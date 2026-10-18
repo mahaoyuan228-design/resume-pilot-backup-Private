@@ -175,6 +175,52 @@
       ],
       "harness": "run-hotjob-tenant.cmd horizon → hotjob-mc Path B (key ready)",
       "if_live_pb": "CMS_BASIC reuse candidate via pb/resumeOperation.html"
+    },
+    {
+      "key": "yls",
+      "name": "上海宇量昇",
+      "su": "SU63847447bef57c649c3505b5",
+      "shell_guess": "mc",
+      "confidence": "medium (portal preference /mc/position/campus like 欧普/隆基; not live-confirmed)",
+      "evidence": [
+        "common portal https://wecruit.hotjob.cn/SU6384…/mc/position/campus",
+        "mc/deliver/operationResumer HTTP 200, hash 352df1… = 中联 mc, body md5 c21b558e… identical",
+        "also exposes pb/resumeOperation.html 200 hash a1541… body md5 5e54d402… (dual; same as all tenants)",
+        "NOT login-wall-only"
+      ],
+      "harness": "run-hotjob-tenant.cmd yls → hotjob-mc Path B (key ready)",
+      "if_live_pb": "CMS_BASIC reuse candidate via pb/resumeOperation.html"
+    },
+    {
+      "key": "haguo",
+      "name": "哈尔滨锅炉厂",
+      "su": "SU65f3a7421eb8054100a07870",
+      "shell_guess": "mc",
+      "confidence": "medium (portal preference /mc/index like 中联; not live-confirmed)",
+      "evidence": [
+        "common portal https://wecruit.hotjob.cn/SU65f3…/mc/index",
+        "mc/deliver/operationResumer HTTP 200, hash 352df1… = 中联 mc, body md5 c21b558e… identical",
+        "also exposes pb/resumeOperation.html 200 hash a1541… body md5 5e54d402… (dual; same as all tenants)",
+        "NOT login-wall-only"
+      ],
+      "harness": "run-hotjob-tenant.cmd haguo → hotjob-mc Path B (key ready)",
+      "if_live_pb": "CMS_BASIC reuse candidate via pb/resumeOperation.html"
+    },
+    {
+      "key": "yunigu",
+      "name": "中科云谷(社招)",
+      "su": "SU60a6449a2f9d2430fdc11a19",
+      "shell_guess": "pb",
+      "confidence": "medium (portal /pb/social.html; not live-confirmed; do not mix with 中联校招 SU661f…)",
+      "evidence": [
+        "common portal https://wecruit.hotjob.cn/SU60a6…/pb/social.html (verify title 中联重科招聘)",
+        "pb/resumeOperation.html HTTP 200, hash a1541… = 招商 CMS, body md5 5e54d402… identical",
+        "pb/social.html 200 hash a1541… body md5 5242e440… (social assets)",
+        "also exposes mc/deliver/operationResumer 200 hash 352df1… body md5 c21b558e…",
+        "NOT login-wall-only"
+      ],
+      "harness": "run-hotjob-tenant.cmd yunigu → CMS_BASIC pb (key ready)",
+      "if_live_mc": "hotjob-mc reuse candidate"
     }
   ],
   "when_caict_opple": "2026-10-18 21:34 Asia/Shanghai",
@@ -182,5 +228,21 @@
   "when_longi_haitian": "2026-10-18 21:47 Asia/Shanghai",
   "note_longi_haitian": "longi+haitian portal mc campus → guess mc/hotjob-mc (like opple); both dual-shell public 200; hashes a1541…/352df1… body md5 match 招商批",
   "when_tsmc_tcl_horizon": "2026-10-18 21:50 Asia/Shanghai",
-  "note_tsmc_tcl_horizon": "tsmc+tclmj+horizon portal mc campus → guess mc/hotjob-mc (like opple/longi/haitian); dual-shell public 200; hashes a1541…/352df1… body md5 match 招商批; horizon opResumer first curl timed out then 200"
+  "note_tsmc_tcl_horizon": "tsmc+tclmj+horizon portal mc campus → guess mc/hotjob-mc (like opple/longi/haitian); dual-shell public 200; hashes a1541…/352df1… body md5 match 招商批; horizon opResumer first curl timed out then 200",
+  "when_yls_haguo_yunigu": "2026-10-18 21:56 Asia/Shanghai",
+  "note_yls_haguo_yunigu": "yls+haguo portal mc (campus|/mc/index) → guess mc/hotjob-mc; yunigu portal /pb/social.html → guess pb/CMS_BASIC; all dual-shell public 200; hashes a1541…/352df1… body md5 match 招商批; verify-list 11/11 shell-class keys now complete",
+  "verify_list_shell_class_complete": true,
+  "verify_list_keys": [
+    "zhonglian",
+    "longi",
+    "opple",
+    "haitian",
+    "caict",
+    "tsmc",
+    "tclmj",
+    "yls",
+    "haguo",
+    "horizon",
+    "yunigu"
+  ]
 }

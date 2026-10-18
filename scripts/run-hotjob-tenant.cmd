@@ -1,12 +1,14 @@
 @echo off
 rem One-shot hotjob tenant basic: readiness, then fill-without-save. NEVER clicks Save/submit/下一步.
-rem Usage: scripts\run-hotjob-tenant.cmd zhonglian^|nanyue^|celebright^|guosheng^|caict^|opple^|longi^|haitian^|tsmc^|tclmj^|tcl^|horizon
+rem Usage: scripts\run-hotjob-tenant.cmd zhonglian^|nanyue^|celebright^|guosheng^|caict^|opple^|longi^|haitian^|tsmc^|tclmj^|tcl^|horizon^|yls^|haguo^|yunigu
 rem Precondition: tenant already logged in on the trial Edge (CDP 9237).
 rem   zhonglian (中联): live uses /mc/deliver/operationResumer (antd-mobile). Path B —
 rem     routes to scripts\auto-hotjob-mc-basic.mjs (siteId=hotjob-mc); CMS_BASIC not used.
 rem   opple (欧普): shell-guess mc (portal /mc/position/campus) → same Path B as zhonglian.
 rem   longi (隆基) / haitian (海天): shell-guess mc (portal /mc/position/campus) → same Path B.
 rem   tsmc (台积电南京) / tclmj|tcl (TCL茂佳) / horizon (地平线): shell-guess mc (portal /mc/position/campus) → same Path B.
+rem   yls (上海宇量昇) / haguo (哈尔滨锅炉厂): shell-guess mc (portal /mc/position/campus|/mc/index) → same Path B.
+rem   yunigu (中科云谷社招): shell-guess pb (portal /pb/social.html) → CMS_BASIC.
 rem   other tenants (nanyue/celebright/guosheng/caict): park on .../SU*/pb/resumeOperation.html → auto-cms-basic.mjs
 rem Env passthrough: RESUME_EXT_ID (default trial hhembhoojafdefnkonmgoejfedgloanc), RELOAD=1,
 rem   AUTO_TIMEOUT_MS, OPEN_CMS_PAGE (default 0 here), NO_PAUSE=1, CDP_PORT (default 9237).
@@ -26,15 +28,18 @@ if /i "%TENANT%"=="tsmc"       set "CMS_SU=SU61075bbabef57c43d825d671"
 if /i "%TENANT%"=="tclmj"      set "CMS_SU=SU6491506a2f9d24316e91b81b"
 if /i "%TENANT%"=="tcl"        set "CMS_SU=SU6491506a2f9d24316e91b81b"
 if /i "%TENANT%"=="horizon"    set "CMS_SU=SU62d915040dcad43c775ec12c"
+if /i "%TENANT%"=="yls"        set "CMS_SU=SU63847447bef57c649c3505b5"
+if /i "%TENANT%"=="haguo"      set "CMS_SU=SU65f3a7421eb8054100a07870"
+if /i "%TENANT%"=="yunigu"     set "CMS_SU=SU60a6449a2f9d2430fdc11a19"
 if not defined CMS_SU (
-  echo Unknown tenant "%TENANT%". Use: zhonglian ^| nanyue ^| celebright ^| guosheng ^| caict ^| opple ^| longi ^| haitian ^| tsmc ^| tclmj ^| tcl ^| horizon
+  echo Unknown tenant "%TENANT%". Use: zhonglian ^| nanyue ^| celebright ^| guosheng ^| caict ^| opple ^| longi ^| haitian ^| tsmc ^| tclmj ^| tcl ^| horizon ^| yls ^| haguo ^| yunigu
   set "RC=64"
   goto :end
 )
 if not defined CDP_PORT set "CDP_PORT=9237"
 if not defined RESUME_EXT_ID set "RESUME_EXT_ID=hhembhoojafdefnkonmgoejfedgloanc"
 
-rem --- mc Path B (中联 live; 欧普/隆基/海天/台积电/TCL茂佳/地平线 shell-guess mc): thin hotjob-mc adapter (not CMS_BASIC) ---
+rem --- mc Path B (中联 live; 欧普/隆基/海天/台积电/TCL茂佳/地平线/宇量昇/哈锅 shell-guess mc): thin hotjob-mc adapter (not CMS_BASIC) ---
 if /i "%TENANT%"=="zhonglian" set "USE_HOTJOB_MC=1"
 if /i "%TENANT%"=="opple" set "USE_HOTJOB_MC=1"
 if /i "%TENANT%"=="longi" set "USE_HOTJOB_MC=1"
@@ -43,6 +48,8 @@ if /i "%TENANT%"=="tsmc" set "USE_HOTJOB_MC=1"
 if /i "%TENANT%"=="tclmj" set "USE_HOTJOB_MC=1"
 if /i "%TENANT%"=="tcl" set "USE_HOTJOB_MC=1"
 if /i "%TENANT%"=="horizon" set "USE_HOTJOB_MC=1"
+if /i "%TENANT%"=="yls" set "USE_HOTJOB_MC=1"
+if /i "%TENANT%"=="haguo" set "USE_HOTJOB_MC=1"
 if defined USE_HOTJOB_MC (
   set "CMS_PAGE=https://wecruit.hotjob.cn/%CMS_SU%/mc/deliver/operationResumer"
   echo [hotjob-tenant] %TENANT% %CMS_SU% -^> mc operationResumer via auto-hotjob-mc-basic.mjs

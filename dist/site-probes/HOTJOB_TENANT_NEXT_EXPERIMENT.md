@@ -1,7 +1,7 @@
 # hotjob 租户 CMS 复用 · 下一实验计划（fill-wo-save）
 
 日期：2026-10-18（Asia/Shanghai）  
-状态：**离线计划 + 公开壳分类已更新（含信通院/欧普/隆基/海天/台积电/TCL茂佳/地平线）** — 本文件不代替 live fill；壳探测用 box curl（无登录、无多开 Edge）。  
+状态：**离线计划 + 公开壳分类已更新（含信通院/欧普/隆基/海天/台积电/TCL茂佳/地平线/宇量昇/哈锅/云谷；verify-list 11/11 keys）** — 本文件不代替 live fill；壳探测用 box curl（无登录、无多开 Edge）。  
 前置证据：`hotjob-tenants-20261018.md` · `hotjob-tenant-verify-20261018.md`（11/11 reuse-CMS **yes**；登录后 fill **未做**）· `hotjob-feishu-tenants-fingerprint-20261018.md`（飞书扩站：南粤/Celebright 同壳；国盛 SLD→`SU6879…`）  
 产品基线：招商 `SU629dbc0c0dcad452299bc0f7` 现网可填；`isCmsResumePage` = `wecruit.hotjob.cn` + `/SU*/pb/resumeOperation.html`。
 
@@ -102,7 +102,26 @@
 - 备选同批（非 Top3）；**未** live、**未**宣称客户可填。Acceptance 仍 85%。  
 - 若 live 停 pb resumeOp → CMS_BASIC 复用候选。
 
-其余备选同批（仍 reuse yes，未本轮壳分类）：哈锅 `SU65f3…`、宇量昇 `SU6384…`；社招中科云谷 `SU60a6…` **medium**，勿与中联校招 SU 混用。
+
+### 1.6 公开 HTTP 壳分类 · 上海宇量昇 / 哈尔滨锅炉厂 / 中科云谷(社招)（2026-10-18 21:56 CST · box curl）
+
+证据：`HOTJOB_SHELL_CLASS_宇量昇哈锅云谷_20261018.md` · `_shell-class-20261018/`（`yuliangsheng_*` / `haguo_*` / `yunigu_*`）· `summary.json`。
+
+| 公司 | SU | 壳猜测 | 非 login-only？ | Harness |
+| --- | --- | --- | --- | --- |
+| 上海宇量昇 | `SU6384…` | **mc**（门户常 `/mc/position/campus`；opResumer hash=`352df1…`=中联） | 是（pb+mc 双 200） | **`yls` key ready** → hotjob-mc |
+| 哈尔滨锅炉厂 | `SU65f3…` | **mc**（门户常 `/mc/index`；opResumer hash=`352df1…`=中联） | 是（pb+mc 双 200） | **`haguo` key ready** → hotjob-mc |
+| 中科云谷(社招) | `SU60a6…` | **pb**（门户 `/pb/social.html`；resumeOp hash=`a1541…`=招商） | 是（pb+mc 双 200） | **`yunigu` key ready** → CMS_BASIC |
+
+- 宇量昇/哈锅同欧普/中联族：门户偏 mc → 主猜 **mc**（Path B）；云谷门户 pb social → 主猜 **pb**。公开侧不能单靠 HTTP 区分招商(pb-live)与中联(mc-live)。  
+- **勿**把云谷社招 `SU60a6…` 与中联校招 `SU661f…` 混用（verify 标题可写「中联重科招聘」）。  
+- 备选同批（非 Top3）；**未** live、**未**宣称客户可填。Acceptance 仍 85%。  
+- 若 live 与猜测相反 → 互换 Path B / CMS_BASIC。
+
+### 1.7 Verify-list shell-class complete
+
+`hotjob-tenant-verify-20261018.md` 候选 **11/11** 均已公开壳分类并接线 `run-hotjob-tenant.cmd` 键（含本轮 `yls`/`haguo`/`yunigu`）。飞书扩站南粤/Celebright/国盛另键，不在该表。**仍非客户可填**。
+
 
 ---
 
@@ -146,7 +165,7 @@
 | SW 任务 | `src/background/cms-basic-auto.mjs`（`CMS_BASIC_AUTO`；`softwareClickedSave` fail-closed） |
 | 页聚焦 | `src/background/cms-page-focus.mjs` |
 | 教育/实习 harness | `scripts/auto-cms-education.mjs` · `scripts/auto-cms-internship.mjs` — **本轮不做**（基线钉死招商 PAGE） |
-| ~~已知缺口~~ 已补（2026-10-18 19:5x CST） | harness 支持 `CMS_PAGE`/`CMS_SU`（校验 `wecruit.hotjob.cn/SU*/pb/resumeOperation.html`）→ auto 页 `cmsPage` → SW `CMS_BASIC_AUTO` 按该 SU 找 tab/probe（原先 SW 钉死招商，仅 `OPEN_CMS_PAGE=0` 也会 `cms_basic_login_or_wrong_page`）；一键 `scripts\run-hotjob-tenant.cmd <zhonglian\|nanyue\|celebright\|guosheng\|caict\|opple\|longi\|haitian\|tsmc\|tclmj\|tcl\|horizon>`；证据自动另存 `hotjob-tenant-<6>-cms-basic-<stamp>.json`，不覆盖招商 latest |
+| ~~已知缺口~~ 已补（2026-10-18 19:5x CST） | harness 支持 `CMS_PAGE`/`CMS_SU`（校验 `wecruit.hotjob.cn/SU*/pb/resumeOperation.html`）→ auto 页 `cmsPage` → SW `CMS_BASIC_AUTO` 按该 SU 找 tab/probe（原先 SW 钉死招商，仅 `OPEN_CMS_PAGE=0` 也会 `cms_basic_login_or_wrong_page`）；一键 `scripts\run-hotjob-tenant.cmd <zhonglian\|nanyue\|celebright\|guosheng\|caict\|opple\|longi\|haitian\|tsmc\|tclmj\|tcl\|horizon\|yls\|haguo\|yunigu>`；证据自动另存 `hotjob-tenant-<6>-cms-basic-<stamp>.json`，不覆盖招商 latest |
 
 ---
 

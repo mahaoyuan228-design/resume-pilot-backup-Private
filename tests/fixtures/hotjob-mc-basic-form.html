@@ -10,13 +10,22 @@
     .am-input-control input { width: 100%; padding: 0.4rem; border: 1px solid #ccc; }
     .my-list-item { margin: 0.75rem 0; padding-bottom: 0.5rem; border-bottom: 1px solid #eee; }
     .am-list-extra { color: #999; }
+    .am-list-extra.active { color: #333; }
     .note { color: #666; font-size: 0.85rem; }
+    .am-modal-wrap-popup { position: fixed; inset: 0; background: rgba(0,0,0,.4); display: none; z-index: 1000; }
+    .am-modal-wrap-popup.open { display: block; }
+    .am-modal.mc-select-popup { position: absolute; left: 0; right: 0; bottom: 0; background: #fff; padding-bottom: 1rem; }
+    .am-picker-popup-header { display: flex; justify-content: space-between; padding: 0.75rem 1rem; border-bottom: 1px solid #eee; }
+    .am-picker-popup-header-left, .am-picker-popup-header-right { cursor: pointer; color: #108ee9; }
+    .mc-select-list .am-list-item { padding: 0.75rem 1rem; border-bottom: 1px solid #f0f0f0; cursor: pointer; display: flex; justify-content: space-between; }
+    .mc-select-list .am-list-item.selected { background: #f5f5f5; }
   </style>
 </head>
 <body>
   <div class="resume-info-title">基本信息</div>
   <p class="note">Offline fixture mirroring live 中联 mc antd-mobile DOM
-    (<code>.my-list-item</code> / <code>.header-title</code> / <code>.am-input-control input</code>).
+    (<code>.my-list-item</code> / <code>.header-title</code> / <code>.am-input-control input</code> /
+    <code>.select-am-list-extra</code> + <code>.am-modal.mc-select-popup</code>).
     siteId <code>hotjob-mc</code>. Never click 下一步.</p>
   <div class="am-list">
 
@@ -35,7 +44,8 @@
       <div class="header-title"><span class="iconfont icon-bitian"></span>性别</div>
       <div class="am-list-item am-list-item-middle">
         <div class="am-list-line">
-          <div class="am-list-extra select-am-list-extra">请选择性别</div>
+          <div class="am-list-extra select-am-list-extra active" id="gender-extra">男</div>
+          <div class="am-list-arrow am-list-arrow-vertical" aria-hidden="true"></div>
         </div>
       </div>
     </div>
@@ -75,5 +85,90 @@
 
   </div>
   <button type="button" class="my-button" id="next-btn">下一步</button>
+
+  <div class="am-modal-wrap am-modal-wrap-popup" id="gender-popup-wrap">
+    <div class="am-modal mc-select-popup am-modal-popup am-modal-popup-slide-up" role="document">
+      <div class="am-modal-content">
+        <div class="am-modal-body">
+          <div class="am-picker-popup-header">
+            <div class="am-picker-popup-item am-picker-popup-header-left">取消</div>
+            <div class="am-picker-popup-item am-picker-popup-title"></div>
+            <div class="am-picker-popup-item am-picker-popup-header-right">确定</div>
+          </div>
+          <div class="mc-select">
+            <div class="am-list mc-select-list">
+              <div class="am-list-body">
+                <div class="am-list-item am-list-item-middle" data-value="男">
+                  <div class="am-list-line">
+                    <div class="am-list-content"><div>男</div></div>
+                    <div class="am-list-extra"><label class="am-radio-wrapper"><span class="am-radio"><input type="radio" class="am-radio-input" name="gender-opt" value="男"></span></label></div>
+                  </div>
+                </div>
+                <div class="am-list-item am-list-item-middle" data-value="女">
+                  <div class="am-list-line">
+                    <div class="am-list-content"><div>女</div></div>
+                    <div class="am-list-extra"><label class="am-radio-wrapper"><span class="am-radio"><input type="radio" class="am-radio-input" name="gender-opt" value="女"></span></label></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    (function () {
+      window.__hotjobMcCommitClicks = 0;
+      document.addEventListener('click', function (event) {
+        var node = event.target.closest('button, a, .my-button');
+        var text = (node && node.textContent || '').replace(/\s+/g, '');
+        if (node && /下一步|保存|提交/.test(text)) window.__hotjobMcCommitClicks += 1;
+      }, true);
+
+      var extra = document.getElementById('gender-extra');
+      var wrap = document.getElementById('gender-popup-wrap');
+      var pending = null;
+
+      function syncRadios(value) {
+        wrap.querySelectorAll('.am-list-item[data-value]').forEach(function (row) {
+          var on = row.getAttribute('data-value') === value;
+          row.classList.toggle('selected', on);
+          var radio = row.querySelector('input.am-radio-input');
+          if (radio) radio.checked = on;
+        });
+      }
+
+      function openPopup() {
+        pending = (extra.textContent || '').trim();
+        syncRadios(pending === '请选择性别' ? '' : pending);
+        wrap.classList.add('open');
+      }
+      function closePopup() {
+        wrap.classList.remove('open');
+        pending = null;
+      }
+
+      extra.addEventListener('click', openPopup);
+      wrap.querySelector('.am-picker-popup-header-left').addEventListener('click', closePopup);
+      wrap.addEventListener('click', function (ev) {
+        if (ev.target === wrap) closePopup();
+      });
+      wrap.querySelectorAll('.am-list-item[data-value]').forEach(function (row) {
+        row.addEventListener('click', function () {
+          pending = row.getAttribute('data-value');
+          syncRadios(pending);
+        });
+      });
+      wrap.querySelector('.am-picker-popup-header-right').addEventListener('click', function () {
+        if (pending) {
+          extra.textContent = pending;
+          extra.classList.add('active');
+        }
+        closePopup();
+      });
+    })();
+  </script>
 </body>
 </html>

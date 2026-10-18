@@ -126,7 +126,7 @@
 
 ## 2026-10-18 晚 · CITICS Ant Select 下一刀：政治面貌（offline/synthetic）
 
-- [x] 政治面貌 Ant Design Vue 1 select：`SELECT_SPECS` allowlist（婚姻状况+政治面貌）；fixtures + `tests/citics-political-select.test.mjs`；synthetic fill-wo-save PASS（群众→共青团员→restore；证据 `dist/auto-runs/citics-ant-select-政治面貌-latest.json`）。**Live 未做**（login wall /my/jl）；勿对外写已支持。
+- [x] 政治面貌 Ant Design Vue 1 select：`SELECT_SPECS` allowlist（婚姻状况+政治面貌）；fixtures + `tests/citics-political-select.test.mjs`；synthetic fill-wo-save PASS（群众→共青团员→restore；`dist/auto-runs/citics-ant-select-政治面貌-latest.json` 仍为 synthetic）。**Live** 证据在 `/workspace/evidence/citics-ant-select-政治面貌-latest.json`（liveEdge=true+restore；同 婚姻状况）；dist latest 未覆盖 — 以 evidence 为准。勿对外写已支持。
 
 - [x] 2026-10-18 19:56 CST：飞书/北森-2022/Moka 第一切片 **extension wired**（SW `FEISHU_ATSX_BASIC_AUTO` / `BEISEN_2022_BASIC_AUTO` / `MOKA_BASIC_AUTO` + auto HTML；programmatic inject；never Save；host fail-closed；`tests/ats-basic-auto-wiring.test.mjs` 7/7）。**未宣称 live 可填**。
 - [ ] Live：仍需 Jeremy 登录各站简历编辑页 + DOM harvest 后再 fill-wo-save；harness `--extension` 可触发，`--synthetic` 不变。
@@ -142,3 +142,7 @@
 
 - [x] 2026-10-18 20:50 CST：`HOTJOB_MC_BASIC_AUTO` wired like feishu/beisen/moka — `src/background/hotjob-mc-basic-auto.mjs` + `src/auto/hotjob-mc-basic-auto.{html,js}` + `worker.mjs` install；programmatic inject；Never Save；fail-closed host+`/SU*/mc/deliver/operationResumer`；harness `--extension` optional. Offline `tests/ats-basic-auto-wiring.test.mjs` + `hotjob-mc-basic.test.mjs` **19/19**.
 - [x] Live optional extra text（中联仍登录）：**证件号码** fill-wo-save+restore **PASS**（CDP one-shot；未扩永久 TEXT_LABELS；下一步未点）。Tabs：1 page（mc）。
+
+## 2026-10-18 晚 · hotjob-mc select 第一刀：性别（Asia/Shanghai）
+
+- [x] 2026-10-18 21:00 CST：中联 mc **性别** `.select-am-list-extra` + `.am-modal.mc-select-popup`（选项 男/女；确定/取消）；`fillSelect` allowlist-only；fixture+`tests/hotjob-mc-basic.test.mjs` **13/13**；harness `--only 性别`；offline synthetic 男→女→restore PASS；**live** fill-wo-save+restore **PASS**（证据 `dist/auto-runs/hotjob-mc-select-性别-latest.json`；未点下一步；tabs≤3）。

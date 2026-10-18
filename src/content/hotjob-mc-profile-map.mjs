@@ -1,5 +1,5 @@
 // Pure hotjob mc (antd-mobile H5) basic field planning from resumeProfile.
-// First slice: 姓名 / 移动电话 / 电子邮箱 — live labels from 中联
+// First slice: 姓名 / 移动电话 / 电子邮箱 + select 性别 — live labels from 中联
 // SU661f… /mc/deliver/operationResumer probe 2026-10-18.
 // Used by tests + harness. Content script mirrors the same rules.
 
@@ -7,6 +7,12 @@ export const HOTJOB_MC_SITE_ID = 'hotjob-mc';
 
 /** Live header-title labels on mc 基本信息 (verified CDP; not invented). */
 export const HOTJOB_MC_TEXT_LABELS = Object.freeze(['姓名', '移动电话', '电子邮箱']);
+
+/** Flat mc-select allowlist (性别 only). Live: .select-am-list-extra + .am-modal.mc-select-popup. */
+export const HOTJOB_MC_SELECT_SPECS = Object.freeze({
+  性别: Object.freeze({ key: 'gender', alternates: Object.freeze(['男', '女']) })
+});
+export const HOTJOB_MC_SELECT_LABELS = Object.freeze(Object.keys(HOTJOB_MC_SELECT_SPECS));
 
 const norm = (value) => String(value ?? '').replace(/[\s\u00a0]+/gu, ' ').trim();
 

@@ -97,3 +97,16 @@ https://wecruit.hotjob.cn/SU661f37091eb8053acd6cdf3d/mc/deliver/operationResumer
 | 对外口径 | 仍 **勿**写「已支持中联客户可填」— 仅实验 fill-wo-save |
 
 Restore 政策：live/synthetic fill 后写回填前值（空→空）；`--no-restore` 可留下填写值，仍永不点下一步。
+
+---
+
+## 7. Select knife · 性别（2026-10-18 21:00 Asia/Shanghai）
+
+| 项 | 值 |
+| --- | --- |
+| Field | **性别**（allowlist-only；国籍/证件类型/籍贯/英语等级 out of scope） |
+| DOM | `.select-am-list-extra` → open `.am-modal.mc-select-popup` → option `.am-list.mc-select-list .am-list-item`（男/女）→ `.am-picker-popup-header-right` 确定 |
+| API | `ResumeHotjobMcBasic.fillSelect('性别', …)` · harness `--only 性别` |
+| Offline | synthetic 男→女→restore **PASS** · `tests/hotjob-mc-basic.test.mjs` 13/13 |
+| Live | fill-wo-save+restore **PASS**（男→女→男）· `dist/auto-runs/hotjob-mc-select-性别-latest.json`；未点下一步 |
+| Restore note | 空占位「请选择性别」无法经 popup 还原 → `select_restore_empty_unsupported`；有值则可 restore |

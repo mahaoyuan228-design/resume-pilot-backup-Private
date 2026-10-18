@@ -9,6 +9,8 @@ import { resolve } from 'node:path';
 import {
   HOTJOB_MC_SITE_ID,
   HOTJOB_MC_TEXT_LABELS,
+  HOTJOB_MC_SELECT_LABELS,
+  HOTJOB_MC_SELECT_SPECS,
   planHotjobMcBasicFromProfile,
   normalizeHotjobMcLabelText,
   isHotjobMcHost,
@@ -46,6 +48,24 @@ test('fixture mirrors live my-list-item / header-title / am-input-control', () =
   assert.match(source, /\.my-list-item/);
   assert.match(source, /\.header-title/);
   assert.match(source, /\.am-input-control/);
+});
+
+test('fixture + source wire 性别 mc-select-popup (select-am-list-extra)', () => {
+  assert.deepEqual([...HOTJOB_MC_SELECT_LABELS], ['性别']);
+  assert.deepEqual([...HOTJOB_MC_SELECT_SPECS['性别'].alternates], ['男', '女']);
+  assert.match(fixture, /select-am-list-extra/);
+  assert.match(fixture, /am-modal mc-select-popup/);
+  assert.match(fixture, /am-picker-popup-header-right/);
+  assert.match(fixture, />性别</);
+  assert.match(fixture, /data-value="男"/);
+  assert.match(fixture, /data-value="女"/);
+  assert.match(source, /SELECT_SPECS/);
+  assert.match(source, /fillSelect/);
+  assert.match(source, /mc-select-popup/);
+  assert.match(source, /select-am-list-extra/);
+  assert.match(source, /label_not_allowed/);
+  assert.doesNotMatch(source, /fillSelect\([^)]*国籍|fillSelect\([^)]*证件类型|fillSelect\([^)]*籍贯/);
+  assert.doesNotMatch(source, /click\(.*下一步|下一步.*\.click/);
 });
 
 test('host/path matchers accept mc operationResumer only', () => {
@@ -137,4 +157,40 @@ test('synthetic readiness finds three labels', { timeout: 120000 }, () => {
   assert.equal(evidence.siteId, 'hotjob-mc');
   assert.equal(evidence.ok, true);
   assert.equal(evidence.probe?.foundCount, 3);
+});
+
+test('harness --only rejects non-allowlist select label', () => {
+  const run = spawnSync(process.execPath, ['scripts/auto-hotjob-mc-basic.mjs', '--only', '国籍', '--synthetic'], {
+    cwd: root,
+    encoding: 'utf8',
+    timeout: 10000
+  });
+  assert.equal(run.status, 2);
+  assert.match(run.stderr + run.stdout, /性别/);
+});
+
+test('synthetic harness fillSelect 性别 fill-wo-save + restore', { timeout: 120000 }, () => {
+  const run = spawnSync(process.execPath, ['scripts/auto-hotjob-mc-basic.mjs', '--only', '性别', '--synthetic'], {
+    cwd: root,
+    encoding: 'utf8',
+    timeout: 90000
+  });
+  assert.equal(run.status, 0, run.stderr || run.stdout);
+  const evidence = JSON.parse(
+    readFileSync(resolve(root, 'dist/auto-runs/hotjob-mc-select-性别-latest.json'), 'utf8')
+  );
+  assert.equal(evidence.siteId, 'hotjob-mc');
+  assert.equal(evidence.label, '性别');
+  assert.equal(evidence.ok, true);
+  assert.equal(evidence.before, '男');
+  assert.equal(evidence.after, '女');
+  assert.equal(evidence.expected, '女');
+  assert.equal(evidence.final, '男');
+  assert.equal(evidence.restored, true);
+  assert.equal(evidence.saved, false);
+  assert.equal(evidence.skippedSave, true);
+  assert.equal(evidence.liveEdge, false);
+  assert.equal(evidence.commitClicks, 0);
+  assert.equal(evidence.neighborsUnchanged, true);
+  assert.equal(evidence.neighborValue, 'NEIGHBOR_KEEP');
 });

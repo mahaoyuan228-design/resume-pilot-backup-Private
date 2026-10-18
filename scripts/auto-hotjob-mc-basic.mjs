@@ -45,16 +45,34 @@ function pause(ms) {
 }
 
 function parseArgs(argv) {
-  const args = { synthetic: false, live: false, help: false, noRestore: false, extension: false };
+  const args = { synthetic: false, live: false, help: false, noRestore: false, extension: false, only: null };
   for (let index = 0; index < argv.length; index += 1) {
     const token = argv[index];
     if (token === '--synthetic') args.synthetic = true;
     else if (token === '--live') args.live = true;
     else if (token === '--no-restore') args.noRestore = true;
     else if (token === '--extension') args.extension = true;
+    else if (token === '--only') args.only = argv[++index] ?? '';
     else if (token === '--help' || token === '-h') args.help = true;
   }
   return args;
+}
+
+const ALLOWED_SELECT_ONLY = Object.freeze(['性别']);
+
+function selectEvidencePaths(label, now = stampIso()) {
+  fs.mkdirSync(outDir, { recursive: true });
+  const file = path.join(outDir, `hotjob-mc-select-${label}-${now}.json`);
+  const latest = path.join(outDir, `hotjob-mc-select-${label}-latest.json`);
+  return { file, latest };
+}
+
+function writeSelectEvidence(label, payload) {
+  const { file, latest } = selectEvidencePaths(label);
+  const json = JSON.stringify(payload, null, 2);
+  fs.writeFileSync(file, json, 'utf8');
+  fs.copyFileSync(file, latest);
+  return { file, latest };
 }
 
 function modeFromEnv() {
@@ -496,6 +514,123 @@ async function runLive(mode, args) {
   return { payload, written };
 }
 
+
+async function runSyntheticSelect(label, args) {
+  const { server, port } = await startFixtureServer();
+  const cdpPort = await freePort();
+  let child;
+  try {
+    ({ child } = await launchChrome(cdpPort));
+    const url = `http://127.0.0.1:${port}/${fixtureName}`;
+    const { socket, send } = await attachNewPage(cdpPort, url);
+    await injectScript(send);
+    const restore = args.noRestore ? false : true;
+    const expected = process.env.HOTJOB_MC_SELECT_VALUE || null;
+    const result = await evaluate(send, `ResumeHotjobMcBasic.fillSelect(${JSON.stringify(label)}, ${expected == null ? 'null' : JSON.stringify(expected)}, {
+      synthetic: true,
+      restore: ${restore ? 'true' : 'false'},
+      pickAlternate: ${expected == null ? 'true' : 'false'}
+    })`);
+    const commitClicks = await evaluate(send, `globalThis.__hotjobMcCommitClicks || 0`);
+    const neighbor = await evaluate(send, `(() => {
+      const item = [...document.querySelectorAll('.my-list-item')].find((node) => {
+        const t = node.querySelector('.header-title');
+        return t && (t.textContent || '').includes('证件号码');
+      });
+      const input = item?.querySelector('.am-input-control input');
+      return input ? input.value : null;
+    })()`);
+    const ok = result?.ok === true
+      && result?.saved === false
+      && result?.skippedSave === true
+      && neighbor === 'NEIGHBOR_KEEP'
+      && commitClicks === 0
+      && (restore ? result?.restored === true : true);
+    const payload = {
+      ...result,
+      ok,
+      siteId: SITE_ID,
+      label,
+      saved: false,
+      skippedSave: true,
+      neverClickedNext: true,
+      liveEdge: false,
+      surface: 'synthetic-fixture',
+      commitClicks,
+      neighborValue: neighbor,
+      neighborsUnchanged: neighbor === 'NEIGHBOR_KEEP',
+      at: new Date().toISOString(),
+      checks: [
+        { name: 'happy', ok: result?.ok === true && result?.reason === 'readback_matched', reason: result?.reason, before: result?.before, after: result?.after, final: result?.final },
+        { name: 'neighbor', ok: neighbor === 'NEIGHBOR_KEEP', neighbor },
+        { name: 'no-next', ok: commitClicks === 0, commitClicks }
+      ]
+    };
+    const written = writeSelectEvidence(label, payload);
+    socket.close();
+    return { payload, written };
+  } finally {
+    try { child?.kill(); } catch {}
+    try { server.close(); } catch {}
+  }
+}
+
+async function runLiveSelect(label, args) {
+  const cdpPort = Number.parseInt(process.env.CDP_PORT || '9237', 10);
+  const target = resolveMcTarget();
+  const listRes = await fetch(`http://127.0.0.1:${cdpPort}/json/list`).catch(() => null);
+  if (!listRes?.ok) {
+    const payload = {
+      ok: false, siteId: SITE_ID, label, reason: 'cdp_unavailable', liveEdge: false,
+      saved: false, skippedSave: true, neverClickedNext: true, at: new Date().toISOString()
+    };
+    return { payload, written: writeSelectEvidence(label, payload) };
+  }
+  const attached = await attachExistingMcTab(cdpPort, target);
+  if (attached.error) {
+    const payload = {
+      ok: false, siteId: SITE_ID, label, reason: attached.error, liveEdge: true,
+      saved: false, skippedSave: true, neverClickedNext: true, openPages: attached.pages,
+      at: new Date().toISOString()
+    };
+    return { payload, written: writeSelectEvidence(label, payload) };
+  }
+  const { socket, send, page } = attached;
+  await injectScript(send);
+  const restore = args.noRestore ? false : true;
+  const expected = process.env.HOTJOB_MC_SELECT_VALUE || null;
+  const result = await evaluate(send, `ResumeHotjobMcBasic.fillSelect(${JSON.stringify(label)}, ${expected == null ? 'null' : JSON.stringify(expected)}, {
+    restore: ${restore ? 'true' : 'false'},
+    pickAlternate: ${expected == null ? 'true' : 'false'}
+  })`);
+  const saveGuard = await evaluate(send, `(() => {
+    const next = [...document.querySelectorAll('.my-button, button')].find((b) => /下一步|保存|提交/.test(b.textContent || ''));
+    return { nextText: next?.textContent?.trim() || null, neverClickedByHarness: true };
+  })()`);
+  const ok = result?.ok === true && result?.saved === false && result?.skippedSave === true
+    && (!restore || result?.restored === true || result?.reason === 'preexisting_same_value');
+  const payload = {
+    ...result,
+    ok,
+    siteId: SITE_ID,
+    label,
+    saved: false,
+    skippedSave: true,
+    neverClickedNext: true,
+    liveEdge: true,
+    surface: 'cdp-live-mc',
+    tenantSu: target.su,
+    cmsPage: target.page,
+    tabId: page.id,
+    tabUrl: page.url,
+    saveGuard,
+    at: new Date().toISOString()
+  };
+  const written = writeSelectEvidence(label, payload);
+  try { socket.close(); } catch {}
+  return { payload, written };
+}
+
 function printHelp() {
   console.log(`Hotjob mc basic harness (siteId=${SITE_ID})
   MODE=readiness|fill (default readiness)
@@ -503,6 +638,9 @@ function printHelp() {
   CMS_SU / CMS_PAGE — mc URL (default 中联 ${DEFAULT_SU})
   Offline:
     MODE=fill node scripts/auto-hotjob-mc-basic.mjs --synthetic
+  Select knife (allowlist):
+    node scripts/auto-hotjob-mc-basic.mjs --only 性别 --synthetic
+    node scripts/auto-hotjob-mc-basic.mjs --only 性别 --live
   Live (existing Edge tab; bringToFront; never Save; restore after fill):
     MODE=readiness CMS_SU=${DEFAULT_SU} node scripts/auto-hotjob-mc-basic.mjs --live
     MODE=fill CMS_SU=${DEFAULT_SU} node scripts/auto-hotjob-mc-basic.mjs --live
@@ -531,6 +669,33 @@ async function main() {
     });
     return;
   }
+
+  if (args.only != null) {
+    if (!ALLOWED_SELECT_ONLY.includes(args.only)) {
+      console.error('Usage: node scripts/auto-hotjob-mc-basic.mjs --only 性别 [--synthetic | --live]');
+      process.exit(2);
+    }
+    const useSynthetic = args.synthetic || (!args.live && process.env.HOTJOB_MC_SURFACE === 'synthetic');
+    try {
+      const { payload, written } = useSynthetic
+        ? await runSyntheticSelect(args.only, args)
+        : await runLiveSelect(args.only, args);
+      console.log(JSON.stringify({ event: 'saved', ...written, ok: payload.ok, reason: payload.reason, label: args.only }, null, 2));
+      process.exit(payload.ok ? 0 : 2);
+    } catch (error) {
+      const payload = {
+        ok: false, siteId: SITE_ID, label: args.only,
+        reason: String(error?.message || error).slice(0, 300),
+        saved: false, skippedSave: true, neverClickedNext: true,
+        at: new Date().toISOString(),
+        error: String(error?.stack || error).slice(0, 800)
+      };
+      const written = writeSelectEvidence(args.only, payload);
+      console.error(JSON.stringify({ event: 'error', ...written, ...payload }, null, 2));
+      process.exit(1);
+    }
+  }
+
   const mode = modeFromEnv();
   // Prefer explicit flags; otherwise live when not synthetic (tenant cmd path).
   const useSynthetic = args.synthetic || (!args.live && process.env.HOTJOB_MC_SURFACE === 'synthetic');

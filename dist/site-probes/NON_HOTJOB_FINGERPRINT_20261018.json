@@ -1,0 +1,87 @@
+{
+  "date": "2026-10-18",
+  "tz": "Asia/Shanghai",
+  "method": "curl-public-no-login",
+  "skipped": [
+    "big5",
+    "cmb-bank",
+    "duomian-no-url",
+    "redsea-no-url",
+    "wjx-no-url"
+  ],
+  "high_leverage": [
+    "xiaomi-feishu-atsx-saas-career-twin"
+  ],
+  "rows": [
+    {
+      "company": "小米",
+      "final_url": "https://xiaomi.jobs.f.mioffice.cn/newretailing/?spread=M1SXHJC",
+      "family": "feishu-atsx-saas-career",
+      "resume_public": false,
+      "difficulty": "reuse-existing-adapter",
+      "note": "same pc.4481de59.js as FEISHU_ATSX; mioffice host"
+    },
+    {
+      "company": "华为",
+      "final_url": "https://career.huawei.com/cn/campus-recruitment",
+      "family": "huawei-self-hwp",
+      "resume_public": false,
+      "difficulty": "new-adapter",
+      "note": "HWP/Sitecore-like; portal5 redirects to /cn"
+    },
+    {
+      "company": "快手",
+      "final_url": "https://campus.kuaishou.cn/",
+      "family": "kuaishou-self-antd",
+      "resume_public": false,
+      "difficulty": "new-adapter",
+      "note": "careers-campus React+antd; edit-resume APIs behind login"
+    },
+    {
+      "company": "拼多多",
+      "final_url": "https://careers.pddglobalhr.com/campus/grad?t=6I3i5acZmE",
+      "family": "pdd-self-next",
+      "resume_public": false,
+      "difficulty": "new-adapter",
+      "note": "Next.js campus web; filter checkboxes only"
+    },
+    {
+      "company": "腾讯音乐",
+      "final_url": "https://join.tencentmusic.com/campus/post/?type=40",
+      "family": "tme-self-nuxt",
+      "resume_public": false,
+      "difficulty": "new-adapter",
+      "note": "Nuxt+Element; /login /resume links, no public form"
+    },
+    {
+      "company": "网易",
+      "final_url": "https://campus.163.com/",
+      "family": "netease-self-ehr",
+      "resume_public": false,
+      "difficulty": "new-adapter",
+      "note": "ehr-web.netease.com shell; #login-box"
+    },
+    {
+      "company": "兴业银行",
+      "final_url": "https://job.cib.com.cn/portal/",
+      "family": "cib-self-antdv",
+      "resume_public": false,
+      "difficulty": "new-adapter",
+      "note": "ant-design-vue portal; not hotjob"
+    },
+    {
+      "company": "民生银行",
+      "final_url": "https://career.cmbc.com.cn/",
+      "family": "cmbc-qiuxian",
+      "resume_public": false,
+      "difficulty": "new-adapter",
+      "note": "qiuxian Angular portal; not beisen/moka/hotjob"
+    }
+  ],
+  "raw_dir": "dist/site-probes/_raw-nonhotjob-20261018",
+  "acceptance_pct_unchanged": 85,
+  "sellable_unchanged": [
+    "CMS",
+    "GTH"
+  ]
+}

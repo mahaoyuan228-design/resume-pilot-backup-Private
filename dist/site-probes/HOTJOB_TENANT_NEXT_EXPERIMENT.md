@@ -231,4 +231,22 @@
 - 证据 JSON 路径写入进度表；窄版验收 **85% 不抬**  
 - 销售口径不变：对外仍仅 **招商 CMS + 国泰 GTH**
 
+
+---
+
+## 7. Non-hotjob 高杠杆 · 飞书 ATSX 孪生（小米 · 2026-10-18 22:05 CST）
+
+来源：`NON_HOTJOB_FINGERPRINT_20261018.md` · raw `_raw-nonhotjob-20261018/xiaomi/`。
+
+| 项 | 值 |
+| --- | --- |
+| 门户 | `https://xiaomi.jobs.f.mioffice.cn/newretailing/?spread=M1SXHJC` · 根 `xiaomi.jobs.f.mioffice.cn` |
+| 族 | **飞书招聘 ATSX saas-career**（同广发 `gffunds.jobs.feishu.cn` / thundersoft） |
+| 证据 | CDN `lf-package-cn.feishucdn.com/obj/atsx-throne/.../saas-career/`；**同哈希** `pc.4481de59.js` · `8825.0e3d5ab8.js`（= `FEISHU_ATSX_NEXT.md`） |
+| vs hotjob | **非** hotjob；**勿** CMS 白名单 |
+| 公开简历 | **否**；登录后才有表单 |
+| 建议 | 登录后优先试 **reuse `feishu-atsx` scaffold**（siteId 族级）；排在 hotjob SU live 队列**旁路**，不插队 CMS+GTH 可卖线 |
+
+本批其余（华为/快手/PDD/TME/网易/兴业/民生）均为自建 **new-adapter**，无新共用族 → **不**改 hotjob Top 序。
+
 *本文件：`dist/site-probes/HOTJOB_TENANT_NEXT_EXPERIMENT.md`*

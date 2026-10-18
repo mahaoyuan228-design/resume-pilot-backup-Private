@@ -2,49 +2,104 @@
 <html lang="zh-CN">
 <head>
   <meta charset="utf-8" />
-  <title>Feishu ATSX basic fixture (offline · provisional DOM)</title>
+  <title>广发基金招聘 · Feishu ATSX fixture (offline · JS-confirmed classes)</title>
+  <meta name="description" content="到广发基金，开启你的新工作 " />
   <style>
-    body { font-family: system-ui, sans-serif; max-width: 480px; margin: 2rem auto; }
+    body { font-family: system-ui, sans-serif; margin: 0; color: #1f2329; }
+    .topbar { display: flex; align-items: center; justify-content: space-between;
+      padding: 0.75rem 1.25rem; border-bottom: 1px solid #e5e6eb; background: #fff; }
+    .topbar-logo, .topbar-site-title { font-weight: 600; }
+    .topbar-navigation-list { display: flex; gap: 1rem; list-style: none; margin: 0; padding: 0; }
+    .topbar-navigation-item { color: #646a73; }
+    .topbar-user-login { color: #3370FF; }
+    .portal-pc { max-width: 720px; margin: 0 auto; padding: 1.5rem 1.25rem 3rem; }
     .atsx-form-item { margin: 1rem 0; }
     .atsx-form-item-label { display: block; font-weight: 600; margin-bottom: 0.25rem; }
-    .atsx-input { width: 100%; padding: 0.4rem 0.5rem; border: 1px solid #ccc; border-radius: 4px; }
+    .atsx-form-item-control { line-height: 32px; }
+    .atsx-input { width: 100%; padding: 0.4rem 0.5rem; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; }
+    .footer { border-top: 1px solid #e5e6eb; padding: 1rem 1.25rem; color: #8f959e; font-size: 0.85rem; }
+    .footer-content { max-width: 720px; margin: 0 auto; }
     .note { color: #666; font-size: 0.85rem; }
   </style>
 </head>
 <body>
-  <h1>基本信息（fixture）</h1>
-  <p class="note">Provisional <code>.atsx-form-item</code> contract for siteId <code>feishu-atsx</code>.
-    Labels match gffunds.jobs.feishu.cn embedded schema. Live SPA classes unproven (login wall).</p>
+  <!-- Public portal chrome classes from saas-career pc.4481de59.js (gffunds.jobs.feishu.cn/index). -->
+  <div id="bd" class="portal-pc">
+    <header class="topbar topbar-content">
+      <div class="topbar-left">
+        <span class="topbar-logo">广发基金</span>
+        <span class="topbar-site-title">社招官网</span>
+      </div>
+      <ul class="topbar-navigation-list">
+        <li class="topbar-navigation-item">首页</li>
+        <li class="topbar-navigation-item">职位</li>
+        <li class="topbar-navigation-item">简历</li>
+      </ul>
+      <div class="topbar-right">
+        <span class="topbar-user-login">登录</span>
+      </div>
+    </header>
 
-  <div class="atsx-form-item" data-field="姓名">
-    <label class="atsx-form-item-label">姓名</label>
-    <div class="atsx-form-item-control">
-      <input class="atsx-input" type="text" name="fullName" value="" />
-    </div>
+    <!-- Fingerprint tokens (index HTML + CDN): probeFingerprint sees atsx / saas-career / feishucdn -->
+    <div id="fp-hint" hidden
+      data-stack="atsx-throne hire-fe-prod portal/saas-career lf-package-cn.feishucdn.com atsx-tob bytescm.com"
+      data-js-chunks="pc.4481de59.js 8825.0e3d5ab8.js 3548.515a223b.js"
+      data-source="https://gffunds.jobs.feishu.cn/index"></div>
+
+    <h1>基本信息（fixture）</h1>
+    <p class="note">Offline stand-in for siteId <code>feishu-atsx</code>. Form class names
+      (<code>.atsx-form-item</code> / <code>.atsx-form-item-label</code> / <code>.atsx-form-item-control</code> /
+      <code>input.atsx-input</code>) are <strong>JS-confirmed</strong> in public saas-career bundles
+      (Ant Design <code>prefixCls=atsx</code>), not invented. Live resume-edit DOM is still
+      <strong>login-walled</strong> (index SSR has <code>#bd</code> only; no field inputs). Labels match
+      embedded <code>resume_form_schema</code> 姓名/手机号码/邮箱. Do not claim live support.</p>
+
+    <form class="atsx-form" action="#" onsubmit="return false;">
+      <div class="atsx-form-item" data-field="姓名">
+        <div class="atsx-form-item-label"><label>姓名</label></div>
+        <div class="atsx-form-item-control">
+          <div class="atsx-form-item-children">
+            <input class="atsx-input" type="text" name="fullName" value="" />
+          </div>
+        </div>
+      </div>
+
+      <div class="atsx-form-item" data-field="手机号码">
+        <div class="atsx-form-item-label"><label>手机号码</label></div>
+        <div class="atsx-form-item-control">
+          <div class="atsx-form-item-children">
+            <input class="atsx-input" type="tel" name="mobile" value="" />
+          </div>
+        </div>
+      </div>
+
+      <div class="atsx-form-item" data-field="邮箱">
+        <div class="atsx-form-item-label"><label>邮箱</label></div>
+        <div class="atsx-form-item-control">
+          <div class="atsx-form-item-children">
+            <input class="atsx-input" type="email" name="email" value="" />
+          </div>
+        </div>
+      </div>
+
+      <!-- Neighbor field: must stay untouched by first-slice fill -->
+      <div class="atsx-form-item" data-field="工作年限">
+        <div class="atsx-form-item-label"><label>工作年限</label></div>
+        <div class="atsx-form-item-control">
+          <div class="atsx-form-item-children">
+            <input class="atsx-input" type="text" name="years" value="0" />
+          </div>
+        </div>
+      </div>
+
+      <button type="button" id="save-btn" class="atsx-btn atsx-btn-primary" disabled>保存（fixture · never clicked by harness）</button>
+    </form>
   </div>
 
-  <div class="atsx-form-item" data-field="手机号码">
-    <label class="atsx-form-item-label">手机号码</label>
-    <div class="atsx-form-item-control">
-      <input class="atsx-input" type="tel" name="mobile" value="" />
+  <footer class="footer">
+    <div class="footer-content">
+      联系我们：gfjj_hr@gffunds.com.cn · 本站使用飞书招聘搭建（fixture chrome）
     </div>
-  </div>
-
-  <div class="atsx-form-item" data-field="邮箱">
-    <label class="atsx-form-item-label">邮箱</label>
-    <div class="atsx-form-item-control">
-      <input class="atsx-input" type="email" name="email" value="" />
-    </div>
-  </div>
-
-  <!-- Neighbor field: must stay untouched by first-slice fill -->
-  <div class="atsx-form-item" data-field="工作年限">
-    <label class="atsx-form-item-label">工作年限</label>
-    <div class="atsx-form-item-control">
-      <input class="atsx-input" type="text" name="years" value="0" />
-    </div>
-  </div>
-
-  <button type="button" id="save-btn" disabled>保存（fixture · never clicked by harness）</button>
+  </footer>
 </body>
 </html>

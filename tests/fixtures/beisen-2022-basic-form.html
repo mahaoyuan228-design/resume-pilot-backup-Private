@@ -2,52 +2,77 @@
 <html lang="zh-CN">
 <head>
   <meta charset="utf-8" />
-  <title>Beisen-2022 basic fixture (offline · provisional DOM)</title>
+  <title>君乐宝乳业 · Beisen-2022 fixture (offline · provisional form classes)</title>
   <style>
-    body { font-family: system-ui, sans-serif; max-width: 480px; margin: 2rem auto; }
+    body { font-family: system-ui, sans-serif; margin: 0; color: #212121; }
+    .views { min-height: 100vh; }
+    .view-main { max-width: 720px; margin: 0 auto; padding: 1.5rem 1.25rem 3rem; }
+    .portal-nav { display: flex; gap: 1rem; list-style: none; margin: 0 0 1.25rem; padding: 0;
+      border-bottom: 1px solid #e0e0e0; padding-bottom: 0.75rem; color: #616161; font-size: 0.9rem; }
     .bs-form-item { margin: 1rem 0; }
     .bs-form-item-label { display: block; font-weight: 600; margin-bottom: 0.25rem; }
-    .bs-input { width: 100%; padding: 0.4rem 0.5rem; border: 1px solid #ccc; border-radius: 4px; }
+    .bs-input { width: 100%; padding: 0.4rem 0.5rem; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; }
     .note { color: #666; font-size: 0.85rem; }
   </style>
 </head>
 <body>
-  <h1>基本信息（fixture）</h1>
-  <p class="note">Provisional <code>.bs-form-item</code> contract for siteId <code>beisen-2022</code>.
-    Labels mirror high-confidence basic text fields for junlebaoruye.zhiye.com family
-    (ux-recruitment-portal-2022). Live SPA classes unproven (login wall).</p>
-  <!-- Fingerprint tokens so probeFingerprint can see portal-2022 on synthetic: -->
-  <div id="fp-hint" hidden data-stack="ux-recruitment-portal-2022 acdn.bstatics.com beisen zhiye.com"></div>
+  <!-- Public portal chrome from junlebaoruye.zhiye.com/campus/jobs SSR (empty #bsMain shell). -->
+  <div class="views">
+    <div class="view view-main" data-page="main">
+      <div class="pages" id="bsMain">
+        <ul class="portal-nav" aria-hidden="true">
+          <li>首页</li>
+          <li>校园招聘</li>
+          <li>我的简历</li>
+        </ul>
 
-  <div class="bs-form-item" data-field="姓名">
-    <label class="bs-form-item-label">姓名</label>
-    <div class="bs-form-item-control">
-      <input class="bs-input" type="text" name="fullName" value="" />
+        <!-- Fingerprint tokens: probeFingerprint sees portal-2022 on synthetic -->
+        <div id="fp-hint" hidden
+          data-stack="ux-recruitment-portal-2022 acdn.bstatics.com beisen zhiye.com"
+          data-js-chunks="pc-e2be192404257687c4d1.chunk.min.js"
+          data-source="https://junlebaoruye.zhiye.com/campus/jobs"></div>
+
+        <h1>基本信息（fixture）</h1>
+        <p class="note">Offline stand-in for siteId <code>beisen-2022</code>. Form class names
+          (<code>.bs-form-item</code> / <code>.bs-form-item-label</code> / <code>input.bs-input</code>)
+          remain <strong>provisional</strong> — <strong>not</strong> found in public
+          ux-recruitment-portal-2022 bundles (entry + phoenix/app/personal-center CSS/JS).
+          Live resume-edit DOM is <strong>login-walled</strong> (<code>/personal/resume</code> SSR
+          has empty <code>#bsMain</code>, 0 inputs). Do not claim live support. Evidence:
+          <code>_beisen-2022-js-class-hints-20261018.txt</code>.</p>
+
+        <div class="bs-form-item" data-field="姓名">
+          <label class="bs-form-item-label">姓名</label>
+          <div class="bs-form-item-control">
+            <input class="bs-input" type="text" name="fullName" value="" />
+          </div>
+        </div>
+
+        <div class="bs-form-item" data-field="手机号码">
+          <label class="bs-form-item-label">手机号码</label>
+          <div class="bs-form-item-control">
+            <input class="bs-input" type="tel" name="mobile" value="" />
+          </div>
+        </div>
+
+        <div class="bs-form-item" data-field="邮箱">
+          <label class="bs-form-item-label">邮箱</label>
+          <div class="bs-form-item-control">
+            <input class="bs-input" type="email" name="email" value="" />
+          </div>
+        </div>
+
+        <!-- Neighbor field: must stay untouched by first-slice fill -->
+        <div class="bs-form-item" data-field="工作年限">
+          <label class="bs-form-item-label">工作年限</label>
+          <div class="bs-form-item-control">
+            <input class="bs-input" type="text" name="years" value="0" />
+          </div>
+        </div>
+
+        <button type="button" id="save-btn" disabled>保存（fixture · never clicked by harness）</button>
+      </div>
     </div>
   </div>
-
-  <div class="bs-form-item" data-field="手机号码">
-    <label class="bs-form-item-label">手机号码</label>
-    <div class="bs-form-item-control">
-      <input class="bs-input" type="tel" name="mobile" value="" />
-    </div>
-  </div>
-
-  <div class="bs-form-item" data-field="邮箱">
-    <label class="bs-form-item-label">邮箱</label>
-    <div class="bs-form-item-control">
-      <input class="bs-input" type="email" name="email" value="" />
-    </div>
-  </div>
-
-  <!-- Neighbor field: must stay untouched by first-slice fill -->
-  <div class="bs-form-item" data-field="工作年限">
-    <label class="bs-form-item-label">工作年限</label>
-    <div class="bs-form-item-control">
-      <input class="bs-input" type="text" name="years" value="0" />
-    </div>
-  </div>
-
-  <button type="button" id="save-btn" disabled>保存（fixture · never clicked by harness）</button>
 </body>
 </html>

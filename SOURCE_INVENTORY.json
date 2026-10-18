@@ -1,6 +1,6 @@
 {
   "version": "0.1.4.9",
-  "sumsSha256": "bf48a7b64283c2acf2dc6493255e0b8cc8515bc383ca383e09f6a543e4570fec",
+  "sumsSha256": "80486b8cbb12ee5fb10bc48e2d4186dd86eba53965e5b88e143fd76754ebdd40",
   "inventory": [
     {
       "path": "manifest.json",
@@ -652,8 +652,8 @@
     },
     {
       "path": "src/content/feishu-atsx-basic.js",
-      "sha256": "d8f12fb9de384453aab313ab96ab42bb174255457b1615af33b7ba5aac3971b1",
-      "sourceSha256": "d8f12fb9de384453aab313ab96ab42bb174255457b1615af33b7ba5aac3971b1",
+      "sha256": "edf05fde9baec6aabf5770bc385d84a44fe37a1bd541940aa4796611da6ce11c",
+      "sourceSha256": "edf05fde9baec6aabf5770bc385d84a44fe37a1bd541940aa4796611da6ce11c",
       "kind": "frozen-product"
     },
     {
@@ -664,8 +664,8 @@
     },
     {
       "path": "src/content/beisen-2022-basic.js",
-      "sha256": "698e7c9d3e24baa7fe5c3b9b3a76b33f0f995835cdadf823486e22b92c64b5b9",
-      "sourceSha256": "698e7c9d3e24baa7fe5c3b9b3a76b33f0f995835cdadf823486e22b92c64b5b9",
+      "sha256": "90410514d74ad9dea3056cbff4505c8274c4d65a1d1cfc458b9e3c541f10d193",
+      "sourceSha256": "90410514d74ad9dea3056cbff4505c8274c4d65a1d1cfc458b9e3c541f10d193",
       "kind": "frozen-product"
     },
     {
@@ -676,8 +676,8 @@
     },
     {
       "path": "src/content/moka-basic.js",
-      "sha256": "bf17fb6175d3a00dd9a77c4d96b06f7046fc7fee9fa8e2669497942a02a6e621",
-      "sourceSha256": "bf17fb6175d3a00dd9a77c4d96b06f7046fc7fee9fa8e2669497942a02a6e621",
+      "sha256": "47421a911e796c215eea3a40a10e4fb7fd2f5883e1eb9d29c134098ed2abd2c8",
+      "sourceSha256": "47421a911e796c215eea3a40a10e4fb7fd2f5883e1eb9d29c134098ed2abd2c8",
       "kind": "frozen-product"
     },
     {

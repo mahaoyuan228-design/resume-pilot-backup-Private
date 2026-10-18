@@ -29,11 +29,19 @@ test('siteId and labels stay isolated from CMS/GTH/citics/feishu', () => {
   assert.doesNotMatch(source, /click\(.*保存|保存.*\.click/);
 });
 
-test('fixture carries provisional bs-form-item selectors for three text fields', () => {
+test('fixture carries provisional bs-form-item selectors + public portal chrome', () => {
   assert.match(fixture, /class="bs-form-item"/);
+  assert.match(fixture, /bs-form-item-label/);
+  assert.match(fixture, /class="bs-input"/);
   assert.match(fixture, />姓名</);
   assert.match(fixture, />手机号码</);
   assert.match(fixture, />邮箱</);
+  // Public portal chrome from ux-recruitment-portal-2022 SSR (not login-walled form invent)
+  assert.match(fixture, /id="bsMain"/);
+  assert.match(fixture, /view-main|class="views"/);
+  assert.match(fixture, /ux-recruitment-portal-2022|pc-e2be192404257687c4d1|bstatics/);
+  assert.match(fixture, /provisional/i);
+  assert.match(fixture, /login-walled|登录墙/i);
   assert.match(source, /\.bs-form-item/);
   assert.match(source, /bs-input/);
 });

@@ -29,11 +29,20 @@ test('siteId and labels stay isolated from CMS/GTH/citics', () => {
   assert.doesNotMatch(source, /click\(.*保存|保存.*\.click/);
 });
 
-test('fixture carries provisional atsx-form-item selectors for three text fields', () => {
+test('fixture carries JS-confirmed atsx-form-item selectors + public portal chrome', () => {
   assert.match(fixture, /class="atsx-form-item"/);
+  assert.match(fixture, /atsx-form-item-label/);
+  assert.match(fixture, /atsx-form-item-control/);
+  assert.match(fixture, /class="atsx-input"/);
   assert.match(fixture, />姓名</);
   assert.match(fixture, />手机号码</);
   assert.match(fixture, />邮箱</);
+  // Public portal chrome from saas-career pc bundle (not login-walled form invent)
+  assert.match(fixture, /id="bd"/);
+  assert.match(fixture, /portal-pc/);
+  assert.match(fixture, /topbar-navigation-list/);
+  assert.match(fixture, /saas-career|atsx-throne|feishucdn/);
+  assert.match(fixture, /JS-confirmed|js-confirmed|8825\.0e3d5ab8|pc\.4481de59/i);
   assert.match(source, /\.atsx-form-item/);
   assert.match(source, /atsx-input/);
 });

@@ -1,0 +1,31 @@
+# Beisen-2022 public JS/CSS class hints (2026-10-18 Asia/Shanghai)
+# Source: junlebaoruye.zhiye.com/campus/jobs (+ /personal/resume same shell)
+# Entry: acdn.bstatics.com/.../ux-recruitment-portal-2022/release/dist/pc-e2be192404257687c4d1.chunk.min.js
+# Lazy chunks sampled: beisen-phoenix / beisen-platform / recruitment-portal / app / pc-app /
+#   pc-personal-center / pc-search-form / pc-login / vendors (+ CSS css/7755.*.css etc.)
+# Method: curl only; no login; no live form DOM
+
+## Provisional fixture classes — NOT found in public bundles
+bs-form-item          (0)
+bs-form-item-label    (0)
+bs-form-item-control  (0)
+bs-input              (0)
+
+## Public portal chrome — confirmed in SSR HTML
+#bsMain
+.views
+.view.view-main
+.pages
+BSGlobal.staticPath = //acdn.bstatics.com/ux/ux-recruitment-portal-2022/release/dist/
+chunk pc-e2be192404257687c4d1
+
+## Nearby public UI strings (NOT resume-edit form)
+form-item__control / form-item__explain  — culture rich-editor only (recruitment-portal)
+phoenix-input / phoenix-search-form      — phoenix UI / job search chrome
+phoenix-form-control-preview             — preview widget, not apply fields
+
+## Gap
+/personal/resume SSR = same empty #bsMain shell (0 <input>). Resume/apply field DOM is
+login-walled client render (and may load packages outside this public portal graph).
+Do not claim live fill. Keep offline fixture on provisional .bs-form-item until Jeremy
+harvests logged-in resume-edit DOM.

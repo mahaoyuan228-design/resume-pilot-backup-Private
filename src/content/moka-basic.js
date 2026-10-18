@@ -5,7 +5,9 @@
 //   姓名 (text) · 手机号码 (text) · 邮箱 (text)
 //
 // DOM contract: provisional `.moka-form-item` + label + text input (fixture-backed).
-// Live SPA form class names are NOT proven yet — login wall; refine after Jeremy login.
+// Public recruitment-web-client bundles do NOT contain moka-form-item (CSS hints: apply-form__/campus-apply__;
+// see _moka-js-class-hints-20261018.txt). Not adopted yet — would invent live form DOM.
+// Live SPA form class names unproven — login wall; refine after Jeremy login.
 // Family sample: 德州仪器 app.mokahr.com/campus-recruitment/ti/143986 (static-ats.mokahr.com recruitment-web-client).
 (() => {
 

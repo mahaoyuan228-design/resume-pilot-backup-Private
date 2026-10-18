@@ -163,3 +163,11 @@
 ## 2026-10-18 晚 · CITICS Ant Select 下一刀：户口类型（offline/synthetic）
 
 - [x] 2026-10-18 21:19 CST：CITICS **户口类型** Ant Design Vue 1 flat select（家庭户口↔集体户口）；`SELECT_SPECS` allowlist（婚姻状况+政治面貌+户口类型）；fixtures + `tests/citics-hukou-type-select.test.mjs`；harness `--only 户口类型`；synthetic fill-wo-save+restore **PASS**（`dist/auto-runs/citics-ant-select-户口类型-latest.json`）。**Live 未做**（Edge 9237 无 careers.citics.com/my/jl；仅中联 mc 页）。仍拒绝：籍贯/现户口所在地/生源地（级联）、国籍（search-heavy 嫌疑）、民族（中等列表未开刀）、证件类型（页上已有则跳过）。勿对外写已支持。Acceptance % 仍 85%。
+
+## 2026-10-18 晚 · Feishu ATSX fixture realism（Asia/Shanghai）
+
+- [x] 2026-10-18 21:22 CST：飞书 ATSX fixture realism — 公开 `gffunds.jobs.feishu.cn/index` curl+JS 包确认 `.atsx-form-item`/`.atsx-form-item-label`/`.atsx-input`（非发明）；fixture 加 `#bd`/topbar/footer chrome；简历表单仍登录墙仅文档缺口；offline `tests/feishu-atsx-basic.test.mjs` 刷新；**未宣称 live**。
+
+## 2026-10-18 晚 · Beisen-2022 / Moka fixture realism（Asia/Shanghai）
+
+- [x] 2026-10-18 21:28 CST：北森-2022 + Moka 公开页 curl+JS/CSS 包对照 provisional 选择器 — **均未命中** `.bs-form-item` / `.moka-form-item`（未改名）；fixture 加门户 chrome；login-wall 缺口写入 `BEISEN_2022_NEXT.md` / `MOKA_NEXT.md` + `_beisen-2022-js-class-hints-20261018.txt` / `_moka-js-class-hints-20261018.txt`；offline tests 刷新；**未宣称 live**（不发明表单 DOM）。

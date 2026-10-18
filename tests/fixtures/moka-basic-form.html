@@ -2,52 +2,79 @@
 <html lang="zh-CN">
 <head>
   <meta charset="utf-8" />
-  <title>Moka basic fixture (offline · provisional DOM)</title>
+  <title>德州仪器招聘 · Moka fixture (offline · provisional form classes)</title>
   <style>
-    body { font-family: system-ui, sans-serif; max-width: 480px; margin: 2rem auto; }
+    body { font-family: system-ui, sans-serif; margin: 0; color: #03040d; }
+    #app { max-width: 720px; margin: 0 auto; padding: 1.5rem 1.25rem 3rem; }
+    .site-footer { border-top: 1px solid #e6e8f2; padding-top: 1rem; margin-top: 2rem;
+      color: #989cb2; font-size: 0.85rem; }
     .moka-form-item { margin: 1rem 0; }
     .moka-form-item-label { display: block; font-weight: 600; margin-bottom: 0.25rem; }
-    .moka-input { width: 100%; padding: 0.4rem 0.5rem; border: 1px solid #ccc; border-radius: 4px; }
+    .moka-input { width: 100%; padding: 0.4rem 0.5rem; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; }
     .note { color: #666; font-size: 0.85rem; }
   </style>
 </head>
 <body>
-  <h1>基本信息（fixture）</h1>
-  <p class="note">Provisional <code>.moka-form-item</code> contract for siteId <code>moka</code>.
-    Labels mirror high-confidence basic text fields for app.mokahr.com family
-    (sample: 德州仪器 campus-recruitment/ti/143986; static-ats.mokahr.com recruitment-web-client). Live SPA classes unproven (login wall).</p>
-  <!-- Fingerprint tokens so probeFingerprint can see Moka ATS on synthetic: -->
-  <div id="fp-hint" hidden data-stack="static-ats.mokahr.com recruitment-web-client mokahr.com moka-apply"></div>
-
-  <div class="moka-form-item" data-field="姓名">
-    <label class="moka-form-item-label">姓名</label>
-    <div class="moka-form-item-control">
-      <input class="moka-input" type="text" name="fullName" value="" />
+  <!-- Public portal chrome from app.mokahr.com/campus-recruitment/ti/143986 SSR. -->
+  <input style="display:none" id="moka-version" data-gray-released="0" data-version="20261012-1723-f0ef3-release" />
+  <div id="app">
+    <div class="forSEO" style="height:0;width:0;overflow:hidden;" aria-hidden="true">
+      <h1>德州仪器</h1>
+      <footer><a href="http://mokahr.com">Moka，智能化招聘管理系统</a></footer>
     </div>
-  </div>
 
-  <div class="moka-form-item" data-field="手机号码">
-    <label class="moka-form-item-label">手机号码</label>
-    <div class="moka-form-item-control">
-      <input class="moka-input" type="tel" name="mobile" value="" />
+    <!-- Fingerprint tokens so probeFingerprint can see Moka ATS on synthetic -->
+    <div id="fp-hint" hidden
+      data-stack="static-ats.mokahr.com recruitment-web-client mokahr.com moka-apply"
+      data-js-chunks="recruitmentWeb-20261012-1723-f0ef3-release.js vendor-112b3d9cba7673886459eb30128f54a6.js"
+      data-source="https://app.mokahr.com/campus-recruitment/ti/143986"></div>
+
+    <!-- Mirrors public hidden init-data keys (values truncated; not a live form). -->
+    <input id="init-data" type="hidden" value="{&quot;org&quot;:{&quot;id&quot;:&quot;ti&quot;,&quot;siteId&quot;:143986},&quot;mode&quot;:&quot;campus&quot;,&quot;useApplyForm&quot;:true}" />
+
+    <h1>基本信息（fixture）</h1>
+    <p class="note">Offline stand-in for siteId <code>moka</code>. Form class names
+      (<code>.moka-form-item</code> / <code>.moka-form-item-label</code> / <code>input.moka-input</code>)
+      remain <strong>provisional</strong> — <strong>not</strong> present in public
+      recruitment-web-client JS/CSS (0 hits). Public CSS instead shows
+      <code>.apply-form__field</code> / <code>.campus-apply__item|label|input</code> /
+      hashed <code>.sd-Input-*</code>; those are documented hints only — <strong>not</strong>
+      adopted as content selectors (would invent live form DOM). Resume/apply fields are
+      <strong>login-walled</strong> (SSR: <code>#app</code> + hidden <code>#init-data</code> only).
+      Evidence: <code>_moka-js-class-hints-20261018.txt</code>.</p>
+
+    <div class="moka-form-item" data-field="姓名">
+      <label class="moka-form-item-label">姓名</label>
+      <div class="moka-form-item-control">
+        <input class="moka-input" type="text" name="fullName" value="" />
+      </div>
     </div>
-  </div>
 
-  <div class="moka-form-item" data-field="邮箱">
-    <label class="moka-form-item-label">邮箱</label>
-    <div class="moka-form-item-control">
-      <input class="moka-input" type="email" name="email" value="" />
+    <div class="moka-form-item" data-field="手机号码">
+      <label class="moka-form-item-label">手机号码</label>
+      <div class="moka-form-item-control">
+        <input class="moka-input" type="tel" name="mobile" value="" />
+      </div>
     </div>
-  </div>
 
-  <!-- Neighbor field: must stay untouched by first-slice fill -->
-  <div class="moka-form-item" data-field="工作年限">
-    <label class="moka-form-item-label">工作年限</label>
-    <div class="moka-form-item-control">
-      <input class="moka-input" type="text" name="years" value="0" />
+    <div class="moka-form-item" data-field="邮箱">
+      <label class="moka-form-item-label">邮箱</label>
+      <div class="moka-form-item-control">
+        <input class="moka-input" type="email" name="email" value="" />
+      </div>
     </div>
-  </div>
 
-  <button type="button" id="save-btn" disabled>保存（fixture · never clicked by harness）</button>
+    <!-- Neighbor field: must stay untouched by first-slice fill -->
+    <div class="moka-form-item" data-field="工作年限">
+      <label class="moka-form-item-label">工作年限</label>
+      <div class="moka-form-item-control">
+        <input class="moka-input" type="text" name="years" value="0" />
+      </div>
+    </div>
+
+    <button type="button" id="save-btn" disabled>保存（fixture · never clicked by harness）</button>
+
+    <div class="site-footer">Moka ATS · fixture chrome only</div>
+  </div>
 </body>
 </html>

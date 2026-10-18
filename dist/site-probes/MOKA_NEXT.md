@@ -29,8 +29,10 @@
 
 **刻意不做**：性别/婚姻 select、证件、教育、保存/投递、popup 接线、对外「已支持」。
 
-**DOM 合同（provisional）**：fixture 使用 `.moka-form-item` + `.moka-form-item-label` + `input.moka-input`。  
-**Live SPA 类名未证** — 登录后若不同，只改 content 选择器，保持 siteId / 标签语义。
+**DOM 合同（provisional · public JS/CSS mismatch）**：fixture 仍用 `.moka-form-item` + `.moka-form-item-label` + `input.moka-input`（offline only）。  
+公开 `recruitment-web-client`（build `20261012-1723-f0ef3-release`）**未出现**这些类名（0 hits）。CSS 另有稳定 BEM 提示：`.apply-form__field*` / `.campus-apply__item|label|input`，以及带 hash 的 `.sd-Input-*` / `.sd-Form-*`（不适合作选择器）。  
+**缺口**：门户 SSR 仅 `#app` + hidden `#init-data`（`useApplyForm=true`）；无字段 input；申请/简历编辑仍登录墙。  
+**未**把 CSS 提示升格为 content 选择器（避免发明 live 表单 DOM）。登录后采真实 markup 再改选择器；优先稳定 BEM 而非 hashed sd-*。证据：`_moka-js-class-hints-20261018.txt`。
 
 ---
 
@@ -77,3 +79,10 @@ Fixture：`tests/fixtures/moka-basic-form.html`
 ## Extension wiring (2026-10-18 Asia/Shanghai)
 
 extension wired; live still needs login+DOM harvest
+
+## 6. Fixture realism refresh (2026-10-18 21:25 Asia/Shanghai)
+
+- Re-fetched `https://app.mokahr.com/campus-recruitment/ti/143986` (HTTP 200, ~163KB, cookie jar) via box curl; refreshed `_raw-zhiye-moka-feishu-20261018/moka-ti-campus.html`.
+- Compared provisional `.moka-form-item` / `.moka-input` → **absent** from public JS/CSS/vendor; documented CSS-confirmed `apply-form__*` / `campus-apply__*` hints without adopting them as selectors.
+- Updated fixture with public chrome (`#app` / `#init-data` / `#moka-version` / forSEO footer); form nodes stay provisional offline stand-ins.
+- **Still docs+offline only**: form invisible without login — no invented live selectors; no live fill claim.

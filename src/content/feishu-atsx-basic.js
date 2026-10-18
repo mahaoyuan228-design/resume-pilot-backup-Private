@@ -4,8 +4,9 @@
 // First slice fields (schema from gffunds.jobs.feishu.cn embedded resume form):
 //   姓名 (text) · 手机号码 (text) · 邮箱 (text)
 //
-// DOM contract: provisional `.atsx-form-item` + label + text input (fixture-backed).
-// Live SPA form class names are NOT proven yet — login wall; refine after Jeremy login.
+// DOM contract: `.atsx-form-item` + `.atsx-form-item-label` + `input.atsx-input`
+// (JS-confirmed in public saas-career bundles pc.4481de59 / 8825.0e3d5ab8; Ant Design prefixCls=atsx).
+// Live resume-edit page still login-walled — refine if harvested DOM differs.
 (() => {
   const previous = globalThis.ResumeFeishuAtsxBasic;
   if (previous?.listener) {
@@ -14,7 +15,7 @@
 
   const SITE_ID = 'feishu-atsx';
   const TEXT_LABELS = ['姓名', '手机号码', '邮箱'];
-  /** Provisional fixture / first-slice root; live may differ — fail-closed if missing. */
+  /** JS-confirmed first-slice root (saas-career); live resume edit may still differ — fail-closed if missing. */
   const ITEM_SEL = '.atsx-form-item';
   const LABEL_SEL = '.atsx-form-item-label, label';
   const INPUT_SEL = 'input.atsx-input, input[type="text"], input[type="tel"], input[type="email"], input:not([type])';

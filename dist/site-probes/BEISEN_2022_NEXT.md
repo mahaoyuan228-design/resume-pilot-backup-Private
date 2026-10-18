@@ -30,8 +30,10 @@
 
 **刻意不做**：性别/婚姻 select、证件、教育、保存/投递、popup 接线、对外「已支持」。
 
-**DOM 合同（provisional）**：fixture 使用 `.bs-form-item` + `.bs-form-item-label` + `input.bs-input`。  
-**Live SPA 类名未证** — 登录后若不同，只改 content 选择器，保持 siteId / 标签语义。
+**DOM 合同（provisional · public JS mismatch）**：fixture 仍用 `.bs-form-item` + `.bs-form-item-label` + `input.bs-input`（offline only）。  
+公开 `ux-recruitment-portal-2022` 包（entry `pc-e2be192404257687c4d1` + phoenix/app/personal-center 等）**未出现**这些类名；近邻仅有 `form-item__control`（富文本）/`phoenix-input`（搜索壳）。  
+**缺口**：`/campus/jobs` 与 `/personal/resume` SSR 皆空 `#bsMain`（0 input）；简历编辑仍登录墙。  
+**未**把公开近邻类名当成 live 表单选择器（避免发明 DOM）。登录后若不同，只改 content 选择器。证据：`_beisen-2022-js-class-hints-20261018.txt`。
 
 ---
 
@@ -79,3 +81,10 @@ Fixture：`tests/fixtures/beisen-2022-basic-form.html`
 ## Extension wiring (2026-10-18 Asia/Shanghai)
 
 extension wired; live still needs login+DOM harvest
+
+## 6. Fixture realism refresh (2026-10-18 21:25 Asia/Shanghai)
+
+- Re-fetched `https://junlebaoruye.zhiye.com/campus/jobs` (HTTP 200, ~22KB) and `/personal/resume` (same empty shell, 0 inputs) via box curl; refreshed `_raw-zhiye-moka-feishu-20261018/junlebao-*.html`.
+- Searched portal-2022 entry + lazy `.chk.js` / CSS for provisional `.bs-form-item` → **no match** (not renamed).
+- Updated fixture with public chrome (`#bsMain` / `.views` / `.view-main` / chunk fingerprint); form nodes stay provisional offline stand-ins.
+- **Still docs+offline only**: form invisible without login — no invented live selectors; no live fill claim.

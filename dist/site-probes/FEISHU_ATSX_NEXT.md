@@ -30,8 +30,10 @@
 
 **刻意不做**：性别/婚姻 select、证件、教育、保存/投递、popup 接线、对外「已支持」。
 
-**DOM 合同（provisional）**：fixture 使用 `.atsx-form-item` + `.atsx-form-item-label` + `input.atsx-input`。  
-**Live SPA 类名未证** — 登录后若不同，只改 content 选择器，保持 siteId / 标签语义。
+**DOM 合同（JS-confirmed · live unproven）**：fixture 使用 `.atsx-form` / `.atsx-form-item` / `.atsx-form-item-label` / `.atsx-form-item-control` / `input.atsx-input`。  
+这些类名在公开门户 JS/CSS 中已证实（`pc.4481de59.js`、`8825.0e3d5ab8.js` Ant Design `prefixCls=atsx`），**不是**凭空发明。  
+**缺口**：`/index` SSR 仅 `#bd` 空挂载；简历编辑表单仍登录墙，**未见** live 字段 DOM。登录后若结构不同，只改 content 选择器，保持 siteId / 标签语义。  
+Fixture 另加公开 chrome：`#bd` · `portal-pc` · `topbar*` · `footer`（来自同 pc 包）。证据：`_feishu-atsx-js-class-hints-20261018.txt`。
 
 ---
 
@@ -59,9 +61,9 @@ Fixture：`tests/fixtures/feishu-atsx-basic-form.html`
 
 ## 4. Live blockers（Jeremy）
 
-1. **Feishu / 广发（或字节）账号登录**后打开真实简历编辑页，才能采 live DOM（替换 provisional `.atsx-form-item`）。
+1. **Feishu / 广发（或字节）账号登录**后打开真实简历编辑页，才能采 live 简历编辑 DOM（校验/微调 JS-confirmed `.atsx-form-item`；勿宣称已 live）。
 2. 试用 Edge **CDP 9237** 可用时，可先跑 `--live` readiness 确认门户仍为 ATSX；**不要**对 live 跑 fill 直到表单 DOM 对齐。
-3. 扩展 reload：本切片尚未挂 SW/`FEISHU_ATSX_BASIC_AUTO`（content + harness 自注入即可）；接线 popup 前需 reload。
+3. 扩展：`FEISHU_ATSX_BASIC_AUTO` 已接线；试用 Edge 需 reload 后才进 SW。Live fill 仍待登录+DOM harvest。
 4. 中信 marital live / hotjob 租户 live **并行阻塞**，本切片不插队那些队列。
 
 ---
@@ -78,3 +80,11 @@ Fixture：`tests/fixtures/feishu-atsx-basic-form.html`
 ## Extension wiring (2026-10-18 Asia/Shanghai)
 
 extension wired; live still needs login+DOM harvest
+
+## 6. Fixture realism refresh (2026-10-18 21:20 Asia/Shanghai)
+
+- Re-fetched `https://gffunds.jobs.feishu.cn/index` (HTTP 200, ~174KB) via box curl; refreshed `_raw-zhiye-moka-feishu-20261018/feishu-gffunds-index.html`.
+- Compared provisional fixture classes → **match** public saas-career bundles (`atsx-form-item` / `atsx-form-item-label` / `atsx-form-item-control` / `atsx-input`); no class rename needed.
+- Updated fixture with portal chrome + `atsx-form` wrapper + nested label/control/children mirroring Ant Design ATSX markup; neighbor 工作年限 unchanged.
+- **Still docs+offline only**: form invisible without login — no invented live selectors; no live fill claim.
+

@@ -29,13 +29,25 @@ test('siteId and labels stay isolated from CMS/GTH/citics/feishu', () => {
   assert.doesNotMatch(source, /click\(.*保存|保存.*\.click/);
 });
 
-test('fixture carries provisional moka-form-item selectors for three text fields', () => {
+test('fixture carries provisional moka-form-item selectors + public portal chrome', () => {
   assert.match(fixture, /class="moka-form-item"/);
+  assert.match(fixture, /moka-form-item-label/);
+  assert.match(fixture, /class="moka-input"/);
   assert.match(fixture, />姓名</);
   assert.match(fixture, />手机号码</);
   assert.match(fixture, />邮箱</);
-  assert.match(source, /\.moka-form-item/);
+  // Public portal chrome from TI campus SSR (not login-walled form invent)
+  assert.match(fixture, /id="app"/);
+  assert.match(fixture, /id="init-data"/);
+  assert.match(fixture, /moka-version|20261012-1723-f0ef3-release/);
+  assert.match(fixture, /static-ats\.mokahr\.com|recruitment-web-client/);
+  assert.match(fixture, /provisional/i);
+  assert.match(fixture, /login-walled|登录墙/i);
+  // Documented public CSS hints stay fixture notes only (not content selectors yet)
+  assert.match(fixture, /apply-form__field|campus-apply__/);
+  assert.match(source, /ITEM_SEL = '\.moka-form-item'/);
   assert.match(source, /moka-input/);
+  assert.doesNotMatch(source, /ITEM_SEL = '\.(?:campus-apply|apply-form)/);
 });
 
 test('host matcher covers *.mokahr.com Moka tenants', () => {

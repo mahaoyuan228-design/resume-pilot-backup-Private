@@ -21,7 +21,7 @@
 - [x] 招行 `career.cmbchina.com` 指纹（自建 SPA；非 CMS hotjob；简历页 + 登录页）
 - [x] 中信字段图（CDP 只读）→ `dist/site-probes/citics-field-map-20261018.md`
 - [x] 中信适配器设计（第一切片）→ `EXPAND_CITICS_ADAPTER_DESIGN.md`
-- [ ] 中信适配器开发（未开工；设计已就绪）
+- [~] 中信适配器：仅「婚姻状况」Ant Select fill-without-save 代码已落地（`src/content/citics-basic.js`、`scripts/auto-citics-basic.mjs`）。备份树原先没有 `citics-basic.js`。实页 Edge 证据仍待（试用 CDP 9237；扩展 reload 可能仍需要）。未点保存。未宣称已支持中信。
 - [ ] 招行适配器开发
 - [ ] 任一新站「可填」客户文档收录
 
@@ -45,7 +45,7 @@
 | --- | --- | --- | --- |
 | hotjob/wecruit（招商 CMS） | [x] + 11 候选租户 | [ ] 扩 SU | [x] 仅招商证券 CMS |
 | 国泰自建 GTH | [x] | - | [x] 国泰海通 |
-| 中信自建 | [x] 指纹+字段图+设计 | [ ] 第一切片未写代码 | [ ] |
+| 中信自建 | [x] 指纹+字段图+设计 | [~] 婚姻状况 Select 代码已落地；实页证据待 9237 | [ ] |
 | 招行自建 | [x] 2026-10-18 | [ ] | [ ] |
 | 腾讯自建 | [~] 仅门户 | [ ] | [ ] |
 | 阿里 CPO 自建 | [~] 仅门户 | [ ] | [ ] |
@@ -58,6 +58,8 @@
 | hotjob 租户 | `dist/site-probes/hotjob-tenants-20261018.md` (+ `.json`) |
 | 中信字段图 | `dist/site-probes/citics-field-map-20261018.md` (+ `.json`) |
 | 中信适配设计 | `EXPAND_CITICS_ADAPTER_DESIGN.md` |
+| 婚姻状况 Select 代码 | `src/content/citics-basic.js` · `scripts/auto-citics-basic.mjs` |
+| 婚姻状况证据（gitignore，跑 harness 才有） | `dist/auto-runs/citics-ant-select-婚姻状况-*.json` |
 | 本进度 | `EXPAND_PROGRESS.md` |
 
 ## 销售口径（勿改）

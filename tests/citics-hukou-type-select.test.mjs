@@ -12,7 +12,8 @@ test('hukou-type select source stays on allowlist and off CMS/GTH', () => {
   assert.match(source, /const HUKOU_TYPE = '户口类型'/);
   assert.match(source, /\[HUKOU_TYPE\]:\s*\{\s*key:\s*'hukouType'/);
   assert.match(source, /alternates:\s*\['家庭户口',\s*'集体户口'\]/);
-  assert.doesNotMatch(source, /籍贯|证件类型|生源地|国籍/);
+  assert.match(source, /const ID_TYPE = '证件类型'/);
+  assert.doesNotMatch(source, /籍贯|生源地|国籍/);
   assert.doesNotMatch(source, /fillSelect\(\s*['"]民族['"]/);
   assert.doesNotMatch(source, /cms-|gth-/);
   assert.match(source, /label_not_allowed/);
@@ -28,7 +29,7 @@ test('harness rejects any label other than allowlist before CDP', () => {
     timeout: 10000
   });
   assert.equal(run.status, 2);
-  assert.match(run.stderr, /户口类型|婚姻状况|政治面貌/);
+  assert.match(run.stderr, /户口类型|婚姻状况|政治面貌|证件类型/);
 });
 
 test('synthetic harness fill-without-save readback for 户口类型', { timeout: 120000 }, () => {

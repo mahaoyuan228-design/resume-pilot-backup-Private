@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // CITICS auto harness (merged):
 // - Extension auto (legacy): no --only → opens citics-basic-auto.html via Edge (MODE=fill|readiness).
-// - CDP select knife: --only 婚姻状况|政治面貌|户口类型 [--synthetic | --live]
+// - CDP select knife: --only 婚姻状况|政治面貌|户口类型|证件类型 [--synthetic | --live]
 // Default is fill-without-save. Never clicks 保存 / 提交 / 暂存. Never touches 易盾.
 import fs from 'node:fs';
 import http from 'node:http';
@@ -17,7 +17,7 @@ if (typeof globalThis.WebSocket === 'undefined') {
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, '..');
 const outDir = path.join(repoRoot, 'dist', 'auto-runs');
-const ALLOWED_ONLY = Object.freeze(['婚姻状况', '政治面貌', '户口类型']);
+const ALLOWED_ONLY = Object.freeze(['婚姻状况', '政治面貌', '户口类型', '证件类型']);
 const SELECT_FIXTURES = Object.freeze({
   '婚姻状况': {
     happy: 'citics-marital-select.html',
@@ -50,6 +50,18 @@ const SELECT_FIXTURES = Object.freeze({
     noReadback: 'citics-hukou-type-select-no-readback.html',
     before: '家庭户口',
     expectedDefault: '集体户口',
+    neighborLabel: '民族',
+    neighborValue: '汉族',
+    refuseLabel: '民族',
+    refuseValue: '汉族'
+  },
+  '证件类型': {
+    happy: 'citics-id-type-select.html',
+    double: 'citics-id-type-select-double.html',
+    badOptions: 'citics-id-type-select-bad-options.html',
+    noReadback: 'citics-id-type-select-no-readback.html',
+    before: '身份证',
+    expectedDefault: '中国护照',
     neighborLabel: '民族',
     neighborValue: '汉族',
     refuseLabel: '民族',
@@ -441,7 +453,7 @@ async function runLive(port, label, expected) {
 
 async function runSelectKnife(args) {
   if (args.help || !ALLOWED_ONLY.includes(args.only)) {
-    console.error('Usage: node scripts/auto-citics-basic.mjs --only 婚姻状况|政治面貌|户口类型 [--synthetic | --live]');
+    console.error('Usage: node scripts/auto-citics-basic.mjs --only 婚姻状况|政治面貌|户口类型|证件类型 [--synthetic | --live]');
     console.error('Legacy extension harness: node scripts/auto-citics-basic.mjs --extension   (or omit --only)');
     process.exit(args.help ? 0 : 2);
   }
@@ -628,7 +640,7 @@ async function main() {
   const wantsSelect = args.only != null || args.synthetic || args.live;
   if (args.help && !wantsSelect && !args.extension) {
     console.error('Usage:');
-    console.error('  node scripts/auto-citics-basic.mjs --only 婚姻状况|政治面貌|户口类型 [--synthetic | --live]');
+    console.error('  node scripts/auto-citics-basic.mjs --only 婚姻状况|政治面貌|户口类型|证件类型 [--synthetic | --live]');
     console.error('  node scripts/auto-citics-basic.mjs --extension   # legacy extension auto HTML');
     console.error('  (no --only) also runs legacy extension harness');
     process.exit(0);

@@ -7,6 +7,7 @@
 | 婚姻状况 | synthetic + live PASS | done |
 | 政治面貌 | synthetic + live PASS | done |
 | 户口类型 | synthetic PASS（家庭户口↔集体户口） | done；live pending `/my/jl` |
+| 证件类型 | synthetic PASS（身份证↔中国护照） | done；live pending `/my/jl`；勿对外宣称已支持 |
 
 ## Refused / out of scope (do not expand yet)
 
@@ -17,6 +18,5 @@
 | 生源地 | 同上 |
 | 国籍（国家或地区） | 可搜/长列表嫌疑（对照 hotjob-mc 国籍 skip） |
 | 民族 | 中等列表；非本刀；neighbor-only in fixtures |
-| 证件类型 | 设计稿「页上已有则跳过」；短枚举但未开刀 |
 
-Shared helper (`selectControl` / `readSelect` / `fillSelect`) stays allowlist-only + cascader fail-closed. Never Save.
+Shared helper (`selectControl` / `readSelect` / `fillSelect`) stays allowlist-only + cascader fail-closed + flat-select max-options/search-heavy skip (`select_search_heavy`). Never Save.

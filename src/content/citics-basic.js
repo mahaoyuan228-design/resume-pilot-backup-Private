@@ -3,8 +3,10 @@
 // Values come from resumeProfile (fullName/identityNumber/phone/email/gender);
 // fail-closed when core facts missing or unconfirmed — no TEST placeholders.
 //
-// Ant Select knives (Ant Design Vue 1): 婚姻状况 + 政治面貌 + 户口类型
+// Ant Select knives (Ant Design Vue 1): 婚姻状况 + 政治面貌 + 户口类型 + 证件类型
 // (selectControl / readSelect / fillSelect). One label per call; allowlist only.
+// Flat-select guard: FLAT_SELECT_MAX_OPTIONS=24 + search-input detect → select_search_heavy.
+// Cascader/region/nation knives stay out of scope.
 // Selector order follows careers.citics.com chunk-vendors.a191a981.css
 // (Ant Design Vue 1 / ant-design 3 class names). Ant Design 4 names are
 // tried after that and only count if the live DOM actually matches.
@@ -21,14 +23,23 @@
   const MARITAL = '婚姻状况';
   const POLITICAL = '政治面貌';
   const HUKOU_TYPE = '户口类型';
-  /** Flat Ant Select allowlist only (marital + political + hukouType). Cascader/region/ID-type/nation out of scope. */
+  const ID_TYPE = '证件类型';
+  /** Flat Ant Select allowlist only (marital + political + hukouType + idType). Cascader/region/nation out of scope. */
   const SELECT_SPECS = {
     [MARITAL]: { key: 'marital', alternates: ['未婚', '已婚', '离异', '丧偶'] },
     [POLITICAL]: { key: 'political', alternates: ['群众', '共青团员', '中共党员', '中共预备党员'] },
-    [HUKOU_TYPE]: { key: 'hukouType', alternates: ['家庭户口', '集体户口'] }
+    [HUKOU_TYPE]: { key: 'hukouType', alternates: ['家庭户口', '集体户口'] },
+    [ID_TYPE]: { key: 'idType', alternates: ['身份证', '中国护照', '港澳居民来往内地通行证', '台湾居民来往大陆通行证'] }
   };
   const ALLOWED_SELECT_LABELS = Object.keys(SELECT_SPECS);
   const ALTERNATES = SELECT_SPECS[MARITAL].alternates;
+  const FLAT_SELECT_MAX_OPTIONS = 24;
+  const SEARCH_INPUT_SEL = [
+    'input.ant-select-search__field',
+    '.ant-select-search__field',
+    'input.ant-select-selection-search-input',
+    '.ant-select-selection-search-input'
+  ].join(', ');
   const READBACK = [
     '.ant-select-selection-selected-value',
     '.ant-select-selection-item'
@@ -427,6 +438,19 @@
     return { hits, selector: null, nodes: [], matches: [] };
   }
 
+  /** True when open Ant Select has a search input or too many options (search-heavy / long list). Never invent options. */
+  function dropdownSearchHeavy(select, dropdown) {
+    if (!dropdown) return { heavy: false, optionCount: 0, hasSearch: false };
+    const hasSearch = !!(dropdown.querySelector(SEARCH_INPUT_SEL) || (select && select.querySelector(SEARCH_INPUT_SEL)));
+    let optionCount = 0;
+    for (const selector of OPTIONS) {
+      const n = [...dropdown.querySelectorAll(selector)].filter(enabledOption).length;
+      if (n) { optionCount = n; break; }
+    }
+    const heavy = hasSearch || optionCount > FLAT_SELECT_MAX_OPTIONS;
+    return { heavy, optionCount, hasSearch };
+  }
+
   function assertSafeTarget(node) {
     if (!(node instanceof Element)) throw code('select_click_target_missing');
     if (node.closest('button, a, [type=submit], .yidun_cover-frame, .yidun_popup, .yidun_modal, .yidun_panel, iframe')) {
@@ -571,6 +595,25 @@
       await closeDropdown(select);
       return { ok: false, reason: opened.reason, selectors, clickedOption: false, openCount: opened.openCount };
     }
+    const heavy = dropdownSearchHeavy(select, opened.dropdown);
+    if (heavy.heavy) {
+      const sampleOptions = [...opened.dropdown.querySelectorAll(OPTIONS[0])]
+        .filter(enabledOption)
+        .map((node) => norm(node.textContent))
+        .filter(Boolean)
+        .slice(0, 12);
+      await closeDropdown(select);
+      return {
+        ok: false,
+        reason: 'select_search_heavy',
+        selectors,
+        clickedOption: false,
+        sampleOptions,
+        optionCount: heavy.optionCount,
+        hasSearch: heavy.hasSearch,
+        openCount: opened.openCount
+      };
+    }
     const found = matchingOptions(opened.dropdown, expected);
     selectors.push(...found.hits);
     const sampleOptions = [...opened.dropdown.querySelectorAll(found.selector || OPTIONS[0])]
@@ -657,6 +700,28 @@
       }
       pointerClick(targetNode.node);
       const opened = await waitForDropdown(control.select);
+      if (opened.ok) {
+        const heavyPick = dropdownSearchHeavy(control.select, opened.dropdown);
+        if (heavyPick.heavy) {
+          const sampleOptions = [...opened.dropdown.querySelectorAll(OPTIONS[0])]
+            .filter(enabledOption)
+            .map((node) => norm(node.textContent))
+            .filter(Boolean)
+            .slice(0, 12);
+          await closeDropdown(control.select);
+          return fail({
+            before,
+            reason: 'select_search_heavy',
+            clickedOption: false,
+            selectors: control.read.hits,
+            structure: structureOf(found.item, control.select, {
+              sampleOptions,
+              optionCount: heavyPick.optionCount,
+              hasSearch: heavyPick.hasSearch
+            })
+          });
+        }
+      }
       const hits = opened.ok ? optionHits(opened.dropdown) : [];
       const selector = hits.find((row) => row.hit)?.selector || null;
       const texts = selector
@@ -756,7 +821,7 @@
   }
 
   async function fillBasic(rawValues = {}, options = {}) {
-    // Select-only shapes: { '婚姻状况'|'政治面貌'|'户口类型': '…' } — route without touching text/radio path.
+    // Select-only shapes: { '婚姻状况'|'政治面貌'|'户口类型'|'证件类型': '…' } — route without touching text/radio path.
     if (rawValues && typeof rawValues === 'object' && !Array.isArray(rawValues)
       && !rawValues.profile && rawValues.allowExplicitValues !== true
       && !rawValues.lastName && !rawValues.firstName && !rawValues.idNumber && !rawValues.mobile && !rawValues.email) {
@@ -764,7 +829,7 @@
       if (keys.length === 1 && SELECT_SPECS[cleanLabel(keys[0])]) {
         return fillSelect(cleanLabel(keys[0]), rawValues[keys[0]], options);
       }
-      if (keys.length >= 1 && keys.every((k) => SELECT_SPECS[cleanLabel(k)] || !['lastName', 'firstName', 'idNumber', 'mobile', 'email', 'confirmEmail', 'gender', 'marital', 'political', 'hukouType'].includes(k))) {
+      if (keys.length >= 1 && keys.every((k) => SELECT_SPECS[cleanLabel(k)] || !['lastName', 'firstName', 'idNumber', 'mobile', 'email', 'confirmEmail', 'gender', 'marital', 'political', 'hukouType', 'idType'].includes(k))) {
         // Non-basic keys that are not an allowed select → PR refusal string (marital-compat).
         if (keys.length === 1 && !SELECT_SPECS[cleanLabel(keys[0])]) {
           return fillMaritalOnly(rawValues, options);
@@ -909,8 +974,10 @@
     MARITAL,
     POLITICAL,
     HUKOU_TYPE,
+    ID_TYPE,
     ALLOWED_SELECT_LABELS,
     SELECT_SPECS,
+    FLAT_SELECT_MAX_OPTIONS,
     isCiticsResumeEditPage,
     fillBasic,
     fillMaritalOnly,

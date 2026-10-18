@@ -164,6 +164,10 @@
 
 - [x] 2026-10-18 21:19 CST：CITICS **户口类型** Ant Design Vue 1 flat select（家庭户口↔集体户口）；`SELECT_SPECS` allowlist（婚姻状况+政治面貌+户口类型）；fixtures + `tests/citics-hukou-type-select.test.mjs`；harness `--only 户口类型`；synthetic fill-wo-save+restore **PASS**（`dist/auto-runs/citics-ant-select-户口类型-latest.json`）。**Live 未做**（Edge 9237 无 careers.citics.com/my/jl；仅中联 mc 页）。仍拒绝：籍贯/现户口所在地/生源地（级联）、国籍（search-heavy 嫌疑）、民族（中等列表未开刀）、证件类型（页上已有则跳过）。勿对外写已支持。Acceptance % 仍 85%。
 
+## 2026-10-18 晚 · CITICS Ant Select 下一刀：证件类型（offline/synthetic）
+
+- [x] 2026-10-18 21:31 CST：CITICS **证件类型** Ant Design Vue 1 flat select（身份证↔中国护照；港澳/台湾通行证在 allowlist）；`SELECT_SPECS` + `idType`；fixtures + `tests/citics-id-type-select.test.mjs`；harness `--only 证件类型`；synthetic fill-wo-save+restore **PASS**（`dist/auto-runs/citics-ant-select-证件类型-latest.json`）。共用 `fillSelect` 加固 `FLAT_SELECT_MAX_OPTIONS=24` + search-input → `select_search_heavy`（不发明选项；未开民族）。**Live 未做**。仍拒绝：籍贯/现户口所在地/生源地（级联）、国籍（search-heavy 嫌疑）、民族。勿对外写已支持。Acceptance % 仍 85%。
+
 ## 2026-10-18 晚 · Feishu ATSX fixture realism（Asia/Shanghai）
 
 - [x] 2026-10-18 21:22 CST：飞书 ATSX fixture realism — 公开 `gffunds.jobs.feishu.cn/index` curl+JS 包确认 `.atsx-form-item`/`.atsx-form-item-label`/`.atsx-input`（非发明）；fixture 加 `#bd`/topbar/footer chrome；简历表单仍登录墙仅文档缺口；offline `tests/feishu-atsx-basic.test.mjs` 刷新；**未宣称 live**。

@@ -12,7 +12,8 @@ test('political select source stays on allowlist and off CMS/GTH', () => {
   assert.match(source, /const POLITICAL = '政治面貌'/);
   assert.match(source, /\[POLITICAL\]:\s*\{\s*key:\s*'political'/);
   assert.match(source, /const HUKOU_TYPE = '户口类型'/);
-  assert.doesNotMatch(source, /籍贯|证件类型|生源地|国籍/);
+  assert.match(source, /const ID_TYPE = '证件类型'/);
+  assert.doesNotMatch(source, /籍贯|生源地|国籍/);
   // 民族 appears only as neighbor fixture / refuse label strings are harness-side; content must not fill 民族
   assert.doesNotMatch(source, /fillSelect\(\s*['"]民族['"]/);
   assert.doesNotMatch(source, /cms-|gth-/);
@@ -29,7 +30,7 @@ test('harness rejects any label other than allowlist before CDP', () => {
     timeout: 10000
   });
   assert.equal(run.status, 2);
-  assert.match(run.stderr, /政治面貌|婚姻状况|户口类型/);
+  assert.match(run.stderr, /政治面貌|婚姻状况|户口类型|证件类型/);
 });
 
 test('synthetic harness fill-without-save readback for 政治面貌', { timeout: 120000 }, () => {

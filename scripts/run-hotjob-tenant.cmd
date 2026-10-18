@@ -1,10 +1,11 @@
 @echo off
 rem One-shot hotjob tenant basic: readiness, then fill-without-save. NEVER clicks Save/submit/下一步.
-rem Usage: scripts\run-hotjob-tenant.cmd zhonglian^|nanyue^|celebright^|guosheng^|caict^|opple
+rem Usage: scripts\run-hotjob-tenant.cmd zhonglian^|nanyue^|celebright^|guosheng^|caict^|opple^|longi^|haitian
 rem Precondition: tenant already logged in on the trial Edge (CDP 9237).
 rem   zhonglian (中联): live uses /mc/deliver/operationResumer (antd-mobile). Path B —
 rem     routes to scripts\auto-hotjob-mc-basic.mjs (siteId=hotjob-mc); CMS_BASIC not used.
 rem   opple (欧普): shell-guess mc (portal /mc/position/campus) → same Path B as zhonglian.
+rem   longi (隆基) / haitian (海天): shell-guess mc (portal /mc/position/campus) → same Path B.
 rem   other tenants (nanyue/celebright/guosheng/caict): park on .../SU*/pb/resumeOperation.html → auto-cms-basic.mjs
 rem Env passthrough: RESUME_EXT_ID (default trial hhembhoojafdefnkonmgoejfedgloanc), RELOAD=1,
 rem   AUTO_TIMEOUT_MS, OPEN_CMS_PAGE (default 0 here), NO_PAUSE=1, CDP_PORT (default 9237).
@@ -18,17 +19,21 @@ if /i "%TENANT%"=="celebright" set "CMS_SU=SU6279c916bef57c3ac0d49671"
 if /i "%TENANT%"=="guosheng"   set "CMS_SU=SU6879a7b3e57172288b60df9d"
 if /i "%TENANT%"=="caict"      set "CMS_SU=SU642fbf5fbef57c1e269fa798"
 if /i "%TENANT%"=="opple"      set "CMS_SU=SU646ed9920dcad45af14821b4"
+if /i "%TENANT%"=="longi"      set "CMS_SU=SU649d30920dcad4644b43e39b"
+if /i "%TENANT%"=="haitian"    set "CMS_SU=SU6322ee8c0dcad46a862dcbe5"
 if not defined CMS_SU (
-  echo Unknown tenant "%TENANT%". Use: zhonglian ^| nanyue ^| celebright ^| guosheng ^| caict ^| opple
+  echo Unknown tenant "%TENANT%". Use: zhonglian ^| nanyue ^| celebright ^| guosheng ^| caict ^| opple ^| longi ^| haitian
   set "RC=64"
   goto :end
 )
 if not defined CDP_PORT set "CDP_PORT=9237"
 if not defined RESUME_EXT_ID set "RESUME_EXT_ID=hhembhoojafdefnkonmgoejfedgloanc"
 
-rem --- mc Path B (中联 live; 欧普 shell-guess mc): thin hotjob-mc adapter (not CMS_BASIC) ---
+rem --- mc Path B (中联 live; 欧普/隆基/海天 shell-guess mc): thin hotjob-mc adapter (not CMS_BASIC) ---
 if /i "%TENANT%"=="zhonglian" set "USE_HOTJOB_MC=1"
 if /i "%TENANT%"=="opple" set "USE_HOTJOB_MC=1"
+if /i "%TENANT%"=="longi" set "USE_HOTJOB_MC=1"
+if /i "%TENANT%"=="haitian" set "USE_HOTJOB_MC=1"
 if defined USE_HOTJOB_MC (
   set "CMS_PAGE=https://wecruit.hotjob.cn/%CMS_SU%/mc/deliver/operationResumer"
   echo [hotjob-tenant] %TENANT% %CMS_SU% -^> mc operationResumer via auto-hotjob-mc-basic.mjs

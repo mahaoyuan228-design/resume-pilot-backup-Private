@@ -155,6 +155,11 @@
 
 - [x] 2026-10-18 21:34 CST：box 公开 HTTP 壳分类（无登录、无 Edge）。信通院+欧普均为 **双壳 200**（pb `a1541…` / mc `352df1…`；body md5 同招商批）；**非** login-wall-only。门户偏好 → 信通院 **pb**（`caict`→CMS_BASIC）、欧普 **mc**（`opple`→hotjob-mc）。排在南粤队列后；**未** live。证据：`dist/site-probes/HOTJOB_SHELL_CLASS_信通院欧普_20261018.md`；已回写 `HOTJOB_TENANT_NEXT_EXPERIMENT.md` §1.3。
 
+## 2026-10-18 晚 · hotjob 隆基/海天 公开壳分类（Asia/Shanghai）
+
+- [x] 2026-10-18 21:47 CST：box 公开 HTTP 壳分类（无登录、无 Edge）。隆基+海天均为 **双壳 200**（pb `a1541…` / mc `352df1…`；body md5 同招商批）；**非** login-wall-only。门户均 `/mc/position/campus` → 主猜 **mc**（`longi`/`haitian`→hotjob-mc Path B，同欧普）。备选同批；**未** live。证据：`dist/site-probes/HOTJOB_SHELL_CLASS_隆基海天_20261018.md`；已回写 `HOTJOB_TENANT_NEXT_EXPERIMENT.md` §1.4；`run-hotjob-tenant.cmd` 键已加。
+
+
 ## 2026-10-18 晚 · hotjob-mc select 第二刀：证件类型（Asia/Shanghai）
 
 - [x] 2026-10-18 21:10 CST：中联 mc **证件类型** `.select-am-list-extra` + `.am-modal.mc-select-popup`（7 选项：居民身份证/中国护照/…）；`SELECT_SPECS` allowlist；fixture+`tests/hotjob-mc-basic.test.mjs` **14/14**；harness `--only 证件类型`；offline synthetic 居民身份证→中国护照→restore PASS；**live** seed+alternate+restore PASS 后 Page.reload discard（原为空占位；证据 `dist/auto-runs/hotjob-mc-select-证件类型-latest.json`；未点下一步；tabs≤3）。

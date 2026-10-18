@@ -97,8 +97,40 @@
       ],
       "harness": "run-hotjob-tenant.cmd opple → hotjob-mc Path B (key ready)",
       "if_live_pb": "CMS_BASIC reuse candidate via pb/resumeOperation.html"
+    },
+    {
+      "key": "longi",
+      "name": "隆基绿能",
+      "su": "SU649d30920dcad4644b43e39b",
+      "shell_guess": "mc",
+      "confidence": "medium (portal preference /mc/position/campus like 欧普/中联; not live-confirmed)",
+      "evidence": [
+        "common portal https://wecruit.hotjob.cn/SU649d…/mc/position/campus",
+        "mc/deliver/operationResumer HTTP 200, hash 352df1… = 中联 mc, body md5 c21b558e… identical",
+        "also exposes pb/resumeOperation.html 200 hash a1541… body md5 5e54d402… (dual; same as all tenants)",
+        "NOT login-wall-only"
+      ],
+      "harness": "run-hotjob-tenant.cmd longi → hotjob-mc Path B (key ready)",
+      "if_live_pb": "CMS_BASIC reuse candidate via pb/resumeOperation.html"
+    },
+    {
+      "key": "haitian",
+      "name": "海天味业",
+      "su": "SU6322ee8c0dcad46a862dcbe5",
+      "shell_guess": "mc",
+      "confidence": "medium (portal preference /mc/position/campus like 欧普/中联; not live-confirmed)",
+      "evidence": [
+        "common portal https://wecruit.hotjob.cn/SU6322…/mc/position/campus",
+        "mc/deliver/operationResumer HTTP 200, hash 352df1… = 中联 mc, body md5 c21b558e… identical",
+        "also exposes pb/resumeOperation.html 200 hash a1541… body md5 5e54d402… (dual; same as all tenants)",
+        "NOT login-wall-only"
+      ],
+      "harness": "run-hotjob-tenant.cmd haitian → hotjob-mc Path B (key ready)",
+      "if_live_pb": "CMS_BASIC reuse candidate via pb/resumeOperation.html"
     }
   ],
   "when_caict_opple": "2026-10-18 21:34 Asia/Shanghai",
-  "note_caict_opple": "caict portal pb → guess pb/CMS_BASIC; opple portal mc campus → guess mc/hotjob-mc; both dual-shell public 200"
+  "note_caict_opple": "caict portal pb → guess pb/CMS_BASIC; opple portal mc campus → guess mc/hotjob-mc; both dual-shell public 200",
+  "when_longi_haitian": "2026-10-18 21:47 Asia/Shanghai",
+  "note_longi_haitian": "longi+haitian portal mc campus → guess mc/hotjob-mc (like opple); both dual-shell public 200; hashes a1541…/352df1… body md5 match 招商批"
 }

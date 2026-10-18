@@ -13,7 +13,7 @@
 
 | # | 公司 | SU | resumeOperation（登录后目标） | 为何最像 CMS |
 | --- | --- | --- | --- | --- |
-| **1（首选）** | **中联重科** | `SU661f37091eb8053acd6cdf3d` | **更正：** live 表单是 `mc/operationResumer`，不是 pb。见 `HOTJOB_MC_OPERATIONRESUMER_20261018.md`。早期探针写过 https://wecruit.hotjob.cn/SU661f37091eb8053acd6cdf3d/pb/resumeOperation.html | verify：**login_wall** + **personal_center**；门户标题「中联重科校园招聘」；`run-hotjob-tenant.cmd zhonglian` 走 mc harness，CMS_BASIC 对 mc 路径 exit 4 |
+| **1（首选）** | **中联重科** | `SU661f37091eb8053acd6cdf3d` | **更正：** live 表单是 `mc/deliver/operationResumer`，不是 pb。见 `HOTJOB_MC_OPERATIONRESUMER_20261018.md`。早期探针写过 https://wecruit.hotjob.cn/SU661f37091eb8053acd6cdf3d/pb/resumeOperation.html | verify：**login_wall** + **personal_center**；门户标题「中联重科校园招聘」；`run-hotjob-tenant.cmd zhonglian` 走 mc harness，CMS_BASIC 对 mc 路径 exit 4 |
 | **2** | **中国信通院** | `SU642fbf5fbef57c1e269fa798` | https://wecruit.hotjob.cn/SU642fbf5fbef57c1e269fa798/pb/resumeOperation.html | 门户即 **`/pb/index.html`**（与招商基线门户形态同族，非 `mc/`）；**login_wall**；标题「中国信通院招聘」 |
 | **3** | **欧普照明** | `SU646ed9920dcad45af14821b4` | https://wecruit.hotjob.cn/SU646ed9920dcad45af14821b4/pb/resumeOperation.html | **personal_center_copy_visible**；校招职位列表高置信；同壳 `resumeOp` 跳转 yes |
 

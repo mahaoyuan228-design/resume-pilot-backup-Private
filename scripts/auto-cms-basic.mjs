@@ -28,12 +28,18 @@ try {
   target = resolveCmsTarget(process.env);
 } catch (error) {
   const reason = error.code || 'cms_target_invalid';
-  const mc = reason === 'cms_mc_shell';
   console.error(JSON.stringify({ event: 'refused', reason, detail: String(error.message || error),
-    hint: mc
-      ? 'mc shell (operationResumer) is not CMS_BASIC. Use scripts/auto-hotjob-mc-basic.mjs or scripts/run-hotjob-tenant.cmd zhonglian'
-      : 'CMS_PAGE must be https://wecruit.hotjob.cn/SU<id>/pb/resumeOperation.html (no query/hash); CMS_SU must be SU<id>' }, null, 2));
-  process.exit(mc ? 4 : 3);
+    hint: 'CMS_PAGE must be https://wecruit.hotjob.cn/SU<id>/pb/resumeOperation.html (no query/hash); CMS_SU must be SU<id>' }, null, 2));
+  process.exit(3);
+}
+if (target.shell === 'mc') {
+  console.error(JSON.stringify({
+    event: 'refused',
+    reason: 'hotjob_mc_shell_requires_adapter',
+    detail: `${target.page} is the hotjob-mc shell, not CMS pb`,
+    hint: 'mc shell (/SU*/mc/deliver/operationResumer) is not CMS_BASIC. Use scripts/auto-hotjob-mc-basic.mjs or scripts/run-hotjob-tenant.cmd zhonglian'
+  }, null, 2));
+  process.exit(4);
 }
 const CMS_PAGE = target.page;
 const harnessTarget = { su: target.su, page: target.page, isBaseline: target.isBaseline, source: target.source,

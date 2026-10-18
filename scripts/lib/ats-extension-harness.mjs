@@ -109,7 +109,7 @@ export async function runAtsExtensionHarness({
   openPageUrl = null,
   targetPage = null
 }) {
-  const EXT_ID = process.env.RESUME_EXT_ID || 'hdekmacbpblppkbpamgocbanjafigfej';
+  const EXT_ID = process.env.RESUME_EXT_ID || 'hhembhoojafdefnkonmgoejfedgloanc';
   const mode = process.env.MODE || 'readiness';
   const openPage = (process.env.OPEN_TARGET_PAGE || '1') !== '0';
   const openIfMissing = (process.env.OPEN_IF_MISSING || '1') !== '0';

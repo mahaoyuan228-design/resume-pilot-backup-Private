@@ -45,3 +45,6 @@ installBeisen2022BasicAutoRunner();
 
 import {installMokaBasicAutoRunner} from './moka-basic-auto.mjs';
 installMokaBasicAutoRunner();
+
+import {installHotjobMcBasicAutoRunner} from './hotjob-mc-basic-auto.mjs';
+installHotjobMcBasicAutoRunner();

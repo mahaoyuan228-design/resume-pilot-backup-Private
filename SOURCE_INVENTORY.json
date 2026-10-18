@@ -1,6 +1,6 @@
 {
   "version": "0.1.4.9",
-  "sumsSha256": "1ca1d4b91f6ef9bf71b9ce5bca196eef1a50655c054219edd8b4ce0d4dcd4295",
+  "sumsSha256": "287fc5b3a0096ae6a207de5e6d16adf418b2a21dd65118ee95cfb2d240d28673",
   "inventory": [
     {
       "path": "manifest.json",
@@ -88,8 +88,8 @@
     },
     {
       "path": "src/background/worker.mjs",
-      "sha256": "dfc99a19d77bc10481311e898384a5ee54eb9c3aae5a8e7e6b062b2a9e992b1b",
-      "sourceSha256": "dfc99a19d77bc10481311e898384a5ee54eb9c3aae5a8e7e6b062b2a9e992b1b",
+      "sha256": "c213764f37d91ce88526225f316dc44251a333973dea3f22797fe4ebf9e65224",
+      "sourceSha256": "c213764f37d91ce88526225f316dc44251a333973dea3f22797fe4ebf9e65224",
       "kind": "frozen-product"
     },
     {
@@ -597,6 +597,12 @@
       "kind": "frozen-product"
     },
     {
+      "path": "src/background/hotjob-mc-basic-auto.mjs",
+      "sha256": "c5a8bd2abedf0f9e11296fe3bae1996cc50ea06e78bf3c2ab0d81f6f3314fca0",
+      "sourceSha256": "c5a8bd2abedf0f9e11296fe3bae1996cc50ea06e78bf3c2ab0d81f6f3314fca0",
+      "kind": "frozen-product"
+    },
+    {
       "path": "src/auto/feishu-atsx-basic-auto.html",
       "sha256": "61773a211e3520ad7f96330e2efec0bbaeba7cf1365ad0e425dbd6f82f2dc562",
       "sourceSha256": "61773a211e3520ad7f96330e2efec0bbaeba7cf1365ad0e425dbd6f82f2dc562",
@@ -633,6 +639,18 @@
       "kind": "frozen-product"
     },
     {
+      "path": "src/auto/hotjob-mc-basic-auto.html",
+      "sha256": "c2fc5968da2439883e76f5280c5d1059446abc8b63843c7a44af5abbfa3a7ffd",
+      "sourceSha256": "c2fc5968da2439883e76f5280c5d1059446abc8b63843c7a44af5abbfa3a7ffd",
+      "kind": "frozen-product"
+    },
+    {
+      "path": "src/auto/hotjob-mc-basic-auto.js",
+      "sha256": "3e644dbb5a3721e12990956663cc3a964ec22283256f7c5dd8f1c159c3153808",
+      "sourceSha256": "3e644dbb5a3721e12990956663cc3a964ec22283256f7c5dd8f1c159c3153808",
+      "kind": "frozen-product"
+    },
+    {
       "path": "src/content/feishu-atsx-basic.js",
       "sha256": "d8f12fb9de384453aab313ab96ab42bb174255457b1615af33b7ba5aac3971b1",
       "sourceSha256": "d8f12fb9de384453aab313ab96ab42bb174255457b1615af33b7ba5aac3971b1",
@@ -666,6 +684,18 @@
       "path": "src/content/moka-profile-map.mjs",
       "sha256": "a7090580b0476160c2d5dac04aaf1cfacfec7e87157c37f7fea8dcd31108cce1",
       "sourceSha256": "a7090580b0476160c2d5dac04aaf1cfacfec7e87157c37f7fea8dcd31108cce1",
+      "kind": "frozen-product"
+    },
+    {
+      "path": "src/content/hotjob-mc-basic.js",
+      "sha256": "b4c9538b2de862932bb6248d95a2429277b472e560b15aa23f78f5bd4ec51a39",
+      "sourceSha256": "b4c9538b2de862932bb6248d95a2429277b472e560b15aa23f78f5bd4ec51a39",
+      "kind": "frozen-product"
+    },
+    {
+      "path": "src/content/hotjob-mc-profile-map.mjs",
+      "sha256": "660ab785c7f431cc219407f2d66ec998373f41f5d30c76035bec763d4668105c",
+      "sourceSha256": "660ab785c7f431cc219407f2d66ec998373f41f5d30c76035bec763d4668105c",
       "kind": "frozen-product"
     },
     {

@@ -1,5 +1,5 @@
 /**
- * Feishu ATSX / Beisen-2022 / Moka BASIC_AUTO wiring:
+ * Feishu ATSX / Beisen-2022 / Moka / hotjob-mc BASIC_AUTO wiring:
  * - resolve*Target refuses wrong hosts (fail-closed siteId isolation)
  * - trusted auto-page sender accepted; wrong sender rejected
  * - readiness probes without write; saveAttempted stays false
@@ -16,6 +16,9 @@ import {
 import {
   createMokaBasicAutoRunner, resolveMokaTarget, isMokaTabUrl
 } from '../src/background/moka-basic-auto.mjs';
+import {
+  createHotjobMcBasicAutoRunner, resolveHotjobMcTarget, isHotjobMcTabUrl
+} from '../src/background/hotjob-mc-basic-auto.mjs';
 
 const epoch = '00000000-0000-4000-8000-000000000001';
 
@@ -139,7 +142,9 @@ function makeHarness({
               result: {
                 ok: true,
                 siteId: messageType.includes('FEISHU') ? 'feishu-atsx'
-                  : messageType.includes('BEISEN') ? 'beisen-2022' : 'moka',
+                  : messageType.includes('BEISEN') ? 'beisen-2022'
+                  : messageType.includes('HOTJOB_MC') ? 'hotjob-mc'
+                  : 'moka',
                 saved: false,
                 skippedSave: true,
                 writeAttempted: true,
@@ -240,6 +245,77 @@ test('MOKA_BASIC_AUTO: wrong sender + invalid targetPage refused before tab work
   assert.equal(ready.liveSupportClaimed, false);
 });
 
+
+test('resolveHotjobMcTarget: sample default + host/SU path accept/refuse', () => {
+  const d = resolveHotjobMcTarget(undefined);
+  assert.equal(d.sample, true);
+  assert.equal(d.host, 'wecruit.hotjob.cn');
+  assert.equal(d.su, 'SU661f37091eb8053acd6cdf3d');
+  assert.match(d.page, /\/mc\/deliver\/operationResumer$/);
+  const ok = resolveHotjobMcTarget(
+    'https://wecruit.hotjob.cn/SU661f37091eb8053acd6cdf3d/mc/deliver/operationResumer?x=1'
+  );
+  assert.equal(ok.sample, false);
+  assert.equal(ok.su, 'SU661f37091eb8053acd6cdf3d');
+  assert.equal(ok.page, 'https://wecruit.hotjob.cn/SU661f37091eb8053acd6cdf3d/mc/deliver/operationResumer');
+  for (const bad of [
+    'http://wecruit.hotjob.cn/SU661f37091eb8053acd6cdf3d/mc/deliver/operationResumer',
+    'https://hotjob.cn.evil.com/SU661f37091eb8053acd6cdf3d/mc/deliver/operationResumer',
+    'https://wecruit.hotjob.cn/SU661f37091eb8053acd6cdf3d/pb/resumeOperation.html',
+    'https://wecruit.hotjob.cn/mc/deliver/operationResumer',
+    'https://gffunds.jobs.feishu.cn/',
+    'https://app.mokahr.com/',
+    'https://user:pass@wecruit.hotjob.cn/SU661f37091eb8053acd6cdf3d/mc/deliver/operationResumer',
+    42, {}
+  ]) assert.throws(() => resolveHotjobMcTarget(bad), /hotjob_mc_page_invalid/, String(bad));
+  assert.equal(
+    isHotjobMcTabUrl('https://wecruit.hotjob.cn/SU661f37091eb8053acd6cdf3d/mc/deliver/operationResumer'),
+    true
+  );
+  assert.equal(isHotjobMcTabUrl('https://wecruit.hotjob.cn/SU661f37091eb8053acd6cdf3d/pb/resumeOperation.html'), false);
+  assert.equal(isHotjobMcTabUrl('https://app.mokahr.com/x'), false);
+});
+
+test('HOTJOB_MC_BASIC_AUTO: wrong sender + invalid targetPage refused; readiness no write', async () => {
+  const h = makeHarness({
+    createRunner: createHotjobMcBasicAutoRunner,
+    autoHtml: 'src/auto/hotjob-mc-basic-auto.html',
+    messageType: 'HOTJOB_MC_BASIC_AUTO',
+    tabUrl: 'https://wecruit.hotjob.cn/SU661f37091eb8053acd6cdf3d/mc/deliver/operationResumer',
+    probeReason: 'hotjob_mc_page_ready',
+    foundLabels: ['姓名', '移动电话', '电子邮箱']
+  });
+  const bad = await h.invoke({ type: 'HOTJOB_MC_BASIC_AUTO', mode: 'readiness' }, h.badSender);
+  assert.equal(bad.reason, 'hotjob_mc_basic_wrong_sender');
+  assert.equal(h.stats.fill, 0);
+  const refused = await h.invoke({
+    type: 'HOTJOB_MC_BASIC_AUTO',
+    mode: 'readiness',
+    openIfMissing: false,
+    targetPage: 'https://wecruit.hotjob.cn/SU661f37091eb8053acd6cdf3d/pb/resumeOperation.html'
+  });
+  assert.equal(refused.ok, false);
+  assert.match(refused.reason, /hotjob_mc_page_invalid|hotjob_mc_basic/);
+  assert.equal(refused.saveAttempted, false);
+  assert.equal(h.stats.probe, 0);
+  const ready = await h.invoke({ type: 'HOTJOB_MC_BASIC_AUTO', mode: 'readiness', openIfMissing: false });
+  assert.equal(ready.ok, true);
+  assert.equal(ready.siteId, 'hotjob-mc');
+  assert.equal(ready.saveAttempted, false);
+  assert.equal(ready.skippedSave, true);
+  assert.equal(ready.liveSupportClaimed, false);
+  assert.equal(h.stats.fill, 0);
+  assert.ok(h.stats.probe >= 1);
+  const filled = await h.invoke({ type: 'HOTJOB_MC_BASIC_AUTO', mode: 'fill', openIfMissing: false });
+  assert.equal(filled.ok, true);
+  assert.equal(filled.siteId, 'hotjob-mc');
+  assert.equal(filled.saveAttempted, false);
+  assert.equal(filled.skippedSave, true);
+  assert.equal(filled.writeAttempted, true);
+  assert.equal(h.stats.inject, 1);
+  assert.equal(h.stats.fill, 1);
+});
+
 test('cross-site message types do not share listeners', async () => {
   const feishu = makeHarness({
     createRunner: createFeishuAtsxBasicAutoRunner,
@@ -252,4 +328,6 @@ test('cross-site message types do not share listeners', async () => {
   assert.equal(ignored.reason, 'listener_ignored');
   const ignored2 = await feishu.invoke({ type: 'BEISEN_2022_BASIC_AUTO', mode: 'readiness' });
   assert.equal(ignored2.reason, 'listener_ignored');
+  const ignored3 = await feishu.invoke({ type: 'HOTJOB_MC_BASIC_AUTO', mode: 'readiness' });
+  assert.equal(ignored3.reason, 'listener_ignored');
 });

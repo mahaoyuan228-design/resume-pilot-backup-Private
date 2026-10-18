@@ -34,12 +34,20 @@ test('resolveCmsTarget default is 招商 baseline and matches extension constant
 
 test('resolveCmsTarget accepts CMS_PAGE / CMS_SU for each tenant', () => {
   for (const [key, row] of Object.entries(HOTJOB_TENANTS)) {
-    const page = `https://wecruit.hotjob.cn/${row.su}/pb/resumeOperation.html`;
-    const a = resolveCmsTarget({ CMS_PAGE: page });
+    const pbPage = `https://wecruit.hotjob.cn/${row.su}/pb/resumeOperation.html`;
+    const suPage = row.shell === 'mc'
+      ? `https://wecruit.hotjob.cn/${row.su}/mc/deliver/operationResumer`
+      : pbPage;
+    const a = resolveCmsTarget({ CMS_PAGE: pbPage });
     const b = resolveCmsTarget({ CMS_SU: row.su });
-    const c = resolveCmsTarget({ CMS_PAGE: page, CMS_SU: row.su });
+    const c = resolveCmsTarget({ CMS_PAGE: pbPage, CMS_SU: row.su });
+    assert.equal(a.page, pbPage);
+    assert.equal(a.shell, 'pb');
+    assert.equal(b.page, suPage);
+    assert.equal(b.shell, row.shell === 'mc' ? 'mc' : 'pb');
+    assert.equal(c.page, pbPage);
+    assert.equal(c.shell, 'pb');
     for (const t of [a, b, c]) {
-      assert.equal(t.page, page);
       assert.equal(t.su, row.su);
       assert.equal(t.isBaseline, false);
       assert.equal(t.tenantKey, key);
@@ -47,6 +55,7 @@ test('resolveCmsTarget accepts CMS_PAGE / CMS_SU for each tenant', () => {
     }
   }
   assert.equal(resolveCmsTarget({ CMS_SU: CMS_BASELINE_SU }).isBaseline, true);
+  assert.equal(resolveCmsTarget({ CMS_SU: CMS_BASELINE_SU }).shell, 'pb');
 });
 
 test('resolveCmsTarget refuses non wecruit/SU/resumeOperation targets', () => {
@@ -67,11 +76,16 @@ test('resolveCmsTarget refuses non wecruit/SU/resumeOperation targets', () => {
   for (const value of [
     'https://wecruit.hotjob.cn/SU661f37091eb8053acd6cdf3d/mc/index',
     'https://wecruit.hotjob.cn/SU661f37091eb8053acd6cdf3d/mc/operationResumer'
-  ]) assert.throws(() => resolveCmsTarget({ CMS_PAGE: value }), /cms_mc_shell/, value);
+  ]) assert.throws(() => resolveCmsTarget({ CMS_PAGE: value }), /cms_page_invalid/, value);
+  const mcPage = `https://wecruit.hotjob.cn/${ZL}/mc/deliver/operationResumer`;
+  const mc = resolveCmsTarget({ CMS_PAGE: `${mcPage}?x=1` });
+  assert.equal(mc.shell, 'mc');
+  assert.equal(mc.page, mcPage);
+  assert.equal(mc.su, ZL);
   assert.throws(() => resolveCmsTarget({ CMS_SU: 'SU../x' }), /cms_su_invalid/);
   assert.throws(() => resolveCmsTarget({ CMS_SU: 'zhonglian' }), /cms_su_invalid/);
   assert.throws(() => resolveCmsTarget({ CMS_PAGE: ZL_PAGE, CMS_SU: HOTJOB_TENANTS.nanyue.su }), /cms_target_conflict/);
-  assert.deepEqual(parseCmsPage(ZL_PAGE), { su: ZL, page: ZL_PAGE });
+  assert.deepEqual(parseCmsPage(ZL_PAGE), { su: ZL, page: ZL_PAGE, shell: 'pb' });
   assert.equal(tenantEvidenceName(ZL, '20261018-193000'), 'hotjob-tenant-661f37-cms-basic-20261018-193000.json');
 });
 
@@ -195,13 +209,19 @@ test('harness refuses mc shell with exit 4 and opens nothing', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cms-mc-'));
   const log = path.join(dir, 'edge.log');
   const r = spawnSync(process.execPath, [harnessScript], { encoding: 'utf8', timeout: 15000,
-    env: { ...process.env, CMS_PAGE: 'https://wecruit.hotjob.cn/SU661f37091eb8053acd6cdf3d/mc/operationResumer',
+    env: { ...process.env, CMS_PAGE: 'https://wecruit.hotjob.cn/SU661f37091eb8053acd6cdf3d/mc/deliver/operationResumer',
       AUTO_RUNS_DIR: dir, EDGE_PATH: fakeEdge, FAKE_EDGE_LOG: log } });
   assert.equal(r.status, 4, r.stderr);
-  assert.match(r.stderr, /cms_mc_shell/);
+  assert.match(r.stderr, /hotjob_mc_shell_requires_adapter/);
   assert.match(r.stderr, /auto-hotjob-mc-basic/);
   assert.equal(fs.existsSync(log), false);
   assert.deepEqual(fs.readdirSync(dir), []);
+  const suOnly = spawnSync(process.execPath, [harnessScript], { encoding: 'utf8', timeout: 15000,
+    env: { ...process.env, CMS_SU: ZL, CMS_PAGE: '',
+      AUTO_RUNS_DIR: dir, EDGE_PATH: fakeEdge, FAKE_EDGE_LOG: log } });
+  assert.equal(suOnly.status, 4, suOnly.stderr);
+  assert.match(suOnly.stderr, /hotjob_mc_shell_requires_adapter/);
+  assert.equal(fs.existsSync(log), false);
 });
 
 test('harness refuses bad CMS_PAGE with exit 3 and opens nothing', () => {
@@ -229,7 +249,7 @@ test('harness tenant run (stub Edge): passes cmsPage, records tenantSu, writes t
   if (process.platform === 'win32') return; // stub relies on shebang exec
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cms-target-'));
   const log = path.join(dir, 'edge.log');
-  const r = await runHarness({ CMS_SU: ZL, OPEN_CMS_PAGE: '0', MODE: 'readiness', AUTO_RUNS_DIR: dir,
+  const r = await runHarness({ CMS_PAGE: ZL_PAGE, CMS_SU: ZL, OPEN_CMS_PAGE: '0', MODE: 'readiness', AUTO_RUNS_DIR: dir,
     EDGE_PATH: fakeEdge, FAKE_EDGE_LOG: log, AUTO_TIMEOUT_MS: '15000' });
   assert.equal(r.code, 0, r.err + r.out);
   const urls = fs.readFileSync(log, 'utf8').trim().split('\n');

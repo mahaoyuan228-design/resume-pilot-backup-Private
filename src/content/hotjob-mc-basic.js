@@ -1,11 +1,14 @@
-// hotjob mc shell first-slice basic fill (fill-without-save).
-// Isolated siteId: hotjob-mc. Never clicks 保存 / 提交 / 投递.
+// Hotjob mc (antd-mobile H5) first-slice basic fill (fill-without-save).
+// Isolated siteId: hotjob-mc. Never clicks 下一步/保存/提交. Never touches pb CMS_BASIC.
 //
-// Live page (中联重科): https://wecruit.hotjob.cn/SU661f37091eb8053acd6cdf3d/mc/operationResumer
-// Fields: 姓名 / 移动电话 / 电子邮箱
-// DOM: .my-list-item > .header-title + .am-input-control input
+// First slice fields (live CDP 中联 SU661f… /mc/deliver/operationResumer 2026-10-18):
+//   姓名 (text) · 移动电话 (text) · 电子邮箱 (text)
 //
-// This is not the pb resumeOperation shell. Do not route it through CMS basic.
+// DOM contract (verified live):
+//   item  = .my-list-item
+//   label = .header-title  (iconfont.icon-bitian + text)
+//   input = .am-input-control input
+//   readiness: .resume-info-title === 基本信息 && my-list-item count > 0
 (() => {
   const previous = globalThis.ResumeHotjobMcBasic;
   if (previous?.listener) {
@@ -13,12 +16,12 @@
   }
 
   const SITE_ID = 'hotjob-mc';
-  const HOST = 'wecruit.hotjob.cn';
   const TEXT_LABELS = ['姓名', '移动电话', '电子邮箱'];
   const ITEM_SEL = '.my-list-item';
   const LABEL_SEL = '.header-title';
-  const INPUT_SEL = '.am-input-control input';
-  const RESUME_PATH_RE = /^\/(SU[0-9A-Za-z]{8,64})\/mc\/operationResumer$/u;
+  const INPUT_SEL = '.am-input-control input, input[type="text"], input[type="tel"], input[type="email"], input:not([type])';
+  const TITLE_SEL = '.resume-info-title';
+  const MC_PATH_RE = /^\/SU[0-9A-Za-z]{8,64}\/mc\/deliver\/operationResumer$/u;
 
   const norm = (value) => String(value ?? '')
     .normalize('NFKC')
@@ -28,17 +31,25 @@
   const cleanLabel = (value) => norm(value).replace(/^\*\s*/u, '').replace(/\s*\*$/u, '').replace(/[：:]\s*$/u, '').trim();
   const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-  function isHotjobMcResumeUrl(value = location.href) {
+  function isHotjobMcHost(hostname = location.hostname) {
+    const host = String(hostname || '').toLowerCase();
+    if (!host) return false;
+    return host === 'wecruit.hotjob.cn' || host === 'hotjob.cn' || host.endsWith('.hotjob.cn');
+  }
+
+  function onHotjobMcPage(url = location.href) {
     try {
-      const url = new URL(value);
-      return url.protocol === 'https:' && url.hostname === HOST && RESUME_PATH_RE.test(url.pathname);
+      const u = new URL(url);
+      return (u.protocol === 'https:' || u.protocol === 'http:')
+        && isHotjobMcHost(u.hostname)
+        && MC_PATH_RE.test(u.pathname);
     } catch {
       return false;
     }
   }
 
   function pageAllowed(options) {
-    if (isHotjobMcResumeUrl()) return true;
+    if (onHotjobMcPage()) return true;
     if (options?.synthetic !== true) return false;
     return location.hostname === '127.0.0.1' || location.hostname === 'localhost';
   }
@@ -46,9 +57,9 @@
   function labelText(node) {
     if (!node) return '';
     const clone = node.cloneNode(true);
-    clone.querySelectorAll('span,i,svg,em').forEach((child) => {
+    clone.querySelectorAll('span.iconfont, span, i, svg, em').forEach((child) => {
       const t = norm(child.textContent);
-      if (!t || t === '*' || t === '：') child.remove();
+      if (!t || t === '*' || t === '：' || child.classList?.contains('iconfont')) child.remove();
     });
     return cleanLabel(clone.textContent);
   }
@@ -68,8 +79,8 @@
 
   function textControl(item) {
     const inputs = [...item.querySelectorAll(INPUT_SEL)].filter((node) => {
-      if (node.type === 'hidden' || node.type === 'radio' || node.type === 'checkbox' || node.type === 'button') return false;
-      if (node.disabled || node.readOnly) return false;
+      if (node.type === 'hidden' || node.type === 'radio' || node.type === 'checkbox' || node.type === 'file') return false;
+      if (node.disabled) return false;
       const style = getComputedStyle(node);
       return style.display !== 'none' && style.visibility !== 'hidden';
     });
@@ -109,6 +120,24 @@
       before,
       after,
       expected: norm(value)
+    };
+  }
+
+  async function restoreText(label, previousValue) {
+    const item = findItem(label);
+    if (!item) return { label, ok: false, reason: 'item_not_found', restoredTo: previousValue };
+    const control = textControl(item);
+    if (!control) return { label, ok: false, reason: 'control_not_found', restoredTo: previousValue };
+    control.focus();
+    setNativeValue(control, String(previousValue ?? ''));
+    await pause(60);
+    const after = readText(item);
+    return {
+      label,
+      ok: after === norm(previousValue),
+      reason: after === norm(previousValue) ? 'restored' : 'restore_mismatch',
+      restoredTo: norm(previousValue),
+      after
     };
   }
 
@@ -153,17 +182,20 @@
   }
 
   function probeFingerprint() {
-    const html = document.documentElement?.innerHTML || '';
-    const title = document.title || '';
-    const href = location.href || '';
+    const titleNode = document.querySelector(TITLE_SEL);
+    const resumeTitle = cleanLabel(titleNode?.textContent || '');
+    const bodyHead = (document.body?.innerText || '').slice(0, 800);
     return {
-      operationResumer: /operationResumer/i.test(href) || /operationResumer/i.test(html),
-      amInput: !!document.querySelector('.am-input-control'),
-      myListItem: formItems().length > 0,
-      pbResumeOperation: /\/pb\/resumeOperation\.html/i.test(href),
-      title,
-      inputCount: document.querySelectorAll(INPUT_SEL).length,
-      formItemCount: formItems().length,
+      amList: !!document.querySelector('.am-list'),
+      myListItem: document.querySelectorAll(ITEM_SEL).length,
+      amInputControl: document.querySelectorAll('.am-input-control input').length,
+      resumeTitle,
+      resumeTitleOk: resumeTitle === '基本信息',
+      loginHints: /登录|注册/.test(bodyHead),
+      loading: /正在加载中/.test(bodyHead),
+      hasNextButton: [...document.querySelectorAll('.my-button, button')].some((b) => /下一步/.test(b.textContent || '')),
+      antFormItem: !!document.querySelector('.ant-form-item'),
+      formCell: !!document.querySelector('.form-cell'),
       foundLabels: TEXT_LABELS.filter((label) => !!findItem(label))
     };
   }
@@ -176,31 +208,43 @@
         label,
         found: !!item,
         hasTextControl: !!item && !!textControl(item),
-        value: item ? readText(item) : ''
+        value: item ? readText(item) : '',
+        placeholder: (() => {
+          const c = item ? textControl(item) : null;
+          return c?.placeholder || '';
+        })()
       };
     });
     const foundCount = labels.filter((row) => row.found && row.hasTextControl).length;
     const onPage = pageAllowed(options);
+    const ready = onPage
+      && !fp.loginHints
+      && !fp.loading
+      && (options?.synthetic === true || fp.resumeTitleOk || foundCount >= 1)
+      && foundCount >= 3;
     return {
-      ok: onPage && foundCount >= 3,
+      ok: ready,
       siteId: SITE_ID,
       href: location.href,
       title: document.title,
-      onHotjobMcResume: isHotjobMcResumeUrl(),
+      onHotjobMcPage: onHotjobMcPage(),
       synthetic: options?.synthetic === true,
       fingerprint: fp,
       labels,
       foundCount,
       reason: !onPage
         ? 'wrong_page'
-        : foundCount >= 3
-          ? 'labels_ready'
-          : foundCount >= 1
-            ? 'labels_partial'
-            : 'labels_missing',
+        : fp.loginHints
+          ? 'login_wall'
+          : fp.loading
+            ? 'still_loading'
+            : foundCount >= 3
+              ? 'labels_ready'
+              : foundCount >= 1
+                ? 'labels_partial'
+                : 'labels_missing',
       saved: false,
-      skippedSave: true,
-      liveSupportClaimed: false
+      skippedSave: true
     };
   }
 
@@ -213,13 +257,13 @@
         href: location.href,
         results: [],
         saved: false,
-        skippedSave: true,
-        liveSupportClaimed: false
+        skippedSave: true
       };
     }
 
     const profile = rawValues.profile;
     const allowExplicit = rawValues.allowExplicitValues === true;
+    const doRestore = options?.restore !== false;
     let values = null;
     let plan = null;
 
@@ -237,9 +281,7 @@
           href: location.href,
           results: [],
           saved: false,
-          skippedSave: true,
-          liveSupportClaimed: false,
-          writeAttempted: false
+          skippedSave: true
         };
       }
     } else {
@@ -263,8 +305,7 @@
           blockers: plan.blockers,
           saved: false,
           skippedSave: true,
-          writeAttempted: false,
-          liveSupportClaimed: false
+          writeAttempted: false
         };
       }
       values = plan.values;
@@ -275,23 +316,44 @@
       ['移动电话', values.mobile],
       ['电子邮箱', values.email]
     ];
+    const snapshots = textPlan.map(([label]) => {
+      const item = findItem(label);
+      return { label, before: item ? readText(item) : '' };
+    });
     const results = [];
     for (const [label, value] of textPlan) {
       results.push(await fillText(label, value));
     }
-    const ok = results.every((row) => row.ok);
+    const fillOk = results.every((row) => row.ok);
+
+    let restore = null;
+    if (doRestore) {
+      restore = [];
+      for (const snap of snapshots) {
+        restore.push(await restoreText(snap.label, snap.before));
+      }
+    }
+
+    // Neighbor text field must stay untouched (证件号码 on live / fixture).
+    const neighborItem = findItem('证件号码');
+    const neighbor = neighborItem
+      ? { label: '证件号码', value: readText(neighborItem) }
+      : { label: '证件号码', value: null, missing: true };
+
     return {
-      ok,
+      ok: fillOk,
       siteId: SITE_ID,
       href: location.href,
       title: document.title,
       saved: false,
       skippedSave: true,
       writeAttempted: true,
-      liveSupportClaimed: false,
+      restored: doRestore === true,
+      restore,
+      neighbor,
       profileSource: allowExplicit ? 'explicit' : 'resumeProfile',
       planSummary: plan
-        ? { reason: plan.reason, readyCount: plan.fields.filter((field) => field.ready).length, blockerCount: plan.blockers.length }
+        ? { reason: plan.reason, readyCount: plan.fields.filter((f) => f.ready).length, blockerCount: plan.blockers.length }
         : { reason: 'explicit_override' },
       results
     };
@@ -302,11 +364,12 @@
     TEXT_LABELS,
     ITEM_SEL,
     LABEL_SEL,
-    INPUT_SEL,
-    isHotjobMcResumeUrl,
+    isHotjobMcHost,
+    onHotjobMcPage,
     findItem,
     textControl,
     fillText,
+    restoreText,
     fillBasic,
     probeLabels,
     probeFingerprint,

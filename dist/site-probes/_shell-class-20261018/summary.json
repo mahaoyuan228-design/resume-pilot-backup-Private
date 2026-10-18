@@ -127,10 +127,60 @@
       ],
       "harness": "run-hotjob-tenant.cmd haitian → hotjob-mc Path B (key ready)",
       "if_live_pb": "CMS_BASIC reuse candidate via pb/resumeOperation.html"
+    },
+    {
+      "key": "tsmc",
+      "name": "台积电(南京)",
+      "su": "SU61075bbabef57c43d825d671",
+      "shell_guess": "mc",
+      "confidence": "medium (portal preference /mc/position/campus like 欧普/隆基/海天; not live-confirmed)",
+      "evidence": [
+        "common portal https://wecruit.hotjob.cn/SU6107…/mc/position/campus",
+        "mc/deliver/operationResumer HTTP 200, hash 352df1… = 中联 mc, body md5 c21b558e… identical",
+        "also exposes pb/resumeOperation.html 200 hash a1541… body md5 5e54d402… (dual; same as all tenants)",
+        "NOT login-wall-only"
+      ],
+      "harness": "run-hotjob-tenant.cmd tsmc → hotjob-mc Path B (key ready)",
+      "if_live_pb": "CMS_BASIC reuse candidate via pb/resumeOperation.html"
+    },
+    {
+      "key": "tclmj",
+      "aliases": [
+        "tcl"
+      ],
+      "name": "TCL茂佳科技",
+      "su": "SU6491506a2f9d24316e91b81b",
+      "shell_guess": "mc",
+      "confidence": "medium (portal preference /mc/position/campus like 欧普/隆基/海天; not live-confirmed)",
+      "evidence": [
+        "common portal https://wecruit.hotjob.cn/SU6491…/mc/position/campus",
+        "mc/deliver/operationResumer HTTP 200, hash 352df1… = 中联 mc, body md5 c21b558e… identical",
+        "also exposes pb/resumeOperation.html 200 hash a1541… body md5 5e54d402… (dual; same as all tenants)",
+        "NOT login-wall-only"
+      ],
+      "harness": "run-hotjob-tenant.cmd tclmj|tcl → hotjob-mc Path B (key ready)",
+      "if_live_pb": "CMS_BASIC reuse candidate via pb/resumeOperation.html"
+    },
+    {
+      "key": "horizon",
+      "name": "地平线",
+      "su": "SU62d915040dcad43c775ec12c",
+      "shell_guess": "mc",
+      "confidence": "medium (portal preference /mc/position/campus like 欧普/隆基/海天; not live-confirmed)",
+      "evidence": [
+        "common portal https://wecruit.hotjob.cn/SU62d9…/mc/position/campus",
+        "mc/deliver/operationResumer HTTP 200 (retry after first curl timeout), hash 352df1… = 中联 mc, body md5 c21b558e… identical",
+        "also exposes pb/resumeOperation.html 200 hash a1541… body md5 5e54d402… (dual; same as all tenants)",
+        "NOT login-wall-only"
+      ],
+      "harness": "run-hotjob-tenant.cmd horizon → hotjob-mc Path B (key ready)",
+      "if_live_pb": "CMS_BASIC reuse candidate via pb/resumeOperation.html"
     }
   ],
   "when_caict_opple": "2026-10-18 21:34 Asia/Shanghai",
   "note_caict_opple": "caict portal pb → guess pb/CMS_BASIC; opple portal mc campus → guess mc/hotjob-mc; both dual-shell public 200",
   "when_longi_haitian": "2026-10-18 21:47 Asia/Shanghai",
-  "note_longi_haitian": "longi+haitian portal mc campus → guess mc/hotjob-mc (like opple); both dual-shell public 200; hashes a1541…/352df1… body md5 match 招商批"
+  "note_longi_haitian": "longi+haitian portal mc campus → guess mc/hotjob-mc (like opple); both dual-shell public 200; hashes a1541…/352df1… body md5 match 招商批",
+  "when_tsmc_tcl_horizon": "2026-10-18 21:50 Asia/Shanghai",
+  "note_tsmc_tcl_horizon": "tsmc+tclmj+horizon portal mc campus → guess mc/hotjob-mc (like opple/longi/haitian); dual-shell public 200; hashes a1541…/352df1… body md5 match 招商批; horizon opResumer first curl timed out then 200"
 }

@@ -1,0 +1,207 @@
+{
+  "status": "PROBE_COMPLETED",
+  "chrome": "Chrome/155.0.8059.84",
+  "display": ":99",
+  "windows": {
+    "siteWin": {
+      "windowId": 1464955558,
+      "bounds": {
+        "left": 20,
+        "top": 20,
+        "width": 900,
+        "height": 700,
+        "windowState": "normal"
+      }
+    },
+    "thiefWin": {
+      "windowId": 1464955560,
+      "bounds": {
+        "left": 30,
+        "top": 30,
+        "width": 900,
+        "height": 700,
+        "windowState": "normal"
+      }
+    }
+  },
+  "notes": [
+    {
+      "step": "after-thief-activate",
+      "mid": {
+        "hasFocus": false,
+        "visible": "visible"
+      }
+    },
+    {
+      "step": "after-thief-click",
+      "mid2": {
+        "hasFocus": false,
+        "visible": "visible"
+      }
+    }
+  ],
+  "cases": {
+    "A_baseline": {
+      "before": {
+        "hasFocus": true,
+        "visible": "visible",
+        "activeTag": "BODY"
+      },
+      "af": {
+        "activeIsInput": true,
+        "hasFocus": true,
+        "visible": "visible"
+      },
+      "ab": {
+        "activeIsInput": false,
+        "hasFocus": true,
+        "visible": "visible"
+      },
+      "events": [
+        "focus:t=true;hf=true;v=visible",
+        "focusin:t=true;hf=true;v=visible",
+        "input:t=false;hf=true;v=visible",
+        "change:t=false;hf=true;v=visible",
+        "blur:t=true;hf=true;v=visible",
+        "focusout:t=true;hf=true;v=visible"
+      ],
+      "focusSeen": true,
+      "blurSeen": true,
+      "focusoutSeen": true,
+      "parent": "NEW42________________________________",
+      "local": "NEW42________________________________",
+      "dom": "NEW42________________________________",
+      "adapterWouldPassDom": true,
+      "parentCommitted": true,
+      "fillLegalVisible": true,
+      "targetCondition": false
+    },
+    "B_thief_activated": {
+      "before": {
+        "hasFocus": false,
+        "visible": "visible",
+        "activeTag": "BODY"
+      },
+      "af": {
+        "activeIsInput": true,
+        "hasFocus": false,
+        "visible": "visible"
+      },
+      "ab": {
+        "activeIsInput": false,
+        "hasFocus": false,
+        "visible": "visible"
+      },
+      "events": [
+        "input:t=false;hf=false;v=visible",
+        "change:t=false;hf=false;v=visible"
+      ],
+      "focusSeen": false,
+      "blurSeen": false,
+      "focusoutSeen": false,
+      "parent": "old10chars",
+      "local": "NEW42________________________________",
+      "dom": "NEW42________________________________",
+      "adapterWouldPassDom": true,
+      "parentCommitted": false,
+      "fillLegalVisible": true,
+      "targetCondition": true
+    },
+    "C_thief_clicked": {
+      "before": {
+        "hasFocus": false,
+        "visible": "visible",
+        "activeTag": "BODY"
+      },
+      "af": {
+        "activeIsInput": true,
+        "hasFocus": false,
+        "visible": "visible"
+      },
+      "ab": {
+        "activeIsInput": false,
+        "hasFocus": false,
+        "visible": "visible"
+      },
+      "events": [
+        "input:t=false;hf=false;v=visible",
+        "change:t=false;hf=false;v=visible"
+      ],
+      "focusSeen": false,
+      "blurSeen": false,
+      "focusoutSeen": false,
+      "parent": "old10chars",
+      "local": "NEW42________________________________",
+      "dom": "NEW42________________________________",
+      "adapterWouldPassDom": true,
+      "parentCommitted": false,
+      "fillLegalVisible": true,
+      "targetCondition": true
+    }
+  },
+  "achievedTarget": true,
+  "silentUnderTarget": [
+    {
+      "before": {
+        "hasFocus": false,
+        "visible": "visible",
+        "activeTag": "BODY"
+      },
+      "af": {
+        "activeIsInput": true,
+        "hasFocus": false,
+        "visible": "visible"
+      },
+      "ab": {
+        "activeIsInput": false,
+        "hasFocus": false,
+        "visible": "visible"
+      },
+      "events": [
+        "input:t=false;hf=false;v=visible",
+        "change:t=false;hf=false;v=visible"
+      ],
+      "focusSeen": false,
+      "blurSeen": false,
+      "focusoutSeen": false,
+      "parent": "old10chars",
+      "local": "NEW42________________________________",
+      "dom": "NEW42________________________________",
+      "adapterWouldPassDom": true,
+      "parentCommitted": false,
+      "fillLegalVisible": true,
+      "targetCondition": true
+    },
+    {
+      "before": {
+        "hasFocus": false,
+        "visible": "visible",
+        "activeTag": "BODY"
+      },
+      "af": {
+        "activeIsInput": true,
+        "hasFocus": false,
+        "visible": "visible"
+      },
+      "ab": {
+        "activeIsInput": false,
+        "hasFocus": false,
+        "visible": "visible"
+      },
+      "events": [
+        "input:t=false;hf=false;v=visible",
+        "change:t=false;hf=false;v=visible"
+      ],
+      "focusSeen": false,
+      "blurSeen": false,
+      "focusoutSeen": false,
+      "parent": "old10chars",
+      "local": "NEW42________________________________",
+      "dom": "NEW42________________________________",
+      "adapterWouldPassDom": true,
+      "parentCommitted": false,
+      "fillLegalVisible": true,
+      "targetCondition": true
+    }
+  ]
+}

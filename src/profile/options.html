@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>简历快填 · 我的资料库</title>
+  <link rel="stylesheet" href="../styles/profile.css">
+</head>
+<body>
+  <header class="masthead">
+    <div class="masthead-inner">
+      <div class="brand"><span class="brand-mark" aria-hidden="true">✳</span><span>简历快填</span></div>
+      <nav class="top-nav" aria-label="页面导航">
+        <button class="top-nav-button active" type="button" data-view="profile" aria-current="page">我的资料库</button>
+        <button class="top-nav-button" type="button" data-view="help">使用说明</button>
+      </nav>
+      <span class="local-indicator"><i aria-hidden="true"></i>资料保存在本机</span>
+    </div>
+  </header>
+
+  <main>
+    <section id="profile-view" class="view">
+      <div class="hero">
+        <div><span class="eyebrow">YOUR STORY, WELL TOLD</span><h1>让每段经历，<br><em>都有清楚的位置。</em></h1><p>只将你亲自核对的事实用于填写。空白资料不会被猜测。</p></div>
+        <span class="hero-flower" aria-hidden="true">✳</span>
+      </div>
+
+      <div class="toolbar" aria-label="资料操作">
+        <div><strong id="profile-count">0 项已核对</strong><span id="profile-updated">尚未保存资料</span></div>
+        <div class="toolbar-actions">
+          <a class="btn" href="../import/import.html" target="_blank" rel="noopener">从简历提取资料</a>
+          <button id="import-button" class="btn" type="button">导入 JSON</button>
+          <button id="export-button" class="btn" type="button">导出 JSON</button>
+          <button id="clear-button" class="btn btn-danger" type="button">删除本机资料</button>
+          <input id="import-file" type="file" accept="application/json,.json" hidden>
+        </div>
+      </div>
+
+      <div class="profile-layout">
+        <aside class="section-menu" aria-label="资料章节">
+          <span class="section-kicker">内容目录</span>
+          <div id="section-buttons"></div>
+        </aside>
+
+        <section class="editor card" aria-labelledby="section-title">
+          <div class="editor-header"><span id="section-number" class="section-kicker"></span><span id="section-state" class="state-badge">待核对</span></div>
+          <h2 id="section-title"></h2>
+          <p id="section-description" class="editor-description"></p>
+          <form id="profile-form" novalidate></form>
+          <div class="review-box">
+            <label><input id="review-check" type="checkbox"><span>我已逐项核对本页内容，确认可以用于招聘表格</span></label>
+            <p>导入的资料默认待核对；编辑已核对内容后，这一项会恢复为待核对。</p>
+          </div>
+          <div class="editor-actions">
+            <button id="save-draft-button" class="btn" type="button">保存草稿</button>
+            <button id="confirm-button" class="btn btn-primary" type="button">确认本页资料</button>
+            <span id="save-state" role="status" aria-live="polite"></span>
+          </div>
+        </section>
+
+        <aside class="profile-side">
+          <div class="card side-card"><span class="section-kicker">资料提示</span><span class="side-icon" aria-hidden="true">⌁</span><h3>资料来源清楚可查</h3><p>手动输入标为“本人填写”；JSON 导入标为“导入”。所有内容都须由你确认后才供自动填写。</p><div id="section-summary" class="mini-list"></div></div>
+          <div class="card side-card material-tip"><span class="section-kicker">简历附件</span><h3>选一次，留在本机</h3><p>你可在材料页主动保存文件供下次使用；文件不会进入 JSON 备份。网站是否收到文件仍需核对。</p><button id="go-materials" class="text-button" type="button">查看材料 →</button></div>
+        </aside>
+      </div>
+    </section>
+
+    <section id="help-view" class="view" hidden>
+      <div class="hero help-hero"><div><span class="eyebrow">A CALMER WAY TO GET STARTED</span><h1>准备好，<br><em>就可以开始填写。</em></h1><p>登录招聘网站后，使用 Edge 扩展操作当前页面。</p></div><span class="hero-flower" aria-hidden="true">✳</span></div>
+      <div class="help-grid">
+        <article class="help-step"><strong>01</strong><h2>核对资料</h2><p>在资料库填写真实经历，逐页勾选并确认。未确认的事实不会自动填写。</p></article>
+        <article class="help-step"><strong>02</strong><h2>本人登录</h2><p>在 Microsoft Edge 打开准备测试的招聘网站，登录后进入空白申请表。</p></article>
+        <article class="help-step"><strong>03</strong><h2>点击填写</h2><p>打开扩展面板，查看当前页面的识别结果，再点击填写。未知或模糊字段会留给你处理。</p></article>
+        <article class="help-step"><strong>04</strong><h2>检查并提交</h2><p>核对扩展报告与网页实际内容。网站保存状态和最终投递由你亲自确认。</p></article>
+      </div>
+      <div class="help-notes"><div class="card"><h2>资料不够怎么办？</h2><p>回到资料库补充并确认后重试。软件会区分资料缺失、网站不支持与操作失败，不会编造答案。</p></div><div class="card"><h2>附件和 AI</h2><p>附件可由你主动保存在此 Edge 的本机存储，网站上传能力按具体站点验证。AI 建议功能尚未启用。</p></div></div>
+      <button id="back-to-profile" class="btn btn-primary" type="button">返回资料库</button>
+    </section>
+  </main>
+
+  <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+  <script type="module" src="./options.js"></script>
+</body>
+</html>

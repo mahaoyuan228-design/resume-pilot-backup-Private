@@ -1,0 +1,156 @@
+#!/usr/bin/env node
+// One-shot: reload SW, then CMS_INTERNSHIP_AUTO via CANONICAL cms-education-auto.html?mode=internship_* .
+// Default readiness (no write). Set MODE=fill for write without Save. Never Save.
+import http from 'node:http';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { spawn } from 'node:child_process';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const repoRoot = path.resolve(__dirname, '..');
+const outDir = path.join(repoRoot, 'dist', 'auto-runs');
+fs.mkdirSync(outDir, { recursive: true });
+
+const EXT_ID = process.env.RESUME_EXT_ID || 'hdekmacbpblppkbpamgocbanjafigfej';
+const profileIndex = Number.parseInt(process.env.PROFILE_INDEX || '0', 10);
+const mode = process.env.MODE || 'readiness';
+const replaceExisting = (process.env.REPLACE_EXISTING || '1') !== '0';
+const timeoutMs = Number.parseInt(process.env.AUTO_TIMEOUT_MS || '180000', 10);
+// Default: skip SW reload (avoids CMS tab document churn). Set RELOAD=1 to force.
+const skipReload = process.env.RELOAD !== '1';
+
+function stamp() {
+  const d = new Date();
+  const p = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`;
+}
+
+function findEdge() {
+  const candidates = [
+    process.env.EDGE_PATH,
+    'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
+    'C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe'
+  ].filter(Boolean);
+  for (const candidate of candidates) {
+    if (fs.existsSync(candidate)) return candidate;
+  }
+  return 'msedge';
+}
+
+function openEdge(url) {
+  const edge = findEdge();
+  const child = spawn(edge, [url], { detached: true, stdio: 'ignore' });
+  child.unref();
+  return edge;
+}
+
+function wait(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function startServer() {
+  const events = [];
+  let resolveResult;
+  let rejectResult;
+  const resultPromise = new Promise((resolve, reject) => {
+    resolveResult = resolve;
+    rejectResult = reject;
+  });
+  const server = http.createServer(async (req, res) => {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'content-type');
+    if (req.method === 'OPTIONS') {
+      res.writeHead(204);
+      res.end();
+      return;
+    }
+    const chunks = [];
+    if (req.method === 'POST') {
+      for await (const chunk of req) chunks.push(chunk);
+    }
+    let body = {};
+    try {
+      body = chunks.length ? JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}') : {};
+    } catch {
+      res.writeHead(400);
+      res.end('bad json');
+      return;
+    }
+    if (req.method === 'POST' && req.url === '/event') {
+      events.push(body);
+      console.log(JSON.stringify({ event: 'page_event', ...body }));
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({ ok: true }));
+      return;
+    }
+    if (req.method === 'POST' && req.url === '/result') {
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({ ok: true }));
+      resolveResult({ body, events });
+      return;
+    }
+    if (req.method === 'GET' && req.url === '/health') {
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({ ok: true, events: events.length }));
+      return;
+    }
+    res.writeHead(404);
+    res.end('no');
+  });
+  return new Promise((resolve, reject) => {
+    server.listen(0, '127.0.0.1', () => {
+      resolve({ server, port: server.address().port, resultPromise, events, rejectResult });
+    });
+    server.on('error', reject);
+  });
+}
+
+const { server, port, resultPromise, rejectResult } = await startServer();
+const timer = setTimeout(() => {
+  rejectResult(new Error(`auto_cms_internship_timeout_${timeoutMs}`));
+  try { server.close(); } catch {}
+}, timeoutMs);
+
+try {
+  if (!skipReload) {
+    const reloadUrl = `chrome-extension://${EXT_ID}/src/auto/cms-education-auto.html?mode=reload&reportPort=${port}`;
+    console.log(JSON.stringify({ event: 'open_reload', reloadUrl }));
+    openEdge(reloadUrl);
+    await wait(6000);
+  }
+  const autoMode = ['readiness', 'fill'].includes(mode) ? mode : 'readiness';
+  const pageMode = autoMode === 'fill' ? 'internship_fill' : 'internship_readiness';
+  const autoUrl = `chrome-extension://${EXT_ID}/src/auto/cms-education-auto.html?mode=${pageMode}&profileIndex=${profileIndex}&replaceExisting=${replaceExisting ? 1 : 0}&reportPort=${port}`;
+  console.log(JSON.stringify({ event: 'open_auto', autoUrl, mode: autoMode, profileIndex, replaceExisting }));
+  openEdge(autoUrl);
+
+  const { body } = await resultPromise;
+  clearTimeout(timer);
+  const file = path.join(outDir, `cms-internship-auto-${stamp()}.json`);
+  fs.writeFileSync(file, JSON.stringify(body, null, 2), 'utf8');
+  const latest = path.join(outDir, 'internship-latest.json');
+  fs.writeFileSync(latest, JSON.stringify(body, null, 2), 'utf8');
+  console.log(JSON.stringify({
+    event: 'saved',
+    file,
+    latest,
+    ok: body?.ok === true,
+    state: body?.job?.state,
+    reason: body?.reason || body?.job?.reason,
+    helpNeeded: body?.helpNeeded === true,
+    fieldCount: Array.isArray(body?.job?.fields) ? body.job.fields.length : 0
+  }, null, 2));
+  try { server.close(); } catch {}
+  process.exit(body?.ok ? 0 : 2);
+} catch (error) {
+  clearTimeout(timer);
+  const file = path.join(outDir, `cms-internship-auto-${stamp()}-error.json`);
+  const payload = { ok: false, reason: String(error?.message || error), at: new Date().toISOString() };
+  fs.writeFileSync(file, JSON.stringify(payload, null, 2));
+  fs.writeFileSync(path.join(outDir, 'internship-latest.json'), JSON.stringify(payload, null, 2));
+  console.error(JSON.stringify({ event: 'error', file, ...payload }, null, 2));
+  try { server.close(); } catch {}
+  process.exit(1);
+}

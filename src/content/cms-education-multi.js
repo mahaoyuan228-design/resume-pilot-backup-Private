@@ -1,0 +1,1 @@
+globalThis.installResumeCmsRecordController('education');

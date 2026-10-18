@@ -1,0 +1,18 @@
+import assert from 'node:assert/strict';import {spawn} from 'node:child_process';import {mkdtemp,readFile,writeFile} from 'node:fs/promises';import {join,dirname,resolve} from 'node:path';import {fileURLToPath} from 'node:url';import {tmpdir} from 'node:os';import {CdpSession} from './cdp.mjs';
+const home=dirname(fileURLToPath(import.meta.url)),root=resolve(home,'../..'),profile=await mkdtemp(join(tmpdir(),'resume-keycode-cross-world-')),pause=ms=>new Promise(done=>setTimeout(done,ms));let edge,session;const observations=[];
+try{
+ edge=spawn('C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',['--headless=new','--disable-gpu','--disable-background-networking','--no-first-run','--no-default-browser-check','--remote-debugging-port=0','--user-data-dir='+profile,'about:blank'],{windowsHide:true,stdio:'ignore'});
+ let port;for(let i=0;i<120;i++){try{port=Number((await readFile(join(profile,'DevToolsActivePort'),'utf8')).split(/\r?\n/)[0]);}catch{}if(port)break;await pause(80);}assert.ok(port&&port!==9237);
+ const targets=await(await fetch('http://127.0.0.1:'+port+'/json')).json(),target=targets.find(x=>x.type==='page'&&x.url==='about:blank');assert.ok(target);session=new CdpSession(target.webSocketDebuggerUrl);await session.ready;await session.send('Runtime.enable');await session.send('Page.enable');
+ await session.evaluate("document.body.innerHTML='<input id=event-probe>';window.keyObservations=[];document.getElementById('event-probe').addEventListener('keydown',event=>keyObservations.push({key:event.key,keyCode:event.keyCode,which:event.which}));");
+ const frame=(await session.send('Page.getFrameTree')).frameTree.frame.id,context=(await session.send('Page.createIsolatedWorld',{frameId:frame,worldName:'owned-isolated-event-test'})).executionContextId;
+ const dispatch=async expression=>{const reply=await session.send('Runtime.evaluate',{expression,contextId:context,returnByValue:true,awaitPromise:true});assert.ok(!reply.exceptionDetails);return session.evaluate('keyObservations[keyObservations.length-1]');};
+ const legacy=await dispatch("(()=>{const event=new KeyboardEvent('keydown',{key:'Escape',code:'Escape',bubbles:true,cancelable:true});Object.defineProperties(event,{keyCode:{get:()=>27},which:{get:()=>27}});document.getElementById('event-probe').dispatchEvent(event);})()");assert.equal(legacy.keyCode,0);assert.equal(legacy.which,0);observations.push({path:'legacy_school_wrapper_getter',mainKeyCode:legacy.keyCode,mainWhich:legacy.which});
+ for(const name of ['cms-education-multi-school.js','cms-education-multi-select.js','cms-education-multi-region.js']){
+  const source=await readFile(join(root,'src/content',name),'utf8');let expression;
+  if(name.includes('school')){const a=source.indexOf('  function escape(input) {'),b=source.indexOf('\n  function cleanupState',a);expression='(()=>{'+source.slice(a,b)+";escape(document.getElementById('event-probe'));})()";}
+  else{const match=/new KeyboardEvent\('keydown',\{[^\n]*?\}\)/u.exec(source);assert.ok(match);expression="document.getElementById('event-probe').dispatchEvent("+match[0]+')';}
+  const observed=await dispatch(expression);assert.deepEqual(observed,{key:'Escape',keyCode:27,which:27});observations.push({path:name,mainKeyCode:observed.keyCode,mainWhich:observed.which});
+ }
+ const result={status:'PASS',evidence:'actual fresh Edge MAIN listener receives native event from isolated world; not original browser or real site',legacyWrapperGetterRejectedByMain:true,fixedProductConstructors:3,observations,originalBrowserConnections:0,realSiteRequests:0};await writeFile(join(home,'cross-world-keycode-result.json'),JSON.stringify(result,null,2)+'\n',{flag:'wx'});console.log(JSON.stringify(result));
+}finally{session?.close();edge?.kill();}

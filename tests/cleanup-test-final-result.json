@@ -1,0 +1,23 @@
+{
+  "status": "PASS",
+  "evidence": "actual candidate cleanup functions in synthetic VM; not Edge or real site",
+  "sourceSha": "0101466deb265ef12d1e84e2bcb34e747a4a69e54559d445800c150b11679ce7",
+  "groups": [
+    {
+      "name": "owned_escape_closes_without_answer_or_query_edit",
+      "passed": true
+    },
+    {
+      "name": "ambiguous_changed_or_permanent_menu_stops",
+      "passed": true,
+      "rejected": [
+        "unlinked",
+        "wrong-record",
+        "foreign-select",
+        "changed-during-owner-check"
+      ],
+      "permanentBudget": 30
+    }
+  ],
+  "browserActions": 0
+}

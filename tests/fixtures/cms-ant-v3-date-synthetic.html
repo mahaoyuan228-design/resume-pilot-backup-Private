@@ -1,0 +1,320 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <title>虚构招商证券 Ant v3 日期夹具</title>
+  <style>
+    body { font: 15px/1.5 sans-serif; margin: 24px; }
+    .form-cell { border: 1px solid #aaa; margin: 12px 0; padding: 10px; }
+    .ant-form-item { display: flex; gap: 16px; margin: 12px 0; }
+    .ant-form-item-label { width: 160px; }
+    .ant-calendar-picker { display: inline-flex; border: 1px solid #777; padding: 4px; }
+    .ant-calendar-picker-input { border: 0; width: 160px; }
+    .ant-calendar-picker-container { position: absolute; top: 96px; left: 220px;
+      z-index: 30; border: 1px solid #777; background: white; padding: 12px; }
+    .ant-calendar-header { display: flex; gap: 6px; margin-bottom: 8px; }
+    .ant-calendar-date-panel, .ant-calendar-year-panel, .ant-calendar-month-panel {
+      width: 290px; min-height: 120px; }
+    .ant-calendar-body { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; }
+    .ant-calendar-year-panel .ant-calendar-body,
+    .ant-calendar-month-panel .ant-calendar-body { grid-template-columns: repeat(4, 1fr); }
+    .ant-calendar-disabled-cell { opacity: .45; }
+  </style>
+</head>
+<body>
+  <form id="fictional-resume-form">
+    <section class="form-cell">
+      <div class="tit-wrap"><div class="tit">个人基本信息必填</div></div>
+      <div class="form-cell-right"><div class="form-cell-inner">
+        <div class="ant-form-item" id="birth-question">
+          <div class="ant-form-item-label"><label>出生日期*</label></div>
+          <div class="ant-form-item-control-wrapper" id="birth-host"></div>
+        </div>
+      </div></div>
+    </section>
+    <section class="form-cell"><div class="tit-wrap"><div class="tit">自我评价必填</div></div></section>
+    <section class="form-cell">
+      <div class="tit-wrap"><div class="tit">教育经历必填</div></div>
+      <div class="form-cell-right"><div class="form-cell-inner">
+        <div class="ant-form-item"><div class="ant-form-item-label"><label>开始时间*</label></div>
+          <div id="education-start-host"></div></div>
+        <div class="ant-form-item"><div class="ant-form-item-label"><label>结束时间*</label></div>
+          <div id="education-end-host"></div></div>
+      </div></div>
+    </section>
+    <button id="site-save" type="button">网站保存</button>
+    <button id="site-submit" type="submit">网站提交</button>
+  </form>
+  <script>
+  (() => {
+    const state = {
+      birth: { value: '', opens: 0, selections: 0 },
+      start: { value: '', opens: 0, selections: 0 },
+      end: { value: '', opens: 0, selections: 0 }
+    };
+    let current = null;
+    let overlay = null;
+    let openTimer = null;
+    let closeTimer = null;
+    let closeDelay = 320;
+    let openDelay = 45;
+    let ignoreEscape = false;
+    let ignoreBodyClose = false;
+    let disabledTarget = false;
+    let duplicateTarget = false;
+    let titleOnOuterCell = false;
+    let conflictingDateTitles = false;
+    let keepDayBehindPanels = false;
+    let deferPanelTransitions = false;
+    let yearReturnsDay = false;
+    let clearAfterSelection = false;
+    let saves = 0;
+    let submits = 0;
+    let rerenders = 0;
+    let coveredDayClicks = 0;
+    let coveredHeaderClicks = 0;
+    let year = 2026;
+    let month = 10;
+    let decadeStart = 2020;
+    const hosts = {
+      birth: document.getElementById('birth-host'),
+      start: document.getElementById('education-start-host'),
+      end: document.getElementById('education-end-host')
+    };
+    const pad = number => String(number).padStart(2, '0');
+    const visible = node => !!node && node.getClientRects().length > 0
+      && getComputedStyle(node).display !== 'none';
+
+    function close(immediate = false) {
+      clearTimeout(openTimer); openTimer = null;
+      clearTimeout(closeTimer); closeTimer = null;
+      if (!overlay) { current = null; return; }
+      if (immediate || closeDelay === 0) {
+        overlay.remove(); overlay = null; current = null;
+        return;
+      }
+      overlay.classList.add('ant-calendar-picker-container-leaving');
+      closeTimer = setTimeout(() => {
+        overlay?.remove(); overlay = null; current = null; closeTimer = null;
+      }, closeDelay);
+    }
+    function button(cls, title, text, action, disabled = false) {
+      const element = document.createElement('button');
+      element.type = 'button';
+      element.className = cls;
+      element.title = title;
+      element.textContent = text;
+      element.disabled = disabled;
+      if (disabled) element.setAttribute('aria-disabled', 'true');
+      else element.addEventListener('click', action);
+      return element;
+    }
+    function calendarShell(panelClass) {
+      if (keepDayBehindPanels && panelClass !== 'ant-calendar-date-panel') {
+        const day = overlay.querySelector('.ant-calendar-date-panel');
+        const calendar = overlay.querySelector('.ant-calendar');
+        if (day && calendar) {
+          calendar.querySelectorAll('.ant-calendar-year-panel,.ant-calendar-month-panel')
+            .forEach(element => element.remove());
+          const panel = document.createElement('div');
+          panel.className = panelClass;
+          calendar.append(panel);
+          return panel;
+        }
+      }
+      overlay.replaceChildren();
+      const calendar = document.createElement('div');
+      calendar.className = 'ant-calendar ant-calendar-picker';
+      const panel = document.createElement('div');
+      panel.className = panelClass;
+      calendar.append(panel);
+      overlay.append(calendar);
+      return panel;
+    }
+    function renderDay() {
+      if (!overlay) return;
+      const panel = calendarShell('ant-calendar-date-panel');
+      const header = document.createElement('div');
+      header.className = 'ant-calendar-header';
+      header.append(
+        button('ant-calendar-prev-month-btn', '上个月', '‹', () => {
+          month -= 1; if (month < 1) { month = 12; year -= 1; } renderDay();
+        }),
+        button('ant-calendar-year-select', '选择年份', String(year), renderYear),
+        button('ant-calendar-month-select', '选择月份', String(month), () => {
+          if (overlay.querySelector('.ant-calendar-year-panel,.ant-calendar-month-panel'))
+            coveredHeaderClicks += 1;
+          renderMonth();
+        }),
+        button('ant-calendar-next-month-btn', '下个月', '›', () => {
+          month += 1; if (month > 12) { month = 1; year += 1; } renderDay();
+        })
+      );
+      const body = document.createElement('div');
+      body.className = 'ant-calendar-body';
+      const first = new Date(year, month - 1, 1);
+      const dayOffset = (first.getDay() + 6) % 7;
+      for (let index = 0; index < 42; index += 1) {
+        const actual = new Date(year, month - 1, index - dayOffset + 1);
+        const date = `${actual.getFullYear()}-${pad(actual.getMonth() + 1)}-${pad(actual.getDate())}`;
+        const cell = document.createElement('div');
+        const isTarget = date === '2002-04-15' && actual.getMonth() + 1 === month;
+        cell.className = 'ant-calendar-cell'
+          + (actual.getMonth() + 1 === month ? '' : ' ant-calendar-last-month-cell')
+          + (isTarget && disabledTarget ? ' ant-calendar-disabled-cell' : '');
+        const day = button('ant-calendar-date', date, String(actual.getDate()), () => {
+          if (!current) return;
+          if (overlay.querySelector('.ant-calendar-year-panel,.ant-calendar-month-panel'))
+            coveredDayClicks += 1;
+          state[current].value = date;
+          state[current].selections += 1;
+          const selected = current;
+          // Site value changes before the old portal and DOM node disappear.
+          setTimeout(() => {
+            if (clearAfterSelection) state[selected].value = '';
+            renderInput(selected); rerenders += 1;
+          }, 45);
+          close();
+        }, isTarget && disabledTarget);
+        if (titleOnOuterCell) {
+          cell.title = date;
+          day.removeAttribute('title');
+        } else if (conflictingDateTitles && isTarget) {
+          cell.title = '2002-04-16';
+        }
+        cell.append(day); body.append(cell);
+        if (isTarget && duplicateTarget) {
+          const duplicate = cell.cloneNode(true);
+          duplicate.classList.remove('ant-calendar-disabled-cell');
+          duplicate.querySelector('button').disabled = false;
+          duplicate.querySelector('button').removeAttribute('aria-disabled');
+          duplicate.querySelector('button').addEventListener('click', () => {
+            if (!current) return;
+            state[current].value = date;
+            state[current].selections += 1;
+            const selected = current;
+            setTimeout(() => {
+              if (clearAfterSelection) state[selected].value = '';
+              renderInput(selected); rerenders += 1;
+            }, 45);
+            close();
+          });
+          body.append(duplicate);
+        }
+      }
+      panel.append(header, body);
+    }
+    function renderYear() {
+      if (!overlay) return;
+      const panel = calendarShell('ant-calendar-year-panel');
+      const header = document.createElement('div');
+      header.className = 'ant-calendar-header';
+      header.append(
+        button('ant-calendar-year-panel-prev-decade-btn', '上十年', '‹', () => {
+          decadeStart -= 10; renderYear();
+        }),
+        button('ant-calendar-year-panel-next-decade-btn', '下十年', '›', () => {
+          decadeStart += 10; renderYear();
+        })
+      );
+      const body = document.createElement('div');
+      body.className = 'ant-calendar-body';
+      for (let next = decadeStart; next < decadeStart + 10; next += 1) {
+        body.append(button('ant-calendar-year-panel-year', String(next), String(next), () => {
+          year = next;
+          const nextPanel = yearReturnsDay ? renderDay : renderMonth;
+          if (deferPanelTransitions) setTimeout(nextPanel, 120);
+          else nextPanel();
+        }));
+      }
+      panel.append(header, body);
+    }
+    function renderMonth() {
+      if (!overlay) return;
+      const panel = calendarShell('ant-calendar-month-panel');
+      const header = document.createElement('div');
+      header.className = 'ant-calendar-header';
+      header.append(button('ant-calendar-month-panel-year-select', '选择年份', String(year), renderYear));
+      const body = document.createElement('div');
+      body.className = 'ant-calendar-body';
+      for (let next = 1; next <= 12; next += 1) {
+        body.append(button('ant-calendar-month-panel-month', `${year}-${pad(next)}`,
+          `${next}月`, () => {
+            month = next;
+            if (deferPanelTransitions) setTimeout(renderDay, 120);
+            else renderDay();
+          }));
+      }
+      panel.append(header, body);
+    }
+    function renderInput(key) {
+      const picker = document.createElement('span');
+      picker.className = 'ant-calendar-picker';
+      const input = document.createElement('input');
+      input.className = 'ant-calendar-picker-input';
+      input.type = 'text';
+      input.readOnly = true;
+      input.placeholder = key === 'birth' ? '请选择出生日期' : '请选择时间';
+      input.value = state[key].value;
+      const icon = document.createElement('span');
+      icon.className = 'ant-calendar-picker-icon';
+      picker.append(input, icon);
+      hosts[key].replaceChildren(picker);
+      picker.addEventListener('click', () => {
+        close(true);
+        current = key;
+        state[key].opens += 1;
+        year = 2026; month = 10; decadeStart = 2020;
+        openTimer = setTimeout(() => {
+          if (current !== key) return;
+          overlay = document.createElement('div');
+          overlay.className = 'ant-calendar-picker-container';
+          overlay.dataset.field = key;
+          document.body.append(overlay);
+          renderDay();
+          openTimer = null;
+        }, openDelay);
+      });
+    }
+    Object.keys(hosts).forEach(renderInput);
+    document.addEventListener('keydown', event => {
+      if (event.key === 'Escape' && !ignoreEscape) close();
+    });
+    document.body.addEventListener('mousedown', event => {
+      if (event.target === document.body && !ignoreBodyClose) close();
+    });
+    document.getElementById('site-save').addEventListener('click', () => { saves += 1; });
+    document.getElementById('fictional-resume-form').addEventListener('submit', event => {
+      event.preventDefault(); submits += 1;
+    });
+    window.syntheticCmsDate = {
+      snapshot() { return {
+        values: Object.fromEntries(Object.entries(state).map(([key, field]) => [key, field.value])),
+        opens: Object.fromEntries(Object.entries(state).map(([key, field]) => [key, field.opens])),
+        selections: Object.fromEntries(Object.entries(state).map(([key, field]) => [key, field.selections])),
+        portalOpen: visible(overlay), portalLeaving: !!overlay?.classList.contains('ant-calendar-picker-container-leaving'),
+        saves, submits, rerenders, coveredDayClicks, coveredHeaderClicks
+      }; },
+      setExisting(key, value) { close(true); state[key].value = value; renderInput(key); },
+      setDisabledTarget(value) { disabledTarget = !!value; },
+      setDuplicateTarget(value) { duplicateTarget = !!value; },
+      setDayTitleOnOuterCell(value) { titleOnOuterCell = !!value; },
+      setConflictingDateTitles(value) { conflictingDateTitles = !!value; },
+      setOverlaidPanels(value) { keepDayBehindPanels = !!value; },
+      setDeferredPanelTransitions(value) { deferPanelTransitions = !!value; },
+      setYearReturnsDay(value) { yearReturnsDay = !!value; },
+      setClearAfterSelection(value) { clearAfterSelection = !!value; },
+      setCloseDelay(value) { closeDelay = Math.max(0, Number(value) || 0); },
+      setOpenDelay(value) { openDelay = Math.max(0, Number(value) || 0); },
+      setEscapeIgnored(value) { ignoreEscape = !!value; },
+      setBodyCloseIgnored(value) { ignoreBodyClose = !!value; },
+      duplicateBirthQuestion() {
+        const clone = document.getElementById('birth-question').cloneNode(true);
+        clone.id = 'birth-question-duplicate';
+        document.getElementById('birth-question').after(clone);
+      }
+    };
+  })();
+  </script>
+</body>
+</html>

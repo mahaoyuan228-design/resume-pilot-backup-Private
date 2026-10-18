@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>简历快填 · 授权激活</title>
+  <link rel="stylesheet" href="activate.css">
+</head>
+<body>
+  <header class="top">
+    <div class="brand"><span class="brand-mark" aria-hidden="true">✳</span><strong>简历快填 · 授权激活</strong></div>
+    <span class="local-tag">仅本机核验 · 授权版</span>
+  </header>
+
+  <main>
+    <p class="eyebrow">LICENSE</p>
+    <h1>激活本机授权</h1>
+    <p class="intro">将经营者签发的授权令牌粘贴到下方，在本机完成激活。此页<strong>不会</strong>出现在内部试用包中；也<strong>不会</strong>向支付平台提交任何信息。</p>
+
+    <section id="flavor-gate" class="card warn" hidden>
+      <h2>本页不可用</h2>
+      <p id="flavor-gate-msg">当前不是授权版构建，或缺少 paid-config。内部试用请继续使用普通工作流，无需激活。</p>
+    </section>
+
+    <section id="panel" class="card" hidden>
+      <h2>当前状态</h2>
+      <dl class="status-grid" aria-label="授权状态">
+        <div><dt>状态</dt><dd id="st-status">读取中…</dd></div>
+        <div><dt>可否填写</dt><dd id="st-allowed">—</dd></div>
+        <div><dt>许可编号</dt><dd id="st-license">—</dd></div>
+        <div><dt>到期时间</dt><dd id="st-expiry">—</dd></div>
+        <div class="wide"><dt>本机 installId</dt><dd id="st-install" class="mono">—</dd></div>
+      </dl>
+      <p id="st-message" class="status-msg" role="status">正在读取授权状态…</p>
+
+      <h2>粘贴授权令牌</h2>
+      <p class="hint">支持 JSON 文本，或该 JSON 的 Base64 / Base64URL。令牌由经营者签发；此处只做本机保存与核验，不连接支付接口。</p>
+      <label class="token-label" for="token-input">授权令牌</label>
+      <textarea id="token-input" rows="8" spellcheck="false" placeholder='{"status":"active","licenseId":"…","expiresAtMs":…}'></textarea>
+      <div class="actions">
+        <button id="btn-activate" class="button primary" type="button">激活并保存到本机</button>
+        <button id="btn-refresh" class="button secondary" type="button">刷新状态</button>
+        <button id="btn-clear" class="button danger" type="button">清除本机授权</button>
+      </div>
+      <p id="action-msg" class="action-msg" role="status" aria-live="polite"></p>
+    </section>
+
+    <aside class="note">
+      <strong>说明</strong>
+      <p>拒绝原因会显示为中文：尚未激活、许可停用/过期、与本机不匹配、本机撤销、服务暂不可用等。未激活或已失效时<strong>填写路径 fail-closed</strong>（禁止写站）。此页<strong>不连接支付平台</strong>；内部 Edge 试用包（worker.mjs）不含此页。</p>
+    </aside>
+  </main>
+
+  <script type="module" src="activate.js"></script>
+</body>
+</html>

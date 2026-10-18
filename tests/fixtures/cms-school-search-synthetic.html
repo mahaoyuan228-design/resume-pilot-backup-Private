@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <title>虚构学校搜索单问题夹具</title>
+  <style>
+    body { font: 15px sans-serif; margin: 24px; }
+    .ant-select-selection { display: block; width: 230px; min-height: 28px; border: 1px solid #777; }
+    .ant-select-dropdown { display: block; border: 1px solid #777; width: 230px; }
+    .ant-select-dropdown-menu-item-disabled { color: #999; }
+    .ant-select-dropdown-menu-item { padding: 4px; }
+  </style>
+</head>
+<body>
+  <form id="fictional-form">
+    <section class="form-cell">
+      <div class="tit-wrap"><div class="tit">教育经历必填</div></div>
+      <div class="form-cell-right"><div class="form-cell-inner">
+        <div class="ant-form-item" id="school-item">
+          <div class="ant-form-item-label"><label>学校*</label></div>
+          <div class="ant-form-item-control-wrapper" id="school-host"></div>
+        </div>
+      </div></div>
+    </section>
+    <input id="unrelated" value="保留">
+    <button type="button" id="save">保存</button>
+    <button type="submit">提交</button>
+  </form>
+  <script>
+    (() => {
+      const answer = '虚构学院甲';
+      const host = document.getElementById('school-host');
+      const unrelated = document.getElementById('unrelated');
+      const form = document.getElementById('fictional-form');
+      let mode = 'unique';
+      let value = '';
+      let opened = false;
+      let menu = null;
+      let renderTimer = null;
+      let searches = 0;
+      let selections = 0;
+      let submits = 0;
+      let saves = 0;
+      let renders = 0;
+      function close() {
+        if (renderTimer) clearTimeout(renderTimer);
+        renderTimer = null;
+        opened = false;
+        menu?.remove();
+        menu = null;
+        const select = host.querySelector('.ant-select');
+        select?.classList.remove('ant-select-open');
+        const input = select?.querySelector('input');
+        if (input) { input.value = ''; input.style.display = 'none'; }
+      }
+      function options() {
+        if (mode === 'zero') return ['虚构学院乙'];
+        if (mode === 'duplicate') return [answer, answer];
+        if (mode === 'disabled') return [{ text: answer, disabled: true }];
+        if (mode === 'near') return ['虚构学院甲分校'];
+        if(mode==='create'||mode==='create_wrong_readback')return [{text:`使用“${answer}”作为我的学校`,value:answer}];
+        if(mode==='create_wrong_quotes')return [{text:`使用"${answer}"作为我的学校`,value:answer}];
+        if(mode==='create_multiple')return [{text:`使用“${answer}”作为我的学校`,value:answer},`${answer}分校`];
+        return [answer, '虚构学院甲分校'];
+      }
+      function renderMenu(searchValue) {
+        if (!opened) return;
+        menu?.remove();
+        menu = document.createElement('div');
+        menu.className = 'ant-select-dropdown';
+        const list = document.createElement('ul');
+        list.id = 'school-options';
+        list.className = 'ant-select-dropdown-menu';
+        list.setAttribute('role', 'listbox');
+        for (const choice of options()) {
+          const text = typeof choice === 'string' ? choice : choice.text;
+          if (!text.includes(searchValue)) continue;
+          const disabled = typeof choice === 'object' && choice.disabled;
+          const item = document.createElement('li');
+          item.className = 'ant-select-dropdown-menu-item'
+            + (disabled ? ' ant-select-dropdown-menu-item-disabled' : '');
+          item.setAttribute('role', 'option');
+          if (disabled) item.setAttribute('aria-disabled', 'true');
+          item.textContent = text;
+          if (!disabled) item.addEventListener('click', () => {
+            selections += 1;
+            value = typeof choice==='object'&&choice.value&&mode!=='create_wrong_readback'?choice.value:text;
+            close();
+            renderControl();
+          });
+          list.append(item);
+        }
+        menu.append(list);
+        document.body.append(menu);
+        renders += 1;
+      }
+      function renderControl() {
+        const wrap = document.createElement('div');
+        wrap.className = 'ant-select ant-select-enabled';
+        const selection = document.createElement('div');
+        selection.className = 'ant-select-selection ant-select-selection--single';
+        selection.tabIndex = 0;
+        selection.setAttribute('role', 'combobox');
+        selection.setAttribute('aria-controls', 'school-options');
+        const display = document.createElement('div');
+        display.className = value ? 'ant-select-selection-selected-value' : 'ant-select-selection__placeholder';
+        display.textContent = value || '请选择';
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.style.display = opened ? 'block' : 'none';
+        selection.append(display, input);
+        wrap.append(selection);
+        if (opened) wrap.classList.add('ant-select-open');
+        host.replaceChildren(wrap);
+        selection.addEventListener('click', () => {
+          if (opened) return;
+          opened = true;
+          wrap.classList.add('ant-select-open');
+          input.style.display = 'block';
+          input.focus();
+          renderMenu('');
+        });
+        input.addEventListener('input', () => {
+          searches += 1;
+          menu?.setAttribute('aria-busy', 'true');
+          if (renderTimer) clearTimeout(renderTimer);
+          renderTimer = setTimeout(() => {
+            renderTimer = null;
+            const searched = input.value;
+            if (mode === 'rerender') {
+              renderControl();
+              host.querySelector('input').value = searched;
+            }
+            renderMenu(searched);
+          }, mode === 'rerender' ? 180 : 30);
+        });
+        input.addEventListener('keydown', event => {
+          if (event.key === 'Escape' && event.keyCode === 27) close();
+        });
+      }
+      document.body.addEventListener('mousedown', event => {
+        if (event.target === document.body) close();
+      });
+      form.addEventListener('submit', event => { event.preventDefault(); submits += 1; });
+      document.getElementById('save').addEventListener('click', () => { saves += 1; });
+      window.syntheticSchool = {
+        answer,
+        setMode(next) { close(); mode = next; value = ''; renderControl(); },
+        setValue(next) { close(); value = next; renderControl(); },
+        snapshot() { return {
+          mode, selected: value, unrelated: unrelated.value,
+          opened, menuCount: document.querySelectorAll('.ant-select-dropdown').length,
+          inputValue: host.querySelector('input')?.value || '',
+          searches, selections, saves, submits, renders
+        }; }
+      };
+      renderControl();
+    })();
+  </script>
+</body>
+</html>

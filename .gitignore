@@ -1,0 +1,12 @@
+node_modules/
+secrets/
+**/*.pem
+**/resume-paid-ed25519/
+_temp-scripts/
+dist/auto-runs/
+dist/edge-paid-*/
+dist/edge-internal-*/
+dist/*.zip
+*.map
+.DS_Store
+Thumbs.db

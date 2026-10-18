@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <title>虚构招商证券形态空表</title>
+  <style>
+    body { max-width: 850px; margin: 24px auto; font: 15px/1.5 sans-serif; }
+    .form-cell { margin: 18px 0; padding: 12px; border: 1px solid #aaa; }
+    .tit { font-weight: bold; }
+    .ant-form-item { display: flex; align-items: center; gap: 12px; margin: 8px 0; }
+    .ant-form-item-label { width: 210px; }
+    .ant-input, .ant-select-selection { min-width: 230px; min-height: 24px; }
+    .ant-select-selection { display: inline-block; border: 1px solid #999; }
+    .ant-checkbox-wrapper { display: inline-block; width: 95px; }
+  </style>
+</head>
+<body>
+  <h1>完全虚构的招聘空表夹具</h1>
+  <form id="synthetic-form" autocomplete="off">
+    <section class="form-cell">
+      <div class="tit-wrap"><div class="tit">个人基本信息必填</div></div>
+      <div class="form-cell-right"><div class="form-cell-inner">
+        <div class="ant-row ant-form-item"><div class="ant-col ant-form-item-label"><label>姓名*</label></div><div class="ant-col ant-form-item-control-wrapper"><div class="ant-form-item-control"><span class="ant-form-item-children"><input id="basic-name" class="ant-input" type="text" placeholder="手机号"></span></div></div></div>
+        <div class="ant-row ant-form-item"><div class="ant-col ant-form-item-label"><label>证件号码*</label></div><div class="ant-col ant-form-item-control-wrapper"><div class="ant-form-item-control"><span class="ant-form-item-children"><input id="basic-id" class="ant-input" type="text" placeholder="请填写证件号码"></span></div></div></div>
+        <div class="ant-row ant-form-item"><div class="ant-col ant-form-item-label"><label>身高*?</label></div><div class="ant-col ant-form-item-control-wrapper"><div class="ant-form-item-control"><span class="ant-form-item-children"><input id="basic-height" class="ant-input" type="text" placeholder="（单位：cm）"></span></div></div></div>
+        <div class="ant-row ant-form-item"><div class="ant-col ant-form-item-label"><label>移动电话（请填写中国大陆移动电话，以便接收短信通知）*</label></div><div class="ant-col ant-form-item-control-wrapper"><div class="ant-form-item-control"><span class="ant-form-item-children"><input id="basic-phone" class="ant-input" type="text" placeholder="请填写移动电话（请填写中国大陆移动电话，以便接收短信通知）"></span></div></div></div>
+        <div class="ant-row ant-form-item"><div class="ant-col ant-form-item-label"><label>电子邮箱（请尽量使用163、qq等常见邮箱，尽量不要用gmail、hotmail等境外邮箱或学校邮箱）*</label></div><div class="ant-col ant-form-item-control-wrapper"><div class="ant-form-item-control"><span class="ant-form-item-children"><input id="basic-email" class="ant-input" type="text" placeholder="请填写电子邮箱"></span></div></div></div>
+        <div class="ant-row ant-form-item"><div class="ant-col ant-form-item-label"><label>专业名称*</label></div><div class="ant-col ant-form-item-control-wrapper"><div class="ant-form-item-control"><span class="ant-form-item-children"><input id="basic-major" class="ant-input" type="text" placeholder="请填写专业名称"></span></div></div></div>
+        <div class="ant-row ant-form-item"><div class="ant-col ant-form-item-label"><label>出生日期*</label></div><div class="ant-col ant-form-item-control-wrapper"><div class="ant-form-item-control"><span class="ant-form-item-children"><span class="ant-calendar-picker"><input id="basic-birth" class="ant-calendar-picker-input ant-input" type="text" placeholder="请选择出生日期" readonly></span></span></div></div></div>
+        <div class="ant-row ant-form-item"><div class="ant-col ant-form-item-label"><label>毕业时间*?</label></div><div class="ant-col ant-form-item-control-wrapper"><div class="ant-form-item-control"><span class="ant-form-item-children"><span class="ant-calendar-picker"><input id="basic-graduation" class="ant-calendar-picker-input ant-input" type="text" placeholder="请选择毕业时间" readonly></span></span></div></div></div>
+        <div class="ant-row ant-form-item"><div class="ant-col ant-form-item-label"><label>政治面貌*</label></div><div class="ant-col ant-form-item-control-wrapper"><div class="ant-form-item-control"><span class="ant-form-item-children"><div class="ant-select ant-select-enabled"><div id="politics-select" class="ant-select-selection" role="combobox" aria-expanded="false"><span class="ant-select-selection__placeholder">请选择</span></div><input type="search" role="combobox" style="display:none"></div></span></div></div></div>
+        <div class="ant-row ant-form-item"><div class="ant-col ant-form-item-label"><label>现居住地*</label></div><div class="ant-col ant-form-item-control-wrapper"><div class="ant-form-item-control"><span class="ant-form-item-children cascader-plugins-wrap"><span class="ant-select ant-select-enabled"><span id="residence-province" class="ant-select-selection" role="combobox" aria-expanded="false">请选择</span><input type="search" role="combobox" style="display:none"></span><span class="ant-select ant-select-enabled"><span id="residence-city" class="ant-select-selection" role="combobox" aria-expanded="false">请选择</span><input type="search" role="combobox" style="display:none"></span></span></div></div></div>
+        <div class="ant-row ant-form-item"><div class="ant-col ant-form-item-label"><label>照片*</label></div><div class="ant-col ant-form-item-control-wrapper"><div class="ant-form-item-control"><span class="ant-form-item-children"><span class="ant-upload"><input id="basic-photo" type="file" accept="image/*" style="display:none"><span>选择照片</span></span></span></div></div></div>
+      </div></div>
+    </section>
+    <section class="form-cell"><div class="tit-wrap"><div class="tit">自我评价必填</div></div><div class="form-cell-right"><div class="form-cell-inner">
+      <div class="ant-row ant-form-item"><div class="ant-col ant-form-item-label"><label>评价内容*</label></div><div class="ant-col ant-form-item-control-wrapper"><div class="ant-form-item-control"><span class="ant-form-item-children"><textarea id="self-evaluation" class="ant-input" placeholder="请填写评价内容"></textarea></span></div></div></div>
+    </div></div></section>
+    <section class="form-cell"><div class="tit-wrap"><div class="tit">求职意向必填</div></div><div class="form-cell-right"><div class="form-cell-inner">
+      <div class="ant-row ant-form-item"><div class="ant-col ant-form-item-label"><label>期望年薪*</label></div><div class="ant-col ant-form-item-control-wrapper"><div class="ant-form-item-control"><span class="ant-form-item-children"><div class="ant-select ant-select-enabled"><div id="salary-select" class="ant-select-selection" role="combobox" aria-expanded="false"><span class="ant-select-selection__placeholder">请选择</span></div><input type="search" role="combobox" style="display:none"></div></span></div></div></div>
+      <div class="ant-row ant-form-item"><div class="ant-col ant-form-item-label"><label>如应聘研究发展中心行业研究类岗位请勾选（建议仅勾选3~5项）*</label></div><div class="ant-col ant-form-item-control-wrapper"><div class="ant-form-item-control"><span id="industry-options" class="ant-form-item-children"></span></div></div></div>
+    </div></div></section>
+    <section class="form-cell"><div class="tit-wrap"><div class="tit">教育经历必填</div></div><div class="form-cell-right"><div class="form-cell-inner">
+      <div class="ant-row ant-form-item"><div class="ant-col ant-form-item-label"><label>开始时间*</label></div><div class="ant-col ant-form-item-control-wrapper"><div class="ant-form-item-control"><span class="ant-form-item-children"><span class="ant-calendar-picker"><input id="education-start" class="ant-calendar-picker-input ant-input" type="text" placeholder="请选择开始时间" readonly></span></span></div></div></div>
+      <div class="ant-row ant-form-item"><div class="ant-col ant-form-item-label"><label>结束时间*</label></div><div class="ant-col ant-form-item-control-wrapper"><div class="ant-form-item-control"><span class="ant-form-item-children"><span class="ant-calendar-picker"><input id="education-end" class="ant-calendar-picker-input ant-input" type="text" placeholder="请选择结束时间" readonly></span></span></div></div></div>
+      <div class="ant-row ant-form-item"><div class="ant-col ant-form-item-label"><label>专业名称*</label></div><div class="ant-col ant-form-item-control-wrapper"><div class="ant-form-item-control"><span class="ant-form-item-children"><input id="education-major" class="ant-input" type="text" placeholder="请填写专业名称"></span></div></div></div>
+    </div><div class="add-more">+ 添加教育经历</div></div></section>
+    <section class="form-cell"><div class="tit-wrap"><div class="tit">个人照片必填</div></div><div class="form-cell-right"><div class="form-cell-inner">
+      <div class="ant-row ant-form-item" style="display:none"><div class="ant-col ant-form-item-label"><label>个人照片*</label></div><div class="ant-col ant-form-item-control-wrapper"><div class="ant-form-item-control"><span class="ant-form-item-children"><span class="ant-upload"><input id="portrait-photo" type="file" accept="image/*" style="display:none"><span>上传照片</span></span></span></div></div></div>
+    </div></div></section>
+    <button id="site-submit" type="submit">网站提交</button>
+  </form>
+  <script>
+    (() => {
+      const options = document.getElementById('industry-options');
+      for (let index = 1; index <= 32; index += 1) {
+        const label = document.createElement('label');
+        label.className = 'ant-checkbox-wrapper';
+        const input = document.createElement('input');
+        input.type = 'checkbox';
+        input.className = 'ant-checkbox-input';
+        label.append(input, document.createTextNode('虚构行业' + String(index).padStart(2, '0')));
+        options.append(label);
+      }
+      let submits = 0;
+      let unsupportedEvents = 0;
+      const unsupportedItems = new Set(['politics-select', 'residence-province',
+        'basic-photo', 'salary-select', 'industry-options', 'portrait-photo']
+        .map(id => document.getElementById(id).closest('.ant-form-item')));
+      for (const type of ['click', 'input', 'change']) {
+        document.getElementById('synthetic-form').addEventListener(type, event => {
+          if (unsupportedItems.has(event.target.closest('.ant-form-item'))) unsupportedEvents += 1;
+        }, true);
+      }
+      document.getElementById('synthetic-form').addEventListener('submit', event => {
+        event.preventDefault();
+        submits += 1;
+      });
+      window.syntheticCmsFixture = {
+        setDateReadOnly(value) {
+          for (const id of ['basic-birth', 'basic-graduation', 'education-start', 'education-end']) {
+            document.getElementById(id).readOnly = value;
+          }
+        },
+        addSecondEducationRow() {
+          const first = document.getElementById('education-major').closest('.form-cell-inner');
+          const second = first.cloneNode(true);
+          second.querySelectorAll('input[id]').forEach(input => { input.id += '-1'; });
+          first.after(second);
+        },
+        snapshot() {
+          const ids = ['basic-name', 'basic-id', 'basic-height', 'basic-phone', 'basic-email',
+            'basic-major', 'basic-birth', 'basic-graduation', 'self-evaluation',
+            'education-start', 'education-end', 'education-major'];
+          if (document.getElementById('education-major-1')) {
+            ids.push('education-start-1', 'education-end-1', 'education-major-1');
+          }
+          const values = Object.fromEntries(ids.map(id => [id, document.getElementById(id).value]));
+          return { values, checkedIndustryOptions: options.querySelectorAll('input:checked').length,
+            industryOptionCount: options.querySelectorAll('input').length,
+            selectedFileCount: [...document.querySelectorAll('input[type="file"]')]
+              .filter(input => input.files.length).length,
+            unsupportedEvents,
+            selectChanged: ['politics-select', 'salary-select', 'residence-province', 'residence-city'].some(id => {
+              const selection = document.getElementById(id);
+              const search = selection.parentElement.querySelector('input[type="search"]');
+              return selection.getAttribute('aria-expanded') === 'true'
+                || selection.textContent.trim() !== '请选择' || !!search.value;
+            }), submits };
+        }
+      };
+    })();
+  </script>
+</body>
+</html>

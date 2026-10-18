@@ -1,0 +1,404 @@
+{
+  "status": "PROBE_COMPLETED",
+  "cases": [
+    {
+      "name": "A-baseline-focused",
+      "before": {
+        "hasFocus": true,
+        "visible": "visible",
+        "activeTag": "BODY"
+      },
+      "afterFocus": {
+        "hasFocus": true,
+        "visible": "visible",
+        "activeTag": "INPUT",
+        "activeIsInput": true
+      },
+      "afterBlur": {
+        "hasFocus": true,
+        "visible": "visible",
+        "activeTag": "BODY",
+        "activeIsInput": false
+      },
+      "events": [
+        {
+          "type": "focus",
+          "trusted": true,
+          "hasFocus": true,
+          "visible": "visible",
+          "activeTag": "INPUT"
+        },
+        {
+          "type": "focusin",
+          "trusted": true,
+          "hasFocus": true,
+          "visible": "visible",
+          "activeTag": "INPUT"
+        },
+        {
+          "type": "input",
+          "trusted": false,
+          "hasFocus": true,
+          "visible": "visible",
+          "activeTag": "INPUT"
+        },
+        {
+          "type": "change",
+          "trusted": false,
+          "hasFocus": true,
+          "visible": "visible",
+          "activeTag": "INPUT"
+        },
+        {
+          "type": "blur",
+          "trusted": true,
+          "hasFocus": true,
+          "visible": "visible",
+          "activeTag": "BODY"
+        },
+        {
+          "type": "focusout",
+          "trusted": true,
+          "hasFocus": true,
+          "visible": "visible",
+          "activeTag": "BODY"
+        }
+      ],
+      "nativeFocusBlurFocusout": [
+        {
+          "type": "focus",
+          "seen": true,
+          "trusted": true
+        },
+        {
+          "type": "blur",
+          "seen": true,
+          "trusted": true
+        },
+        {
+          "type": "focusout",
+          "seen": true,
+          "trusted": true
+        }
+      ],
+      "parent": "new-confirmed-major-value-forty-two-chars!!",
+      "local": "new-confirmed-major-value-forty-two-chars!!",
+      "dom": "new-confirmed-major-value-forty-two-chars!!",
+      "desired": "new-confirmed-major-value-forty-two-chars!!",
+      "adapterWouldPassDom": true,
+      "parentCommitted": true,
+      "fillLegal": true
+    },
+    {
+      "name": "B-other-window-activated",
+      "before": {
+        "hasFocus": true,
+        "visible": "visible",
+        "activeTag": "BODY"
+      },
+      "afterFocus": {
+        "hasFocus": true,
+        "visible": "visible",
+        "activeTag": "INPUT",
+        "activeIsInput": true
+      },
+      "afterBlur": {
+        "hasFocus": true,
+        "visible": "visible",
+        "activeTag": "BODY",
+        "activeIsInput": false
+      },
+      "events": [
+        {
+          "type": "focus",
+          "trusted": true,
+          "hasFocus": true,
+          "visible": "visible",
+          "activeTag": "INPUT"
+        },
+        {
+          "type": "focusin",
+          "trusted": true,
+          "hasFocus": true,
+          "visible": "visible",
+          "activeTag": "INPUT"
+        },
+        {
+          "type": "input",
+          "trusted": false,
+          "hasFocus": true,
+          "visible": "visible",
+          "activeTag": "INPUT"
+        },
+        {
+          "type": "change",
+          "trusted": false,
+          "hasFocus": true,
+          "visible": "visible",
+          "activeTag": "INPUT"
+        },
+        {
+          "type": "blur",
+          "trusted": true,
+          "hasFocus": true,
+          "visible": "visible",
+          "activeTag": "BODY"
+        },
+        {
+          "type": "focusout",
+          "trusted": true,
+          "hasFocus": true,
+          "visible": "visible",
+          "activeTag": "BODY"
+        }
+      ],
+      "nativeFocusBlurFocusout": [
+        {
+          "type": "focus",
+          "seen": true,
+          "trusted": true
+        },
+        {
+          "type": "blur",
+          "seen": true,
+          "trusted": true
+        },
+        {
+          "type": "focusout",
+          "seen": true,
+          "trusted": true
+        }
+      ],
+      "parent": "new-confirmed-major-value-forty-two-chars!!",
+      "local": "new-confirmed-major-value-forty-two-chars!!",
+      "dom": "new-confirmed-major-value-forty-two-chars!!",
+      "desired": "new-confirmed-major-value-forty-two-chars!!",
+      "adapterWouldPassDom": true,
+      "parentCommitted": true,
+      "fillLegal": true
+    },
+    {
+      "name": "C-activate-thief-after-site-front",
+      "before": {
+        "hasFocus": true,
+        "visible": "visible",
+        "activeTag": "BODY"
+      },
+      "afterFocus": {
+        "hasFocus": true,
+        "visible": "visible",
+        "activeTag": "INPUT",
+        "activeIsInput": true
+      },
+      "afterBlur": {
+        "hasFocus": true,
+        "visible": "visible",
+        "activeTag": "BODY",
+        "activeIsInput": false
+      },
+      "events": [
+        {
+          "type": "focus",
+          "trusted": true,
+          "hasFocus": true,
+          "visible": "visible",
+          "activeTag": "INPUT"
+        },
+        {
+          "type": "focusin",
+          "trusted": true,
+          "hasFocus": true,
+          "visible": "visible",
+          "activeTag": "INPUT"
+        },
+        {
+          "type": "input",
+          "trusted": false,
+          "hasFocus": true,
+          "visible": "visible",
+          "activeTag": "INPUT"
+        },
+        {
+          "type": "change",
+          "trusted": false,
+          "hasFocus": true,
+          "visible": "visible",
+          "activeTag": "INPUT"
+        },
+        {
+          "type": "blur",
+          "trusted": true,
+          "hasFocus": true,
+          "visible": "visible",
+          "activeTag": "BODY"
+        },
+        {
+          "type": "focusout",
+          "trusted": true,
+          "hasFocus": true,
+          "visible": "visible",
+          "activeTag": "BODY"
+        }
+      ],
+      "nativeFocusBlurFocusout": [
+        {
+          "type": "focus",
+          "seen": true,
+          "trusted": true
+        },
+        {
+          "type": "blur",
+          "seen": true,
+          "trusted": true
+        },
+        {
+          "type": "focusout",
+          "seen": true,
+          "trusted": true
+        }
+      ],
+      "parent": "new-confirmed-major-value-forty-two-chars!!",
+      "local": "new-confirmed-major-value-forty-two-chars!!",
+      "dom": "new-confirmed-major-value-forty-two-chars!!",
+      "desired": "new-confirmed-major-value-forty-two-chars!!",
+      "adapterWouldPassDom": true,
+      "parentCommitted": true,
+      "fillLegal": true
+    },
+    {
+      "name": "D-window-bounds-thief-focus",
+      "before": {
+        "hasFocus": true,
+        "visible": "visible",
+        "activeTag": "BODY"
+      },
+      "afterFocus": {
+        "hasFocus": true,
+        "visible": "visible",
+        "activeTag": "INPUT",
+        "activeIsInput": true
+      },
+      "afterBlur": {
+        "hasFocus": true,
+        "visible": "visible",
+        "activeTag": "BODY",
+        "activeIsInput": false
+      },
+      "events": [
+        {
+          "type": "focus",
+          "trusted": true,
+          "hasFocus": true,
+          "visible": "visible",
+          "activeTag": "INPUT"
+        },
+        {
+          "type": "focusin",
+          "trusted": true,
+          "hasFocus": true,
+          "visible": "visible",
+          "activeTag": "INPUT"
+        },
+        {
+          "type": "input",
+          "trusted": false,
+          "hasFocus": true,
+          "visible": "visible",
+          "activeTag": "INPUT"
+        },
+        {
+          "type": "change",
+          "trusted": false,
+          "hasFocus": true,
+          "visible": "visible",
+          "activeTag": "INPUT"
+        },
+        {
+          "type": "blur",
+          "trusted": true,
+          "hasFocus": true,
+          "visible": "visible",
+          "activeTag": "BODY"
+        },
+        {
+          "type": "focusout",
+          "trusted": true,
+          "hasFocus": true,
+          "visible": "visible",
+          "activeTag": "BODY"
+        }
+      ],
+      "nativeFocusBlurFocusout": [
+        {
+          "type": "focus",
+          "seen": true,
+          "trusted": true
+        },
+        {
+          "type": "blur",
+          "seen": true,
+          "trusted": true
+        },
+        {
+          "type": "focusout",
+          "seen": true,
+          "trusted": true
+        }
+      ],
+      "parent": "new-confirmed-major-value-forty-two-chars!!",
+      "local": "new-confirmed-major-value-forty-two-chars!!",
+      "dom": "new-confirmed-major-value-forty-two-chars!!",
+      "desired": "new-confirmed-major-value-forty-two-chars!!",
+      "adapterWouldPassDom": true,
+      "parentCommitted": true,
+      "fillLegal": true
+    }
+  ],
+  "notes": [
+    {
+      "step": "thief-window-activated",
+      "hasFocus": true,
+      "visible": "visible",
+      "thiefId": "353F8826683C72B15966702C65CC21B0",
+      "siteTargetId": "88202BC8BB45F1E83D844622EC938D4B"
+    },
+    {
+      "step": "site-front-then-activate-thief-only",
+      "hasFocus": true,
+      "visible": "visible"
+    },
+    {
+      "step": "windows",
+      "siteWin": {
+        "windowId": 567380797,
+        "bounds": {
+          "left": 20,
+          "top": 20,
+          "width": 780,
+          "height": 580,
+          "windowState": "normal"
+        }
+      },
+      "thiefWin": {
+        "windowId": 567380799,
+        "bounds": {
+          "left": 30,
+          "top": 30,
+          "width": 780,
+          "height": 580,
+          "windowState": "normal"
+        }
+      }
+    },
+    {
+      "step": "setWindowBounds-thief-focus",
+      "hasFocus": true,
+      "visible": "visible"
+    }
+  ],
+  "chromeVersion": "Chrome/155.0.8059.84",
+  "achievedHasFocusFalseWhileVisible": false,
+  "silentActiveElementCases": [],
+  "interpretation": "Did not achieve hasFocus=false while visible=visible on headless Chrome. Silent activeElement-without-events observed only when also hidden (if any). Real Edge: focus another OS window while CMS tab stays selected and visible.",
+  "probeSha256": "5e1cd6ddb7541925ca6824d596f2614b0ae52cad5518ba6a2fd4ff4b2cad4695"
+}

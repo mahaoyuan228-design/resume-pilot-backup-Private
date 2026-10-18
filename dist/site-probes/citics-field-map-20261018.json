@@ -1,0 +1,240 @@
+{
+  "date": "2026-10-18",
+  "timezone": "Asia/Shanghai",
+  "probeMethod": "Edge CDP 9237 Runtime.evaluate (read-only; never Save)",
+  "page": {
+    "url": "https://careers.citics.com/my/jl?resumeType=0&type=edit&name=xiaozhao-cn",
+    "title": "完善简历-总部校园招聘",
+    "loggedIn": true,
+    "framework": "Vue SPA + Ant Design Vue (ant-form-item); 网易易盾 captcha scripts present",
+    "notHotjob": true
+  },
+  "counts": {
+    "inputs": 157,
+    "textareas": 10,
+    "selects": 0,
+    "buttons": 16,
+    "antFormItems": 159,
+    "uniqueLabeledFieldsApprox": 78,
+    "label.ant-form-item-required": 109
+  },
+  "sections": [
+    "个人信息",
+    "联系方式",
+    "教育经历",
+    "工作/实习经历",
+    "证书/技能",
+    "语言",
+    "家庭信息",
+    "其他信息",
+    "其他个人情况",
+    "个人声明",
+    "公司声明"
+  ],
+  "personalInfoFields": [
+    {
+      "label": "姓",
+      "required": true,
+      "control": "text"
+    },
+    {
+      "label": "名",
+      "required": true,
+      "control": "text"
+    },
+    {
+      "label": "姓（拼音）",
+      "required": true,
+      "control": "text"
+    },
+    {
+      "label": "名（拼音）",
+      "required": true,
+      "control": "text"
+    },
+    {
+      "label": "国籍（国家或地区）",
+      "required": true,
+      "control": "ant-select"
+    },
+    {
+      "label": "证件类型",
+      "required": true,
+      "control": "ant-select"
+    },
+    {
+      "label": "证件号码",
+      "required": true,
+      "control": "text"
+    },
+    {
+      "label": "性别",
+      "required": true,
+      "control": "ant-radio"
+    },
+    {
+      "label": "出生日期",
+      "required": true,
+      "control": "ant-date"
+    },
+    {
+      "label": "民族",
+      "required": true,
+      "control": "ant-select"
+    },
+    {
+      "label": "婚姻状况",
+      "required": true,
+      "control": "ant-select"
+    },
+    {
+      "label": "政治面貌",
+      "required": true,
+      "control": "ant-select"
+    },
+    {
+      "label": "籍贯",
+      "required": true,
+      "control": "ant-select"
+    },
+    {
+      "label": "联系地址",
+      "required": true,
+      "control": "text"
+    },
+    {
+      "label": "邮编",
+      "required": true,
+      "control": "text"
+    },
+    {
+      "label": "现户口所在地",
+      "required": true,
+      "control": "ant-select"
+    },
+    {
+      "label": "生源地",
+      "required": true,
+      "control": "ant-select"
+    },
+    {
+      "label": "户口类型",
+      "required": true,
+      "control": "ant-select"
+    },
+    {
+      "label": "是否同意部门/岗位调配",
+      "required": true,
+      "control": "ant-radio"
+    }
+  ],
+  "contactFields": [
+    {
+      "label": "手机",
+      "required": true,
+      "control": "text"
+    },
+    {
+      "label": "电子邮箱",
+      "required": true,
+      "control": "text"
+    },
+    {
+      "label": "确认邮箱",
+      "required": true,
+      "control": "text"
+    },
+    {
+      "label": "微信",
+      "required": false,
+      "control": "text"
+    },
+    {
+      "label": "紧急联系人",
+      "required": true,
+      "control": "text"
+    },
+    {
+      "label": "紧急联系人手机",
+      "required": true,
+      "control": "text"
+    }
+  ],
+  "minClosedLoopPropose": {
+    "section": "个人信息 + 联系方式（切片）",
+    "fields": [
+      {
+        "label": "姓",
+        "control": "text",
+        "why": "必填纯文本，最易读回"
+      },
+      {
+        "label": "名",
+        "control": "text",
+        "why": "必填纯文本"
+      },
+      {
+        "label": "证件号码",
+        "control": "text",
+        "why": "必填纯文本；证件类型可先沿用页上已选"
+      },
+      {
+        "label": "手机",
+        "control": "text",
+        "why": "联系方式必填文本"
+      },
+      {
+        "label": "电子邮箱",
+        "control": "text",
+        "why": "必填文本"
+      },
+      {
+        "label": "确认邮箱",
+        "control": "text",
+        "why": "必填；与邮箱同值即可验证写后读回"
+      },
+      {
+        "label": "性别",
+        "control": "ant-radio",
+        "why": "第一个非文本控件，验证 Ant Radio 路径"
+      },
+      {
+        "label": "出生日期",
+        "control": "ant-date",
+        "why": "可选第 8 项；日期控件单独适配"
+      }
+    ],
+    "explicitlyExcluded": [
+      "不点击保存/提交/暂存",
+      "不触发易盾验证码流程",
+      "不上传头像/附件解析",
+      "不写教育/实习等后续分区"
+    ],
+    "successCriteria": "上述 5～8 项 fill → DOM 读回一致；页面无 Save；CMS/GTH 回归仍绿"
+  },
+  "otherRequiredLabelSample": [
+    "学历/学位",
+    "学校名称",
+    "院系（中文）",
+    "专业类型",
+    "培养方式",
+    "学制",
+    "开始时间",
+    "取得毕业证时间",
+    "平均学分成绩（GPA）",
+    "单位名称",
+    "是否是中信证券实习",
+    "部门",
+    "岗位",
+    "有无通过的证券从业资格考试",
+    "TOEFL",
+    "IELTS",
+    "四级",
+    "六级",
+    "是否有亲属在本公司任职"
+  ],
+  "saveButtonsSeen": [
+    "提交使用问题反馈"
+  ],
+  "note": "Probe did not click any save. Session was already on edit page."
+}

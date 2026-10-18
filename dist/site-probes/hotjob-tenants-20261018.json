@@ -1,0 +1,99 @@
+{
+  "date": "2026-10-18",
+  "timezone": "Asia/Shanghai",
+  "purpose": "hotjob/wecruit reuse candidates — NOT claimed as supported",
+  "host_pattern": "https://wecruit.hotjob.cn/SU*/…",
+  "reuse_hypothesis": "Same SPA shell as CMS (招商); fill engine may reuse after whitelist + SU path checks; must verify resumeOperation.html shape per tenant before any support claim.",
+  "candidate_count_excluding_baseline": 11,
+  "tenants": [
+    {
+      "company": "招商证券",
+      "su_id": "SU629dbc0c0dcad452299bc0f7",
+      "evidence_url": "https://wecruit.hotjob.cn/SU629dbc0c0dcad452299bc0f7/pb/resumeOperation.html",
+      "confidence": "baseline",
+      "notes": "现网已支持 CMS 基线；CDP 试用 Edge 仍开着简历编辑页。不算扩站候选，作对照。"
+    },
+    {
+      "company": "中联重科",
+      "su_id": "SU661f37091eb8053acd6cdf3d",
+      "evidence_url": "https://wecruit.hotjob.cn/SU661f37091eb8053acd6cdf3d/mc/index",
+      "confidence": "high",
+      "notes": "公开校招门户标题即「中联重科校园招聘」；CDN 路径含 zoomlion。"
+    },
+    {
+      "company": "隆基绿能（LONGI）",
+      "su_id": "SU649d30920dcad4644b43e39b",
+      "evidence_url": "https://wecruit.hotjob.cn/SU649d30920dcad4644b43e39b/mc/position/campus",
+      "confidence": "high",
+      "notes": "职位页 CDN 资源路径含 /oline/LONGI/；另有 longi.hotjob.cn 入口，同属 hotjob 族。"
+    },
+    {
+      "company": "欧普照明",
+      "su_id": "SU646ed9920dcad45af14821b4",
+      "evidence_url": "https://wecruit.hotjob.cn/SU646ed9920dcad45af14821b4/mc/position/campus",
+      "confidence": "high",
+      "notes": "职位列表展示「欧普照明股份有限公司」岗位名。"
+    },
+    {
+      "company": "海天味业",
+      "su_id": "SU6322ee8c0dcad46a862dcbe5",
+      "evidence_url": "https://wecruit.hotjob.cn/SU6322ee8c0dcad46a862dcbe5/mc/position/campus",
+      "confidence": "high",
+      "notes": "高校就业网内推链接指向该 SU；文案为海天味业 2026 届校招。"
+    },
+    {
+      "company": "中国信息通信研究院",
+      "su_id": "SU642fbf5fbef57c1e269fa798",
+      "evidence_url": "https://wecruit.hotjob.cn/SU642fbf5fbef57c1e269fa798/pb/index.html",
+      "confidence": "high",
+      "notes": "门户标题「中国信通院招聘」；页面正文为信通院校招「智定者」计划。"
+    },
+    {
+      "company": "台积电（南京）",
+      "su_id": "SU61075bbabef57c43d825d671",
+      "evidence_url": "https://wecruit.hotjob.cn/SU61075bbabef57c43d825d671/mc/position/campus",
+      "confidence": "high",
+      "notes": "职位列表岗位归属「台积电（南京）有限公司」。"
+    },
+    {
+      "company": "TCL茂佳科技",
+      "su_id": "SU6491506a2f9d24316e91b81b",
+      "evidence_url": "https://wecruit.hotjob.cn/SU6491506a2f9d24316e91b81b/mc/position/campus",
+      "confidence": "high",
+      "notes": "职位列表明确标注 TCL茂佳科技 27 届岗位。"
+    },
+    {
+      "company": "上海宇量昇科技",
+      "su_id": "SU63847447bef57c649c3505b5",
+      "evidence_url": "https://wecruit.hotjob.cn/SU63847447bef57c649c3505b5/mc/position/campus",
+      "confidence": "high",
+      "notes": "高校就业网「应聘网址」直链该 SU；公司名上海宇量昇。"
+    },
+    {
+      "company": "哈尔滨锅炉厂（哈锅）",
+      "su_id": "SU65f3a7421eb8054100a07870",
+      "evidence_url": "https://wecruit.hotjob.cn/SU65f3a7421eb8054100a07870/mc/index",
+      "confidence": "high",
+      "notes": "门户标题「哈锅2027校园招聘」；正文为哈尔滨锅炉厂。"
+    },
+    {
+      "company": "地平线（Horizon）",
+      "su_id": "SU62d915040dcad43c775ec12c",
+      "evidence_url": "https://wecruit.hotjob.cn/SU62d915040dcad43c775ec12c/mc/position/campus",
+      "confidence": "high",
+      "notes": "第三方校招站将同名「AI芯片Linux/Android平台软件工程师」岗位归属北京地平线，并给出该 SU 投递链。另有 horizon-campus.hotjob.cn 入口，同属 hotjob 族。"
+    },
+    {
+      "company": "中联重科 / 中科云谷（社招租户）",
+      "su_id": "SU60a6449a2f9d2430fdc11a19",
+      "evidence_url": "https://wecruit.hotjob.cn/SU60a6449a2f9d2430fdc11a19/pb/social.html",
+      "confidence": "medium",
+      "notes": "社招页公司列为中科云谷等；与校招 SU661f… 不同租户，复用时需单独验证简历编辑路径。"
+    }
+  ],
+  "source_notes": [
+    "Public campus pages + university job boards + CDN path tokens (LONGI/zoomlion).",
+    "SPA shells return little static HTML; company identity from page titles, job company fields, or third-party announcements linking the SU.",
+    "Do not claim supported. No payment/HTTPS inventions."
+  ]
+}

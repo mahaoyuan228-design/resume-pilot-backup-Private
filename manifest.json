@@ -1,0 +1,24 @@
+{
+  "manifest_version": 3,
+  "name": "简历快填 · 试用版",
+  "version": "0.1.4.9",
+  "description": "在你打开的招聘页面中识别字段，使用已核对的本机资料填写并逐项读回。",
+  "permissions": [
+    "activeTab",
+    "scripting",
+    "storage"
+  ],
+  "host_permissions": [
+    "https://hr.gtht.com/*",
+    "https://wecruit.hotjob.cn/*"
+  ],
+  "background": {
+    "service_worker": "src/background/worker.mjs",
+    "type": "module"
+  },
+  "action": {
+    "default_title": "简历快填",
+    "default_popup": "src/popup/popup.html"
+  },
+  "options_page": "src/profile/options.html"
+}

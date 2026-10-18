@@ -1,0 +1,60 @@
+// Candidate-only normal profile UI. A disposable Edge profile, never 9237.
+import assert from 'node:assert/strict';
+import {spawn} from 'node:child_process';
+import {mkdtemp,readFile,writeFile} from 'node:fs/promises';
+import {tmpdir} from 'node:os';
+import {join,resolve} from 'node:path';
+import {connectPage,navigate} from './cdp.mjs';
+import {emptyProfile} from '../../src/profile/store.js';
+const root=await mkdtemp(join(tmpdir(),'resume-profile-lifecycle-ui-')),home=join(root,'edge'),extension=resolve(process.argv[2]);
+const source=emptyProfile();source.fullName='SYNTHETIC A';source.education=[{school:'SYNTHETIC SCHOOL',degree:'本科',major:'SYNTHETIC MAJOR',startDate:'2018-09',endDate:'2022-06'}];
+const inputFile=join(root,'input.json');await writeFile(inputFile,JSON.stringify(source));
+const edge=spawn('C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',['--headless=new','--disable-gpu','--disable-background-networking','--no-first-run','--no-default-browser-check',`--user-data-dir=${home}`,'--remote-debugging-port=0',`--disable-extensions-except=${extension}`,`--load-extension=${extension}`,'about:blank'],{windowsHide:true,stdio:'ignore'});
+const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));let session;
+try{
+  let port,id;for(let i=0;i<120;i++){try{port=Number((await readFile(join(home,'DevToolsActivePort'),'utf8')).split(/\r?\n/)[0]);
+    const entries=JSON.parse(await readFile(join(home,'Default','Secure Preferences'),'utf8')).extensions?.settings||{};
+    id=Object.entries(entries).find(([,v])=>v.path&&resolve(v.path).toLowerCase()===extension.toLowerCase())?.[0];if(port&&id)break;}catch{}await sleep(100);}
+  assert.ok(port&&id);assert.notEqual(port,9237);({session}=await connectPage(port,t=>t.url==='about:blank'));
+  const errors=[];session.on('Runtime.exceptionThrown',()=>errors.push('page_exception'));
+  session.on('Page.javascriptDialogOpening',event=>{const ok=event.type==='confirm'&&/^(导入会替换当前资料|导出的 JSON|确定删除此浏览器中的全部简历资料)/u.test(event.message);
+    if(!ok)errors.push('unexpected_dialog');session.send('Page.handleJavaScriptDialog',{accept:ok}).catch(()=>errors.push('dialog_failure'));});
+  const evaluate=expression=>session.evaluate(expression,{timeoutMs:7000});
+  const wait=async expression=>{for(let i=0;i<120;i++){if(await evaluate(expression))return;await sleep(60);}throw Error('profile_ui_timeout');};
+  const click=selector=>evaluate(`(()=>{document.querySelector(${JSON.stringify(selector)}).click();return true;})()`);
+  const fill=(selector,value)=>evaluate(`(()=>{const n=document.querySelector(${JSON.stringify(selector)});n.value=${JSON.stringify(value)};n.dispatchEvent(new Event('input',{bubbles:true}));n.dispatchEvent(new Event('change',{bubbles:true}));})()`);
+  const read=()=>evaluate('chrome.storage.local.get(null)');
+  const importFile=async path=>{await session.send('DOM.enable');const {root}=await session.send('DOM.getDocument',{depth:1});const {nodeId}=await session.send('DOM.querySelector',{nodeId:root.nodeId,selector:'#import-file'});await session.send('DOM.setFileInputFiles',{nodeId,files:[path]});};
+  await navigate(session,`chrome-extension://${id}/src/profile/options.html`);await wait("document.querySelectorAll('[data-section]').length===8");
+  assert.equal((await read()).resumeProfileLifecycle,undefined,'opening does not create epoch');
+  await importFile(inputFile);await wait("document.getElementById('toast').textContent.startsWith('导入完成')");
+  await click('[data-section="education"]');await wait("document.getElementById('cms-education-site-0-academicDegree')");
+  await click('#review-check');await click('#confirm-button');await wait("document.getElementById('toast').textContent.includes('本页资料已确认')");
+  await wait("document.getElementById('cms-education-site-0-academicDegree')");
+  const stem='#cms-education-site-0-';
+  for(const [key,value]of Object.entries({academicDegree:'学士',province:'SYNTHETIC PROVINCE',city:'SYNTHETIC CITY',startDate:'2018-09-18',endDate:'2022-06-28'}))await fill(stem+key,value);
+  await click(stem+'checked');await click('[data-cms-site-save="0"]');await wait("document.getElementById('cms-education-site-0-message').textContent.includes('已核对')");
+  let stored=await read();assert.equal(stored.resumeEducationSiteFacts.entries.length,4);const epochA=stored.resumeProfileLifecycle.epoch;
+  await evaluate('(()=>{const original=URL.createObjectURL;URL.createObjectURL=blob=>{window.__backupBlob=blob;return original(blob);};})()');
+  await click('#export-button');await wait('window.__backupBlob');const backup=JSON.parse(await evaluate('window.__backupBlob.text()'));
+  assert.equal(backup.version,2);assert.equal(backup.educationSiteFacts.entries.length,4);assert.equal(backup.profile.confirmedFields.length,5);
+  const backupFile=join(root,'backup-v2.json');await writeFile(backupFile,JSON.stringify(backup));
+  const altered=structuredClone(backup);altered.profile.fullName='SYNTHETIC CORRUPTED';const badFile=join(root,'invalid-v2.json');await writeFile(badFile,JSON.stringify(altered));
+  await importFile(badFile);await wait("document.getElementById('toast').textContent.startsWith('导入失败')");
+  assert.equal((await read()).resumeProfileLifecycle.epoch,epochA,'bad fingerprint never mutates epoch/profile');
+  const other=emptyProfile();other.fullName='SYNTHETIC B';const otherFile=join(root,'B.json');await writeFile(otherFile,JSON.stringify(other));
+  await importFile(otherFile);await wait("chrome.storage.local.get('resumeProfile').then(x=>x.resumeProfile?.fullName==='SYNTHETIC B')");
+  await wait("chrome.storage.local.get('resumeProfileLifecycle').then(x=>x.resumeProfileLifecycle?.state==='ready')");
+  stored=await read();assert.equal(stored.resumeProfile.confirmedFields.length,0);assert.equal(stored.resumeEducationSiteFacts.entries.length,0);
+  await importFile(backupFile);await wait("document.getElementById('toast').textContent.startsWith('导入完成：已恢复本人备份')");
+  stored=await read();assert.equal(stored.resumeProfile.fullName,'SYNTHETIC A');assert.equal(stored.resumeProfile.confirmedFields.length,5);
+  assert.notEqual(stored.resumeProfileLifecycle.epoch,epochA);assert.equal(stored.resumeEducationSiteFacts.entries.length,4);
+  assert.ok(stored.resumeEducationSiteFacts.entries.every(e=>e.ownerBinding.epoch===stored.resumeProfileLifecycle.epoch));
+  await click('[data-section="education"]');await wait("document.getElementById('cms-education-site-0-startDate')?.value==='2018-09-18'");
+  await navigate(session,`chrome-extension://${id}/src/profile/options.html`);await wait("document.querySelectorAll('[data-section]').length===8");
+  await click('[data-section="education"]');await wait("document.getElementById('cms-education-site-0-academicDegree')?.value==='学士'");
+  await click('#clear-button');await wait("chrome.storage.local.get('resumeProfile').then(x=>!x.resumeProfile)");
+  assert.equal((await read()).resumeEducationSiteFacts,undefined);assert.deepEqual(errors,[]);
+  console.log(JSON.stringify({status:'profile_lifecycle_v2_actual_ui_passed',realRecruitmentPagesTouched:0,userProfilesTouched:0,
+    perRecordFactsConfirmed:4,v1Unconfirmed:true,v2OwnBackupConfirmed:true,newEpoch:true,invalidBackupNoMutation:true,deleteCleared:true}));
+}finally{session?.close();edge.kill();}

@@ -22,6 +22,7 @@
   - **高杠杆**：小米 `*.jobs.f.mioffice.cn` = **飞书 ATSX saas-career 孪生**（同 `pc.4481de59.js`）→ reuse `feishu-atsx` 候选（登录后；旁路 hotjob 队列）。
   - 其余（华为/快手/PDD/TME/网易/兴业/民生）= 自建 new-adapter / login-gated。
 - **Done offline**: `feishu-atsx` host matcher + manifest now include `*.jobs.f.mioffice.cn` (Xiaomi twin); still login-gated; no live claim; acceptance unchanged 85%.
+- **mioffice twin scan** (2026-10-18 ~22:23 CST): only Xiaomi in current scrape; twin note `FEISHU_ATSX_MIOFFICE_TWINS_20261018.md`; host wired + twin scan done; acceptance **85%**.
 - 进一步 expand：**可选登录** → 一键 `run-hotjob-tenant.cmd <key>`（壳键已齐）；**或** 小米/广发 ATSX 登录后 DOM（需 Jeremy）。
 - 本夜公开 HTTP / shell-class / non-hotjob fingerprint 已收敛；**无新适配器、不开 Edge 扩 live**。
 - **验收仍 85%**；**可卖仍 CMS+GTH**；live 仍需 Jeremy 登录。

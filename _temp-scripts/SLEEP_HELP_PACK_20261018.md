@@ -11,6 +11,6 @@
 ## 2. 仍需 Jeremy 有空时（TODO，均可选）
 
 1. **可选登录**（主阻塞）：南粤 / Celebright / 国盛 / **caict** / **opple**（+ 备选 longi/haitian/tsmc/tclmj/horizon/yls/haguo/yunigu）→ 登录后停在猜壳页 → **一键** `scripts\run-hotjob-tenant.cmd <key>`（壳键已齐；login→fill harness 一 cmd 之遥；Never Save）。
-2. **可选 ATS DOM**：广发飞书 / 君乐宝北森 / TI(Moka) → 采真实 DOM 后再 fill-wo-save；同族备选：中科创达飞书 / 乐牛·正泰 Moka / 现代牧业·北芯北森。
+2. **可选 ATS DOM**：广发飞书 / **小米 ATSX** `https://xiaomi.jobs.f.mioffice.cn/newretailing/?spread=M1SXHJC`（登录后停在简历编辑页即可；host 已接线；Never Save） / 君乐宝北森 / TI(Moka) → 采真实 DOM 后再 fill-wo-save；同族备选：中科创达飞书 / 乐牛·正泰 Moka / 现代牧业·北芯北森。
 3. **可选中信 live**：`careers.citics.com/my/jl` 上户口类型 + 证件类型（synthetic 已绿）。
 4. **可选**：付费 Edge **9239**；Codex Cloud 环境发布；更多非-hotjob 公开 fingerprint。

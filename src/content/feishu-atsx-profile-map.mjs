@@ -76,12 +76,13 @@ export function normalizeFeishuAtsxLabelText(raw) {
 
 /**
  * Host match for Feishu ATSX saas-career family.
- * Documented samples: gffunds.jobs.feishu.cn; jobs.bytedance.com is same product line (campus shell).
+ * Documented samples: gffunds.jobs.feishu.cn; jobs.bytedance.com; xiaomi.jobs.f.mioffice.cn (Xiaomi twin).
  */
 export function isFeishuAtsxHost(hostname) {
   const host = String(hostname || '').toLowerCase();
   if (!host) return false;
   if (host === 'jobs.bytedance.com' || host.endsWith('.jobs.bytedance.com')) return true;
   if (host === 'jobs.feishu.cn' || host.endsWith('.jobs.feishu.cn')) return true;
+  if (host === 'jobs.f.mioffice.cn' || host.endsWith('.jobs.f.mioffice.cn')) return true;
   return false;
 }

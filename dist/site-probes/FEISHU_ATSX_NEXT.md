@@ -97,3 +97,8 @@ Public Extra batch same saas-career JS as 广发 `gffunds.jobs.feishu.cn` (hosts
 | 中科创达 | `thundersoft.jobs.feishu.cn` | reuse → **feishu-atsx** |
 
 Login still required for resume-form DOM harvest. Docs-only; **no live claim**. Evidence: `shared-ats-fingerprint-zhiye-moka-feishu-20261018.md` Extra §4.2–4.4.
+
+## 8. Xiaomi mioffice twin host (2026-10-18 ~22:20 Asia/Shanghai)
+
+Host matcher now includes `jobs.f.mioffice.cn` / `*.jobs.f.mioffice.cn` (Xiaomi twin; same saas-career JS hashes as 广发). Still **login-gated** for resume-form DOM; **no live fill claim**; not customer-ready Xiaomi support.
+

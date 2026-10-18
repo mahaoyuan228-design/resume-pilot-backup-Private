@@ -7,7 +7,7 @@
 // DOM contract: `.atsx-form-item` + `.atsx-form-item-label` + `input.atsx-input`
 // (JS-confirmed in public saas-career bundles pc.4481de59 / 8825.0e3d5ab8; Ant Design prefixCls=atsx).
 // Live resume-edit page still login-walled — refine if harvested DOM differs.
-// Family samples: gffunds.jobs.feishu.cn · thundersoft.jobs.feishu.cn (same saas-career JS as gffunds).
+// Family samples: gffunds.jobs.feishu.cn · thundersoft.jobs.feishu.cn · xiaomi.jobs.f.mioffice.cn (same saas-career JS as gffunds).
 (() => {
   const previous = globalThis.ResumeFeishuAtsxBasic;
   if (previous?.listener) {
@@ -34,6 +34,7 @@
     if (!host) return false;
     if (host === 'jobs.bytedance.com' || host.endsWith('.jobs.bytedance.com')) return true;
     if (host === 'jobs.feishu.cn' || host.endsWith('.jobs.feishu.cn')) return true;
+    if (host === 'jobs.f.mioffice.cn' || host.endsWith('.jobs.f.mioffice.cn')) return true;
     return false;
   }
 

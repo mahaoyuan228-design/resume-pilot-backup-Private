@@ -50,6 +50,9 @@ test('fixture carries JS-confirmed atsx-form-item selectors + public portal chro
 test('host matcher covers jobs.feishu.cn tenants and bytedance ATSX', () => {
   assert.equal(isFeishuAtsxHost('gffunds.jobs.feishu.cn'), true);
   assert.equal(isFeishuAtsxHost('jobs.bytedance.com'), true);
+  assert.equal(isFeishuAtsxHost('xiaomi.jobs.f.mioffice.cn'), true);
+  assert.equal(isFeishuAtsxHost('jobs.f.mioffice.cn'), true);
+  assert.equal(isFeishuAtsxHost('jobs.f.mioffice.cn.evil.com'), false);
   assert.equal(isFeishuAtsxHost('wecruit.hotjob.cn'), false);
   assert.equal(isFeishuAtsxHost('careers.citics.com'), false);
 });

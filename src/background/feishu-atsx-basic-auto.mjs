@@ -44,6 +44,7 @@ function probePageFunc() {
     if (!host) return false;
     if (host === 'jobs.bytedance.com' || host.endsWith('.jobs.bytedance.com')) return true;
     if (host === 'jobs.feishu.cn' || host.endsWith('.jobs.feishu.cn')) return true;
+    if (host === 'jobs.f.mioffice.cn' || host.endsWith('.jobs.f.mioffice.cn')) return true;
     return false;
   };
   const href = location.href;
@@ -113,7 +114,7 @@ export function createFeishuAtsxBasicAutoRunner({ api = globalThis.chrome, verif
       return { tab: ranked.find((tab) => tab.active) || ranked[0], kind: 'exact_multi' };
     }
     const related = tabs.filter((tab) => typeof tab.url === 'string' && tab.id !== excludeTabId
-      && (/feishu\.cn|bytedance\.com|larksuite/u.test(tab.url)));
+      && (/feishu\.cn|bytedance\.com|larksuite|mioffice/u.test(tab.url)));
     if (related.length) {
       const err = Error('feishu_atsx_basic_login_or_wrong_page');
       err.helpUrl = related[0].url;
@@ -126,7 +127,7 @@ export function createFeishuAtsxBasicAutoRunner({ api = globalThis.chrome, verif
         await sleep(500);
         const tab = await api.tabs.get(created.id);
         if (isFeishuAtsxTabUrl(tab.url) && tab.status === 'complete') return { tab, kind: 'opened' };
-        if (typeof tab.url === 'string' && /feishu|bytedance|larksuite/u.test(tab.url) && !isFeishuAtsxTabUrl(tab.url)) {
+        if (typeof tab.url === 'string' && /feishu|bytedance|larksuite|mioffice/u.test(tab.url) && !isFeishuAtsxTabUrl(tab.url)) {
           const err = Error('feishu_atsx_basic_login_or_wrong_page');
           err.helpUrl = tab.url;
           err.helpReason = 'Opened Feishu URL redirected off ATSX host; login likely required';

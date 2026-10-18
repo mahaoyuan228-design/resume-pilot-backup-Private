@@ -28,9 +28,11 @@ test('resolveFeishuAtsxTarget: sample default + host accept/refuse', () => {
   assert.match(d.page, /gffunds\.jobs\.feishu\.cn/);
   assert.equal(resolveFeishuAtsxTarget('https://jobs.bytedance.com/campus/').host, 'jobs.bytedance.com');
   assert.equal(resolveFeishuAtsxTarget('https://acme.jobs.feishu.cn/resume').sample, false);
+  assert.equal(resolveFeishuAtsxTarget('https://xiaomi.jobs.f.mioffice.cn/index').host, 'xiaomi.jobs.f.mioffice.cn');
   for (const bad of [
     'http://gffunds.jobs.feishu.cn/',
     'https://jobs.feishu.cn.evil.com/',
+    'https://jobs.f.mioffice.cn.evil.com/',
     'https://wecruit.hotjob.cn/SUx/pb/resumeOperation.html',
     'https://junlebaoruye.zhiye.com/',
     'https://app.mokahr.com/',
@@ -38,6 +40,7 @@ test('resolveFeishuAtsxTarget: sample default + host accept/refuse', () => {
     42, {}
   ]) assert.throws(() => resolveFeishuAtsxTarget(bad), /feishu_atsx_page_invalid/, String(bad));
   assert.equal(isFeishuAtsxTabUrl('https://gffunds.jobs.feishu.cn/index'), true);
+  assert.equal(isFeishuAtsxTabUrl('https://xiaomi.jobs.f.mioffice.cn/index'), true);
   assert.equal(isFeishuAtsxTabUrl('https://careers.citics.com/my/jl'), false);
 });
 

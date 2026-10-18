@@ -1,0 +1,286 @@
+/**
+ * GTH_SIMPLE_AUTO scaffolding smoke:
+ * - trusted auto-page sender accepted; wrong sender rejected
+ * - default mode=readiness probes without skills fill
+ * - fill path injects once, never sets saveAttempted
+ */
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { createGthSimpleAutoRunner } from '../src/background/gth-simple-auto.mjs';
+
+const epoch = '00000000-0000-4000-8000-000000000001';
+const tabId = 42;
+const PAGE = 'https://hr.gtht.com/resume/edit/';
+const SECTION = '职业技能与特长';
+const TITLES = ['基本信息', '教育经历', '求职意向', '工作经验', '职业技能与特长', '附件简历', '其他信息'];
+
+const fixture = () => ({
+  schemaVersion: 1,
+  fullName: 'Synthetic Customer B',
+  customAnswers: { [SECTION]: 'Python / SQL / Excel' },
+  confirmedFields: [`customAnswers.${SECTION}`],
+});
+
+async function harness({ fillResponse } = {}) {
+  const data = {
+    resumeProfile: fixture(),
+    resumeProfileLifecycle: { version: 1, epoch, state: 'ready' },
+  };
+  const clone = (value) => (value === undefined ? undefined : structuredClone(value));
+  const stats = { inject: 0, fill: 0, probe: 0 };
+  const storage = {
+    get: async (keys) =>
+      keys === null
+        ? clone(data)
+        : Object.fromEntries((Array.isArray(keys) ? keys : [keys]).map((key) => [key, clone(data[key])])),
+    set: async (values) => Object.assign(data, clone(values)),
+    remove: async (keys) => {
+      for (const key of Array.isArray(keys) ? keys : [keys]) delete data[key];
+    },
+  };
+  let runner;
+  const autoSender = {
+    id: 'synthetic-extension',
+    url: 'chrome-extension://synthetic-extension/src/auto/gth-simple-auto.html?mode=readiness',
+  };
+  const badSender = {
+    id: 'synthetic-extension',
+    url: 'chrome-extension://synthetic-extension/src/auto/gth-basic-auto.html',
+  };
+  const invoke = (message, sender = autoSender) =>
+    new Promise((resolve) => {
+      const handled = runner.listener(message, sender, resolve);
+      if (handled === false) resolve({ ok: false, reason: 'listener_ignored' });
+    });
+  const defaultFill = fillResponse || {
+    ok: true,
+    sectionName: SECTION,
+    editorLeftOpen: true,
+    writeStarted: false,
+    savedOnSite: null,
+    submitted: null,
+    softwareClickedSave: false,
+    softwareClickedSubmit: false,
+    fields: [{ question: SECTION, status: 'verified', reason: 'preexisting_same_value' }],
+  };
+  const api = {
+    storage: { local: storage },
+    runtime: {
+      id: autoSender.id,
+      getURL: (path) => 'chrome-extension://synthetic-extension/' + path,
+      getManifest: () => ({ background: { service_worker: 'src/background/worker.mjs' } }),
+    },
+    windows: { update: async () => ({}) },
+    tabs: {
+      get: async () => ({ id: tabId, url: PAGE, windowId: 1, status: 'complete' }),
+      create: async () => ({ id: tabId, url: PAGE, windowId: 1, status: 'complete' }),
+      query: async (query = {}) => {
+        if (query.active && query.lastFocusedWindow) {
+          return [{ id: tabId, url: PAGE, active: true }];
+        }
+        return [{ id: tabId, url: PAGE, active: true, lastAccessed: Date.now() }];
+      },
+      update: async () => ({ id: tabId, url: PAGE, windowId: 1 }),
+      sendMessage: async () => { throw Error('unexpected_sendMessage'); },
+    },
+    scripting: {
+      executeScript: async (request) => {
+        if (request.files) {
+          stats.inject += 1;
+          return [];
+        }
+        if (typeof request.func === 'function' && (request.world === 'MAIN' || request.world === 'ISOLATED')) {
+          const src = String(request.func);
+          if (src.includes('expectedTitles') || src.includes('r-section')) {
+            stats.probe += 1;
+            return [{
+              frameId: 0,
+              result: {
+                ok: true,
+                reason: 'gth_page_ready',
+                href: PAGE,
+                readyState: 'complete',
+                visible: 'visible',
+                titles: TITLES,
+                editorOpen: false,
+                editLinkCount: 1,
+                timeOrigin: 99,
+                sectionIndex: 4,
+                sectionName: SECTION,
+              },
+            }];
+          }
+          stats.fill += 1;
+          return [{ frameId: 0, result: defaultFill }];
+        }
+        return [];
+      },
+    },
+  };
+  runner = createGthSimpleAutoRunner({
+    api,
+    timeoutMs: 5000,
+    lifecycleOptions: { locks: { request: async (_n, _o, work) => work() }, cryptoImpl: globalThis.crypto },
+  });
+  return { invoke, stats, data, autoSender, badSender };
+}
+
+test('GTH_SIMPLE_AUTO rejects non-simple auto page sender', async () => {
+  const h = await harness();
+  const response = await h.invoke({ type: 'GTH_SIMPLE_AUTO', mode: 'readiness' }, h.badSender);
+  assert.equal(response.ok, false);
+  assert.equal(response.reason, 'gth_simple_wrong_sender');
+  assert.equal(h.stats.fill, 0);
+});
+
+test('GTH_SIMPLE_AUTO readiness probes without skills fill', async () => {
+  const h = await harness();
+  const response = await h.invoke({ type: 'GTH_SIMPLE_AUTO', mode: 'readiness' });
+  assert.equal(response.ok, true);
+  assert.equal(response.kind, 'gth_simple_auto');
+  assert.equal(response.mode, 'readiness');
+  assert.equal(response.writeAttempted, false);
+  assert.equal(response.saveAttempted, false);
+  assert.equal(response.saveAllowedByPolicy, false);
+  assert.equal(h.stats.probe >= 1, true);
+  assert.equal(h.stats.fill, 0);
+  assert.equal(h.stats.inject, 0);
+  assert.equal(response.readiness?.pageState, 'ready');
+  assert.equal(response.readiness?.skills?.ready, true);
+  assert.equal(h.data.resumeGthSimpleAutoRun?.ok, true);
+});
+
+test('GTH_SIMPLE_AUTO defaults to readiness when mode omitted', async () => {
+  const h = await harness();
+  const response = await h.invoke({ type: 'GTH_SIMPLE_AUTO' });
+  assert.equal(response.ok, true);
+  assert.equal(response.mode, 'readiness');
+  assert.equal(response.writeAttempted, false);
+  assert.equal(h.stats.fill, 0);
+});
+
+test('GTH_SIMPLE_AUTO fill injects once and never Save', async () => {
+  const h = await harness();
+  const response = await h.invoke({
+    type: 'GTH_SIMPLE_AUTO',
+    mode: 'fill',
+    originConfirmed: true,
+  });
+  assert.equal(response.ok, true);
+  assert.equal(response.mode, 'fill');
+  assert.equal(response.saveAttempted, false);
+  assert.equal(response.saveAllowedByPolicy, false);
+  assert.equal(h.stats.inject, 1);
+  assert.equal(h.stats.fill, 1);
+  assert.equal(response.job?.state, 'completed');
+  assert.equal(response.job?.softwareClickedSave, false);
+  assert.equal(response.job?.fields?.length, 1);
+  assert.equal(h.data.resumeGthSimpleAutoRun?.saveAttempted, false);
+});
+
+
+test('GTH_SIMPLE_AUTO skillsSource ready only with confirmed answer', async () => {
+  const runner = createGthSimpleAutoRunner({
+    api: {
+      storage: { local: { get: async () => ({}), set: async () => {}, remove: async () => {} } },
+      runtime: {
+        id: 'x',
+        getURL: (p) => 'chrome-extension://x/' + p,
+        getManifest: () => ({ background: { service_worker: 'src/background/worker.mjs' } }),
+      },
+      tabs: {},
+      scripting: {},
+    },
+  });
+  assert.equal(runner.skillsSource({ customAnswers: {}, confirmedFields: [] }).ready, false);
+  assert.equal(runner.skillsSource({
+    customAnswers: { '职业技能与特长': 'Python' },
+    confirmedFields: [],
+  }).hasAnswer, true);
+  assert.equal(runner.skillsSource({
+    customAnswers: { '职业技能与特长': 'Python' },
+    confirmedFields: [],
+  }).ready, false);
+  assert.equal(runner.skillsSource({
+    customAnswers: { '职业技能与特长': 'Python' },
+    confirmedFields: ['customAnswers.职业技能与特长'],
+  }).ready, true);
+});
+
+test('GTH_SIMPLE_AUTO fill fail-closed missing_profile_value', async () => {
+  const h = await harness();
+  h.data.resumeProfile = { schemaVersion: 1, fullName: 'Synthetic', customAnswers: {}, confirmedFields: [] };
+  const response = await h.invoke({ type: 'GTH_SIMPLE_AUTO', mode: 'fill', originConfirmed: true });
+  assert.equal(response.ok, false);
+  assert.equal(response.reason, 'missing_profile_value');
+  assert.equal(response.saveAttempted, false);
+  assert.equal(h.stats.fill, 0);
+});
+
+test('GTH_SIMPLE_AUTO fill fail-closed profile_fact_unconfirmed', async () => {
+  const h = await harness();
+  h.data.resumeProfile = {
+    schemaVersion: 1,
+    fullName: 'Synthetic',
+    customAnswers: { '职业技能与特长': 'Python / SQL' },
+    confirmedFields: [],
+  };
+  const response = await h.invoke({ type: 'GTH_SIMPLE_AUTO', mode: 'fill', originConfirmed: true });
+  assert.equal(response.ok, false);
+  assert.equal(response.reason, 'profile_fact_unconfirmed');
+  assert.equal(response.saveAttempted, false);
+  assert.equal(h.stats.fill, 0);
+});
+
+test('GTH_SIMPLE_AUTO related GTH tab without edit → login helpNeeded', async () => {
+  const data = {
+    resumeProfile: { schemaVersion: 1, fullName: 'S', customAnswers: {}, confirmedFields: [] },
+    resumeProfileLifecycle: { version: 1, epoch: '00000000-0000-4000-8000-000000000001', state: 'ready' },
+  };
+  const clone = (value) => (value === undefined ? undefined : structuredClone(value));
+  const storage = {
+    get: async (keys) =>
+      keys === null
+        ? clone(data)
+        : Object.fromEntries((Array.isArray(keys) ? keys : [keys]).map((key) => [key, clone(data[key])])),
+    set: async (values) => Object.assign(data, clone(values)),
+    remove: async (keys) => {
+      for (const key of Array.isArray(keys) ? keys : [keys]) delete data[key];
+    },
+  };
+  const autoSender = {
+    id: 'synthetic-extension',
+    url: 'chrome-extension://synthetic-extension/src/auto/gth-simple-auto.html?mode=readiness',
+  };
+  let runner;
+  const invoke = (message, sender = autoSender) =>
+    new Promise((resolve) => {
+      const handled = runner.listener(message, sender, resolve);
+      if (handled === false) resolve({ ok: false, reason: 'listener_ignored' });
+    });
+  runner = createGthSimpleAutoRunner({
+    api: {
+      storage: { local: storage },
+      runtime: {
+        id: autoSender.id,
+        getURL: (path) => 'chrome-extension://synthetic-extension/' + path,
+        getManifest: () => ({ background: { service_worker: 'src/background/worker.mjs' } }),
+      },
+      windows: { update: async () => ({}) },
+      tabs: {
+        get: async () => ({ id: 9, url: 'https://hr.gtht.com/login', windowId: 1, status: 'complete' }),
+        query: async () => ([{ id: 9, url: 'https://hr.gtht.com/login', active: true, lastAccessed: Date.now() }]),
+        update: async () => ({}),
+        sendMessage: async () => { throw Error('unexpected'); },
+      },
+      scripting: { executeScript: async () => [] },
+    },
+    timeoutMs: 5000,
+    lifecycleOptions: { locks: { request: async (_n, _o, work) => work() }, cryptoImpl: globalThis.crypto },
+  });
+  const response = await invoke({ type: 'GTH_SIMPLE_AUTO', mode: 'readiness' });
+  assert.equal(response.ok, false);
+  assert.equal(response.reason, 'gth_simple_login_or_wrong_page');
+  assert.equal(response.helpNeeded, true);
+  assert.equal(response.saveAttempted, false);
+});

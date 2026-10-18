@@ -1,0 +1,12 @@
+{
+  "v": 1,
+  "alg": "Ed25519",
+  "payload": {
+    "status": "active",
+    "installId": "11111111-2222-4333-a444-555555555555",
+    "profileHash": null,
+    "licenseId": "lic-example-test",
+    "expiresAtMs": 4102444800000
+  },
+  "signature": "qRjCeaL0cG7Ord8zIMxccKAl11E6nMpjYd7uo0G9nJQf4Op7Fy9+I2edJ1jtxMr6QPXgbknz8KzVrwNUzYzPBg=="
+}

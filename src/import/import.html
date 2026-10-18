@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>简历导入 · 简历快填</title>
+  <link rel="stylesheet" href="./import.css">
+</head>
+<body>
+  <main class="shell">
+    <header class="topbar">
+      <div class="brand"><span class="brand-icon">✳</span><span>简历快填</span><small>本地资料台</small></div>
+      <a class="back" href="../profile/options.html">返回资料库 →</a>
+    </header>
+
+    <section class="hero">
+      <div class="eyebrow">01 / 本地整理</div>
+      <h1>从简历中找出可用信息</h1>
+      <p>选择本机 PDF、DOCX 或 TXT。我们只在当前页面提取文字，并列出有明确依据的候选。你选中的内容会进入资料库，仍需在资料库逐项核对，之后才能用于填写网站。</p>
+    </section>
+
+    <div class="grid">
+      <section class="card file-card" aria-labelledby="file-heading">
+        <div class="card-heading"><div><span class="step">1</span><h2 id="file-heading">选择简历</h2></div><span class="pill">仅本机处理</span></div>
+        <label class="dropzone" for="resume-file"><span class="file-symbol">↥</span><strong>点击选择本机简历</strong><small>支持 PDF、DOCX、TXT；最大 10 MB。旧版 DOC 与扫描件暂不自动识别。</small></label>
+        <input id="resume-file" type="file" accept=".pdf,.docx,.txt,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain">
+        <div id="file-name" class="file-name">还没有选择文件</div>
+        <div id="status" class="status" role="status" aria-live="polite">等待选择文件。</div>
+        <div class="attachment-actions"><button id="save-attachment" class="secondary" type="button" disabled>保存此文件，供之后的网站使用</button><button id="clear-attachment" class="text-button" type="button" disabled>删除已存文件</button></div>
+        <div id="attachment-state" class="attachment-state" role="status" aria-live="polite">正在检查本机附件…</div>
+        <p class="storage-note">文件仅存于此 Edge 扩展的本机存储，最多 5 MB。资料 JSON 备份不含文件正文；换设备需重新选择。网页是否接受上传仍需核验。</p>
+      </section>
+
+      <section class="card candidates-card" aria-labelledby="candidates-heading">
+        <div class="card-heading"><div><span class="step">2</span><h2 id="candidates-heading">核看候选资料</h2></div><span id="candidate-count" class="pill">0 项</span></div>
+        <p class="small-note">勾选要加入资料库的项目。已有不同内容时会保留原值，并提示冲突。</p>
+        <div id="warnings" class="warnings" hidden></div>
+        <div id="candidate-list" class="candidate-list"><div class="empty">选择文件后，这里会列出有明确来源的姓名、联系方式和少量标签字段。</div></div>
+        <button id="import-button" class="primary" type="button" disabled>加入待核对资料</button>
+        <div id="import-status" class="import-status" role="status" aria-live="polite"></div>
+      </section>
+    </div>
+
+    <section class="card preview-card" aria-labelledby="preview-heading">
+      <div class="card-heading"><div><span class="step">3</span><h2 id="preview-heading">查看提取的文字</h2></div><span class="pill muted">不会存入资料库</span></div>
+      <p class="small-note">复杂排版可能打乱顺序；项目、实习、教育等内容如果未成为候选，请对照原简历在资料库手动填写。</p>
+      <textarea id="extracted-text" readonly placeholder="选择简历后显示提取的文字。" aria-label="从简历提取的文字"></textarea>
+    </section>
+
+    <footer>导入不代表信息正确，也不代表已在招聘网站上传简历。网站附件仍需按页面提示选择并核验。</footer>
+  </main>
+  <script type="module" src="./import.js"></script>
+</body>
+</html>

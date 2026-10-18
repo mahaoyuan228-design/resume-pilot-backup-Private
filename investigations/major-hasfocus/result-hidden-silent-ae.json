@@ -1,0 +1,62 @@
+{
+  "status": "PROBE_COMPLETED",
+  "chrome": "Chrome/155.0.8059.84",
+  "baseline": {
+    "before": {
+      "hasFocus": true,
+      "visible": "visible"
+    },
+    "af": {
+      "activeIsInput": true,
+      "hasFocus": true
+    },
+    "ab": {
+      "activeIsInput": false
+    },
+    "events": [
+      "focus:true",
+      "focusin:true",
+      "input:false",
+      "change:false",
+      "blur:true",
+      "focusout:true"
+    ],
+    "parent": "NEW42________________________________",
+    "local": "NEW42________________________________",
+    "dom": "NEW42________________________________"
+  },
+  "bgState": {
+    "hasFocus": false,
+    "visible": "hidden"
+  },
+  "backgrounded": {
+    "before": {
+      "hasFocus": false,
+      "visible": "hidden"
+    },
+    "af": {
+      "activeIsInput": true,
+      "hasFocus": false,
+      "visible": "hidden"
+    },
+    "ab": {
+      "activeIsInput": false,
+      "hasFocus": false,
+      "visible": "hidden"
+    },
+    "events": [
+      "input:trusted=false;hf=false;vis=hidden",
+      "change:trusted=false;hf=false;vis=hidden"
+    ],
+    "focusSeen": false,
+    "blurSeen": false,
+    "focusoutSeen": false,
+    "parent": "old10chars",
+    "local": "NEW42________________________________",
+    "dom": "NEW42________________________________",
+    "adapterWouldPassDom": true,
+    "parentCommitted": false
+  },
+  "silentActiveElementWithoutBlur": true,
+  "parentStaleDespiteDomPass": true
+}

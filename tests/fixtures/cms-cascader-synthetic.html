@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8">
+<title>虚构招商证券省市级联夹具</title>
+<style>
+  body { font: 16px sans-serif; margin: 20px; }
+  .form-cell { border: 1px solid #ccc; margin: 12px 0; padding: 12px; }
+  .ant-form-item { display: flex; gap: 12px; margin: 8px 0; }
+  .ant-form-item-label { width: 130px; }
+  .ant-select { display: inline-block; margin-right: 12px; }
+  .ant-select-selection { display: block; border: 1px solid #777; padding: 5px; min-width: 120px; cursor: pointer; }
+  .ant-select-disabled .ant-select-selection { color: #999; }
+  .ant-select-dropdown { background: white; border: 1px solid #777; width: 135px; }
+  .ant-select-dropdown-menu { list-style: none; padding: 0; margin: 0; }
+  .ant-select-dropdown-menu-item { padding: 5px; cursor: pointer; }
+</style>
+<form id="fictional-resume-form">
+  <section class="form-cell"><div class="tit-wrap"><div class="tit">个人基本信息必填</div></div>
+    <div class="form-cell-right"><div class="form-cell-inner">
+      <div id="residence-item" class="ant-form-item">
+        <div class="ant-form-item-label"><label>现居住地*</label></div>
+        <div class="ant-form-item-control-wrapper"><div class="cascader-plugins-wrap" id="cascader-host"></div></div>
+      </div>
+    </div></div>
+  </section>
+  <section class="form-cell"><div class="tit-wrap"><div class="tit">自我评价必填</div></div></section>
+  <section class="form-cell"><div class="tit-wrap"><div class="tit">教育经历必填</div></div></section>
+  <button id="site-submit" type="submit">网站提交</button>
+</form>
+<script>
+(() => {
+  const host = document.getElementById('cascader-host');
+  const state = { province: '', city: '', cityEnabled: false, mode: 'normal',
+    provinceOptions: ['虚构省甲', '虚构省乙'], cityOptions: ['虚构市甲', '虚构市乙'],
+    opens: { province: 0, city: 0 }, selections: { province: 0, city: 0 }, submits: 0 };
+  let menu = null;
+  let generation = 0;
+  let timers = [];
+  function closeMenu() { menu?.remove(); menu = null; }
+  function render() {
+    closeMenu();
+    generation += 1;
+    host.replaceChildren();
+    for (const level of ['province', 'city']) {
+      const select = document.createElement('span');
+      select.className = 'ant-select ' + (level === 'city' && !state.cityEnabled
+        ? 'ant-select-disabled' : 'ant-select-enabled');
+      const selection = document.createElement('span');
+      selection.className = 'ant-select-selection ant-select-selection--single';
+      selection.id = 'selection-' + level;
+      selection.setAttribute('role', 'combobox');
+      selection.setAttribute('aria-controls', 'menu-' + level + '-' + generation);
+      const display = document.createElement('span');
+      display.className = state[level] ? 'ant-select-selection-selected-value'
+        : 'ant-select-selection__placeholder';
+      display.textContent = state[level] || '请选择';
+      selection.append(display);
+      selection.addEventListener('click', () => open(level, selection));
+      const search = document.createElement('input');
+      search.type = 'text';
+      search.style.display = 'none';
+      select.append(selection, search);
+      host.append(select);
+    }
+  }
+  function open(level, selection) {
+    if (level === 'city' && !state.cityEnabled) return;
+    closeMenu();
+    state.opens[level] += 1;
+    const options = level === 'province' ? state.provinceOptions : state.cityOptions;
+    const dropdown = document.createElement('div');
+    dropdown.className = 'ant-select-dropdown';
+    const list = document.createElement('ul');
+    list.className = 'ant-select-dropdown-menu';
+    list.id = selection.getAttribute('aria-controls');
+    list.setAttribute('role', 'listbox');
+    for (const text of options) {
+      const item = document.createElement('li');
+      item.className = 'ant-select-dropdown-menu-item';
+      item.setAttribute('role', 'option');
+      item.textContent = text;
+      item.addEventListener('click', () => {
+        state[level] = text;
+        state.selections[level] += 1;
+        closeMenu();
+        if (level === 'province') {
+          state.city = '';
+          state.cityEnabled = false;
+          render();
+          timers.push(setTimeout(() => { state.cityEnabled = true; render(); },
+            state.mode === 'slow-city-rerender' ? 180 : 45));
+        } else render();
+      });
+      list.append(item);
+    }
+    dropdown.append(list);
+    document.body.append(dropdown);
+    menu = dropdown;
+    if (level === 'city' && state.mode === 'city-menu-rerender') {
+      timers.push(setTimeout(() => {
+        if (!menu) return;
+        state.cityOptions = ['虚构市乙'];
+        const replacement = document.createElement('li');
+        replacement.className = 'ant-select-dropdown-menu-item';
+        replacement.setAttribute('role', 'option');
+        replacement.textContent = '虚构市乙';
+        list.replaceChildren(replacement);
+      }, 20));
+    }
+  }
+  document.getElementById('fictional-resume-form').addEventListener('submit', event => {
+    event.preventDefault(); state.submits += 1;
+  });
+  document.body.addEventListener('mousedown', event => {
+    if (event.target === document.body) closeMenu();
+  });
+  render();
+  window.syntheticCmsCascader = {
+    reset(mode = 'normal') {
+      for (const timer of timers) clearTimeout(timer);
+      timers = [];
+      Object.assign(state, { province: '', city: '', cityEnabled: false, mode,
+        provinceOptions: ['虚构省甲', '虚构省乙'], cityOptions: ['虚构市甲', '虚构市乙'],
+        opens: { province: 0, city: 0 }, selections: { province: 0, city: 0 }, submits: 0 });
+      render();
+    },
+    setOptions(level, options) { state[level + 'Options'] = options; },
+    setExisting(province, city) {
+      state.province = province; state.city = city; state.cityEnabled = !!province; render();
+    },
+    snapshot() { return { province: state.province, city: state.city,
+      opens: { ...state.opens }, selections: { ...state.selections }, submits: state.submits,
+      menuCount: document.querySelectorAll('.ant-select-dropdown').length }; }
+  };
+})();
+</script>
+</html>

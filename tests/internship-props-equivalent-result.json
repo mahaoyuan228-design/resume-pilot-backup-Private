@@ -1,0 +1,31 @@
+{
+  "status": "PASS",
+  "sourceSHA256": "58cf396276f4e5a649f392fc50d98990cd03862e3b2c834a5d72539f7453378f",
+  "evidence": "offline synthetic DOM and React props; no real user data",
+  "groups": [
+    {
+      "name": "distinct_references_all_five_inputs_equivalent_key_order_ignored",
+      "passed": true,
+      "oldSingleReferenceFields": 6,
+      "oldMultiReferenceRejected": true,
+      "newOutputEqualsOldSingleReference": true
+    },
+    {
+      "name": "any_projection_conflict_remains_not_unique",
+      "passed": true,
+      "rejected": [
+        "formData",
+        "map",
+        "template",
+        "templateArrayOrder",
+        "scalarType",
+        "idScalarType"
+      ],
+      "arrayOrderPreserved": true,
+      "scalarTypesPreserved": true
+    }
+  ],
+  "browserConnections": 0,
+  "networkRequests": 0,
+  "productChanges": 0
+}

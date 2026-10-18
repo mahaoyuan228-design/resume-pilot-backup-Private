@@ -1,0 +1,58 @@
+{
+  "date": "2026-10-18",
+  "tz": "Asia/Shanghai",
+  "cdp": { "trialPort": 9237, "paidPort": 9239, "machineId": "245d9456-4926-4fac-ab9a-249fed419d18" },
+  "experiments": {
+    "E1": {
+      "citics": {
+        "finalUrl": "https://careers.citics.com/my/jl?resumeType=0&type=edit&name=xiaozhao-cn",
+        "title": "完善简历-总部校园招聘",
+        "loginWall": false,
+        "atsGuess": "self-built-vue-cli",
+        "not": ["beisen", "moka", "hotjob", "wecruit", "feishu"],
+        "scriptHosts": ["careers.citics.com", "cstaticdun.126.net"],
+        "fieldCounts": { "inputs": 157, "selects": 0, "textareas": 10, "buttons": 21 },
+        "difficulty": "new-adapter"
+      },
+      "cmbchina": {
+        "resumeUrl": "https://career.cmbchina.com/center/resume",
+        "loginUrl": "https://career.cmbchina.com/login?redirect=%2Fcenter%2Fresume",
+        "loginWallOnResumeTab": false,
+        "loginPagePresent": true,
+        "atsGuess": "self-built-spa-main-bundle",
+        "not": ["hotjob", "wecruit", "beisen", "moka"],
+        "scriptHosts": ["career.cmbchina.com"],
+        "fieldCounts": { "inputs": 71, "selects": 0, "textareas": 5, "buttons": 11 },
+        "difficulty": "new-adapter",
+        "note": "CMB bank != CMS CMS hotjob tenant"
+      }
+    },
+    "E2": {
+      "tencent": {
+        "campus": ["https://join.qq.com/", "https://careers.tencent.com/zh-cn/campusrecruit.html"],
+        "selfBuilt": true,
+        "cdnHint": "cdn.multilingualres.hr.tencent.com",
+        "resumeFormProbed": false,
+        "difficulty": "new-adapter-needs-login"
+      },
+      "alibaba": {
+        "campus": ["https://campus-talent.alibaba.com/", "https://campus-talent.alibaba.com/campus/position"],
+        "social": ["https://talent.alibaba.com/"],
+        "selfBuilt": true,
+        "stackHint": "CPO-platform/recruit-portal + campus-application on g.alicdn.com, React16",
+        "resumeFormProbed": false,
+        "difficulty": "new-adapter-needs-login"
+      }
+    }
+  },
+  "baselinesReadOnly": {
+    "cms": "https://wecruit.hotjob.cn/SU629dbc0c0dcad452299bc0f7/pb/resumeOperation.html",
+    "gth": "https://hr.gtht.com/resume/edit/"
+  },
+  "nextTargetsByLeverage": [
+    "other-hotjob-wecruit-tenants-reuse-cms",
+    "citics-careers-new-adapter",
+    "cmbchina-career-new-adapter"
+  ],
+  "claimSupport": false
+}

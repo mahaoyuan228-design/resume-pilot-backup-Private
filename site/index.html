@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>简历快填 · ResumeQuickFill</title>
+  <meta name="description" content="简历快填（ResumeQuickFill）— 校园招聘简历自动填写助手。域名 jianlikuaitian.com" />
+  <style>
+    :root {
+      --bg: #0f1419;
+      --card: #1a2332;
+      --text: #e7ecf3;
+      --muted: #9aa8b8;
+      --accent: #3b82f6;
+      --border: #2a3544;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.65;
+    }
+    .wrap { max-width: 720px; margin: 0 auto; padding: 2.5rem 1.25rem 4rem; }
+    h1 { font-size: 1.75rem; margin: 0 0 0.35rem; letter-spacing: 0.02em; }
+    .sub { color: var(--muted); margin: 0 0 1.75rem; font-size: 0.95rem; }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 1.25rem 1.35rem;
+      margin: 0 0 1.1rem;
+    }
+    h2 { font-size: 1.1rem; margin: 0 0 0.75rem; color: #cfe0ff; }
+    ol, ul { margin: 0.4rem 0 0; padding-left: 1.25rem; }
+    li { margin: 0.35rem 0; }
+    .price {
+      font-size: 1.35rem;
+      font-weight: 600;
+      color: #93c5fd;
+    }
+    .placeholder {
+      background: #243044;
+      border: 1px dashed #4b6280;
+      border-radius: 8px;
+      padding: 0.85rem 1rem;
+      color: #cbd5e1;
+      font-size: 0.92rem;
+      white-space: pre-wrap;
+    }
+    .note { color: var(--muted); font-size: 0.88rem; margin-top: 0.75rem; }
+    a { color: var(--accent); }
+    footer {
+      margin-top: 2rem;
+      color: var(--muted);
+      font-size: 0.82rem;
+      border-top: 1px solid var(--border);
+      padding-top: 1rem;
+    }
+    code { font-family: ui-monospace, Consolas, monospace; font-size: 0.9em; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>简历快填</h1>
+    <p class="sub">ResumeQuickFill · 校园招聘（CMS / GTH 等）简历自动填写助手<br />
+      官方域名：<strong>jianlikuaitian.com</strong></p>
+
+    <div class="card">
+      <h2>产品与价格</h2>
+      <p>Edge 扩展付费授权版：付款后获得本机绑定的授权令牌（entitlement），在扩展「授权激活」页粘贴即可使用。</p>
+      <p class="price">价格：TBD（待定）</p>
+      <p class="note">具体席位、有效期、支持站点以成交时约定为准。内部试用包 ≠ 付费授权版。</p>
+    </div>
+
+    <div class="card">
+      <h2>如何付款（个人转账）</h2>
+      <p>当前为<strong>无营业执照过渡方案</strong>：个人银行转账 / 支付宝 / 微信个人收款。微信商户、支付宝商户进件在取得营业执照前<strong>暂停</strong>。</p>
+      <div class="placeholder">【收款信息由卖家填写 — 请勿使用示例】
+收款方式：□ 银行转账  □ 支付宝  □ 微信
+户名：____________________
+账号 / 收款码：____________________
+开户行（如适用）：____________________
+转账备注请写：订单昵称或约定短码
+金额以报价为准</div>
+      <p class="note">本页不展示真实卡号或商户号。成交前请通过可信渠道向卖家索取收款信息。</p>
+    </div>
+
+    <div class="card">
+      <h2>付款后如何发凭证</h2>
+      <ol>
+        <li>完成转账后，将<strong>转账截图</strong>或流水号发至卖家约定的联系方式。</li>
+        <li>同时发送：你在扩展「授权激活」页看到的 <code>installId</code>（本机安装 ID）。</li>
+        <li>卖家人工核对到账后，离线签发 Ed25519 授权令牌（JSON 或 Base64）。</li>
+        <li>将令牌私信发回给你；请勿在公开群转发完整令牌。</li>
+      </ol>
+    </div>
+
+    <div class="card">
+      <h2>如何激活</h2>
+      <ol>
+        <li>安装卖家提供的<strong>付费包</strong> Edge 扩展（不要用内部试用包当授权版）。</li>
+        <li>打开扩展弹窗 →「授权激活」。</li>
+        <li>粘贴收到的 JSON 或 Base64 令牌 → 确认激活。</li>
+        <li>令牌与本机 <code>installId</code> 绑定；换机需重新联系卖家处理。</li>
+      </ol>
+      <p class="note">激活为离线校验；生产 HTTPS 在线复验上线后可并存，不影响本流程。</p>
+    </div>
+
+    <div class="card">
+      <h2>说明与边界</h2>
+      <ul>
+        <li>本产品提供填写辅助，不代替你对简历内容的真实性负责。</li>
+        <li>授权非无限转售；详见卖家 Anti-resale / 席位约定。</li>
+        <li>退款与对账：人工处理；订单少时可控。</li>
+      </ul>
+    </div>
+
+    <footer>
+      <p>© 简历快填 / ResumeQuickFill · 官方域名 jianlikuaitian.com（自定义域绑定 / HTTPS 备案完成前，请以卖家私信渠道为准）</p>
+      <p>本页为静态说明；价格与收款信息空白处由运营填写后再正式对外。阿里云 OSS 对象直链仅可作临时文件兜底，不作为官网入口。</p>
+    </footer>
+  </div>
+</body>
+</html>

@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>简历快填</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <header class="top">
+    <div class="brand"><span class="brand-mark">✳</span><strong>简历快填</strong></div>
+    <button id="open-profile" class="text-button" type="button">我的资料库 ↗</button>
+  </header>
+  <main>
+    <div class="eyebrow">填写工作台</div>
+    <h1>这一页，<span>先看清再填写。</span></h1>
+    <p class="intro">只使用你已核对的资料。填写后逐项读回；本软件不会主动点击提交。</p>
+    <section class="site-card" aria-label="当前网站">
+      <div class="site-label">当前网站</div>
+      <div id="site-title" class="site-title">正在读取…</div>
+      <div id="site-url" class="site-url"></div>
+      <label class="file-choice">简历附件（如网站需要）<input id="attachment" type="file" accept=".pdf,.doc,.docx,.txt"><small id="attachment-state">正在检查本机附件…</small></label>
+      <label class="remember-choice"><input id="remember-attachment" type="checkbox"> 将本次文件保存在本机（以后复用前需核对确认）</label>
+      <button id="clear-attachment" class="text-button clear-file" type="button" hidden>删除已保存的本机文件</button>
+      <section id="cms-photo-choices" class="cms-photo-choices" aria-label="招商证券照片" hidden>
+        <h2>招商证券照片</h2>
+        <p>两处照片分别选择和确认，仅本次使用；网站已有照片会保留。选择新文件后须重新确认。</p>
+        <label class="file-choice">基本信息 · 照片<input id="cms-photo-basic" type="file" accept="image/jpeg,image/gif,image/png,image/bmp"><small id="cms-photo-basic-state">本次尚未选择</small></label>
+        <label class="remember-choice"><input id="cms-photo-basic-confirm" type="checkbox" disabled> 我确认用于“基本信息 · 照片”</label>
+        <label class="file-choice">个人照片 · 个人照片<input id="cms-photo-portrait" type="file" accept="image/jpeg,image/gif,image/png,image/bmp"><small id="cms-photo-portrait-state">本次尚未选择</small></label>
+        <label class="remember-choice"><input id="cms-photo-portrait-confirm" type="checkbox" disabled> 我确认用于“个人照片 · 个人照片”</label>
+      </section>
+      <div class="actions">
+        <button id="inspect" class="button secondary" type="button">重新识别</button>
+        <button id="fill" class="button primary" type="button" disabled>填写并读回</button>
+      </div>
+      <section id="gth-salary-trial" class="gth-salary-trial" hidden>
+        <button id="gth-salary-button" class="button secondary" type="button" disabled>试填期望薪资并读回（不保存）</button>
+        <small>仅使用已核对的国泰海通专用答案；保留其他原值。试填后编辑器保持打开，网站保存状态仍需单独核对。</small>
+      </section>
+      <section id="gth-basic-trial" class="gth-simple-trial" hidden>
+        <label for="gth-basic-source">最高学历使用哪段教育资料</label>
+        <select id="gth-basic-source"><option value="">请选择资料记录</option></select>
+        <label class="remember-choice"><input id="gth-basic-replace" type="checkbox"> 重新填写基本信息的已有内容</label>
+        <button id="gth-basic-button" class="button secondary" type="button" disabled>试填基本信息并读回（不保存）</button>
+        <small>目前官网可填姓名、性别、出生年月和最高学历。手机和邮箱属于账户只读内容，会保留并单独报告；现居住地、照片和参加工作时间尚未支持。关闭弹窗后后台仍会继续，不保存、不投递。</small>
+      </section>
+      <section id="gth-intent-trial" class="gth-simple-trial" hidden>
+        <button id="gth-intent-button" class="button secondary" type="button" disabled>试填求职意向五项并读回（不保存）</button>
+        <small>仅在五项答案都已单独核对并限定本页、本分区时启用。网站选项必须与答案完全一致；保留网页原值，编辑器保持打开，不点击保存或投递。</small>
+      </section>
+      <section id="gth-education-trial" class="gth-simple-trial" hidden>
+        <label for="gth-education-source">使用资料库中的哪段教育经历</label>
+        <select id="gth-education-source"><option value="">请选择资料记录</option></select>
+        <label for="gth-education-target">填写网站中的哪段教育经历</label>
+        <select id="gth-education-target"><option value="">正在读取网站记录</option></select>
+        <label class="remember-choice"><input id="gth-education-replace" type="checkbox"> 重新填写所选网站记录的已有内容</label>
+        <small>勾选后会用选定资料逐项重填这条网站教育记录。请先核对资料源；软件会标明重填项，编辑后可用网站“取消”放弃未保存的修改。</small>
+        <button id="gth-education-target-button" class="button primary" type="button" disabled>填写所选教育记录并读回（不保存）</button>
+        <button id="gth-education-new-button" class="button secondary" type="button" disabled>新增一段教育并填写（不保存）</button>
+        <button id="gth-education-full-first-button" type="button" hidden disabled>旧第一段入口</button>
+        <button id="gth-education-full-second-button" type="button" hidden disabled>旧第二段入口</button>
+        <small>逐项报告学校、专业、学历、时间及其他教育问题的结果。资料缺失或控件未支持会明确列出；只有全部项目验收后才显示完整。网站保存状态另行核对。</small>
+        <button id="gth-education-first-button" type="button" hidden disabled>旧文字入口一</button>
+        <button id="gth-education-second-button" type="button" hidden disabled>旧文字入口二</button>
+        <button id="gth-education-draft-inspect" class="button secondary" type="button" disabled>检查本条教育草稿（不保存）</button>
+        <button id="gth-education-draft-save" class="button primary" type="button" disabled>保存本条教育草稿并核对</button>
+        <button id="gth-education-draft-resume" class="button secondary" type="button" disabled>继续核对已保存草稿（不重复保存）</button>
+        <small id="gth-education-draft-note">教育填写完成后，先检查草稿，再决定是否保存；不会最终投递。</small>
+      </section>
+      <section id="gth-simple-trial" class="gth-simple-trial" hidden>
+        <button id="gth-simple-button" class="button secondary" type="button" disabled>试填职业技能与特长并读回（不保存）</button>
+        <small>仅使用资料库中已确认、限定本站与此分区的答案；保留网页原值。填写后仍需单独检查网站保存。</small>
+      </section>
+      <section id="gth-other-trial" class="gth-simple-trial" hidden>
+        <button id="gth-other-button" class="button secondary" type="button" disabled>试填其他信息两项并读回（不保存）</button>
+        <small>仅使用资料库中已确认、限定本站“其他信息”分区的描述和标题；保留网页原值。填写后仍需单独检查网站保存。</small>
+      </section>
+    </section>
+    <div id="message" class="message" role="status">正在检查当前页面。</div>
+    <section id="recent-result" class="recent-result" aria-label="最近一次操作的历史读回" hidden>
+      <strong>最近一次操作的历史读回</strong>
+      <p id="recent-result-text"></p>
+    </section>
+    <section id="validation-gaps" class="validation-gaps" aria-label="网站当前校验提示" hidden>
+      <h2 id="validation-gap-title">网站当前校验提示</h2>
+      <p>这些是网站现在显示的报错。空白与资料缺失不同；带岗位条件的题目需先核对是否适用。</p>
+      <div id="validation-gap-list" class="validation-gap-list"></div>
+    </section>
+    <section id="question-drafts" class="question-drafts" aria-label="待补充的网站问题" hidden>
+      <h2>这些问题还没有答案</h2>
+      <p>只记录下面列出的题目原文，不复制网页里的填写内容。你回答并确认后，回到此页重新识别，再点“填写并读回”。</p>
+      <ul id="question-draft-list"></ul>
+      <button id="collect-questions" class="button secondary" type="button">加入资料库并回答 ↗</button>
+      <small id="question-draft-note"></small>
+    </section>
+    <section class="results" aria-label="字段结果">
+      <div class="section-head"><h2>字段结果</h2><span id="summary">—</span></div>
+      <div id="field-list" class="field-list"></div>
+    </section>
+    <section class="note"><strong>请检查网站状态</strong><p>“读回一致”只说明当前页面显示了该值。网站可能在输入时自动保存或处理，请核对后再决定是否提交。</p></section>
+  </main>
+  <script type="module" src="popup.js"></script>
+  <script type="module" src="cms-education-actions.js"></script>
+  <script type="module" src="cms-internship-actions.js"></script>
+  <script type="module" src="gth-batch-education-actions.js"></script>
+</body>
+</html>

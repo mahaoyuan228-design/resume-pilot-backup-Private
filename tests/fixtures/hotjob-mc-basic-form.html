@@ -26,7 +26,7 @@
   <p class="note">Offline fixture mirroring live 中联 mc antd-mobile DOM
     (<code>.my-list-item</code> / <code>.header-title</code> / <code>.am-input-control input</code> /
     <code>.select-am-list-extra</code> + <code>.am-modal.mc-select-popup</code>).
-    siteId <code>hotjob-mc</code>. Never click 下一步.</p>
+    siteId <code>hotjob-mc</code>. Selects: 性别 · 证件类型. Never click 下一步.</p>
   <div class="am-list">
 
     <div class="my-list-item" id="2_ref">
@@ -44,7 +44,17 @@
       <div class="header-title"><span class="iconfont icon-bitian"></span>性别</div>
       <div class="am-list-item am-list-item-middle">
         <div class="am-list-line">
-          <div class="am-list-extra select-am-list-extra active" id="gender-extra">男</div>
+          <div class="am-list-extra select-am-list-extra active" id="gender-extra" data-select-key="gender">男</div>
+          <div class="am-list-arrow am-list-arrow-vertical" aria-hidden="true"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="my-list-item" id="28_ref">
+      <div class="header-title"><span class="iconfont icon-bitian"></span>证件类型</div>
+      <div class="am-list-item am-list-item-middle">
+        <div class="am-list-line">
+          <div class="am-list-extra select-am-list-extra active" id="idtype-extra" data-select-key="idType">居民身份证</div>
           <div class="am-list-arrow am-list-arrow-vertical" aria-hidden="true"></div>
         </div>
       </div>
@@ -86,7 +96,7 @@
   </div>
   <button type="button" class="my-button" id="next-btn">下一步</button>
 
-  <div class="am-modal-wrap am-modal-wrap-popup" id="gender-popup-wrap">
+  <div class="am-modal-wrap am-modal-wrap-popup" id="mc-select-popup-wrap">
     <div class="am-modal mc-select-popup am-modal-popup am-modal-popup-slide-up" role="document">
       <div class="am-modal-content">
         <div class="am-modal-body">
@@ -97,20 +107,7 @@
           </div>
           <div class="mc-select">
             <div class="am-list mc-select-list">
-              <div class="am-list-body">
-                <div class="am-list-item am-list-item-middle" data-value="男">
-                  <div class="am-list-line">
-                    <div class="am-list-content"><div>男</div></div>
-                    <div class="am-list-extra"><label class="am-radio-wrapper"><span class="am-radio"><input type="radio" class="am-radio-input" name="gender-opt" value="男"></span></label></div>
-                  </div>
-                </div>
-                <div class="am-list-item am-list-item-middle" data-value="女">
-                  <div class="am-list-line">
-                    <div class="am-list-content"><div>女</div></div>
-                    <div class="am-list-extra"><label class="am-radio-wrapper"><span class="am-radio"><input type="radio" class="am-radio-input" name="gender-opt" value="女"></span></label></div>
-                  </div>
-                </div>
-              </div>
+              <div class="am-list-body" id="mc-select-options"></div>
             </div>
           </div>
         </div>
@@ -127,12 +124,26 @@
         if (node && /下一步|保存|提交/.test(text)) window.__hotjobMcCommitClicks += 1;
       }, true);
 
-      var extra = document.getElementById('gender-extra');
-      var wrap = document.getElementById('gender-popup-wrap');
+      var OPTIONS = {
+        gender: ['男', '女'],
+        idType: [
+          '居民身份证',
+          '中国护照',
+          '外国护照',
+          '港澳居民来往内地通行证',
+          '港澳居民居住证',
+          '台湾居民居住证',
+          '台湾居民来往大陆通行证'
+        ]
+      };
+      var wrap = document.getElementById('mc-select-popup-wrap');
+      var listBody = document.getElementById('mc-select-options');
+      var activeExtra = null;
       var pending = null;
+      var activeKey = null;
 
       function syncRadios(value) {
-        wrap.querySelectorAll('.am-list-item[data-value]').forEach(function (row) {
+        listBody.querySelectorAll('.am-list-item[data-value]').forEach(function (row) {
           var on = row.getAttribute('data-value') === value;
           row.classList.toggle('selected', on);
           var radio = row.querySelector('input.am-radio-input');
@@ -140,31 +151,54 @@
         });
       }
 
-      function openPopup() {
+      function renderOptions(key) {
+        var opts = OPTIONS[key] || [];
+        listBody.innerHTML = '';
+        opts.forEach(function (opt) {
+          var row = document.createElement('div');
+          row.className = 'am-list-item am-list-item-middle';
+          row.setAttribute('data-value', opt);
+          row.innerHTML =
+            '<div class="am-list-line">' +
+              '<div class="am-list-content"><div>' + opt + '</div></div>' +
+              '<div class="am-list-extra"><label class="am-radio-wrapper"><span class="am-radio">' +
+                '<input type="radio" class="am-radio-input" name="mc-opt" value="' + opt + '">' +
+              '</span></label></div>' +
+            '</div>';
+          row.addEventListener('click', function () {
+            pending = row.getAttribute('data-value');
+            syncRadios(pending);
+          });
+          listBody.appendChild(row);
+        });
+      }
+
+      function openPopup(extra) {
+        activeExtra = extra;
+        activeKey = extra.getAttribute('data-select-key');
         pending = (extra.textContent || '').trim();
-        syncRadios(pending === '请选择性别' ? '' : pending);
+        renderOptions(activeKey);
+        syncRadios(/^请选择/.test(pending) ? '' : pending);
         wrap.classList.add('open');
       }
       function closePopup() {
         wrap.classList.remove('open');
         pending = null;
+        activeExtra = null;
+        activeKey = null;
       }
 
-      extra.addEventListener('click', openPopup);
+      document.querySelectorAll('.select-am-list-extra[data-select-key]').forEach(function (extra) {
+        extra.addEventListener('click', function () { openPopup(extra); });
+      });
       wrap.querySelector('.am-picker-popup-header-left').addEventListener('click', closePopup);
       wrap.addEventListener('click', function (ev) {
         if (ev.target === wrap) closePopup();
       });
-      wrap.querySelectorAll('.am-list-item[data-value]').forEach(function (row) {
-        row.addEventListener('click', function () {
-          pending = row.getAttribute('data-value');
-          syncRadios(pending);
-        });
-      });
       wrap.querySelector('.am-picker-popup-header-right').addEventListener('click', function () {
-        if (pending) {
-          extra.textContent = pending;
-          extra.classList.add('active');
+        if (pending && activeExtra) {
+          activeExtra.textContent = pending;
+          activeExtra.classList.add('active');
         }
         closePopup();
       });

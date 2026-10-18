@@ -58,7 +58,7 @@ function parseArgs(argv) {
   return args;
 }
 
-const ALLOWED_SELECT_ONLY = Object.freeze(['性别']);
+const ALLOWED_SELECT_ONLY = Object.freeze(['性别', '证件类型']);
 
 function selectEvidencePaths(label, now = stampIso()) {
   fs.mkdirSync(outDir, { recursive: true });
@@ -640,7 +640,9 @@ function printHelp() {
     MODE=fill node scripts/auto-hotjob-mc-basic.mjs --synthetic
   Select knife (allowlist):
     node scripts/auto-hotjob-mc-basic.mjs --only 性别 --synthetic
+    node scripts/auto-hotjob-mc-basic.mjs --only 证件类型 --synthetic
     node scripts/auto-hotjob-mc-basic.mjs --only 性别 --live
+    node scripts/auto-hotjob-mc-basic.mjs --only 证件类型 --live
   Live (existing Edge tab; bringToFront; never Save; restore after fill):
     MODE=readiness CMS_SU=${DEFAULT_SU} node scripts/auto-hotjob-mc-basic.mjs --live
     MODE=fill CMS_SU=${DEFAULT_SU} node scripts/auto-hotjob-mc-basic.mjs --live
@@ -672,7 +674,7 @@ async function main() {
 
   if (args.only != null) {
     if (!ALLOWED_SELECT_ONLY.includes(args.only)) {
-      console.error('Usage: node scripts/auto-hotjob-mc-basic.mjs --only 性别 [--synthetic | --live]');
+      console.error('Usage: node scripts/auto-hotjob-mc-basic.mjs --only <性别|证件类型> [--synthetic | --live]');
       process.exit(2);
     }
     const useSynthetic = args.synthetic || (!args.live && process.env.HOTJOB_MC_SURFACE === 'synthetic');

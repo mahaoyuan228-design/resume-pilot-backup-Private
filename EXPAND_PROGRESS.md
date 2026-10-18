@@ -146,3 +146,12 @@
 ## 2026-10-18 晚 · hotjob-mc select 第一刀：性别（Asia/Shanghai）
 
 - [x] 2026-10-18 21:00 CST：中联 mc **性别** `.select-am-list-extra` + `.am-modal.mc-select-popup`（选项 男/女；确定/取消）；`fillSelect` allowlist-only；fixture+`tests/hotjob-mc-basic.test.mjs` **13/13**；harness `--only 性别`；offline synthetic 男→女→restore PASS；**live** fill-wo-save+restore **PASS**（证据 `dist/auto-runs/hotjob-mc-select-性别-latest.json`；未点下一步；tabs≤3）。
+
+## 2026-10-18 晚 · hotjob 南粤/Celebright/国盛 公开壳分类（Asia/Shanghai）
+
+- [x] 2026-10-18 21:05 CST：box 公开 HTTP 壳分类（无登录、无 PC 多标签）。三租户均为 **双壳 200**（pb `resumeOperation` hash `a1541…` = 招商；mc `operationResumer` hash `352df1…`）；**非** login-wall-only。门户偏好 → 主猜 **pb**。`run-hotjob-tenant` 键 **`nanyue` / `celebright` / `guosheng` ready（CMS_BASIC）**；若 live 落 mc → hotjob-mc reuse candidate。证据：`dist/site-probes/HOTJOB_SHELL_CLASS_南粤Celebright国盛_20261018.md`；已回写 `HOTJOB_TENANT_NEXT_EXPERIMENT.md` §1.2。
+
+## 2026-10-18 晚 · hotjob-mc select 第二刀：证件类型（Asia/Shanghai）
+
+- [x] 2026-10-18 21:10 CST：中联 mc **证件类型** `.select-am-list-extra` + `.am-modal.mc-select-popup`（7 选项：居民身份证/中国护照/…）；`SELECT_SPECS` allowlist；fixture+`tests/hotjob-mc-basic.test.mjs` **14/14**；harness `--only 证件类型`；offline synthetic 居民身份证→中国护照→restore PASS；**live** seed+alternate+restore PASS 后 Page.reload discard（原为空占位；证据 `dist/auto-runs/hotjob-mc-select-证件类型-latest.json`；未点下一步；tabs≤3）。
+- [x] 2026-10-18 21:10 CST：睡前清单收敛 → `_temp-scripts/SLEEP_HELP_PACK_20261018.md`（DONE：中信 marital+political；中联 mc texts+性别+证件类型；EXT hhem…｜TODO 可选：南粤/Celebright/国盛 pb live；广发/君乐宝/TI ATS DOM；付费 Edge 9239 + Codex cloud）。

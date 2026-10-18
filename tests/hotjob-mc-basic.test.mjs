@@ -50,21 +50,32 @@ test('fixture mirrors live my-list-item / header-title / am-input-control', () =
   assert.match(source, /\.am-input-control/);
 });
 
-test('fixture + source wire 性别 mc-select-popup (select-am-list-extra)', () => {
-  assert.deepEqual([...HOTJOB_MC_SELECT_LABELS], ['性别']);
+test('fixture + source wire 性别/证件类型 mc-select-popup (select-am-list-extra)', () => {
+  assert.deepEqual([...HOTJOB_MC_SELECT_LABELS], ['性别', '证件类型']);
   assert.deepEqual([...HOTJOB_MC_SELECT_SPECS['性别'].alternates], ['男', '女']);
+  assert.deepEqual([...HOTJOB_MC_SELECT_SPECS['证件类型'].alternates], [
+    '居民身份证',
+    '中国护照',
+    '外国护照',
+    '港澳居民来往内地通行证',
+    '港澳居民居住证',
+    '台湾居民居住证',
+    '台湾居民来往大陆通行证'
+  ]);
   assert.match(fixture, /select-am-list-extra/);
   assert.match(fixture, /am-modal mc-select-popup/);
   assert.match(fixture, /am-picker-popup-header-right/);
   assert.match(fixture, />性别</);
-  assert.match(fixture, /data-value="男"/);
-  assert.match(fixture, /data-value="女"/);
+  assert.match(fixture, />证件类型</);
+  assert.match(fixture, /居民身份证/);
+  assert.match(fixture, /中国护照/);
   assert.match(source, /SELECT_SPECS/);
   assert.match(source, /fillSelect/);
   assert.match(source, /mc-select-popup/);
   assert.match(source, /select-am-list-extra/);
   assert.match(source, /label_not_allowed/);
-  assert.doesNotMatch(source, /fillSelect\([^)]*国籍|fillSelect\([^)]*证件类型|fillSelect\([^)]*籍贯/);
+  assert.match(source, /证件类型/);
+  assert.doesNotMatch(source, /fillSelect\([^)]*国籍|fillSelect\([^)]*籍贯|fillSelect\([^)]*出生日期/);
   assert.doesNotMatch(source, /click\(.*下一步|下一步.*\.click/);
 });
 
@@ -166,7 +177,7 @@ test('harness --only rejects non-allowlist select label', () => {
     timeout: 10000
   });
   assert.equal(run.status, 2);
-  assert.match(run.stderr + run.stdout, /性别/);
+  assert.match(run.stderr + run.stdout, /性别|证件类型/);
 });
 
 test('synthetic harness fillSelect 性别 fill-wo-save + restore', { timeout: 120000 }, () => {
@@ -186,6 +197,32 @@ test('synthetic harness fillSelect 性别 fill-wo-save + restore', { timeout: 12
   assert.equal(evidence.after, '女');
   assert.equal(evidence.expected, '女');
   assert.equal(evidence.final, '男');
+  assert.equal(evidence.restored, true);
+  assert.equal(evidence.saved, false);
+  assert.equal(evidence.skippedSave, true);
+  assert.equal(evidence.liveEdge, false);
+  assert.equal(evidence.commitClicks, 0);
+  assert.equal(evidence.neighborsUnchanged, true);
+  assert.equal(evidence.neighborValue, 'NEIGHBOR_KEEP');
+});
+
+test('synthetic harness fillSelect 证件类型 fill-wo-save + restore', { timeout: 120000 }, () => {
+  const run = spawnSync(process.execPath, ['scripts/auto-hotjob-mc-basic.mjs', '--only', '证件类型', '--synthetic'], {
+    cwd: root,
+    encoding: 'utf8',
+    timeout: 90000
+  });
+  assert.equal(run.status, 0, run.stderr || run.stdout);
+  const evidence = JSON.parse(
+    readFileSync(resolve(root, 'dist/auto-runs/hotjob-mc-select-证件类型-latest.json'), 'utf8')
+  );
+  assert.equal(evidence.siteId, 'hotjob-mc');
+  assert.equal(evidence.label, '证件类型');
+  assert.equal(evidence.ok, true);
+  assert.equal(evidence.before, '居民身份证');
+  assert.equal(evidence.after, '中国护照');
+  assert.equal(evidence.expected, '中国护照');
+  assert.equal(evidence.final, '居民身份证');
   assert.equal(evidence.restored, true);
   assert.equal(evidence.saved, false);
   assert.equal(evidence.skippedSave, true);

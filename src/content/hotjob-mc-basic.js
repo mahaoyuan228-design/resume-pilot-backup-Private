@@ -1,9 +1,9 @@
-// Hotjob mc (antd-mobile H5) first-slice basic fill + 性别 mc-select (fill-without-save).
+// Hotjob mc (antd-mobile H5) first-slice basic fill + mc-select (fill-without-save).
 // Isolated siteId: hotjob-mc. Never clicks 下一步/保存/提交. Never touches pb CMS_BASIC.
 //
 // First slice fields (live CDP 中联 SU661f… /mc/deliver/operationResumer 2026-10-18):
 //   姓名 (text) · 移动电话 (text) · 电子邮箱 (text)
-// Select knife (one field): 性别 via .select-am-list-extra + .am-modal.mc-select-popup
+// Select knives: 性别 · 证件类型 via .select-am-list-extra + .am-modal.mc-select-popup
 //
 // DOM contract (verified live):
 //   item  = .my-list-item
@@ -21,9 +21,22 @@
   const SITE_ID = 'hotjob-mc';
   const TEXT_LABELS = ['姓名', '移动电话', '电子邮箱'];
   const GENDER = '性别';
-  /** Flat mc-select allowlist only (性别). Cascader/date/region out of scope. */
+  const ID_TYPE = '证件类型';
+  /** Flat mc-select allowlist (性别 + 证件类型). Cascader/date/region out of scope. */
   const SELECT_SPECS = {
-    [GENDER]: { key: 'gender', alternates: ['男', '女'] }
+    [GENDER]: { key: 'gender', alternates: ['男', '女'] },
+    [ID_TYPE]: {
+      key: 'idType',
+      alternates: [
+        '居民身份证',
+        '中国护照',
+        '外国护照',
+        '港澳居民来往内地通行证',
+        '港澳居民居住证',
+        '台湾居民居住证',
+        '台湾居民来往大陆通行证'
+      ]
+    }
   };
   const ALLOWED_SELECT_LABELS = Object.keys(SELECT_SPECS);
   const ITEM_SEL = '.my-list-item';
@@ -638,6 +651,7 @@
     SELECT_SPECS,
     ALLOWED_SELECT_LABELS,
     GENDER,
+    ID_TYPE,
     ITEM_SEL,
     LABEL_SEL,
     isHotjobMcHost,

@@ -1,5 +1,5 @@
 // Pure hotjob mc (antd-mobile H5) basic field planning from resumeProfile.
-// First slice: 姓名 / 移动电话 / 电子邮箱 + select 性别 — live labels from 中联
+// First slice: 姓名 / 移动电话 / 电子邮箱 + select 性别/证件类型 — live labels from 中联
 // SU661f… /mc/deliver/operationResumer probe 2026-10-18.
 // Used by tests + harness. Content script mirrors the same rules.
 
@@ -8,9 +8,22 @@ export const HOTJOB_MC_SITE_ID = 'hotjob-mc';
 /** Live header-title labels on mc 基本信息 (verified CDP; not invented). */
 export const HOTJOB_MC_TEXT_LABELS = Object.freeze(['姓名', '移动电话', '电子邮箱']);
 
-/** Flat mc-select allowlist (性别 only). Live: .select-am-list-extra + .am-modal.mc-select-popup. */
+/** Flat mc-select allowlist. Live: .select-am-list-extra + .am-modal.mc-select-popup.
+ *  性别 (2026-10-18) · 证件类型 (2026-10-18 中联 options sampled via CDP cancel-only). */
 export const HOTJOB_MC_SELECT_SPECS = Object.freeze({
-  性别: Object.freeze({ key: 'gender', alternates: Object.freeze(['男', '女']) })
+  性别: Object.freeze({ key: 'gender', alternates: Object.freeze(['男', '女']) }),
+  证件类型: Object.freeze({
+    key: 'idType',
+    alternates: Object.freeze([
+      '居民身份证',
+      '中国护照',
+      '外国护照',
+      '港澳居民来往内地通行证',
+      '港澳居民居住证',
+      '台湾居民居住证',
+      '台湾居民来往大陆通行证'
+    ])
+  })
 });
 export const HOTJOB_MC_SELECT_LABELS = Object.freeze(Object.keys(HOTJOB_MC_SELECT_SPECS));
 

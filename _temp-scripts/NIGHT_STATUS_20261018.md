@@ -8,7 +8,7 @@
 - Trial EXT：`hhembhoojafdefnkonmgoejfedgloanc`。
 
 ## 2. 离线刀（synthetic / fixture；未宣称 live）
-- CITICS **户口类型** + **证件类型** synthetic PASS；`FLAT_SELECT_MAX_OPTIONS` harden。**Live 未做**。
+- CITICS **户口类型** + **证件类型** + **民族** synthetic PASS；`FLAT_SELECT_MAX_OPTIONS` harden。**Live 未做**（民族 live 若全量≈56/可搜 → `select_search_heavy` fail-closed）。
 - PR #3 draft 累积中。https://github.com/mahaoyuan228-design/resume-pilot-backup-Private/pull/3
 - ATS fixtures + Extra fingerprints（docs only；无 live）。Family docs 已归档。
 
@@ -24,11 +24,11 @@
 - **Done offline**: `feishu-atsx` host matcher + manifest now include `*.jobs.f.mioffice.cn` (Xiaomi twin); still login-gated; no live claim; acceptance unchanged 85%.
 - **mioffice twin scan** (2026-10-18 ~22:23 CST): only Xiaomi in current scrape; twin note `FEISHU_ATSX_MIOFFICE_TWINS_20261018.md`; host wired + twin scan done; acceptance **85%**.
 - 进一步 expand：**可选登录** → 一键 `run-hotjob-tenant.cmd <key>`（壳键已齐）；**或** 小米/广发 ATSX 登录后 DOM（需 Jeremy）。
-- 本夜公开 HTTP / shell-class / non-hotjob fingerprint 已收敛；**无新适配器、不开 Edge 扩 live**。
+- 本夜公开 HTTP / shell-class / non-hotjob fingerprint 已收敛；CITICS **民族** Ant Select offline knife 已合；**无新适配器、不开 Edge 扩 live**。
 - **验收仍 85%**；**可卖仍 CMS+GTH**；live 仍需 Jeremy 登录。
 
 ## 5. 明确拒绝 / skip
-- 中联国籍/地区；中信级联籍贯/现户口所在地/生源地；国籍 search；民族未开刀。
+- 中联国籍/地区；中信级联籍贯/现户口所在地/生源地；国籍 search；民族 synthetic 已开（live pending）。
 - duomian / Redsea / wjx：scrape 无具体 URL，本批 skip。
 
 ## 6. 卡在 Jeremy（均可选）

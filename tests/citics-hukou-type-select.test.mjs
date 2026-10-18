@@ -23,13 +23,13 @@ test('hukou-type select source stays on allowlist and off CMS/GTH', () => {
 });
 
 test('harness rejects any label other than allowlist before CDP', () => {
-  const run = spawnSync(process.execPath, ['scripts/auto-citics-basic.mjs', '--only', '民族'], {
+  const run = spawnSync(process.execPath, ['scripts/auto-citics-basic.mjs', '--only', '国籍'], {
     cwd: root,
     encoding: 'utf8',
     timeout: 10000
   });
   assert.equal(run.status, 2);
-  assert.match(run.stderr, /户口类型|婚姻状况|政治面貌|证件类型/);
+  assert.match(run.stderr, /户口类型|婚姻状况|政治面貌|证件类型|民族/);
 });
 
 test('synthetic harness fill-without-save readback for 户口类型', { timeout: 120000 }, () => {

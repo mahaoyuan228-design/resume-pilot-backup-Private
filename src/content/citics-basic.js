@@ -3,10 +3,10 @@
 // Values come from resumeProfile (fullName/identityNumber/phone/email/gender);
 // fail-closed when core facts missing or unconfirmed — no TEST placeholders.
 //
-// Ant Select knives (Ant Design Vue 1): 婚姻状况 + 政治面貌 + 户口类型 + 证件类型
+// Ant Select knives (Ant Design Vue 1): 婚姻状况 + 政治面貌 + 户口类型 + 证件类型 + 民族
 // (selectControl / readSelect / fillSelect). One label per call; allowlist only.
 // Flat-select guard: FLAT_SELECT_MAX_OPTIONS=24 + search-input detect → select_search_heavy.
-// Cascader/region/nation knives stay out of scope.
+// Cascader/region/nation knives stay out of scope. Key for 民族 is ethnicity (not nation).
 // Selector order follows careers.citics.com chunk-vendors.a191a981.css
 // (Ant Design Vue 1 / ant-design 3 class names). Ant Design 4 names are
 // tried after that and only count if the live DOM actually matches.
@@ -24,12 +24,14 @@
   const POLITICAL = '政治面貌';
   const HUKOU_TYPE = '户口类型';
   const ID_TYPE = '证件类型';
-  /** Flat Ant Select allowlist only (marital + political + hukouType + idType). Cascader/region/nation out of scope. */
+  const ETHNICITY = '民族';
+  /** Flat Ant Select allowlist only (marital + political + hukouType + idType + ethnicity). Cascader/region/nation out of scope. */
   const SELECT_SPECS = {
     [MARITAL]: { key: 'marital', alternates: ['未婚', '已婚', '离异', '丧偶'] },
     [POLITICAL]: { key: 'political', alternates: ['群众', '共青团员', '中共党员', '中共预备党员'] },
     [HUKOU_TYPE]: { key: 'hukouType', alternates: ['家庭户口', '集体户口'] },
-    [ID_TYPE]: { key: 'idType', alternates: ['身份证', '中国护照', '港澳居民来往内地通行证', '台湾居民来往大陆通行证'] }
+    [ID_TYPE]: { key: 'idType', alternates: ['身份证', '中国护照', '港澳居民来往内地通行证', '台湾居民来往大陆通行证'] },
+    [ETHNICITY]: { key: 'ethnicity', alternates: ['汉族', '回族', '满族', '蒙古族', '藏族', '维吾尔族'] }
   };
   const ALLOWED_SELECT_LABELS = Object.keys(SELECT_SPECS);
   const ALTERNATES = SELECT_SPECS[MARITAL].alternates;
@@ -821,7 +823,7 @@
   }
 
   async function fillBasic(rawValues = {}, options = {}) {
-    // Select-only shapes: { '婚姻状况'|'政治面貌'|'户口类型'|'证件类型': '…' } — route without touching text/radio path.
+    // Select-only shapes: { '婚姻状况'|'政治面貌'|'户口类型'|'证件类型'|'民族': '…' } — route without touching text/radio path.
     if (rawValues && typeof rawValues === 'object' && !Array.isArray(rawValues)
       && !rawValues.profile && rawValues.allowExplicitValues !== true
       && !rawValues.lastName && !rawValues.firstName && !rawValues.idNumber && !rawValues.mobile && !rawValues.email) {
@@ -829,7 +831,7 @@
       if (keys.length === 1 && SELECT_SPECS[cleanLabel(keys[0])]) {
         return fillSelect(cleanLabel(keys[0]), rawValues[keys[0]], options);
       }
-      if (keys.length >= 1 && keys.every((k) => SELECT_SPECS[cleanLabel(k)] || !['lastName', 'firstName', 'idNumber', 'mobile', 'email', 'confirmEmail', 'gender', 'marital', 'political', 'hukouType', 'idType'].includes(k))) {
+      if (keys.length >= 1 && keys.every((k) => SELECT_SPECS[cleanLabel(k)] || !['lastName', 'firstName', 'idNumber', 'mobile', 'email', 'confirmEmail', 'gender', 'marital', 'political', 'hukouType', 'idType', 'ethnicity'].includes(k))) {
         // Non-basic keys that are not an allowed select → PR refusal string (marital-compat).
         if (keys.length === 1 && !SELECT_SPECS[cleanLabel(keys[0])]) {
           return fillMaritalOnly(rawValues, options);
@@ -975,6 +977,7 @@
     POLITICAL,
     HUKOU_TYPE,
     ID_TYPE,
+    ETHNICITY,
     ALLOWED_SELECT_LABELS,
     SELECT_SPECS,
     FLAT_SELECT_MAX_OPTIONS,

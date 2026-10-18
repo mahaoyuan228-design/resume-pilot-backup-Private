@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <title>完善简历-总部校园招聘</title>
+  <link rel="stylesheet" href="https://unpkg.com/ant-design-vue@1.7.8/dist/antd.min.css">
+</head>
+<body>
+  <div id="app">
+    <a-form :label-col="{ span: 6 }" :wrapper-col="{ span: 12 }">
+      <a-form-item label="姓">
+        <a-input v-model="last"></a-input>
+      </a-form-item>
+      <a-form-item label="民族" required>
+        <a-select v-model="ethnicity" style="width: 240px">
+          <a-select-option value="汉族">汉族</a-select-option>
+          <a-select-option value="回族">回族</a-select-option>
+          <a-select-option value="满族">满族</a-select-option>
+          <a-select-option value="蒙古族">蒙古族</a-select-option>
+          <a-select-option value="藏族">藏族</a-select-option>
+          <a-select-option value="维吾尔族">维吾尔族</a-select-option>
+        </a-select>
+      </a-form-item>
+      <a-form-item label="证件类型" required>
+        <a-select v-model="idType" style="width: 240px">
+          <a-select-option value="身份证">身份证</a-select-option>
+          <a-select-option value="中国护照">中国护照</a-select-option>
+        </a-select>
+      </a-form-item>
+    </a-form>
+    <button type="button" id="save">保存</button>
+    <button type="button" id="draft">暂存</button>
+    <button type="button" id="submit">提交</button>
+  </div>
+  <script src="https://unpkg.com/vue@2.7.16/dist/vue.js"></script>
+  <script src="https://unpkg.com/ant-design-vue@1.7.8/dist/antd.min.js"></script>
+  <script>
+    Vue.use(antd);
+    window.__citicsCommitClicks = 0;
+    document.addEventListener('click', event => {
+      const node = event.target.closest('button, a');
+      const text = (node?.textContent || '').replace(/\s+/g, '');
+      if (node && /保存|提交|暂存/.test(text)) window.__citicsCommitClicks += 1;
+    }, true);
+    new Vue({ el: '#app', data: { last: '测', ethnicity: '汉族', idType: '身份证' } });
+  </script>
+</body>
+</html>

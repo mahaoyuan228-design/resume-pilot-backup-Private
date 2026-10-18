@@ -15,7 +15,7 @@ test('id-type select source stays on allowlist and off CMS/GTH', () => {
   assert.match(source, /FLAT_SELECT_MAX_OPTIONS\s*=\s*24/);
   assert.match(source, /select_search_heavy/);
   assert.match(source, /dropdownSearchHeavy/);
-  // Cascader / nation stay out of SELECT_SPECS knives (民族 not filled).
+  // Cascader / nation stay out of SELECT_SPECS knives (籍贯/生源地/国籍 refused; 民族 allowlisted separately).
   assert.doesNotMatch(source, /籍贯|生源地|国籍/);
   assert.doesNotMatch(source, /fillSelect\(\s*['"]民族['"]/);
   assert.doesNotMatch(source, /cms-|gth-/);
@@ -26,13 +26,13 @@ test('id-type select source stays on allowlist and off CMS/GTH', () => {
 });
 
 test('harness rejects any label other than allowlist before CDP', () => {
-  const run = spawnSync(process.execPath, ['scripts/auto-citics-basic.mjs', '--only', '民族'], {
+  const run = spawnSync(process.execPath, ['scripts/auto-citics-basic.mjs', '--only', '国籍'], {
     cwd: root,
     encoding: 'utf8',
     timeout: 10000
   });
   assert.equal(run.status, 2);
-  assert.match(run.stderr, /证件类型|户口类型|婚姻状况|政治面貌/);
+  assert.match(run.stderr, /证件类型|户口类型|婚姻状况|政治面貌|民族/);
 });
 
 test('synthetic harness fill-without-save readback for 证件类型', { timeout: 120000 }, () => {

@@ -55,7 +55,6 @@ test('resolveCmsTarget refuses non wecruit/SU/resumeOperation targets', () => {
     'https://gszq.hotjob.cn/SU6879a7b3e57172288b60df9d/pb/resumeOperation.html',
     'https://wecruit.hotjob.cn.evil.com/SU661f37091eb8053acd6cdf3d/pb/resumeOperation.html',
     'https://wecruit.hotjob.cn/SU661f37091eb8053acd6cdf3d/pb/index.html',
-    'https://wecruit.hotjob.cn/SU661f37091eb8053acd6cdf3d/mc/index',
     'https://wecruit.hotjob.cn/XX661f37091eb8053acd6cdf3d/pb/resumeOperation.html',
     'https://wecruit.hotjob.cn:8443/SU661f37091eb8053acd6cdf3d/pb/resumeOperation.html',
     'https://u:p@wecruit.hotjob.cn/SU661f37091eb8053acd6cdf3d/pb/resumeOperation.html',
@@ -65,6 +64,10 @@ test('resolveCmsTarget refuses non wecruit/SU/resumeOperation targets', () => {
     'not a url'
   ];
   for (const value of bad) assert.throws(() => resolveCmsTarget({ CMS_PAGE: value }), /cms_page_invalid/, value);
+  for (const value of [
+    'https://wecruit.hotjob.cn/SU661f37091eb8053acd6cdf3d/mc/index',
+    'https://wecruit.hotjob.cn/SU661f37091eb8053acd6cdf3d/mc/operationResumer'
+  ]) assert.throws(() => resolveCmsTarget({ CMS_PAGE: value }), /cms_mc_shell/, value);
   assert.throws(() => resolveCmsTarget({ CMS_SU: 'SU../x' }), /cms_su_invalid/);
   assert.throws(() => resolveCmsTarget({ CMS_SU: 'zhonglian' }), /cms_su_invalid/);
   assert.throws(() => resolveCmsTarget({ CMS_PAGE: ZL_PAGE, CMS_SU: HOTJOB_TENANTS.nanyue.su }), /cms_target_conflict/);
@@ -187,6 +190,19 @@ test('SW refuses invalid cmsPage before touching tabs', async () => {
 
 const harnessScript = path.join(root, 'scripts', 'auto-cms-basic.mjs');
 const fakeEdge = path.join(root, 'tests', 'fixtures', 'fake-edge-cms-basic.mjs');
+
+test('harness refuses mc shell with exit 4 and opens nothing', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cms-mc-'));
+  const log = path.join(dir, 'edge.log');
+  const r = spawnSync(process.execPath, [harnessScript], { encoding: 'utf8', timeout: 15000,
+    env: { ...process.env, CMS_PAGE: 'https://wecruit.hotjob.cn/SU661f37091eb8053acd6cdf3d/mc/operationResumer',
+      AUTO_RUNS_DIR: dir, EDGE_PATH: fakeEdge, FAKE_EDGE_LOG: log } });
+  assert.equal(r.status, 4, r.stderr);
+  assert.match(r.stderr, /cms_mc_shell/);
+  assert.match(r.stderr, /auto-hotjob-mc-basic/);
+  assert.equal(fs.existsSync(log), false);
+  assert.deepEqual(fs.readdirSync(dir), []);
+});
 
 test('harness refuses bad CMS_PAGE with exit 3 and opens nothing', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cms-target-'));

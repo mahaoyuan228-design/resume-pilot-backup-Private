@@ -9,18 +9,41 @@ export const CMS_SU_RE = /^SU[0-9A-Za-z]{8,64}$/u;
 export const cmsPageForSu = (su) => `https://${CMS_HOST}/${su}/pb/resumeOperation.html`;
 export const CMS_BASELINE_PAGE = cmsPageForSu(CMS_BASELINE_SU);
 
-// Same-shell hotjob tenants (see dist/site-probes/HOTJOB_TENANT_NEXT_EXPERIMENT.md).
+// pb = CMS resumeOperation shell. mc = antd-mobile operationResumer shell (中联 live).
 export const HOTJOB_TENANTS = Object.freeze({
-  zhonglian: Object.freeze({ su: 'SU661f37091eb8053acd6cdf3d', name: '中联重科' }),
-  nanyue: Object.freeze({ su: 'SU670a291d6202cc7666c744bc', name: '广东南粤银行' }),
-  celebright: Object.freeze({ su: 'SU6279c916bef57c3ac0d49671', name: 'Celebright 曼领' }),
-  guosheng: Object.freeze({ su: 'SU6879a7b3e57172288b60df9d', name: '国盛证券 (via wecruit)' })
+  zhonglian: Object.freeze({
+    su: 'SU661f37091eb8053acd6cdf3d',
+    name: '中联重科',
+    shell: 'mc'
+  }),
+  nanyue: Object.freeze({ su: 'SU670a291d6202cc7666c744bc', name: '广东南粤银行', shell: 'pb' }),
+  celebright: Object.freeze({ su: 'SU6279c916bef57c3ac0d49671', name: 'Celebright 曼领', shell: 'pb' }),
+  guosheng: Object.freeze({ su: 'SU6879a7b3e57172288b60df9d', name: '国盛证券 (via wecruit)', shell: 'pb' })
 });
+
+/** Live 中联 resume form. Not /pb/resumeOperation.html. */
+export const MC_SHELL_PATH_RE = /^\/(SU[0-9A-Za-z]{8,64})\/mc(?:\/|$)/u;
+export const MC_RESUME_PATH_RE = /^\/(SU[0-9A-Za-z]{8,64})\/mc\/operationResumer$/u;
+export const mcResumePageForSu = (su) => `https://${CMS_HOST}/${su}/mc/operationResumer`;
+export const ZHONGLIAN_MC_PAGE = mcResumePageForSu(HOTJOB_TENANTS.zhonglian.su);
 
 function refuse(reason, detail) {
   const error = new Error(`${reason}: ${detail}`);
   error.code = reason;
   throw error;
+}
+
+// https wecruit /SU*/mc/… is the mc shell, not a CMS basic page.
+// Returns { su, page, resume } or null when the URL is not that shell.
+export function parseMcShellPage(value) {
+  let url;
+  try { url = new URL(String(value || '').trim()); } catch { return null; }
+  if (url.protocol !== 'https:' || url.hostname !== CMS_HOST || url.port || url.username || url.password)
+    return null;
+  const match = MC_SHELL_PATH_RE.exec(url.pathname);
+  if (!match) return null;
+  const resume = MC_RESUME_PATH_RE.test(url.pathname);
+  return { su: match[1], page: `${url.origin}${url.pathname}`, resume };
 }
 
 // Returns { su, page } or throws code cms_page_invalid.
@@ -46,6 +69,8 @@ export function resolveCmsTarget(env = {}) {
   let page = null;
   let source = 'default';
   if (rawPage) {
+    const mc = parseMcShellPage(rawPage);
+    if (mc) refuse('cms_mc_shell', `${mc.page} is hotjob-mc, not CMS pb; use scripts/auto-hotjob-mc-basic.mjs`);
     ({ su, page } = parseCmsPage(rawPage));
     source = 'CMS_PAGE';
   }

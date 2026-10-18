@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <title>hotjob-mc operationResumer fixture (offline)</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 480px; margin: 2rem auto; }
+    .my-list-item { margin: 1rem 0; }
+    .header-title { display: block; font-weight: 600; margin-bottom: 0.25rem; }
+    .am-input-control input { width: 100%; padding: 0.4rem 0.5rem; border: 1px solid #ccc; border-radius: 4px; }
+    .note { color: #666; font-size: 0.85rem; }
+  </style>
+</head>
+<body>
+  <h1>基本信息（fixture）</h1>
+  <p class="note">siteId <code>hotjob-mc</code>. Selectors from 中联
+    <code>SU661f37091eb8053acd6cdf3d/mc/operationResumer</code>:
+    <code>.my-list-item</code> <code>.header-title</code> <code>.am-input-control input</code>.
+    Not customer-ready. Never Save.</p>
+
+  <div class="my-list-item" data-field="姓名">
+    <div class="header-title">姓名</div>
+    <div class="am-input-control">
+      <input type="text" name="fullName" value="" />
+    </div>
+  </div>
+
+  <div class="my-list-item" data-field="移动电话">
+    <div class="header-title">移动电话</div>
+    <div class="am-input-control">
+      <input type="tel" name="mobile" value="" />
+    </div>
+  </div>
+
+  <div class="my-list-item" data-field="电子邮箱">
+    <div class="header-title">电子邮箱</div>
+    <div class="am-input-control">
+      <input type="email" name="email" value="" />
+    </div>
+  </div>
+
+  <div class="my-list-item" data-field="证件号码">
+    <div class="header-title">证件号码</div>
+    <div class="am-input-control">
+      <input type="text" name="idNo" value="0" />
+    </div>
+  </div>
+
+  <button type="button" id="save-btn" disabled>保存（fixture · never clicked by harness）</button>
+</body>
+</html>

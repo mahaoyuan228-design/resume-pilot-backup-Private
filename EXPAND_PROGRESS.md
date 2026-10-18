@@ -155,3 +155,7 @@
 
 - [x] 2026-10-18 21:10 CST：中联 mc **证件类型** `.select-am-list-extra` + `.am-modal.mc-select-popup`（7 选项：居民身份证/中国护照/…）；`SELECT_SPECS` allowlist；fixture+`tests/hotjob-mc-basic.test.mjs` **14/14**；harness `--only 证件类型`；offline synthetic 居民身份证→中国护照→restore PASS；**live** seed+alternate+restore PASS 后 Page.reload discard（原为空占位；证据 `dist/auto-runs/hotjob-mc-select-证件类型-latest.json`；未点下一步；tabs≤3）。
 - [x] 2026-10-18 21:10 CST：睡前清单收敛 → `_temp-scripts/SLEEP_HELP_PACK_20261018.md`（DONE：中信 marital+political；中联 mc texts+性别+证件类型；EXT hhem…｜TODO 可选：南粤/Celebright/国盛 pb live；广发/君乐宝/TI ATS DOM；付费 Edge 9239 + Codex cloud）。
+
+## 2026-10-18 晚 · hotjob-mc select：国籍/地区 skip + shared select harden（Asia/Shanghai）
+
+- [x] 2026-10-18 21:15 CST：中联 mc live 仍登录；probe **国籍/地区** 同 `.am-modal.mc-select-popup` 但 **搜索+~199 选项** → **skip fill**；harden 共用 `fillSelect`（`popupSearchHeavy`/`SELECT_OUT_OF_SCOPE`/`select_search_heavy`；性别+证件类型已共用无重复路径）；docs §9；offline **14/14**；未点下一步；tarball `hotjob-mc-20261018.tgz` 刷新。

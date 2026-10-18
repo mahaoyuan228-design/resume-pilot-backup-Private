@@ -77,6 +77,11 @@ test('fixture + source wire 性别/证件类型 mc-select-popup (select-am-list-
   assert.match(source, /证件类型/);
   assert.doesNotMatch(source, /fillSelect\([^)]*国籍|fillSelect\([^)]*籍贯|fillSelect\([^)]*出生日期/);
   assert.doesNotMatch(source, /click\(.*下一步|下一步.*\.click/);
+  assert.match(source, /select_search_heavy/);
+  assert.match(source, /SELECT_OUT_OF_SCOPE/);
+  assert.match(source, /popupSearchHeavy/);
+  assert.match(source, /FLAT_SELECT_MAX_OPTIONS/);
+  assert.match(source, /国籍\/地区/);
 });
 
 test('host/path matchers accept mc operationResumer only', () => {
@@ -171,13 +176,15 @@ test('synthetic readiness finds three labels', { timeout: 120000 }, () => {
 });
 
 test('harness --only rejects non-allowlist select label', () => {
-  const run = spawnSync(process.execPath, ['scripts/auto-hotjob-mc-basic.mjs', '--only', '国籍', '--synthetic'], {
-    cwd: root,
-    encoding: 'utf8',
-    timeout: 10000
-  });
-  assert.equal(run.status, 2);
-  assert.match(run.stderr + run.stdout, /性别|证件类型/);
+  for (const bad of ['国籍', '国籍/地区']) {
+    const run = spawnSync(process.execPath, ['scripts/auto-hotjob-mc-basic.mjs', '--only', bad, '--synthetic'], {
+      cwd: root,
+      encoding: 'utf8',
+      timeout: 10000
+    });
+    assert.equal(run.status, 2, bad);
+    assert.match(run.stderr + run.stdout, /性别|证件类型/);
+  }
 });
 
 test('synthetic harness fillSelect 性别 fill-wo-save + restore', { timeout: 120000 }, () => {

@@ -104,9 +104,35 @@ Restore 政策：live/synthetic fill 后写回填前值（空→空）；`--no-r
 
 | 项 | 值 |
 | --- | --- |
-| Field | **性别**（allowlist-only；国籍/证件类型/籍贯/英语等级 out of scope） |
+| Field | **性别**（allowlist-only；国籍/地区 / 籍贯 / 出生日期 / 英语等级 out of scope） |
 | DOM | `.select-am-list-extra` → open `.am-modal.mc-select-popup` → option `.am-list.mc-select-list .am-list-item`（男/女）→ `.am-picker-popup-header-right` 确定 |
 | API | `ResumeHotjobMcBasic.fillSelect('性别', …)` · harness `--only 性别` |
 | Offline | synthetic 男→女→restore **PASS** · `tests/hotjob-mc-basic.test.mjs` 13/13 |
 | Live | fill-wo-save+restore **PASS**（男→女→男）· `dist/auto-runs/hotjob-mc-select-性别-latest.json`；未点下一步 |
 | Restore note | 空占位「请选择性别」无法经 popup 还原 → `select_restore_empty_unsupported`；有值则可 restore |
+
+---
+
+## 8. Select knife · 证件类型（2026-10-18 21:10 Asia/Shanghai）
+
+| 项 | 值 |
+| --- | --- |
+| Field | **证件类型**（flat allowlist；与性别共用 `fillSelect`） |
+| DOM | 同 §7：`.select-am-list-extra` → `.am-modal.mc-select-popup`（7 选项，无搜索框） |
+| Offline | synthetic 居民身份证→中国护照→restore **PASS** · `tests/hotjob-mc-basic.test.mjs` 14/14 |
+| Live | seed+alternate+restore PASS 后 Page.reload discard · `dist/auto-runs/hotjob-mc-select-证件类型-latest.json`；未点下一步 |
+
+---
+
+## 9. 国籍/地区 probe + shared select harden（2026-10-18 21:15 Asia/Shanghai）
+
+| 项 | 值 |
+| --- | --- |
+| Live label | **国籍/地区**（非「国籍」） |
+| DOM class | 同 flat：`.select-am-list-extra` → `.am-modal.mc-select-popup` |
+| Why skipped | **search-heavy**：popup 含 `placeholder=搜索` + **~199** 选项（中国/中国台湾/…）；非小列表 allowlist |
+| Also out | 籍贯（select-extra，疑 cascader）、出生日期（date picker）、英语等级 |
+| Harden | Shared `fillSelect`/`fillSelectOnce`：`popupSearchHeavy` → fail `select_search_heavy`；`SELECT_OUT_OF_SCOPE` → `select_out_of_scope_search_or_cascader`；`FLAT_SELECT_MAX_OPTIONS=24` |
+| Live action | CDP open→inspect→**取消** only；未填、未点下一步；tabs≤3 |
+| Offline | `tests/hotjob-mc-basic.test.mjs` **14/14**（含 search-heavy source guards + harness reject `国籍`/`国籍/地区`） |
+

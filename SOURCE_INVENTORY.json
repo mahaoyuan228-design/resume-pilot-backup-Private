@@ -1,6 +1,6 @@
 {
   "version": "0.1.4.9",
-  "sumsSha256": "c3b1c5e11a50827ee49039da06bf3aa0fd8a5695016ebad2bd357732529dcafc",
+  "sumsSha256": "bf48a7b64283c2acf2dc6493255e0b8cc8515bc383ca383e09f6a543e4570fec",
   "inventory": [
     {
       "path": "manifest.json",
@@ -688,14 +688,14 @@
     },
     {
       "path": "src/content/hotjob-mc-basic.js",
-      "sha256": "843c8ca8f5eb00ce143c39b0ac7185af5d4a6f4d6b343fb4d6f77f139d971e0e",
-      "sourceSha256": "843c8ca8f5eb00ce143c39b0ac7185af5d4a6f4d6b343fb4d6f77f139d971e0e",
+      "sha256": "e38b28e15291c98444f2c5f40bfbb8381c6ce27c9f6d216761f1869d70a66a3d",
+      "sourceSha256": "e38b28e15291c98444f2c5f40bfbb8381c6ce27c9f6d216761f1869d70a66a3d",
       "kind": "frozen-product"
     },
     {
       "path": "src/content/hotjob-mc-profile-map.mjs",
-      "sha256": "52480b8e4ab4e0022ecea8e4aa27e229689f10e80aa1834912b0e80ec7a367f1",
-      "sourceSha256": "52480b8e4ab4e0022ecea8e4aa27e229689f10e80aa1834912b0e80ec7a367f1",
+      "sha256": "393d59d0a3579428ce0bb43c3eaded29d51184ca5abff919ec23d295f11307f2",
+      "sourceSha256": "393d59d0a3579428ce0bb43c3eaded29d51184ca5abff919ec23d295f11307f2",
       "kind": "frozen-product"
     },
     {

@@ -8,8 +8,9 @@ export const HOTJOB_MC_SITE_ID = 'hotjob-mc';
 /** Live header-title labels on mc 基本信息 (verified CDP; not invented). */
 export const HOTJOB_MC_TEXT_LABELS = Object.freeze(['姓名', '移动电话', '电子邮箱']);
 
-/** Flat mc-select allowlist. Live: .select-am-list-extra + .am-modal.mc-select-popup.
- *  性别 (2026-10-18) · 证件类型 (2026-10-18 中联 options sampled via CDP cancel-only). */
+/** Flat mc-select allowlist. Live: .select-am-list-extra + .am-modal.mc-select-popup (no search).
+ *  性别 · 证件类型 share one fillSelect path (2026-10-18).
+ *  Out of scope: 国籍/地区 (same popup + 搜索 + ~199 opts → search-heavy); 籍贯/出生日期 cascader|date. */
 export const HOTJOB_MC_SELECT_SPECS = Object.freeze({
   性别: Object.freeze({ key: 'gender', alternates: Object.freeze(['男', '女']) }),
   证件类型: Object.freeze({

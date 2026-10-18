@@ -3,7 +3,11 @@
 //
 // First slice fields (live CDP 中联 SU661f… /mc/deliver/operationResumer 2026-10-18):
 //   姓名 (text) · 移动电话 (text) · 电子邮箱 (text)
-// Select knives: 性别 · 证件类型 via .select-am-list-extra + .am-modal.mc-select-popup
+// Flat select knives (shared fillSelect): 性别 · 证件类型
+//   via .select-am-list-extra + .am-modal.mc-select-popup (no search box; small option list)
+// Out of scope (same extra class but NOT flat allowlist):
+//   国籍/地区 — same mc-select-popup + 搜索 + ~199 options (search-heavy) → select_search_heavy
+//   籍贯 / 出生日期 / 英语等级 — cascader/date/picker or unverified
 //
 // DOM contract (verified live):
 //   item  = .my-list-item
@@ -22,7 +26,7 @@
   const TEXT_LABELS = ['姓名', '移动电话', '电子邮箱'];
   const GENDER = '性别';
   const ID_TYPE = '证件类型';
-  /** Flat mc-select allowlist (性别 + 证件类型). Cascader/date/region out of scope. */
+  /** Flat mc-select allowlist only. 性别 + 证件类型 share one fillSelect / fillSelectOnce path. */
   const SELECT_SPECS = {
     [GENDER]: { key: 'gender', alternates: ['男', '女'] },
     [ID_TYPE]: {
@@ -39,12 +43,17 @@
     }
   };
   const ALLOWED_SELECT_LABELS = Object.keys(SELECT_SPECS);
+  /** Live labels that look like selects but are search-heavy / cascader / date — never allowlist. */
+  const SELECT_OUT_OF_SCOPE = Object.freeze(['国籍/地区', '国籍', '籍贯', '出生日期', '英语等级']);
+  /** Flat lists stay small; live 国籍/地区 opens ~199 rows + 搜索. */
+  const FLAT_SELECT_MAX_OPTIONS = 24;
   const ITEM_SEL = '.my-list-item';
   const LABEL_SEL = '.header-title';
   const INPUT_SEL = '.am-input-control input, input[type="text"], input[type="tel"], input[type="email"], input:not([type])';
   const EXTRA_SEL = '.select-am-list-extra, .am-list-extra';
   const POPUP_SEL = '.am-modal.mc-select-popup';
   const OPTION_ROW_SEL = '.am-list.mc-select-list .am-list-item, .mc-select-list .am-list-item';
+  const SEARCH_INPUT_SEL = '.mc-search-input input, input[placeholder="搜索"], input[placeholder*="搜索"]';
   const CONFIRM_SEL = '.am-picker-popup-header-right';
   const CANCEL_SEL = '.am-picker-popup-header-left';
   const TITLE_SEL = '.resume-info-title';
@@ -220,6 +229,15 @@
     return norm(row.querySelector('.am-list-content')?.textContent || row.dataset?.value || row.textContent);
   }
 
+  /** True when popup has a 搜索 box or too many options (国籍/地区 live pattern). */
+  function popupSearchHeavy(popup) {
+    if (!popup) return { heavy: false, optionCount: 0, hasSearch: false };
+    const hasSearch = !!popup.querySelector(SEARCH_INPUT_SEL);
+    const optionCount = optionRows(popup).length;
+    const heavy = hasSearch || optionCount > FLAT_SELECT_MAX_OPTIONS;
+    return { heavy, optionCount, hasSearch };
+  }
+
   async function closeSelectPopup() {
     const popup = visiblePopup();
     if (!popup) return;
@@ -253,6 +271,20 @@
     if (!extra) return { ok: false, reason: 'select_extra_missing', clickedOption: false, confirmed: false };
     const opened = await openSelectPopup(extra);
     if (!opened.ok) return { ok: false, reason: opened.reason, clickedOption: false, confirmed: false };
+    const heavy = popupSearchHeavy(opened.popup);
+    if (heavy.heavy) {
+      const sampleOptions = optionRows(opened.popup).map(optionText).filter(Boolean).slice(0, 12);
+      await closeSelectPopup();
+      return {
+        ok: false,
+        reason: 'select_search_heavy',
+        clickedOption: false,
+        confirmed: false,
+        sampleOptions,
+        optionCount: heavy.optionCount,
+        hasSearch: heavy.hasSearch
+      };
+    }
     const rows = optionRows(opened.popup);
     const sampleOptions = rows.map(optionText).filter(Boolean).slice(0, 12);
     const matches = rows.filter((row) => optionText(row) === norm(expected));
@@ -329,7 +361,12 @@
       expected: expected == null ? null : norm(expected),
       ...partial
     });
-    if (!spec) return fail({ reason: 'label_not_allowed' });
+    if (!spec) {
+      if (SELECT_OUT_OF_SCOPE.includes(activeLabel) || /^国籍/u.test(activeLabel)) {
+        return fail({ reason: 'select_out_of_scope_search_or_cascader' });
+      }
+      return fail({ reason: 'label_not_allowed' });
+    }
     if (!pageAllowed(options)) return fail({ reason: 'wrong_page', href: location.href });
 
     const item = findItem(activeLabel);
@@ -342,13 +379,23 @@
     if (!target && options.pickAlternate === true) {
       const opened = await openSelectPopup(selectExtra(item));
       if (!opened.ok) return fail({ before, reason: opened.reason });
+      const heavy = popupSearchHeavy(opened.popup);
       const texts = optionRows(opened.popup).map(optionText);
       await closeSelectPopup();
+      if (heavy.heavy) {
+        return fail({
+          before,
+          reason: 'select_search_heavy',
+          sampleOptions: texts.slice(0, 12),
+          optionCount: heavy.optionCount,
+          hasSearch: heavy.hasSearch
+        });
+      }
       target = (spec.alternates || []).find((option) => option !== before && texts.includes(option)) || '';
       if (!target) {
         return fail({
           before,
-          reason: texts.length ? 'select_option_missing' : 'select_option_missing',
+          reason: 'select_option_missing',
           sampleOptions: texts.slice(0, 12)
         });
       }
@@ -650,8 +697,11 @@
     TEXT_LABELS,
     SELECT_SPECS,
     ALLOWED_SELECT_LABELS,
+    SELECT_OUT_OF_SCOPE,
+    FLAT_SELECT_MAX_OPTIONS,
     GENDER,
     ID_TYPE,
+    popupSearchHeavy,
     ITEM_SEL,
     LABEL_SEL,
     isHotjobMcHost,

@@ -7,7 +7,7 @@
 // DOM contract: provisional `.bs-form-item` + label + text input (fixture-backed).
 // Public portal-2022 bundles do NOT contain bs-form-item (see _beisen-2022-js-class-hints-20261018.txt).
 // Live SPA form class names unproven — login wall; refine after Jeremy login.
-// Family tenants: junlebaoruye / invt / jssoft (same ux-recruitment-portal-2022 chunk).
+// Family tenants: junlebaoruye / invt / jssoft / xiandaimuye / insight-med (same ux-recruitment-portal-2022 chunk).
 (() => {
   const previous = globalThis.ResumeBeisen2022Basic;
   if (previous?.listener) {

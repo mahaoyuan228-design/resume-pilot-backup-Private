@@ -12,7 +12,7 @@
 | --- | --- |
 | `siteId` | **`moka`**（族级；德州仪器等 `*.mokahr.com` 同壳，非 `ti` 单租户） |
 | 公开样例门户 | https://app.mokahr.com/campus-recruitment/ti/143986 （HTTP 200；需 cookie；SPA） |
-| 同族对照 | `static-ats.mokahr.com/recruitment-web-client/*`（build `20261012-1723-f0ef3-release`） |
+| 同族对照 | `static-ats.mokahr.com/recruitment-web-client/*`（build `20261012-1723-f0ef3-release`）；另样例 `leniu/36041` · `chint/40745` |
 | 栈 | **Moka ATS** recruitment-web-client；`org.id=ti` · `siteId=143986` · `mode=campus` · `useApplyForm=true` |
 | vs hotjob | **不可** CMS 复用（无 `wecruit.hotjob.cn`） |
 | 未登录简历表单 | **否** — 门户仅 hidden `init-data`；无字段 input；`/apply` 等裸 path 404（客户端路由） |
@@ -86,3 +86,14 @@ extension wired; live still needs login+DOM harvest
 - Compared provisional `.moka-form-item` / `.moka-input` → **absent** from public JS/CSS/vendor; documented CSS-confirmed `apply-form__*` / `campus-apply__*` hints without adopting them as selectors.
 - Updated fixture with public chrome (`#app` / `#init-data` / `#moka-version` / forSEO footer); form nodes stay provisional offline stand-ins.
 - **Still docs+offline only**: form invisible without login — no invented live selectors; no live fill claim.
+
+## 7. Extra fingerprint reuse candidates (2026-10-18 ~21:43 Asia/Shanghai)
+
+Public Extra batch same `static-ats` recruitment-web-client build as TI `ti/143986` (hosts already `*.mokahr.com` wildcards — **no adapter behavior change**):
+
+| 雇主 | 公开样例 | 结论 |
+| --- | --- | --- |
+| 乐牛游戏 | `app.mokahr.com/.../leniu/36041` | reuse → **moka** |
+| 正泰安能 | `app.mokahr.com/.../chint/40745` | reuse → **moka** |
+
+Login still required for resume-form DOM harvest. Docs-only; **no live claim**. Evidence: `shared-ats-fingerprint-zhiye-moka-feishu-20261018.md` Extra §4.2–4.4.

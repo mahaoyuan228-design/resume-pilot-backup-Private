@@ -12,7 +12,7 @@
 | --- | --- |
 | `siteId` | **`feishu-atsx`**（族级；广发 ≈ 字节同壳，非 `gf-atsx` 单租户） |
 | 公开样例门户 | https://gffunds.jobs.feishu.cn/index （HTTP 200；SPA） |
-| 同族对照 | `jobs.bytedance.com`（E4：`atsx-throne` / `hire-fe-prod` @ feishucdn） |
+| 同族对照 | `jobs.bytedance.com`（E4）；`thundersoft.jobs.feishu.cn`（同广发 saas-career JS） |
 | 栈 | 飞书招聘 **ATSX saas-career**；CDN `lf-package-cn.feishucdn.com/obj/atsx-throne/.../saas-career/` |
 | vs hotjob | **不可** CMS 复用（无 `wecruit.hotjob.cn`） |
 | 未登录简历表单 | **否** — 门户有「简历」导航配置，无 `<form>`/`<input>` SSR；`/resume` 等裸 path 404（客户端路由） |
@@ -88,3 +88,12 @@ extension wired; live still needs login+DOM harvest
 - Updated fixture with portal chrome + `atsx-form` wrapper + nested label/control/children mirroring Ant Design ATSX markup; neighbor 工作年限 unchanged.
 - **Still docs+offline only**: form invisible without login — no invented live selectors; no live fill claim.
 
+## 7. Extra fingerprint reuse candidates (2026-10-18 ~21:43 Asia/Shanghai)
+
+Public Extra batch same saas-career JS as 广发 `gffunds.jobs.feishu.cn` (hosts already `*.jobs.feishu.cn` wildcards — **no adapter behavior change**):
+
+| 雇主 | 公开样例 | 结论 |
+| --- | --- | --- |
+| 中科创达 | `thundersoft.jobs.feishu.cn` | reuse → **feishu-atsx** |
+
+Login still required for resume-form DOM harvest. Docs-only; **no live claim**. Evidence: `shared-ats-fingerprint-zhiye-moka-feishu-20261018.md` Extra §4.2–4.4.

@@ -12,7 +12,7 @@
 | --- | --- |
 | `siteId` | **`beisen-2022`**（族级；君乐宝 ≈ 英威腾 ≈ 金山云同壳，非单租户） |
 | 公开样例门户 | https://junlebaoruye.zhiye.com/campus/jobs （HTTP 200；SPA） |
-| 同族对照 | `invt.zhiye.com` · `jssoft.zhiye.com`（同 `pc-e2be192404257687c4d1` chunk） |
+| 同族对照 | `invt.zhiye.com` · `jssoft.zhiye.com` · `xiandaimuye.zhiye.com` · `insight-med.zhiye.com`（同 `pc-e2be192404257687c4d1` chunk） |
 | 栈 | 北森 **ux-recruitment-portal-2022**；CDN `acdn.bstatics.com`；嵌入 BSGlobal + 站点地图 |
 | vs hotjob | **不可** CMS 复用（无 `wecruit.hotjob.cn`） |
 | vs 北森 legacy | **不可**混用（新华 `nci.zhiye.com` = CmsPortal / `is-old`；与 2022 壳不同代） |
@@ -88,3 +88,14 @@ extension wired; live still needs login+DOM harvest
 - Searched portal-2022 entry + lazy `.chk.js` / CSS for provisional `.bs-form-item` → **no match** (not renamed).
 - Updated fixture with public chrome (`#bsMain` / `.views` / `.view-main` / chunk fingerprint); form nodes stay provisional offline stand-ins.
 - **Still docs+offline only**: form invisible without login — no invented live selectors; no live fill claim.
+
+## 7. Extra fingerprint reuse candidates (2026-10-18 ~21:43 Asia/Shanghai)
+
+Public Extra batch same portal-2022 chunk as junlebao/invt/jssoft (hosts already `*.zhiye.com` wildcards — **no adapter behavior change**):
+
+| 雇主 | 公开样例 | 结论 |
+| --- | --- | --- |
+| 现代牧业 | `xiandaimuye.zhiye.com` | reuse → **beisen-2022** |
+| 北芯生命 | `insight-med.zhiye.com` | reuse → **beisen-2022** |
+
+Login still required for resume-form DOM harvest. Docs-only; **no live claim**. Evidence: `shared-ats-fingerprint-zhiye-moka-feishu-20261018.md` Extra §4.2–4.4.

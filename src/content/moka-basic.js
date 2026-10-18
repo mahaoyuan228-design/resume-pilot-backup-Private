@@ -8,7 +8,7 @@
 // Public recruitment-web-client bundles do NOT contain moka-form-item (CSS hints: apply-form__/campus-apply__;
 // see _moka-js-class-hints-20261018.txt). Not adopted yet — would invent live form DOM.
 // Live SPA form class names unproven — login wall; refine after Jeremy login.
-// Family sample: 德州仪器 app.mokahr.com/campus-recruitment/ti/143986 (static-ats.mokahr.com recruitment-web-client).
+// Family samples: app.mokahr.com/campus-recruitment/ti/143986 · leniu/36041 · chint/40745 (same static-ats recruitment-web-client build).
 (() => {
 
   const previous = globalThis.ResumeMokaBasic;

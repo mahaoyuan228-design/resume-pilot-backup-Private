@@ -1,7 +1,7 @@
 # hotjob 租户 CMS 复用 · 下一实验计划（fill-wo-save）
 
 日期：2026-10-18（Asia/Shanghai）  
-状态：**离线计划 only** — 本文件不代替 live；**未**对 Jeremy PC 跑 CDP（无 machineId）。  
+状态：**离线计划 + 公开壳分类已更新（含信通院/欧普）** — 本文件不代替 live fill；壳探测用 box curl（无登录、无多开 Edge）。  
 前置证据：`hotjob-tenants-20261018.md` · `hotjob-tenant-verify-20261018.md`（11/11 reuse-CMS **yes**；登录后 fill **未做**）· `hotjob-feishu-tenants-fingerprint-20261018.md`（飞书扩站：南粤/Celebright 同壳；国盛 SLD→`SU6879…`）  
 产品基线：招商 `SU629dbc0c0dcad452299bc0f7` 现网可填；`isCmsResumePage` = `wecruit.hotjob.cn` + `/SU*/pb/resumeOperation.html`。
 
@@ -12,10 +12,12 @@
 排序依据（探针侧）：与招商同壳 SPA 跳转一致 + `login_wall` / `personal_center` / `pb/` 门户形态接近基线 + 高置信品牌。
 
 | # | 公司 | SU | resumeOperation（登录后目标） | 为何最像 CMS |
-| --- | --- | --- | --- | --- |
-| **1（首选）** | **中联重科** | `SU661f37091eb8053acd6cdf3d` | **更正：** live 表单是 `mc/deliver/operationResumer`，不是 pb。见 `HOTJOB_MC_OPERATIONRESUMER_20261018.md`。早期探针写过 https://wecruit.hotjob.cn/SU661f37091eb8053acd6cdf3d/pb/resumeOperation.html | verify：**login_wall** + **personal_center**；门户标题「中联重科校园招聘」；`run-hotjob-tenant.cmd zhonglian` 走 mc harness，CMS_BASIC 对 mc 路径 exit 4 |
-| **2** | **中国信通院** | `SU642fbf5fbef57c1e269fa798` | https://wecruit.hotjob.cn/SU642fbf5fbef57c1e269fa798/pb/resumeOperation.html | 门户即 **`/pb/index.html`**（与招商基线门户形态同族，非 `mc/`）；**login_wall**；标题「中国信通院招聘」 |
-| **3** | **欧普照明** | `SU646ed9920dcad45af14821b4` | https://wecruit.hotjob.cn/SU646ed9920dcad45af14821b4/pb/resumeOperation.html | **personal_center_copy_visible**；校招职位列表高置信；同壳 `resumeOp` 跳转 yes |
+| ---
+> **2026-10-18 live update（中联）**：登录后真实页是 `/mc/deliver/operationResumer`（antd-mobile H5），**不是** `/pb/resumeOperation.html`。Path **B** thin adapter；CMS_BASIC 对 mc fail-closed (`hotjob_mc_shell_requires_adapter`)。详见 `HOTJOB_MC_OPERATIONRESUMER_20261018.md`。
+ | --- | --- | --- | --- |
+| **1（首选）** | **中联重科** | `SU661f37091eb8053acd6cdf3d` | https://wecruit.hotjob.cn/SU661f37091eb8053acd6cdf3d/pb/resumeOperation.html | verify：**login_wall** + **personal_center**；门户标题「中联重科校园招聘」；未登录 `resumeOp`→同 SU `/pb/index.html#/` 与基线一致；verify 文末已点名作下一登录目标 |
+| **2** | **中国信通院** | `SU642fbf5fbef57c1e269fa798` | https://wecruit.hotjob.cn/SU642fbf5fbef57c1e269fa798/pb/resumeOperation.html | **壳猜 pb**；门户 **`/pb/index.html`**；公开双壳 200（hash=`a1541…`/`352df1…`）；`caict` ready → CMS_BASIC；**排在南粤队列后**；未 live |
+| **3** | **欧普照明** | `SU646ed9920dcad45af14821b4` | https://wecruit.hotjob.cn/SU646ed9920dcad45af14821b4/mc/deliver/operationResumer（兼 pb resumeOp） | **壳猜 mc**（门户常 `/mc/position/campus`）；公开双壳 200；`opple` ready → hotjob-mc；若 live 为 pb 则 CMS_BASIC 候选；**排在南粤队列后**；未 live |
 
 门户入口（未登录可开）：
 
@@ -30,21 +32,48 @@
 
 | # | 公司 | SU | 门户（未登录） | resumeOperation（登录后目标） | 备注 |
 | --- | --- | --- | --- | --- | --- |
-| **1b（中联后）** | **广东南粤银行** | `SU670a291d6202cc7666c744bc` | https://wecruit.hotjob.cn/SU670a291d6202cc7666c744bc/pb/school.html | https://wecruit.hotjob.cn/SU670a291d6202cc7666c744bc/pb/resumeOperation.html | `/pb/school.html`；飞书截止约 2026/11/04；resumeOp 公开 200 同壳 |
-| **1c** | **Celebright 曼领** | `SU6279c916bef57c3ac0d49671` | https://wecruit.hotjob.cn/SU6279c916bef57c3ac0d49671/pb/index.html | https://wecruit.hotjob.cn/SU6279c916bef57c3ac0d49671/pb/resumeOperation.html | `/pb/index.html` 门户（同信通院族）；resumeOp 公开 200 同壳 |
+| **1b（中联后）** | **广东南粤银行** | `SU670a291d6202cc7666c744bc` | https://wecruit.hotjob.cn/SU670a291d6202cc7666c744bc/pb/school.html | https://wecruit.hotjob.cn/SU670a291d6202cc7666c744bc/pb/resumeOperation.html | **壳猜 pb**；飞书截止约 2026/11/04；resumeOp 200=`a1541…`；兼开 mc；`nanyue` ready |
+| **1c** | **Celebright 曼领** | `SU6279c916bef57c3ac0d49671` | https://wecruit.hotjob.cn/SU6279c916bef57c3ac0d49671/pb/index.html | https://wecruit.hotjob.cn/SU6279c916bef57c3ac0d49671/pb/resumeOperation.html | **壳猜 pb**（同信通院族）；resumeOp 200 同壳；兼开 mc；`celebright` ready |
 
-**Live 序（建议）**：① 中联重科（上表 #1）→ ② 南粤银行 → ③ Celebright → 原 #2/#3 信通院/欧普仍作备选。
+**Live 序（建议）**：① 中联重科（已 live=mc）→ ② 南粤银行 → ③ Celebright → （可选）国盛 → **再** 信通院（pb 猜）/ 欧普（mc 猜）。信通院/欧普 **仍排南粤队列之后**；本轮不 live。
 
-**国盛证券（非 wecruit 根域，旁注）**：`https://gszq.hotjob.cn/` → getSLD → SU `SU6879a7b3e57172288b60df9d`。SPA 同壳，但 `isCmsResumePage` 钉死 `wecruit.hotjob.cn`；若试填用  
-`https://wecruit.hotjob.cn/SU6879a7b3e57172288b60df9d/pb/resumeOperation.html`（勿用 `gszq` host 进 harness）。排在南粤/Celebright 之后作 #4 备选。
+**国盛证券（非 wecruit 根域，旁注）**：`https://gszq.hotjob.cn/` → getSLD → SU `SU6879a7b3e57172288b60df9d` · link=`…/pb/index.html#/` → **壳猜 pb**。`isCmsResumePage` 钉死 `wecruit.hotjob.cn`；试填用  
+`https://wecruit.hotjob.cn/SU6879a7b3e57172288b60df9d/pb/resumeOperation.html`（勿用 `gszq` host）。`guosheng` key ready；#4 备选。兼开 mc → 若 live 为 operationResumer 则 hotjob-mc 候选。
 
-**推荐第一个 live 租户 URL（登录后停在此页再 fill）**：  
-`https://wecruit.hotjob.cn/SU661f37091eb8053acd6cdf3d/pb/resumeOperation.html`（中联重科）
+**推荐第一个 live 租户 URL（中联已 live = mc）**：  
+`https://wecruit.hotjob.cn/SU661f37091eb8053acd6cdf3d/mc/deliver/operationResumer`（中联重科；**勿**再默认 pb）
 
 **中联之后队列（飞书新增，exact）**：  
 1. 南粤：`https://wecruit.hotjob.cn/SU670a291d6202cc7666c744bc/pb/resumeOperation.html`  
 2. Celebright：`https://wecruit.hotjob.cn/SU6279c916bef57c3ac0d49671/pb/resumeOperation.html`  
 3. （可选）国盛 via wecruit：`https://wecruit.hotjob.cn/SU6879a7b3e57172288b60df9d/pb/resumeOperation.html`
+
+### 1.2 公开 HTTP 壳分类（2026-10-18 21:05 CST · box curl）
+
+证据：`HOTJOB_SHELL_CLASS_南粤Celebright国盛_20261018.md` · `_shell-class-20261018/summary.json`。
+
+| 公司 | SU | 壳猜测 | 非 login-only？ | Harness |
+| --- | --- | --- | --- | --- |
+| 南粤 | `SU670a…` | **pb**（门户 `/pb/school.html`；resumeOp hash=`a1541…`=招商） | 是（pb+mc 双 200） | **`nanyue` key ready** → CMS_BASIC |
+| Celebright | `SU6279…` | **pb**（门户 `/pb/index.html`） | 是 | **`celebright` key ready** → CMS_BASIC |
+| 国盛 | `SU6879…` | **pb**（getSLD→`…/pb/index.html#/`；实验用 **wecruit** host） | 是 | **`guosheng` key ready** → CMS_BASIC |
+
+- 公开侧 **不能**单靠 HTTP 区分招商(pb-live)与中联(mc-live)：两壳 HTML 跨租户 byte 相同。  
+- 三者**不像**中联那样对外主推 `/mc/index` → 主猜 **pb**；若登录后落到 `operationResumer` → **hotjob-mc reuse candidate**（资产已存在）。  
+- **不是** unknown login-only。
+
+### 1.3 公开 HTTP 壳分类 · 信通院 / 欧普（2026-10-18 21:34 CST · box curl）
+
+证据：`HOTJOB_SHELL_CLASS_信通院欧普_20261018.md` · `_shell-class-20261018/`（`caict_*` / `opple_*`）· `summary.json`。
+
+| 公司 | SU | 壳猜测 | 非 login-only？ | Harness |
+| --- | --- | --- | --- | --- |
+| 中国信通院 | `SU642fbf…` | **pb**（门户 `/pb/index.html`；resumeOp hash=`a1541…`=招商） | 是（pb+mc 双 200） | **`caict` key ready** → CMS_BASIC |
+| 欧普照明 | `SU646ed…` | **mc**（门户常 `/mc/position/campus`；opResumer hash=`352df1…`=中联） | 是（pb+mc 双 200） | **`opple` key ready** → hotjob-mc |
+
+- 与南粤批相同：公开侧不能单靠 HTTP 区分招商(pb-live)与中联(mc-live)。  
+- 信通院不像中联主推 mc 门户 → 主猜 **pb**；欧普门户偏 mc → 主猜 **mc**（Path B）。  
+- **Live 序**：排在南粤 / Celebright /（可选国盛）**之后**；**未** live、**未**宣称客户可填。Acceptance 仍 85%。
 
 备选同批（非 Top3，仍 reuse yes）：隆基 `SU649d…`、海天 `SU6322…`、台积电南京 `SU6107…`、TCL茂佳 `SU6491…`、哈锅 `SU65f3…`、地平线 `SU62d9…`、宇量昇 `SU6384…`；社招中科云谷 `SU60a6…` **medium**，勿与中联校招 SU 混用。
 
@@ -57,7 +86,7 @@
 | 项 | 值 |
 | --- | --- |
 | Edge CDP | **9237**（试用 / internal；见 `PAID_HANDOFF_QA_BLOCKER_20261018.md`） |
-| 扩展 | 试用 id 默认 `hdekmacbpblppkbpamgocbanjafigfej`（`RESUME_EXT_ID`） |
+| 扩展 | 试用 id 默认 `hhembhoojafdefnkonmgoejfedgloanc`（`RESUME_EXT_ID`；旧 `hdek…` blocked） |
 | 授权 9239 | **本实验不用** — 租户摸底用试用；交客户前另在授权会话复测 |
 
 **步骤（fill-wo-save / dry）**
@@ -90,7 +119,7 @@
 | SW 任务 | `src/background/cms-basic-auto.mjs`（`CMS_BASIC_AUTO`；`softwareClickedSave` fail-closed） |
 | 页聚焦 | `src/background/cms-page-focus.mjs` |
 | 教育/实习 harness | `scripts/auto-cms-education.mjs` · `scripts/auto-cms-internship.mjs` — **本轮不做**（基线钉死招商 PAGE） |
-| ~~已知缺口~~ 已补（2026-10-18 19:5x CST） | harness 支持 `CMS_PAGE`/`CMS_SU`（校验 `wecruit.hotjob.cn/SU*/pb/resumeOperation.html`）→ auto 页 `cmsPage` → SW `CMS_BASIC_AUTO` 按该 SU 找 tab/probe（原先 SW 钉死招商，仅 `OPEN_CMS_PAGE=0` 也会 `cms_basic_login_or_wrong_page`）；一键 `scripts\run-hotjob-tenant.cmd <zhonglian\|nanyue\|celebright\|guosheng>`；证据自动另存 `hotjob-tenant-<6>-cms-basic-<stamp>.json`，不覆盖招商 latest |
+| ~~已知缺口~~ 已补（2026-10-18 19:5x CST） | harness 支持 `CMS_PAGE`/`CMS_SU`（校验 `wecruit.hotjob.cn/SU*/pb/resumeOperation.html`）→ auto 页 `cmsPage` → SW `CMS_BASIC_AUTO` 按该 SU 找 tab/probe（原先 SW 钉死招商，仅 `OPEN_CMS_PAGE=0` 也会 `cms_basic_login_or_wrong_page`）；一键 `scripts\run-hotjob-tenant.cmd <zhonglian\|nanyue\|celebright\|guosheng\|caict\|opple>`；证据自动另存 `hotjob-tenant-<6>-cms-basic-<stamp>.json`，不覆盖招商 latest |
 
 ---
 

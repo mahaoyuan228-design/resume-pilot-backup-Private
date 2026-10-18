@@ -1,0 +1,104 @@
+{
+  "when": "2026-10-18 21:05 Asia/Shanghai",
+  "method": "box curl public HTTP only; no login; no PC Edge tabs",
+  "controls": {
+    "cmb_招商": {
+      "su": "SU629dbc0c0dcad452299bc0f7",
+      "live_shell": "pb",
+      "public_pb": 200,
+      "public_mc": 200
+    },
+    "zhonglian_中联": {
+      "su": "SU661f37091eb8053acd6cdf3d",
+      "live_shell": "mc",
+      "public_pb": 200,
+      "public_mc": 200,
+      "portal": "/mc/index"
+    }
+  },
+  "hashes": {
+    "pb": "a1541cf6cc9fe092be2a (resumeOperation.js/css + vendor)",
+    "mc": "352df1b0f121f4bbf78c (mc index.js/vendor)"
+  },
+  "note": "pb and mc HTML bodies are byte-identical across ALL probed SUs including controls; public HTTP alone cannot prove post-login shell",
+  "tenants": [
+    {
+      "key": "nanyue",
+      "name": "广东南粤银行",
+      "su": "SU670a291d6202cc7666c744bc",
+      "shell_guess": "pb",
+      "confidence": "medium-high (portal preference; not live-confirmed)",
+      "evidence": [
+        "feishu portal https://wecruit.hotjob.cn/SU670a…/pb/school.html",
+        "pb/resumeOperation.html HTTP 200, hash a1541… = 招商 CMS, body md5 identical to 招商",
+        "also exposes mc/deliver/operationResumer 200 hash 352df1… (same as all tenants incl 招商)",
+        "NOT login-wall-only: SPA shells serve without HTTP auth redirect"
+      ],
+      "harness": "run-hotjob-tenant.cmd nanyue → CMS_BASIC pb (key ready)",
+      "if_live_mc": "hotjob-mc reuse candidate"
+    },
+    {
+      "key": "celebright",
+      "name": "Celebright 曼领",
+      "su": "SU6279c916bef57c3ac0d49671",
+      "shell_guess": "pb",
+      "confidence": "medium-high",
+      "evidence": [
+        "feishu portal …/pb/index.html#/",
+        "pb/resumeOperation.html 200 same CMS hash/body as 招商",
+        "dual mc exposure same as peers",
+        "NOT login-wall-only"
+      ],
+      "harness": "run-hotjob-tenant.cmd celebright → CMS_BASIC pb (key ready)",
+      "if_live_mc": "hotjob-mc reuse candidate"
+    },
+    {
+      "key": "guosheng",
+      "name": "国盛证券",
+      "su": "SU6879a7b3e57172288b60df9d",
+      "shell_guess": "pb",
+      "confidence": "medium-high (getSLD points pb; hostname caveat)",
+      "evidence": [
+        "getSLD gszq.hotjob.cn → link …/SU6879…/pb/index.html#/ title 国盛证券招聘官网",
+        "wecruit …/pb/resumeOperation.html 200 same CMS hash",
+        "gszq …/pb/resumeOperation.html also 200 but hostname fails isCmsResumePage",
+        "dual mc on both hosts",
+        "NOT login-wall-only"
+      ],
+      "harness": "run-hotjob-tenant.cmd guosheng → wecruit pb URL (key ready); do not use gszq host",
+      "if_live_mc": "hotjob-mc reuse candidate on wecruit host"
+    },
+    {
+      "key": "caict",
+      "name": "中国信通院",
+      "su": "SU642fbf5fbef57c1e269fa798",
+      "shell_guess": "pb",
+      "confidence": "medium-high (portal /pb/index.html; not live-confirmed)",
+      "evidence": [
+        "portal https://wecruit.hotjob.cn/SU642fbf…/pb/index.html",
+        "pb/resumeOperation.html HTTP 200, hash a1541… = 招商 CMS, body md5 5e54d402… identical",
+        "also exposes mc/deliver/operationResumer 200 hash 352df1… body md5 c21b558e…",
+        "NOT login-wall-only: SPA shells serve without HTTP auth redirect"
+      ],
+      "harness": "run-hotjob-tenant.cmd caict → CMS_BASIC pb (key ready)",
+      "if_live_mc": "hotjob-mc reuse candidate"
+    },
+    {
+      "key": "opple",
+      "name": "欧普照明",
+      "su": "SU646ed9920dcad45af14821b4",
+      "shell_guess": "mc",
+      "confidence": "medium (portal preference /mc/position/campus like 中联 /mc/index; not live-confirmed)",
+      "evidence": [
+        "common portal https://wecruit.hotjob.cn/SU646ed…/mc/position/campus",
+        "mc/deliver/operationResumer HTTP 200, hash 352df1… = 中联 mc, body md5 identical",
+        "also exposes pb/resumeOperation.html 200 hash a1541… (dual; same as all tenants)",
+        "NOT login-wall-only"
+      ],
+      "harness": "run-hotjob-tenant.cmd opple → hotjob-mc Path B (key ready)",
+      "if_live_pb": "CMS_BASIC reuse candidate via pb/resumeOperation.html"
+    }
+  ],
+  "when_caict_opple": "2026-10-18 21:34 Asia/Shanghai",
+  "note_caict_opple": "caict portal pb → guess pb/CMS_BASIC; opple portal mc campus → guess mc/hotjob-mc; both dual-shell public 200"
+}

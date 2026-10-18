@@ -1,0 +1,13 @@
+HTTP/2 200 
+date: Sun, 18 Oct 2026 13:34:42 GMT
+content-type: text/html; charset=utf-8
+content-length: 4151
+set-cookie: acw_tc=0000000017923304829065837e4fd5c44a13c4ffcfc2f23587809040b2d2e8;path=/;HttpOnly;Max-Age=1800
+vary: Accept-Encoding
+last-modified: Wed, 23 Sep 2026 13:26:40 GMT
+vary: Accept-Encoding
+etag: "6ab3d390-1037"
+cache-control: no-store, max-age=0
+accept-ranges: bytes
+set-cookie: SERVERID=a232c76a369c895f1ebffb6ac1d6f78e|1792330482|1792330482;Path=/
+

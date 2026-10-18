@@ -10,7 +10,12 @@
   ],
   "host_permissions": [
     "https://hr.gtht.com/*",
-    "https://wecruit.hotjob.cn/*"
+    "https://wecruit.hotjob.cn/*",
+    "https://careers.citics.com/*",
+    "https://*.jobs.feishu.cn/*",
+    "https://jobs.bytedance.com/*",
+    "https://*.zhiye.com/*",
+    "https://*.mokahr.com/*"
   ],
   "background": {
     "service_worker": "src/background/worker.mjs",

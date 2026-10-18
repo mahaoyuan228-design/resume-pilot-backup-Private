@@ -8,9 +8,12 @@ import test from 'node:test';
 const root = resolve('.');
 const source = readFileSync(resolve(root, 'src/content/citics-basic.js'), 'utf8');
 
-test('marital select source stays on one label and off CMS/GTH', () => {
+test('marital select source stays on allowlist and off CMS/GTH', () => {
   assert.match(source, /const MARITAL = '婚姻状况'/);
-  assert.doesNotMatch(source, /民族|国籍|籍贯|政治面貌|户口类型|证件类型|生源地/);
+  assert.match(source, /const POLITICAL = '政治面貌'/);
+  // Flat allowlist only: marital + political. No cascader/region/ID-type knives yet.
+  assert.doesNotMatch(source, /籍贯|户口类型|证件类型|生源地|国籍/);
+  assert.doesNotMatch(source, /fillSelect\(\s*['"]民族['"]/);
   assert.doesNotMatch(source, /cms-|gth-/);
   assert.match(source, /only_marital_select_in_this_slice/);
   assert.match(source, /select_structure_unexpected/);

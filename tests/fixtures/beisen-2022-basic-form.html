@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <title>Beisen-2022 basic fixture (offline · provisional DOM)</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 480px; margin: 2rem auto; }
+    .bs-form-item { margin: 1rem 0; }
+    .bs-form-item-label { display: block; font-weight: 600; margin-bottom: 0.25rem; }
+    .bs-input { width: 100%; padding: 0.4rem 0.5rem; border: 1px solid #ccc; border-radius: 4px; }
+    .note { color: #666; font-size: 0.85rem; }
+  </style>
+</head>
+<body>
+  <h1>基本信息（fixture）</h1>
+  <p class="note">Provisional <code>.bs-form-item</code> contract for siteId <code>beisen-2022</code>.
+    Labels mirror high-confidence basic text fields for junlebaoruye.zhiye.com family
+    (ux-recruitment-portal-2022). Live SPA classes unproven (login wall).</p>
+  <!-- Fingerprint tokens so probeFingerprint can see portal-2022 on synthetic: -->
+  <div id="fp-hint" hidden data-stack="ux-recruitment-portal-2022 acdn.bstatics.com beisen zhiye.com"></div>
+
+  <div class="bs-form-item" data-field="姓名">
+    <label class="bs-form-item-label">姓名</label>
+    <div class="bs-form-item-control">
+      <input class="bs-input" type="text" name="fullName" value="" />
+    </div>
+  </div>
+
+  <div class="bs-form-item" data-field="手机号码">
+    <label class="bs-form-item-label">手机号码</label>
+    <div class="bs-form-item-control">
+      <input class="bs-input" type="tel" name="mobile" value="" />
+    </div>
+  </div>
+
+  <div class="bs-form-item" data-field="邮箱">
+    <label class="bs-form-item-label">邮箱</label>
+    <div class="bs-form-item-control">
+      <input class="bs-input" type="email" name="email" value="" />
+    </div>
+  </div>
+
+  <!-- Neighbor field: must stay untouched by first-slice fill -->
+  <div class="bs-form-item" data-field="工作年限">
+    <label class="bs-form-item-label">工作年限</label>
+    <div class="bs-form-item-control">
+      <input class="bs-input" type="text" name="years" value="0" />
+    </div>
+  </div>
+
+  <button type="button" id="save-btn" disabled>保存（fixture · never clicked by harness）</button>
+</body>
+</html>

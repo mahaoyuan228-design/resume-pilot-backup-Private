@@ -1,6 +1,6 @@
 /**
  * Regression: WHITELIST.productPaths length/set must match build-internal $files
- * and build-paid $productFiles. Prevents silent 81↔96 drift.
+ * and build-paid $productFiles. Prevents silent product-path drift.
  */
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
@@ -26,9 +26,9 @@ describe('productPaths ↔ WHITELIST ↔ build allowlists', () => {
   const whitelist = JSON.parse(readFileSync(resolve(root, 'WHITELIST.json'), 'utf8'));
   const productPaths = whitelist.productPaths;
 
-  it('productPaths is a non-empty array with expected count (96 @ v0.1.4.9)', () => {
+  it('productPaths is a non-empty array with expected count (111 @ v0.1.4.9)', () => {
     assert.ok(Array.isArray(productPaths), 'productPaths must be array');
-    assert.equal(productPaths.length, 96, `productPaths length ${productPaths.length} ≠ 96`);
+    assert.equal(productPaths.length, 111, `productPaths length ${productPaths.length} ≠ 111`);
     assert.equal(whitelist.version, '0.1.4.9');
   });
 

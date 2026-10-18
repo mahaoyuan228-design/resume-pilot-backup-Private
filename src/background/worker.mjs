@@ -36,3 +36,12 @@ installGthIntentAutoRunner();
 
 import {installCmsBasicAutoRunner} from './cms-basic-auto.mjs';
 installCmsBasicAutoRunner();
+
+import {installFeishuAtsxBasicAutoRunner} from './feishu-atsx-basic-auto.mjs';
+installFeishuAtsxBasicAutoRunner();
+
+import {installBeisen2022BasicAutoRunner} from './beisen-2022-basic-auto.mjs';
+installBeisen2022BasicAutoRunner();
+
+import {installMokaBasicAutoRunner} from './moka-basic-auto.mjs';
+installMokaBasicAutoRunner();

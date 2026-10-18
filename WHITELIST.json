@@ -239,13 +239,28 @@
     "src/auto/cms-basic-auto.html",
     "src/background/gth-intent-auto.mjs",
     "src/auto/gth-intent-auto.js",
-    "src/auto/gth-intent-auto.html"
+    "src/auto/gth-intent-auto.html",
+    "src/background/feishu-atsx-basic-auto.mjs",
+    "src/background/beisen-2022-basic-auto.mjs",
+    "src/background/moka-basic-auto.mjs",
+    "src/auto/feishu-atsx-basic-auto.html",
+    "src/auto/feishu-atsx-basic-auto.js",
+    "src/auto/beisen-2022-basic-auto.html",
+    "src/auto/beisen-2022-basic-auto.js",
+    "src/auto/moka-basic-auto.html",
+    "src/auto/moka-basic-auto.js",
+    "src/content/feishu-atsx-basic.js",
+    "src/content/feishu-atsx-profile-map.mjs",
+    "src/content/beisen-2022-basic.js",
+    "src/content/beisen-2022-profile-map.mjs",
+    "src/content/moka-basic.js",
+    "src/content/moka-profile-map.mjs"
   ],
   "excluded": [
     "No directory-wide copy of repository/tests/exports/dist.",
     "No real browser drivers, customer profile or backup data, private snapshots, screenshots or logs.",
     "No .git/.codex/.agents/.env/keys/server storage/payment credentials.",
     "No installer, ready package, paid build, test receipts or source archive nested in source.",
-    "No src/license paid scaffolding or scripts/build-paid.ps1 in the internal 96-file product package (paid flavor is a separate dist path)."
+    "No src/license paid scaffolding or scripts/build-paid.ps1 in the internal 111-file product package (paid flavor is a separate dist path)."
   ]
 }

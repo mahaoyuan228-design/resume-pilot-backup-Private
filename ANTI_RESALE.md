@@ -19,7 +19,7 @@ Content/background **hooks already exist**: when `service_worker === 'src/licens
 
 ## Flavor separation
 
-- **Internal** (`scripts/build-internal.ps1`): 96-file package, `worker.mjs`, gate OFF. Jeremy’s 003753 / 011002 workflow unchanged.
+- **Internal** (`scripts/build-internal.ps1`): 111-file package, `worker.mjs`, gate OFF. Jeremy’s 003753 / 011002 workflow unchanged.
 - **Paid** (`scripts/build-paid.ps1 -LicenseServiceUrl https://…`): separate `dist/edge-paid-v…` tree, `guard-worker.mjs`, Chinese `activate.html` panel, fail-closed without activation.
 
 ## What we will NOT do yet

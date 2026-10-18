@@ -1,26 +1,59 @@
 #!/usr/bin/env node
-// Dedicated CITICS run: Ant Select fill + readback for 婚姻状况 only.
+// CITICS auto harness (merged):
+// - Extension auto (legacy): no --only → opens citics-basic-auto.html via Edge (MODE=fill|readiness).
+// - CDP select knife: --only 婚姻状况|政治面貌 [--synthetic | --live]
 // Default is fill-without-save. Never clicks 保存 / 提交 / 暂存. Never touches 易盾.
-//
-// Live (trial Edge CDP, usually 9237):
-//   node scripts/auto-citics-basic.mjs --only 婚姻状况
-// Synthetic Ant Design Vue 1 fixture (no Edge session):
-//   node scripts/auto-citics-basic.mjs --only 婚姻状况 --synthetic
 import fs from 'node:fs';
 import http from 'node:http';
 import net from 'node:net';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+if (typeof globalThis.WebSocket === 'undefined') {
+  const { default: WS } = await import('ws');
+  globalThis.WebSocket = WS;
+}
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, '..');
 const outDir = path.join(repoRoot, 'dist', 'auto-runs');
-const ONLY = '婚姻状况';
+const ALLOWED_ONLY = Object.freeze(['婚姻状况', '政治面貌']);
+const SELECT_FIXTURES = Object.freeze({
+  '婚姻状况': {
+    happy: 'citics-marital-select.html',
+    double: 'citics-marital-select-double.html',
+    badOptions: 'citics-marital-select-bad-options.html',
+    noReadback: 'citics-marital-select-no-readback.html',
+    before: '未婚',
+    expectedDefault: '已婚',
+    neighborLabel: '民族',
+    neighborValue: '汉族',
+    refuseLabel: '民族',
+    refuseValue: '汉族'
+  },
+  '政治面貌': {
+    happy: 'citics-political-select.html',
+    double: 'citics-political-select-double.html',
+    badOptions: 'citics-political-select-bad-options.html',
+    noReadback: 'citics-political-select-no-readback.html',
+    before: '群众',
+    expectedDefault: '共青团员',
+    neighborLabel: '民族',
+    neighborValue: '汉族',
+    refuseLabel: '民族',
+    refuseValue: '汉族'
+  }
+});
 const scriptPath = path.join(repoRoot, 'src', 'content', 'citics-basic.js');
 
-function stamp() {
+function stampIso() {
   return new Date().toISOString().replace(/\.\d{3}Z$/u, '').replace(/:/gu, '-');
+}
+
+function stampLocal() {
+  const d = new Date();
+  const p = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`;
 }
 
 function pause(ms) {
@@ -28,36 +61,38 @@ function pause(ms) {
 }
 
 function parseArgs(argv) {
-  const args = { only: null, synthetic: false, live: false };
+  const args = { only: null, synthetic: false, live: false, help: false, extension: false };
   for (let index = 0; index < argv.length; index += 1) {
     const token = argv[index];
     if (token === '--only') args.only = argv[++index] ?? '';
     else if (token === '--synthetic') args.synthetic = true;
     else if (token === '--live') args.live = true;
+    else if (token === '--extension') args.extension = true;
     else if (token === '--help') args.help = true;
   }
   return args;
 }
 
-function evidencePaths(now = stamp()) {
+function evidencePaths(label, now = stampIso()) {
   fs.mkdirSync(outDir, { recursive: true });
-  const file = path.join(outDir, `citics-ant-select-${ONLY}-${now}.json`);
-  const latest = path.join(outDir, `citics-ant-select-${ONLY}-latest.json`);
+  const file = path.join(outDir, `citics-ant-select-${label}-${now}.json`);
+  const latest = path.join(outDir, `citics-ant-select-${label}-latest.json`);
   return { file, latest };
 }
 
 function writeEvidence(payload) {
-  const { file, latest } = evidencePaths();
+  const label = payload.label || '未知';
+  const { file, latest } = evidencePaths(label);
   const json = JSON.stringify(payload, null, 2);
   fs.writeFileSync(file, json, 'utf8');
   fs.copyFileSync(file, latest);
   return { file, latest };
 }
 
-function requiredShape(partial) {
+function requiredShape(label, partial) {
   return {
     siteId: 'citics',
-    label: ONLY,
+    label,
     ok: false,
     reason: null,
     before: null,
@@ -125,7 +160,14 @@ async function waitFor(fn, ms) {
 }
 
 function chromePath() {
-  const candidates = [process.env.CHROME_PATH, process.env.EDGE_PATH, '/usr/local/bin/google-chrome', '/usr/bin/google-chrome'].filter(Boolean);
+  const candidates = [
+    process.env.CHROME_PATH,
+    process.env.EDGE_PATH,
+    '/usr/local/bin/google-chrome',
+    '/usr/bin/google-chrome',
+    '/usr/bin/google-chrome-stable',
+    '/usr/local/bin/box-chrome'
+  ].filter(Boolean);
   return candidates.find(candidate => fs.existsSync(candidate)) || 'google-chrome';
 }
 
@@ -228,7 +270,7 @@ async function evaluate(send, expression, awaitPromise = false) {
   return result.result?.value;
 }
 
-async function injectAndFill(send, { expected, synthetic, restore, pickAlternate }) {
+async function injectAndFill(send, { label, expected, synthetic, restore, pickAlternate }) {
   const source = fs.readFileSync(scriptPath, 'utf8');
   await evaluate(send, source, false);
   await evaluate(send, `document.addEventListener('click', event => {
@@ -236,7 +278,7 @@ async function injectAndFill(send, { expected, synthetic, restore, pickAlternate
     const text = (node && node.textContent || '').replace(/\\s+/g, '');
     if (node && /保存|提交|暂存/.test(text)) window.__citicsCommitClicks = (window.__citicsCommitClicks || 0) + 1;
   }, true);`, false);
-  const call = `ResumeCiticsBasic.fillSelect(${JSON.stringify(ONLY)}, ${expected == null ? 'null' : JSON.stringify(expected)}, ${JSON.stringify({
+  const call = `ResumeCiticsBasic.fillSelect(${JSON.stringify(label)}, ${expected == null ? 'null' : JSON.stringify(expected)}, ${JSON.stringify({
     synthetic,
     restore: restore === true,
     pickAlternate: pickAlternate === true
@@ -248,16 +290,18 @@ async function injectAndFill(send, { expected, synthetic, restore, pickAlternate
   return { result, commitClicks, weirdClicks, opened };
 }
 
-function assertEvidence(payload) {
+function assertEvidence(payload, label) {
   const missing = ['siteId', 'label', 'ok', 'before', 'after', 'expected', 'saved', 'skippedSave', 'skippedYidun', 'structure', 'selectors']
     .filter(key => !(key in payload));
   if (missing.length) throw new Error(`evidence_missing_${missing.join('_')}`);
-  if (payload.siteId !== 'citics' || payload.label !== ONLY) throw new Error('evidence_identity');
+  if (payload.siteId !== 'citics' || payload.label !== label) throw new Error('evidence_identity');
   if (payload.saved !== false || payload.skippedSave !== true || payload.skippedYidun !== true) throw new Error('evidence_save_flag');
   if (payload.ok === true && payload.after !== payload.expected) throw new Error('evidence_readback');
 }
 
-async function runSynthetic(expected) {
+async function runSynthetic(label, expected) {
+  const fixture = SELECT_FIXTURES[label];
+  if (!fixture) throw new Error('unknown_select_label');
   const cdpPort = await freePort();
   const { server } = await startFixtureServer();
   const chrome = await launchChrome(cdpPort);
@@ -268,11 +312,12 @@ async function runSynthetic(expected) {
     const { send, waitEvent } = attached.socket;
     await send('Page.enable');
     await send('Runtime.enable');
+    const base = `http://127.0.0.1:${server.address().port}`;
     const cases = [
-      ['happy', `http://127.0.0.1:${server.address().port}/citics-marital-select.html`, expected, true],
-      ['double-select', `http://127.0.0.1:${server.address().port}/citics-marital-select-double.html`, '已婚', false],
-      ['option-selector-miss', `http://127.0.0.1:${server.address().port}/citics-marital-select-bad-options.html`, '已婚', false],
-      ['readback-missing', `http://127.0.0.1:${server.address().port}/citics-marital-select-no-readback.html`, '已婚', false]
+      ['happy', `${base}/${fixture.happy}`, expected, true],
+      ['double-select', `${base}/${fixture.double}`, expected, false],
+      ['option-selector-miss', `${base}/${fixture.badOptions}`, expected, false],
+      ['readback-missing', `${base}/${fixture.noReadback}`, expected, false]
     ];
     let happy = null;
     for (const [name, url, value, restore] of cases) {
@@ -282,17 +327,18 @@ async function runSynthetic(expected) {
       if (name === 'happy') {
         await waitFor(async () => {
           const text = await evaluate(send, `document.querySelector('.ant-select-selection-selected-value')?.textContent || ''`, false);
-          if (text.replace(/\s+/g, '') !== '未婚') throw new Error('fixture_not_ready');
+          if (text.replace(/\s+/g, '') !== fixture.before) throw new Error('fixture_not_ready');
           return text;
         }, 45000);
       } else {
         await pause(150);
       }
-      const filled = await injectAndFill(send, { expected: value, synthetic: true, restore, pickAlternate: false });
+      const filled = await injectAndFill(send, { label, expected: value, synthetic: true, restore, pickAlternate: false });
       const row = filled.result || {};
       if (name === 'happy') {
-        const nation = await evaluate(send, `[...document.querySelectorAll('.ant-form-item')].map(item => item.innerText).find(text => text.includes('民族')) || ''`, false);
-        happy = requiredShape({
+        const neighborExpr = `[...document.querySelectorAll('.ant-form-item')].map(item => item.innerText).find(text => text.includes(${JSON.stringify(fixture.neighborLabel)})) || ''`;
+        const neighbor = await evaluate(send, neighborExpr, false);
+        happy = requiredShape(label, {
           ...row,
           liveEdge: false,
           surface: 'synthetic-ant-design-vue-1',
@@ -301,7 +347,7 @@ async function runSynthetic(expected) {
         });
         checks.push({
           name: 'happy',
-          ok: row.ok === true && row.after === value && row.before === '未婚' && row.final === '未婚' && row.restored === true && filled.commitClicks === 0 && String(nation).includes('汉族'),
+          ok: row.ok === true && row.after === value && row.before === fixture.before && row.final === fixture.before && row.restored === true && filled.commitClicks === 0 && String(neighbor).includes(fixture.neighborValue),
           reason: row.reason,
           before: row.before,
           after: row.after,
@@ -327,12 +373,12 @@ async function runSynthetic(expected) {
         });
       }
     }
-    const refused = await evaluate(attached.socket.send, `ResumeCiticsBasic.fillSelect('民族', '汉族', { synthetic: true })`, true);
+    const refused = await evaluate(attached.socket.send, `ResumeCiticsBasic.fillSelect(${JSON.stringify(fixture.refuseLabel)}, ${JSON.stringify(fixture.refuseValue)}, { synthetic: true })`, true);
     checks.push({ name: 'other-label-refused', ok: refused?.reason === 'label_not_allowed' && refused.clickedOption === false, reason: refused?.reason });
     if (!happy) throw new Error('synthetic_happy_missing');
     happy.ok = happy.ok === true && checks.every(check => check.ok === true);
     if (!happy.ok) happy.reason = checks.find(check => check.ok !== true)?.reason || happy.reason || 'synthetic_check_failed';
-    assertEvidence(happy);
+    assertEvidence(happy, label);
     return happy;
   } finally {
     await chrome.close();
@@ -340,7 +386,7 @@ async function runSynthetic(expected) {
   }
 }
 
-async function runLive(port, expected) {
+async function runLive(port, label, expected) {
   const version = await fetch(`http://127.0.0.1:${port}/json/version`);
   if (!version.ok) throw new Error('cdp_unavailable');
   const attached = await pageSocket(port, page => {
@@ -352,19 +398,21 @@ async function runLive(port, expected) {
     }
   });
   if (!attached.ok) {
-    return requiredShape({ reason: attached.reason, liveEdge: false, surface: 'cdp', structure: { tabs: attached.tabs || [] }, selectors: [] });
+    return requiredShape(label, { reason: attached.reason, liveEdge: false, surface: 'cdp', structure: { tabs: attached.tabs || [] }, selectors: [] });
   }
   const { send } = attached.socket;
   await send('Runtime.enable');
+  try { await send('Page.enable'); await send('Page.bringToFront'); } catch {}
   const explicit = expected != null && expected !== '';
   const filled = await injectAndFill(send, {
+    label,
     expected: explicit ? expected : null,
     synthetic: false,
     restore: process.env.CITICS_RESTORE !== '0',
     pickAlternate: !explicit
   });
   const row = filled.result || {};
-  const payload = requiredShape({
+  const payload = requiredShape(label, {
     ...row,
     liveEdge: true,
     surface: 'careers.citics.com',
@@ -375,26 +423,28 @@ async function runLive(port, expected) {
     payload.ok = false;
     payload.reason = 'commit_click_observed';
   }
-  assertEvidence(payload);
+  assertEvidence(payload, label);
   return payload;
 }
 
-async function main() {
-  const args = parseArgs(process.argv.slice(2));
-  if (args.help || args.only !== ONLY) {
-    console.error('Usage: node scripts/auto-citics-basic.mjs --only 婚姻状况 [--synthetic | --live]');
+async function runSelectKnife(args) {
+  if (args.help || !ALLOWED_ONLY.includes(args.only)) {
+    console.error('Usage: node scripts/auto-citics-basic.mjs --only 婚姻状况|政治面貌 [--synthetic | --live]');
+    console.error('Legacy extension harness: node scripts/auto-citics-basic.mjs --extension   (or omit --only)');
     process.exit(args.help ? 0 : 2);
   }
-  const expected = process.env.CITICS_EXPECT || (args.synthetic ? '已婚' : null);
+  const label = args.only;
+  const fixture = SELECT_FIXTURES[label];
+  const expected = process.env.CITICS_EXPECT || (args.synthetic ? fixture.expectedDefault : null);
   try {
     const payload = args.synthetic
-      ? await runSynthetic(expected)
-      : await runLive(Number.parseInt(process.env.CDP_PORT || '9237', 10), expected);
+      ? await runSynthetic(label, expected)
+      : await runLive(Number.parseInt(process.env.CDP_PORT || '9237', 10), label, expected);
     const written = writeEvidence(payload);
     console.log(JSON.stringify({ event: 'saved', ...written, ok: payload.ok === true, reason: payload.reason, before: payload.before, after: payload.after, expected: payload.expected, liveEdge: payload.liveEdge }, null, 2));
     process.exit(payload.ok === true ? 0 : 2);
   } catch (error) {
-    const payload = requiredShape({
+    const payload = requiredShape(label, {
       reason: String(error?.message || error).slice(0, 300),
       surface: args.synthetic ? 'synthetic-ant-design-vue-1' : 'cdp',
       structure: { error: String(error?.stack || error).slice(0, 800) }
@@ -405,7 +455,180 @@ async function main() {
   }
 }
 
+/** Legacy: extension auto HTML (MODE=fill|readiness). Preserved from pre-PR live tree. */
+async function runExtensionHarness() {
+  const EXT_ID = process.env.RESUME_EXT_ID || 'hdekmacbpblppkbpamgocbanjafigfej';
+  const mode = process.env.MODE || 'fill';
+  const openPage = (process.env.OPEN_CITICS_PAGE || '1') !== '0';
+  const openIfMissing = (process.env.OPEN_IF_MISSING || '1') !== '0';
+  const timeoutMs = Number.parseInt(process.env.AUTO_TIMEOUT_MS || '180000', 10);
+  const skipReload = process.env.SKIP_RELOAD === '1';
+  const CITICS_PAGE = process.env.CITICS_PAGE
+    || 'https://careers.citics.com/my/jl?resumeType=0&type=edit&name=xiaozhao-cn';
+
+  function findEdge() {
+    const candidates = [
+      process.env.EDGE_PATH,
+      'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
+      'C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe'
+    ].filter(Boolean);
+    for (const candidate of candidates) {
+      if (fs.existsSync(candidate)) return candidate;
+    }
+    return 'msedge';
+  }
+
+  function openEdge(url) {
+    const edge = findEdge();
+    const child = spawn(edge, [url], { detached: true, stdio: 'ignore' });
+    child.unref();
+    return edge;
+  }
+
+  function wait(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  function startServer() {
+    const events = [];
+    let resolveResult;
+    let rejectResult;
+    const resultPromise = new Promise((resolve, reject) => {
+      resolveResult = resolve;
+      rejectResult = reject;
+    });
+    const server = http.createServer(async (req, res) => {
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+      res.setHeader('Access-Control-Allow-Headers', 'content-type');
+      if (req.method === 'OPTIONS') {
+        res.writeHead(204);
+        res.end();
+        return;
+      }
+      const chunks = [];
+      if (req.method === 'POST') {
+        for await (const chunk of req) chunks.push(chunk);
+      }
+      let body = {};
+      try {
+        body = chunks.length ? JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}') : {};
+      } catch {
+        res.writeHead(400);
+        res.end('bad json');
+        return;
+      }
+      if (req.method === 'POST' && req.url === '/event') {
+        events.push(body);
+        console.log(JSON.stringify({ event: 'page_event', ...body }));
+        res.writeHead(200, { 'content-type': 'application/json' });
+        res.end(JSON.stringify({ ok: true }));
+        return;
+      }
+      if (req.method === 'POST' && req.url === '/result') {
+        res.writeHead(200, { 'content-type': 'application/json' });
+        res.end(JSON.stringify({ ok: true }));
+        resolveResult({ body, events });
+        return;
+      }
+      if (req.method === 'GET' && req.url === '/health') {
+        res.writeHead(200, { 'content-type': 'application/json' });
+        res.end(JSON.stringify({ ok: true, events: events.length }));
+        return;
+      }
+      res.writeHead(404);
+      res.end('no');
+    });
+    return new Promise((resolve, reject) => {
+      server.listen(0, '127.0.0.1', () => {
+        resolve({ server, port: server.address().port, resultPromise, events, rejectResult });
+      });
+      server.on('error', reject);
+    });
+  }
+
+  fs.mkdirSync(outDir, { recursive: true });
+  const { server, port, resultPromise, rejectResult } = await startServer();
+  const timer = setTimeout(() => {
+    rejectResult(new Error(`auto_citics_basic_timeout_${timeoutMs}`));
+    try { server.close(); } catch {}
+  }, timeoutMs);
+
+  try {
+    if (openPage) {
+      console.log(JSON.stringify({ event: 'open_citics_page', url: CITICS_PAGE }));
+      openEdge(CITICS_PAGE);
+      await wait(3500);
+    }
+    if (!skipReload) {
+      const reloadUrl = `chrome-extension://${EXT_ID}/src/auto/citics-basic-auto.html?mode=reload&reportPort=${port}`;
+      console.log(JSON.stringify({ event: 'open_reload', reloadUrl }));
+      openEdge(reloadUrl);
+      await wait(4500);
+    }
+    const qs = new URLSearchParams({
+      mode,
+      openIfMissing: openIfMissing ? '1' : '0',
+      reportPort: String(port)
+    });
+    const autoUrl = `chrome-extension://${EXT_ID}/src/auto/citics-basic-auto.html?${qs}`;
+    console.log(JSON.stringify({ event: 'open_auto', autoUrl, mode, extId: EXT_ID }));
+    openEdge(autoUrl);
+
+    const { body } = await resultPromise;
+    clearTimeout(timer);
+    const file = path.join(outDir, `citics-basic-auto-${stampLocal()}.json`);
+    fs.writeFileSync(file, JSON.stringify(body, null, 2), 'utf8');
+    const latest = path.join(outDir, 'citics-basic-latest.json');
+    fs.writeFileSync(latest, JSON.stringify(body, null, 2), 'utf8');
+    fs.writeFileSync(path.join(outDir, 'latest-citics-basic.json'), JSON.stringify(body, null, 2), 'utf8');
+    console.log(JSON.stringify({
+      event: 'saved',
+      file,
+      latest,
+      ok: body?.ok === true,
+      mode: body?.mode || mode,
+      state: body?.job?.state || body?.readiness?.pageState,
+      reason: body?.reason || body?.job?.reason,
+      helpNeeded: body?.helpNeeded === true,
+      helpUrl: body?.helpUrl || null,
+      writeAttempted: body?.writeAttempted === true,
+      note: body?.reason === 'extension_reload_required'
+        ? 'await_extension_reload'
+        : undefined
+    }, null, 2));
+    try { server.close(); } catch {}
+    process.exit(body?.ok ? 0 : 2);
+  } catch (error) {
+    clearTimeout(timer);
+    const file = path.join(outDir, `citics-basic-auto-${stampLocal()}-error.json`);
+    const payload = { ok: false, reason: String(error?.message || error), at: new Date().toISOString() };
+    fs.writeFileSync(file, JSON.stringify(payload, null, 2));
+    fs.writeFileSync(path.join(outDir, 'citics-basic-latest.json'), JSON.stringify(payload, null, 2));
+    console.error(JSON.stringify({ event: 'error', file, ...payload }, null, 2));
+    try { server.close(); } catch {}
+    process.exit(1);
+  }
+}
+
+async function main() {
+  const args = parseArgs(process.argv.slice(2));
+  const wantsSelect = args.only != null || args.synthetic || args.live;
+  if (args.help && !wantsSelect && !args.extension) {
+    console.error('Usage:');
+    console.error('  node scripts/auto-citics-basic.mjs --only 婚姻状况|政治面貌 [--synthetic | --live]');
+    console.error('  node scripts/auto-citics-basic.mjs --extension   # legacy extension auto HTML');
+    console.error('  (no --only) also runs legacy extension harness');
+    process.exit(0);
+  }
+  if (wantsSelect) {
+    await runSelectKnife(args);
+    return;
+  }
+  await runExtensionHarness();
+}
+
 const isMain = process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
 if (isMain) await main();
 
-export { requiredShape, writeEvidence, ONLY };
+export { requiredShape, writeEvidence, ALLOWED_ONLY, SELECT_FIXTURES };

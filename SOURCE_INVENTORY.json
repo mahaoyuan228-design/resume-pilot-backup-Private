@@ -1,11 +1,11 @@
 {
   "version": "0.1.4.9",
-  "sumsSha256": "7e6a0c9b1f8c8d707d733b0f0c4b164bc2d4e3792d8c681737a883886bda8207",
+  "sumsSha256": "1ca1d4b91f6ef9bf71b9ce5bca196eef1a50655c054219edd8b4ce0d4dcd4295",
   "inventory": [
     {
       "path": "manifest.json",
-      "sha256": "7ec68fd094297a47bddae19f18e051f7cb425617b673a955168b08889ae544b4",
-      "sourceSha256": "7ec68fd094297a47bddae19f18e051f7cb425617b673a955168b08889ae544b4",
+      "sha256": "1498934cd19958d22753ae17c68dfebedefc278316eda5d7206e723f23b0639b",
+      "sourceSha256": "1498934cd19958d22753ae17c68dfebedefc278316eda5d7206e723f23b0639b",
       "kind": "frozen-product"
     },
     {
@@ -88,8 +88,8 @@
     },
     {
       "path": "src/background/worker.mjs",
-      "sha256": "5e698e0d1e642442ffa23288e49852af4c9ee538144bc3937040e1834943856d",
-      "sourceSha256": "5e698e0d1e642442ffa23288e49852af4c9ee538144bc3937040e1834943856d",
+      "sha256": "dfc99a19d77bc10481311e898384a5ee54eb9c3aae5a8e7e6b062b2a9e992b1b",
+      "sourceSha256": "dfc99a19d77bc10481311e898384a5ee54eb9c3aae5a8e7e6b062b2a9e992b1b",
       "kind": "frozen-product"
     },
     {
@@ -544,14 +544,14 @@
     },
     {
       "path": "src/background/cms-basic-auto.mjs",
-      "sha256": "dc92f3882952eb154f777cf9a2adf6280d532f386f398b1d8467b09a73729b81",
-      "sourceSha256": "dc92f3882952eb154f777cf9a2adf6280d532f386f398b1d8467b09a73729b81",
+      "sha256": "c1ab3d707c6164326eb68493c02197319397b3698253f1c14e06e41c59eee151",
+      "sourceSha256": "c1ab3d707c6164326eb68493c02197319397b3698253f1c14e06e41c59eee151",
       "kind": "frozen-product"
     },
     {
       "path": "src/auto/cms-basic-auto.js",
-      "sha256": "c594a0e0184b7e89fc26f6e2ef5bf68d360feb580e4e90f012ac1e5c61adad7f",
-      "sourceSha256": "c594a0e0184b7e89fc26f6e2ef5bf68d360feb580e4e90f012ac1e5c61adad7f",
+      "sha256": "77bb586ae714c3667a1787e1987e26ae5722d2c13243da752c1788a29a292e0c",
+      "sourceSha256": "77bb586ae714c3667a1787e1987e26ae5722d2c13243da752c1788a29a292e0c",
       "kind": "frozen-product"
     },
     {
@@ -579,9 +579,99 @@
       "kind": "frozen-product"
     },
     {
+      "path": "src/background/feishu-atsx-basic-auto.mjs",
+      "sha256": "665e97742310bdf2b84e5f2511c67e5f19fc7da108ef797a35a989854dc8a774",
+      "sourceSha256": "665e97742310bdf2b84e5f2511c67e5f19fc7da108ef797a35a989854dc8a774",
+      "kind": "frozen-product"
+    },
+    {
+      "path": "src/background/beisen-2022-basic-auto.mjs",
+      "sha256": "09e9b0056908dd3ae66855188a712a2d0a1719337febd1c9a198e0456f82dc4c",
+      "sourceSha256": "09e9b0056908dd3ae66855188a712a2d0a1719337febd1c9a198e0456f82dc4c",
+      "kind": "frozen-product"
+    },
+    {
+      "path": "src/background/moka-basic-auto.mjs",
+      "sha256": "4af56f2f71e2255490d393156b362408af3b8d52ede1ee6ec2c6bb063cf217af",
+      "sourceSha256": "4af56f2f71e2255490d393156b362408af3b8d52ede1ee6ec2c6bb063cf217af",
+      "kind": "frozen-product"
+    },
+    {
+      "path": "src/auto/feishu-atsx-basic-auto.html",
+      "sha256": "61773a211e3520ad7f96330e2efec0bbaeba7cf1365ad0e425dbd6f82f2dc562",
+      "sourceSha256": "61773a211e3520ad7f96330e2efec0bbaeba7cf1365ad0e425dbd6f82f2dc562",
+      "kind": "frozen-product"
+    },
+    {
+      "path": "src/auto/feishu-atsx-basic-auto.js",
+      "sha256": "5d58f46e78ee496b592c85611aab682bfac3fafa61284fd44295775c3cb4bafe",
+      "sourceSha256": "5d58f46e78ee496b592c85611aab682bfac3fafa61284fd44295775c3cb4bafe",
+      "kind": "frozen-product"
+    },
+    {
+      "path": "src/auto/beisen-2022-basic-auto.html",
+      "sha256": "aa386138d6f2dd7686aa08022163fb031b76cba9e4a3a90bb93ced2bd9e58388",
+      "sourceSha256": "aa386138d6f2dd7686aa08022163fb031b76cba9e4a3a90bb93ced2bd9e58388",
+      "kind": "frozen-product"
+    },
+    {
+      "path": "src/auto/beisen-2022-basic-auto.js",
+      "sha256": "5570860e1a9b38fd45c0554d15ba619c78362d28e322f4cc05c852afed5fcf60",
+      "sourceSha256": "5570860e1a9b38fd45c0554d15ba619c78362d28e322f4cc05c852afed5fcf60",
+      "kind": "frozen-product"
+    },
+    {
+      "path": "src/auto/moka-basic-auto.html",
+      "sha256": "546026267bbdae10c47c05fd67c1e5c2e410ea968d09753b83e67488853501e8",
+      "sourceSha256": "546026267bbdae10c47c05fd67c1e5c2e410ea968d09753b83e67488853501e8",
+      "kind": "frozen-product"
+    },
+    {
+      "path": "src/auto/moka-basic-auto.js",
+      "sha256": "e9d9f93a17bfa78ded118f25591d623a9c6b68abdf2879a5d69213629681fcf6",
+      "sourceSha256": "e9d9f93a17bfa78ded118f25591d623a9c6b68abdf2879a5d69213629681fcf6",
+      "kind": "frozen-product"
+    },
+    {
+      "path": "src/content/feishu-atsx-basic.js",
+      "sha256": "d8f12fb9de384453aab313ab96ab42bb174255457b1615af33b7ba5aac3971b1",
+      "sourceSha256": "d8f12fb9de384453aab313ab96ab42bb174255457b1615af33b7ba5aac3971b1",
+      "kind": "frozen-product"
+    },
+    {
+      "path": "src/content/feishu-atsx-profile-map.mjs",
+      "sha256": "6c3ee1366f1b328cf4ca9671936b8de9ccdaf9ced8334340922a320dab5fa62b",
+      "sourceSha256": "6c3ee1366f1b328cf4ca9671936b8de9ccdaf9ced8334340922a320dab5fa62b",
+      "kind": "frozen-product"
+    },
+    {
+      "path": "src/content/beisen-2022-basic.js",
+      "sha256": "698e7c9d3e24baa7fe5c3b9b3a76b33f0f995835cdadf823486e22b92c64b5b9",
+      "sourceSha256": "698e7c9d3e24baa7fe5c3b9b3a76b33f0f995835cdadf823486e22b92c64b5b9",
+      "kind": "frozen-product"
+    },
+    {
+      "path": "src/content/beisen-2022-profile-map.mjs",
+      "sha256": "cbcfc1a9536b11ddf16dfbfaffdd74c4d738d9e98951aed970c22d82e286e915",
+      "sourceSha256": "cbcfc1a9536b11ddf16dfbfaffdd74c4d738d9e98951aed970c22d82e286e915",
+      "kind": "frozen-product"
+    },
+    {
+      "path": "src/content/moka-basic.js",
+      "sha256": "bf17fb6175d3a00dd9a77c4d96b06f7046fc7fee9fa8e2669497942a02a6e621",
+      "sourceSha256": "bf17fb6175d3a00dd9a77c4d96b06f7046fc7fee9fa8e2669497942a02a6e621",
+      "kind": "frozen-product"
+    },
+    {
+      "path": "src/content/moka-profile-map.mjs",
+      "sha256": "a7090580b0476160c2d5dac04aaf1cfacfec7e87157c37f7fea8dcd31108cce1",
+      "sourceSha256": "a7090580b0476160c2d5dac04aaf1cfacfec7e87157c37f7fea8dcd31108cce1",
+      "kind": "frozen-product"
+    },
+    {
       "path": "scripts/build-internal.ps1",
-      "sha256": "06b79cb9654f70dcea4e7041046d45c0b4f86549cfc82f8a2fbaeffa25221141",
-      "sourceSha256": "06b79cb9654f70dcea4e7041046d45c0b4f86549cfc82f8a2fbaeffa25221141",
+      "sha256": "05fdd9fd5b9891e77f4a620372c506e3aef62e61dcb8c998fb54a296dd787cfd",
+      "sourceSha256": "05fdd9fd5b9891e77f4a620372c506e3aef62e61dcb8c998fb54a296dd787cfd",
       "kind": "required-build"
     },
     {

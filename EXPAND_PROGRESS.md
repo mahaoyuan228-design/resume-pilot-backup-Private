@@ -198,3 +198,10 @@
 - [x] 2026-10-18 21:28 CST：北森-2022 + Moka 公开页 curl+JS/CSS 包对照 provisional 选择器 — **均未命中** `.bs-form-item` / `.moka-form-item`（未改名）；fixture 加门户 chrome；login-wall 缺口写入 `BEISEN_2022_NEXT.md` / `MOKA_NEXT.md` + `_beisen-2022-js-class-hints-20261018.txt` / `_moka-js-class-hints-20261018.txt`；offline tests 刷新；**未宣称 live**（不发明表单 DOM）。
 
 - [x] 2026-10-18 21:40 CST：共用 ATS 公开指纹 **Extra §4.2–4.4**（现代牧业/北芯生命=beisen-2022 同 chunk；乐牛/正泰安能=moka 同 TI build；中科创达=feishu-atsx 同广发 JS）→ `dist/site-probes/shared-ats-fingerprint-zhiye-moka-feishu-20261018.md` Extra；reuse candidate 仅标注、**未** live、验收 % 不变。
+
+
+## 2026-10-18 夜 · night close / plateau（Asia/Shanghai ~22:28 CST）
+
+- [x] **Night close board**：hotjob shell-class **11/11** complete；non-hotjob 公开 fingerprint 批完成（小米=`feishu-atsx` ATSX 孪生；其余自建）；小米 `*.jobs.f.mioffice.cn` host 已接线 feishu-atsx（login-gated；**无 live claim**）；CITICS **民族** Ant Select synthetic PASS（live pending；全量/可搜 → fail-closed）；PR #3 draft 累积中。
+- **Live tonight only**：中信 partial（婚姻状况+政治面貌）+ 中联 mc（文本+性别+证件类型）。**Sellable** 仍仅 CMS+GTH。**Acceptance 仍 85%**（不抬）。
+- **Plateau**：再 expand live 需 Jeremy 登录 — 见 `_temp-scripts/SLEEP_HELP_PACK_20261018.md` §2。状态板：`_temp-scripts/NIGHT_STATUS_20261018.md` §8。无新适配器；Never Save。

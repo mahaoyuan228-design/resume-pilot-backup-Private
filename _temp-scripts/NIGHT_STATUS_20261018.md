@@ -1,4 +1,4 @@
-# 夜间状态板 · 2026-10-18（Asia/Shanghai）· wrap / plateau
+# 夜间状态板 · 2026-10-18（Asia/Shanghai）· wrap / plateau · **night close**
 
 验收仍 **85%**；对外可卖仅 **招商 CMS + 国泰 GTH**。Never Save。扩站 live 只记叙事，**不抬**窄版 %。无新适配器；无 Edge；无 live 新宣称。
 
@@ -33,10 +33,22 @@
 
 ## 6. 卡在 Jeremy（均可选）
 - 登录：南粤 / Celebright / 国盛 / caict / opple（+ 备选 longi/haitian/tsmc/…）
-- ATS DOM：广发飞书 / **小米 mioffice ATSX** / 君乐宝 / TI(Moka)；中信 `/my/jl` 户口+证件 live
+- ATS DOM：广发飞书 / **小米 mioffice ATSX** / 君乐宝 / TI(Moka)；中信 `/my/jl` 户口+证件+民族 live
 - 付费 Edge 9239；Codex cloud；生产 HTTPS/支付/钥（约 15%）
 
 ## 7. 验收 %
 - **85%**（不变）。`ACCEPTANCE_DELTA_20261018.md` · `FINAL_ACCEPTANCE_CHECKLIST.md`
 
-证据：`EXPAND_PROGRESS.md` · hotjob-mc-select · citics synthetic · `HOTJOB_SHELL_CLASS_*` · INDEX · `NON_HOTJOB_FINGERPRINT_20261018.md`
+## 8. Final night close · 2026-10-18 ~22:28 CST（Asia/Shanghai）
+
+Honest board refresh; **no code adapters; no live claims; acceptance stays 85%**.
+
+| Bucket | Status |
+| --- | --- |
+| **Done tonight (offline)** | hotjob shell-class **11/11**; non-hotjob fingerprints; Xiaomi `*.jobs.f.mioffice.cn` host wired into `feishu-atsx`; CITICS **民族** synthetic; PR #3 accumulating |
+| **Live tonight** | **中信** partial（婚姻状况+政治面貌）+ **中联** mc only（文本+性别+证件类型；国籍/地区 skip） |
+| **Sellable** | still **招商 CMS + 国泰 GTH** only |
+| **Acceptance** | **85%**（unchanged；不抬窄版 %） |
+| **Plateau** | further live needs Jeremy logins — see `_temp-scripts/SLEEP_HELP_PACK_20261018.md` §2（南粤/Celebright/国盛/caict/opple + 备选壳；广发/小米 ATSX / 君乐宝 / TI；中信 `/my/jl` 户口+证件+民族；付费 Edge 9239 / Codex cloud） |
+
+证据：`EXPAND_PROGRESS.md` · hotjob-mc-select · citics synthetic · `HOTJOB_SHELL_CLASS_*` · INDEX · `NON_HOTJOB_FINGERPRINT_20261018.md` · `CITICS_ANT_SELECT_REFUSED_20261018.md` · `FEISHU_ATSX_MIOFFICE_TWINS_20261018.md`

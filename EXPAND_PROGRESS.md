@@ -158,7 +158,7 @@
 ## 2026-10-18 晚 · hotjob-mc select 第二刀：证件类型（Asia/Shanghai）
 
 - [x] 2026-10-18 21:10 CST：中联 mc **证件类型** `.select-am-list-extra` + `.am-modal.mc-select-popup`（7 选项：居民身份证/中国护照/…）；`SELECT_SPECS` allowlist；fixture+`tests/hotjob-mc-basic.test.mjs` **14/14**；harness `--only 证件类型`；offline synthetic 居民身份证→中国护照→restore PASS；**live** seed+alternate+restore PASS 后 Page.reload discard（原为空占位；证据 `dist/auto-runs/hotjob-mc-select-证件类型-latest.json`；未点下一步；tabs≤3）。
-- [x] 2026-10-18 21:10 CST：睡前清单收敛 → `_temp-scripts/SLEEP_HELP_PACK_20261018.md`（DONE：中信 marital+political；中联 mc texts+性别+证件类型；EXT hhem…｜TODO 可选：南粤/Celebright/国盛 pb live；广发/君乐宝/TI ATS DOM；付费 Edge 9239 + Codex cloud）。
+- [x] 2026-10-18 21:10 CST：睡前清单收敛 → `_temp-scripts/SLEEP_HELP_PACK_20261018.md`（DONE：中信 marital+political；中联 mc texts+性别+证件类型；EXT hhem…｜TODO 可选：南粤/Celebright/国盛/caict/opple；广发/君乐宝/TI ATS DOM；中信 /my/jl hukou+idType；付费 Edge 9239 + Codex cloud）。**21:36 CST wrap refresh**：同文件 + `NIGHT_STATUS_20261018.md` 已含 证件类型 synthetic、信通院/欧普壳、PR #3、85%。
 
 ## 2026-10-18 晚 · hotjob-mc select：国籍/地区 skip + shared select harden（Asia/Shanghai）
 
@@ -179,3 +179,5 @@
 ## 2026-10-18 晚 · Beisen-2022 / Moka fixture realism（Asia/Shanghai）
 
 - [x] 2026-10-18 21:28 CST：北森-2022 + Moka 公开页 curl+JS/CSS 包对照 provisional 选择器 — **均未命中** `.bs-form-item` / `.moka-form-item`（未改名）；fixture 加门户 chrome；login-wall 缺口写入 `BEISEN_2022_NEXT.md` / `MOKA_NEXT.md` + `_beisen-2022-js-class-hints-20261018.txt` / `_moka-js-class-hints-20261018.txt`；offline tests 刷新；**未宣称 live**（不发明表单 DOM）。
+
+- [x] 2026-10-18 21:40 CST：共用 ATS 公开指纹 **Extra §4.2–4.4**（现代牧业/北芯生命=beisen-2022 同 chunk；乐牛/正泰安能=moka 同 TI build；中科创达=feishu-atsx 同广发 JS）→ `dist/site-probes/shared-ats-fingerprint-zhiye-moka-feishu-20261018.md` Extra；reuse candidate 仅标注、**未** live、验收 % 不变。

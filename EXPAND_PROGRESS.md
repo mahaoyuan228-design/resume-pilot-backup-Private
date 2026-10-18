@@ -159,3 +159,7 @@
 ## 2026-10-18 晚 · hotjob-mc select：国籍/地区 skip + shared select harden（Asia/Shanghai）
 
 - [x] 2026-10-18 21:15 CST：中联 mc live 仍登录；probe **国籍/地区** 同 `.am-modal.mc-select-popup` 但 **搜索+~199 选项** → **skip fill**；harden 共用 `fillSelect`（`popupSearchHeavy`/`SELECT_OUT_OF_SCOPE`/`select_search_heavy`；性别+证件类型已共用无重复路径）；docs §9；offline **14/14**；未点下一步；tarball `hotjob-mc-20261018.tgz` 刷新。
+
+## 2026-10-18 晚 · CITICS Ant Select 下一刀：户口类型（offline/synthetic）
+
+- [x] 2026-10-18 21:19 CST：CITICS **户口类型** Ant Design Vue 1 flat select（家庭户口↔集体户口）；`SELECT_SPECS` allowlist（婚姻状况+政治面貌+户口类型）；fixtures + `tests/citics-hukou-type-select.test.mjs`；harness `--only 户口类型`；synthetic fill-wo-save+restore **PASS**（`dist/auto-runs/citics-ant-select-户口类型-latest.json`）。**Live 未做**（Edge 9237 无 careers.citics.com/my/jl；仅中联 mc 页）。仍拒绝：籍贯/现户口所在地/生源地（级联）、国籍（search-heavy 嫌疑）、民族（中等列表未开刀）、证件类型（页上已有则跳过）。勿对外写已支持。Acceptance % 仍 85%。

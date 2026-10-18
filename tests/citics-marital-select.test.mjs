@@ -11,8 +11,9 @@ const source = readFileSync(resolve(root, 'src/content/citics-basic.js'), 'utf8'
 test('marital select source stays on allowlist and off CMS/GTH', () => {
   assert.match(source, /const MARITAL = '婚姻状况'/);
   assert.match(source, /const POLITICAL = '政治面貌'/);
-  // Flat allowlist only: marital + political. No cascader/region/ID-type knives yet.
-  assert.doesNotMatch(source, /籍贯|户口类型|证件类型|生源地|国籍/);
+  // Flat allowlist: marital + political + hukouType. No cascader/region/ID-type/nation knives.
+  assert.match(source, /const HUKOU_TYPE = '户口类型'/);
+  assert.doesNotMatch(source, /籍贯|证件类型|生源地|国籍/);
   assert.doesNotMatch(source, /fillSelect\(\s*['"]民族['"]/);
   assert.doesNotMatch(source, /cms-|gth-/);
   assert.match(source, /only_marital_select_in_this_slice/);
@@ -21,14 +22,14 @@ test('marital select source stays on allowlist and off CMS/GTH', () => {
   assert.match(source, /select_readback_missing/);
 });
 
-test('harness rejects any label other than 婚姻状况 before CDP', () => {
+test('harness rejects any label other than allowlist before CDP', () => {
   const run = spawnSync(process.execPath, ['scripts/auto-citics-basic.mjs', '--only', '民族'], {
     cwd: root,
     encoding: 'utf8',
     timeout: 10000
   });
   assert.equal(run.status, 2);
-  assert.match(run.stderr, /婚姻状况/);
+  assert.match(run.stderr, /婚姻状况|政治面貌|户口类型/);
 });
 
 test('synthetic harness fill-without-save readback for 婚姻状况', { timeout: 120000 }, () => {

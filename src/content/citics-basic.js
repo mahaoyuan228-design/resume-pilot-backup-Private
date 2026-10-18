@@ -3,7 +3,7 @@
 // Values come from resumeProfile (fullName/identityNumber/phone/email/gender);
 // fail-closed when core facts missing or unconfirmed — no TEST placeholders.
 //
-// Ant Select knives (Ant Design Vue 1): 婚姻状况 + 政治面貌
+// Ant Select knives (Ant Design Vue 1): 婚姻状况 + 政治面貌 + 户口类型
 // (selectControl / readSelect / fillSelect). One label per call; allowlist only.
 // Selector order follows careers.citics.com chunk-vendors.a191a981.css
 // (Ant Design Vue 1 / ant-design 3 class names). Ant Design 4 names are
@@ -20,10 +20,12 @@
   const RADIO_LABEL = "性别";
   const MARITAL = '婚姻状况';
   const POLITICAL = '政治面貌';
-  /** Flat Ant Select allowlist only (marital + political). Cascader/region/ID-type out of scope. */
+  const HUKOU_TYPE = '户口类型';
+  /** Flat Ant Select allowlist only (marital + political + hukouType). Cascader/region/ID-type/nation out of scope. */
   const SELECT_SPECS = {
     [MARITAL]: { key: 'marital', alternates: ['未婚', '已婚', '离异', '丧偶'] },
-    [POLITICAL]: { key: 'political', alternates: ['群众', '共青团员', '中共党员', '中共预备党员'] }
+    [POLITICAL]: { key: 'political', alternates: ['群众', '共青团员', '中共党员', '中共预备党员'] },
+    [HUKOU_TYPE]: { key: 'hukouType', alternates: ['家庭户口', '集体户口'] }
   };
   const ALLOWED_SELECT_LABELS = Object.keys(SELECT_SPECS);
   const ALTERNATES = SELECT_SPECS[MARITAL].alternates;
@@ -754,7 +756,7 @@
   }
 
   async function fillBasic(rawValues = {}, options = {}) {
-    // Select-only shapes: { '婚姻状况'|'政治面貌': '…' } — route without touching text/radio path.
+    // Select-only shapes: { '婚姻状况'|'政治面貌'|'户口类型': '…' } — route without touching text/radio path.
     if (rawValues && typeof rawValues === 'object' && !Array.isArray(rawValues)
       && !rawValues.profile && rawValues.allowExplicitValues !== true
       && !rawValues.lastName && !rawValues.firstName && !rawValues.idNumber && !rawValues.mobile && !rawValues.email) {
@@ -762,7 +764,7 @@
       if (keys.length === 1 && SELECT_SPECS[cleanLabel(keys[0])]) {
         return fillSelect(cleanLabel(keys[0]), rawValues[keys[0]], options);
       }
-      if (keys.length >= 1 && keys.every((k) => SELECT_SPECS[cleanLabel(k)] || !['lastName', 'firstName', 'idNumber', 'mobile', 'email', 'confirmEmail', 'gender', 'marital', 'political'].includes(k))) {
+      if (keys.length >= 1 && keys.every((k) => SELECT_SPECS[cleanLabel(k)] || !['lastName', 'firstName', 'idNumber', 'mobile', 'email', 'confirmEmail', 'gender', 'marital', 'political', 'hukouType'].includes(k))) {
         // Non-basic keys that are not an allowed select → PR refusal string (marital-compat).
         if (keys.length === 1 && !SELECT_SPECS[cleanLabel(keys[0])]) {
           return fillMaritalOnly(rawValues, options);
@@ -906,6 +908,7 @@
     siteId: "citics",
     MARITAL,
     POLITICAL,
+    HUKOU_TYPE,
     ALLOWED_SELECT_LABELS,
     SELECT_SPECS,
     isCiticsResumeEditPage,

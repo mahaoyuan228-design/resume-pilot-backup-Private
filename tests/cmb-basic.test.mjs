@@ -32,6 +32,9 @@ import {
   CMB_ENGLISH_LEVEL_LIST_ID,
   CMB_ENGLISH_LEVEL_OPTIONS,
   CMB_ENGLISH_LEVEL_SELECT_ID,
+  CMB_CHANNEL_TYPE_LIST_ID,
+  CMB_CHANNEL_TYPE_OPTIONS,
+  CMB_CHANNEL_TYPE_SELECT_ID,
   CMB_ETHNICITY_OPTIONS,
   CMB_ID_CARD_TYPE_LIST_ID,
   CMB_ID_CARD_TYPE_OPTIONS,
@@ -43,6 +46,7 @@ import {
   isCmbRelationshipLabel,
   isCmbAwardLevelLabel,
   isCmbEnglishLevelLabel,
+  isCmbChannelTypeLabel,
   isCmbIdCardTypeLabel,
   isCmbWeightLabel,
   isCmbMaritalLabel,
@@ -679,7 +683,14 @@ test('harvested gated dicts match the live evidence and are not invented', () =>
 
   const embedded = source.match(/const GATED_DICTS = JSON\.parse\('(.*)'\);/);
   assert.ok(embedded);
-  const parsed = JSON.parse(embedded[1]);
+  let embeddedJson = '';
+  for (let i = 0; i < embedded[1].length; i++) {
+    if (embedded[1][i] !== '\\') { embeddedJson += embedded[1][i]; continue; }
+    const next = embedded[1][++i];
+    assert.ok(next === '\\' || next === "'" || next === '"');
+    embeddedJson += next;
+  }
+  const parsed = JSON.parse(embeddedJson);
   assert.deepEqual(parsed.maritalStatus, [...CMB_MARITAL_OPTIONS]);
   assert.deepEqual(parsed.politics, [...CMB_POLITICS_OPTIONS]);
   assert.deepEqual(parsed.ethnicity, [...CMB_ETHNICITY_OPTIONS]);
@@ -688,6 +699,7 @@ test('harvested gated dicts match the live evidence and are not invented', () =>
   assert.deepEqual(parsed.relationshipType, [...CMB_RELATIONSHIP_TYPE_OPTIONS]);
   assert.deepEqual(parsed.awardLevel, [...CMB_AWARD_LEVEL_OPTIONS]);
   assert.deepEqual(parsed.englishLevel, [...CMB_ENGLISH_LEVEL_OPTIONS]);
+  assert.deepEqual(parsed.channelType, [...CMB_CHANNEL_TYPE_OPTIONS]);
 
   assert.match(fixture, /id="resume_basicInfo_maritalStatus"/);
   assert.match(fixture, /id="resume_basicInfo_politicalAffinity"/);
@@ -729,6 +741,7 @@ test('gated select plan maps harvested text or code and does not fill birth date
   assert.equal(absent.values.relationshipTypeRow1, '');
   assert.equal(absent.values.awardLevel, '');
   assert.equal(absent.values.englishLevel, '');
+  assert.equal(absent.values.channelType, '');
   assert.equal(absent.fields.some((row) => row.path === 'birthDate'), false);
 
   const ready = planCmbBasicFromProfile({
@@ -1232,6 +1245,62 @@ test('EnglishLevel options use the harvested skill row and do not convert names 
   assert.equal(dropped.blockers.find((row) => row.path === 'englishLevel')?.reason, 'invalid_profile_value');
 });
 
+test('ChannelType options keep harvested names and do not merge abbreviations', () => {
+  const full = JSON.parse(readFileSync(resolve(root, 'dist/site-probes/cmb-dictmap-full-20261019.json'), 'utf8'));
+  const dom = JSON.parse(readFileSync(resolve(root, 'dist/site-probes/cmb-remaining-dom-ids-20261019.json'), 'utf8'));
+  const hint = dom.fields.find((row) => row.id === 'resume_basicInfo_channelType');
+  assert.equal(hint.labelText, '招聘信息来源');
+  assert.equal(hint.ariaControls, CMB_CHANNEL_TYPE_LIST_ID);
+  assert.equal(CMB_CHANNEL_TYPE_SELECT_ID, 'resume_basicInfo_channelType');
+  const kept = full.dicts.ChannelType.filter((row) => row.name !== '请选择' && row.code !== 'CT000');
+  assert.equal(kept.length, 15);
+  assert.deepEqual(
+    [...CMB_CHANNEL_TYPE_OPTIONS],
+    kept.map((row) => ({ text: row.name, code: row.code }))
+  );
+  const quoted = '"招商银行招聘"微信公众号';
+  assert.equal(CMB_CHANNEL_TYPE_OPTIONS.some((row) => row.code === 'CT0016' && row.text === '其他'), true);
+  assert.equal(CMB_CHANNEL_TYPE_OPTIONS.some((row) => row.code === 'CT002' && row.text === quoted), true);
+  assert.equal(resolveCmbCodedOption(CMB_CHANNEL_TYPE_OPTIONS, '请选择'), null);
+  assert.equal(resolveCmbCodedOption(CMB_CHANNEL_TYPE_OPTIONS, 'CT000'), null);
+  assert.equal(resolveCmbCodedOption(CMB_CHANNEL_TYPE_OPTIONS, '微信'), null);
+  assert.equal(resolveCmbCodedOption(CMB_CHANNEL_TYPE_OPTIONS, '官网'), null);
+  assert.equal(resolveCmbCodedOption(CMB_CHANNEL_TYPE_OPTIONS, '智联'), null);
+  assert.equal(resolveCmbCodedOption(CMB_CHANNEL_TYPE_OPTIONS, '51job'), null);
+  assert.equal(resolveCmbCodedOption(CMB_CHANNEL_TYPE_OPTIONS, '招商银行招聘微信公众号'), null);
+  assert.equal(resolveCmbCodedOption(CMB_CHANNEL_TYPE_OPTIONS, quoted)?.code, 'CT002');
+  assert.equal(resolveCmbCodedOption(CMB_CHANNEL_TYPE_OPTIONS, 'CT002')?.text, quoted);
+  assert.equal(resolveCmbCodedOption(CMB_CHANNEL_TYPE_OPTIONS, '其他')?.code, 'CT0016');
+  assert.equal(resolveCmbCodedOption(CMB_CHANNEL_TYPE_OPTIONS, '一网通')?.code, 'CT001');
+  assert.match(fixture, /id="resume_basicInfo_channelType"/);
+  assert.match(fixture, /id="resume_basicInfo_channelType_list"/);
+  assert.equal((fixture.match(/data-code="CT/g) || []).length, 15);
+  assert.equal(fixture.includes(quoted), true);
+  assert.doesNotMatch(fixture, /id="resume_basicInfo_channelType"[^>]*show-search/);
+  assert.match(source, /fillChannelType/);
+  assert.match(source, /invalid_channel_type/);
+  assert.match(harness, /live_channel_type_select_fill_unclaimed/);
+  assert.equal(isCmbChannelTypeLabel('招聘信息来源'), true);
+  assert.equal(isCmbChannelTypeLabel('渠道'), false);
+  assert.equal(isCmbChannelTypeLabel('面试期望城市'), false);
+  const store = readFileSync(resolve(root, 'src/profile/store.js'), 'utf8');
+  assert.doesNotMatch(store, /channelType/);
+  const base = {
+    fullName: '测试甲',
+    phone: '13800138000',
+    email: 'cmb.user@example.com',
+    confirmedFields: ['fullName', 'phone', 'email', 'channelType']
+  };
+  const ready = planCmbBasicFromProfile({ ...base, channelType: ' CT0017 ' });
+  assert.equal(ready.values.channelType, '智联招聘');
+  assert.equal(ready.fields.find((row) => row.path === 'channelType')?.code, 'CT0017');
+  const quotedReady = planCmbBasicFromProfile({ ...base, channelType: quoted });
+  assert.equal(quotedReady.values.channelType, quoted);
+  const dropped = planCmbBasicFromProfile({ ...base, channelType: '微信' });
+  assert.equal(dropped.values.channelType, '');
+  assert.equal(dropped.blockers.find((row) => row.path === 'channelType')?.reason, 'invalid_profile_value');
+});
+
 test('synthetic harness english level select maps text and code and --live refuses the click', { timeout: 120000 }, () => {
   assertGatedSelectKnife(
     '最高英语水平',
@@ -1250,6 +1319,28 @@ test('synthetic harness english level select maps text and code and --live refus
   assert.equal(payload.byText?.afterCode, 'EL006');
   assert.equal(payload.explicitInvalid?.reason, 'invalid_english_level');
   assert.equal(payload.explicitInvalid?.writeAttempted, false);
+});
+
+test('synthetic harness channel type select keeps the quoted name and --live refuses the click', { timeout: 120000 }, () => {
+  const quoted = '"招商银行招聘"微信公众号';
+  assertGatedSelectKnife(
+    '招聘信息来源',
+    'live_channel_type_select_fill_unclaimed',
+    'synthetic_channel_select_pass',
+    'cmb-channel-select-latest.json',
+    quoted,
+    'CT002'
+  );
+  const payload = JSON.parse(readFileSync(resolve(root, 'dist/auto-runs/cmb-channel-select-latest.json'), 'utf8'));
+  assert.equal(payload.optionListHarvested, true);
+  assert.equal(payload.liveSelectFillClaimed, false);
+  assert.equal(payload.formFillClaimed, false);
+  assert.equal(payload.byText?.after, '智联招聘');
+  assert.equal(payload.byText?.afterCode, 'CT0017');
+  assert.equal(payload.explicitInvalid?.reason, 'invalid_channel_type');
+  assert.equal(payload.explicitInvalid?.writeAttempted, false);
+  assert.equal(payload.neighbor?.channel?.text, quoted);
+  assert.equal(payload.neighbor?.english?.text, '');
 });
 
 test('birth date knife records the DatePicker hint and does not write', () => {

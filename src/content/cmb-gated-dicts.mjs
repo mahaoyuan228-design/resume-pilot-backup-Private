@@ -203,6 +203,34 @@ export const CMB_ENGLISH_LEVEL_OPTIONS = Object.freeze([
 export const CMB_ENGLISH_LEVEL_SELECT_ID = 'resume_skill_0_englishLevel';
 export const CMB_ENGLISH_LEVEL_LIST_ID = 'resume_skill_0_englishLevel_list';
 
+/**
+ * ChannelType from cmb-dictmap-full-20261019.json.
+ * Fifteen rows. No 请选择 and no CT000. CT0016（其他）is a real row.
+ * Names stay exact, including the quotation marks on the WeChat row.
+ * A shorter name is not merged into a longer one. Live click is not claimed.
+ */
+export const CMB_CHANNEL_TYPE_OPTIONS = Object.freeze([
+  Object.freeze({"text":"招商银行官网","code":"CT0014"}),
+  Object.freeze({"text":"\"招商银行招聘\"微信公众号","code":"CT002"}),
+  Object.freeze({"text":"招商银行员工推荐","code":"CT0015"}),
+  Object.freeze({"text":"院校老师推荐","code":"CT007"}),
+  Object.freeze({"text":"校园宣讲会","code":"CT0012"}),
+  Object.freeze({"text":"学校就业网站","code":"CT0010"}),
+  Object.freeze({"text":"校友/朋友推荐","code":"CT008"}),
+  Object.freeze({"text":"智联招聘","code":"CT0017"}),
+  Object.freeze({"text":"牛客网","code":"CT0011"}),
+  Object.freeze({"text":"刺猬实习","code":"CT0019"}),
+  Object.freeze({"text":"51job/应届生网","code":"CT005"}),
+  Object.freeze({"text":"qq群/微信群消息","code":"CT009"}),
+  Object.freeze({"text":"猎头","code":"CT0013"}),
+  Object.freeze({"text":"一网通","code":"CT001"}),
+  Object.freeze({"text":"其他","code":"CT0016"})
+]);
+
+/** Harvested 2026-10-19. List id comes from aria-controls. Live click is not claimed. */
+export const CMB_CHANNEL_TYPE_SELECT_ID = 'resume_basicInfo_channelType';
+export const CMB_CHANNEL_TYPE_LIST_ID = 'resume_basicInfo_channelType_list';
+
 /** Kind + fill hint only. No synthetic DatePicker DOM. */
 export const CMB_BIRTHDATE_HINT = Object.freeze({
   key: 'birthDate',

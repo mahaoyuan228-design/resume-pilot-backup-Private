@@ -15,12 +15,12 @@ Option text and codes stay in `cmb-dictmap-full-20261019.json`. This file does n
 | RelationshipType | 关系类型 | `#resume_familyList_0_relationship` and `#resume_familyList_1_relationship` | `…_list` on each | offline select wired on each index. A row-0 value is not written to row 1. No placeholder dropped. `--live` refuses `live_relationship_select_fill_unclaimed`. Name and phone are not filled |
 | AwardsLevel | 获奖级别 | `#resume_awardList_0_awardLevel` | `resume_awardList_0_awardLevel_list` | offline select wired on award row 0. Level is not inferred from 奖项名称. No placeholder row in the dict. `--live` refuses `live_award_level_select_fill_unclaimed` |
 | InterviewCity | 面试期望城市 | `#resume_basicInfo_expectedInterviewCity` | `resume_basicInfo_expectedInterviewCity_list` | not wired; defer |
-| ChannelType | 招聘信息来源 | `#resume_basicInfo_channelType` | `resume_basicInfo_channelType_list` | not wired; defer |
+| ChannelType | 招聘信息来源 | `#resume_basicInfo_channelType` | `resume_basicInfo_channelType_list` | offline select wired. Fifteen names stay exact, including the quoted WeChat row. No placeholder dropped. `--live` refuses `live_channel_type_select_fill_unclaimed` |
 | RankingMajor | — | absent on this resume page | — | `DOM_CONTROL_MISSING`. Keep the dict fixture. Do not guess a selector. |
 
 Each mapped select above is an `input.ant-select-selection-search-input` with `role=combobox` and `type=search`. The select root class was not captured in this harvest, so the Education fixture does not add `ant-select-show-search`. It uses the same non-search stand-in as 婚姻状况 / 证件类型: the harvested id sits on `.ant-select`, and the list id sits on the listbox. Option-row markup is synthetic. A live click is not claimed.
 
-RelationshipType, AwardsLevel, and EnglishLevel are wired offline. ChannelType and InterviewCity can wait. InterviewCity and ChannelType can wait. RankingMajor is `DOM_CONTROL_MISSING` and stays out of that order. The trimmed note is `CMB_DICT_REMAINING_TRIM_20261019.md`. Never Save. 招行 is not supported.
+RelationshipType, AwardsLevel, EnglishLevel, and ChannelType are wired offline. InterviewCity can wait. RankingMajor is `DOM_CONTROL_MISSING` and stays out of that order. The trimmed note is `CMB_DICT_REMAINING_TRIM_20261019.md`. Never Save. 招行 is not supported.
 
 ## Education neighbors that are not filled
 

@@ -22,7 +22,7 @@ Birth date is not in this map. It stays the harvested DatePicker hint (`resume_b
 | PoliticalAffinity | 13 | 0 | politics select (offline; harvested DOM id resume_basicInfo_politicalAffinity) |
 | IdCardType | 15 | 0 | offline select; harvested DOM id `resume_basicInfo_idCardType` (no show-search); `--live` still refuses `live_id_card_type_select_fill_unclaimed` |
 | RankingMajor | 3 | 0 | unwired |
-| ChannelType | 15 | 0 | unwired |
+| ChannelType | 15 | 0 | offline select on `#resume_basicInfo_channelType`; names stay exact; `--live` refuses `live_channel_type_select_fill_unclaimed` |
 
 ## IdCardType (15, no 请选择)
 

@@ -14,6 +14,7 @@ import {
   isCmbRelationshipLabel,
   isCmbAwardLevelLabel,
   isCmbEnglishLevelLabel,
+  isCmbChannelTypeLabel,
   isCmbEthnicityLabel,
   isCmbIdCardTypeLabel,
   isCmbHeightLabel,
@@ -207,6 +208,17 @@ const GATED_SPECS = {
     liveReason: 'live_english_level_select_fill_unclaimed',
     first: { text: 'CET-6', code: 'EL006' },
     second: { text: 'TOEFL', code: 'EL001' }
+  },
+  channel: {
+    label: '招聘信息来源',
+    fn: 'fillChannelType',
+    path: 'channelType',
+    selectId: 'resume_basicInfo_channelType',
+    invalid: '微信',
+    explicitReason: 'invalid_channel_type',
+    liveReason: 'live_channel_type_select_fill_unclaimed',
+    first: { text: '智联招聘', code: 'CT0017' },
+    second: { text: '"招商银行招聘"微信公众号', code: 'CT002' }
   }
 };
 
@@ -224,6 +236,7 @@ function onlyKind(value) {
   if (text === '家庭关系' || isCmbRelationshipLabel(text)) return 'relationship';
   if (isCmbAwardLevelLabel(text)) return 'award';
   if (text === '英语等级' || isCmbEnglishLevelLabel(text)) return 'english';
+  if (text === '渠道' || isCmbChannelTypeLabel(text)) return 'channel';
   if (isCmbBirthDateLabel(text)) return 'birthDate';
   return '';
 }
@@ -1195,6 +1208,7 @@ async function runSyntheticGated(kind) {
         relationshipRow1: read('resume_familyList_1_relationship'),
         award: read('resume_awardList_0_awardLevel'),
         english: read('resume_skill_0_englishLevel'),
+        channel: read('resume_basicInfo_channelType'),
         englishScore: document.getElementById('resume_skill_0_englishScore')?.value ?? null,
         awardName: document.getElementById('resume_awardList_0_awardName')?.value ?? null,
         awardDate: document.getElementById('resume_awardList_0_awardDate')?.value ?? null,
@@ -1274,7 +1288,7 @@ async function runSyntheticGated(kind) {
       && planReady?.values?.relationshipTypeRow1 === ''
     );
     const fieldResult = basic?.results?.find((row) => row.label === spec.label && (spec.row1 ? row.rowIndex === 0 : true));
-    const othersEmpty = ['marital', 'politics', 'ethnicity', 'idCard', 'education', 'relationship', 'relationshipRow1', 'award', 'english'].every((name) => {
+    const othersEmpty = ['marital', 'politics', 'ethnicity', 'idCard', 'education', 'relationship', 'relationshipRow1', 'award', 'english', 'channel'].every((name) => {
       const row = neighbor?.[name];
       if (name === kind) return row?.text === spec.second.text && row?.code === spec.second.code;
       return row?.text === '' && row?.code === '';
@@ -1386,6 +1400,7 @@ function printHelp() {
     node scripts/auto-cmb-basic.mjs --only 关系类型
     node scripts/auto-cmb-basic.mjs --only 获奖级别
     node scripts/auto-cmb-basic.mjs --only 最高英语水平
+    node scripts/auto-cmb-basic.mjs --only 招聘信息来源
     node scripts/auto-cmb-basic.mjs --only 出生日期
   Gender is offline synthetic only. Live radio DOM is not harvested.
   Formal work (是否参加过正式工作) is offline synthetic radio only. Options are field-map 是/否.
@@ -1408,6 +1423,9 @@ function printHelp() {
   The level is not inferred from 奖项名称. --only 获奖级别 --live refuses live_award_level_select_fill_unclaimed.
   最高英语水平 uses harvested row-0 id resume_skill_0_englishLevel.
   托福 / 四级 / a score are not converted. --only 最高英语水平 --live refuses live_english_level_select_fill_unclaimed.
+  招聘信息来源 uses harvested id resume_basicInfo_channelType.
+  Names stay exact, including quotation marks. 微信 / 官网 / 智联 are not merged.
+  --only 招聘信息来源 --live refuses live_channel_type_select_fill_unclaimed.
   Live portal fingerprint only (no fill claim):
     MODE=readiness node scripts/auto-cmb-basic.mjs --live
     Extension path (Edge + SW message CMB_BASIC_AUTO):
@@ -1438,7 +1456,7 @@ async function main() {
   }
   const kind = args.only == null ? '' : onlyKind(args.only);
   if (args.only != null && !kind) {
-    console.error('Only 性别, 是否参加过正式工作, 身高, 体重, 婚姻状况, 政治面貌, 民族, 证件类型, 学历, 关系类型, 获奖级别, 最高英语水平, and 出生日期 are in this knife.');
+    console.error('Only 性别, 是否参加过正式工作, 身高, 体重, 婚姻状况, 政治面貌, 民族, 证件类型, 学历, 关系类型, 获奖级别, 最高英语水平, 招聘信息来源, and 出生日期 are in this knife.');
     process.exit(2);
   }
   if (kind === 'height' && args.live && !args.synthetic) {

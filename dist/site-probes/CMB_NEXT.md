@@ -90,3 +90,5 @@ Jeremy 登录招行招聘账号并停在 `/center/resume` 后，才能 harvest l
 获奖级别 AwardsLevel 已离线接线，只接第 0 行 `#resume_awardList_0_awardLevel`。选项是字典 5 项（院校级 AL002、县市级 AL003、省区级 AL004、国家级 AL005、国际级 AL006）。字典里没有「请选择」或 AL000/AL001，没有可剔的占位。级别不从奖项名称推断；「国家级奖学金」「国家」拒填。奖项名称和获奖时间不填。`--only 获奖级别 --live` 拒 `live_award_level_select_fill_unclaimed`。Never Save。未宣称已支持招行。下一刀 EnglishLevel。
 
 最高英语水平 EnglishLevel 已离线接线，只接技能第 0 行 `#resume_skill_0_englishLevel`。选项是字典 10 项（TOEFL EL001 至其他 EL010）。字典里没有「请选择」或 EL000；`其他` 是真实项，保留。不把托福、雅思、四级或分数换算成考试名。分数控件不填。`--only 最高英语水平 --live` 拒 `live_english_level_select_fill_unclaimed`。Never Save。未宣称已支持招行。ChannelType / InterviewCity 仍可延后。RankingMajor 仍是 `DOM_CONTROL_MISSING`。
+
+招聘信息来源 ChannelType 已离线接线，控件 `#resume_basicInfo_channelType`。选项是字典 15 项，名称和 code 保持原样，不做模糊归并。字典里没有「请选择」或 CT000；`其他`（CT0016）是真实项，保留。带引号的 `"招商银行招聘"微信公众号`（CT002）按原文匹配；「微信」「官网」「智联」拒填。`--only 招聘信息来源 --live` 拒 `live_channel_type_select_fill_unclaimed`。Never Save。未宣称已支持招行。下一刀 InterviewCity。RankingMajor 仍是 `DOM_CONTROL_MISSING`。

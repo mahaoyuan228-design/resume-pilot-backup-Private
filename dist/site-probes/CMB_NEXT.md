@@ -86,3 +86,5 @@ Jeremy 登录招行招聘账号并停在 `/center/resume` 后，才能 harvest l
 裁剪笔记 `CMB_DICT_REMAINING_TRIM_20261019.md`（Never Save）与上面交叉。下一刀从 RelationshipType 起，顺序 RelationshipType → AwardsLevel → EnglishLevel → ChannelType → InterviewCity。RankingMajor 记 `DOM_CONTROL_MISSING`，不猜 selector。Education 已落地，不重做。未宣称已支持招行。验收仍 **85%**。
 
 关系类型 RelationshipType 已离线接线。`#resume_familyList_0_relationship` 与 `#resume_familyList_1_relationship` 各自绑定，索引隔离，不把一行的值写到另一行。选项是字典 8 项（RT0001–RT0008），无占位可剔。简称「父」「其他」拒填。家庭姓名和电话不填。`--only 关系类型 --live` 拒 `live_relationship_select_fill_unclaimed`。Never Save。未宣称已支持招行。下一刀 AwardsLevel。
+
+获奖级别 AwardsLevel 已离线接线，只接第 0 行 `#resume_awardList_0_awardLevel`。选项是字典 5 项（院校级 AL002、县市级 AL003、省区级 AL004、国家级 AL005、国际级 AL006）。字典里没有「请选择」或 AL000/AL001，没有可剔的占位。级别不从奖项名称推断；「国家级奖学金」「国家」拒填。奖项名称和获奖时间不填。`--only 获奖级别 --live` 拒 `live_award_level_select_fill_unclaimed`。Never Save。未宣称已支持招行。下一刀 EnglishLevel。

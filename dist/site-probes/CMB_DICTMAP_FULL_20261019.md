@@ -18,7 +18,7 @@ Birth date is not in this map. It stays the harvested DatePicker hint (`resume_b
 | Education | 8 | 0 | offline select on row 0; ED000 dropped; `--live` refuses `live_education_level_select_fill_unclaimed` |
 | RelationshipType | 8 | 0 | offline select on family rows 0 and 1; indexes stay isolated; `--live` refuses `live_relationship_select_fill_unclaimed` |
 | InterviewCity | 44 | 0 | unwired |
-| AwardsLevel | 5 | 0 | unwired |
+| AwardsLevel | 5 | 0 | offline select on award row 0; level is not inferred from the award name; `--live` refuses `live_award_level_select_fill_unclaimed` |
 | PoliticalAffinity | 13 | 0 | politics select (offline; harvested DOM id resume_basicInfo_politicalAffinity) |
 | IdCardType | 15 | 0 | offline select; harvested DOM id `resume_basicInfo_idCardType` (no show-search); `--live` still refuses `live_id_card_type_select_fill_unclaimed` |
 | RankingMajor | 3 | 0 | unwired |

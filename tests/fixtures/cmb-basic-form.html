@@ -408,6 +408,42 @@
         <input id="resume_familyList_1_name" class="ant-input" placeholder="请输入" value="" data-dom="harvested-text-not-filled" />
         <input id="resume_familyList_1_phone" class="ant-input" placeholder="请输入" value="" data-dom="harvested-text-not-filled" />
 
+        <!--
+          Award row 0 only. Options are the five AwardsLevel rows. No placeholder.
+          Ids harvested 2026-10-19. Select root class was not captured, so this
+          stand-in is non-search. Option rows are synthetic. A level is never
+          inferred from 奖项名称. --live refuses live_award_level_select_fill_unclaimed.
+          Award name and award date are present and are not filled.
+          Never Save. 招行 is not supported.
+        -->
+        <div class="ant-form-item" data-field="奖项名称" data-dom="harvested-text-not-filled">
+          <div class="ant-form-item-label"><label for="resume_awardList_0_awardName">奖项名称</label></div>
+          <div class="ant-form-item-control">
+            <input id="resume_awardList_0_awardName" class="ant-input" placeholder="请输入" value="" />
+          </div>
+        </div>
+        <div class="ant-form-item" data-field="获奖级别" data-dom="synthetic-harvested-options">
+          <div class="ant-form-item-label"><label for="resume_awardList_0_awardLevel">获奖级别</label></div>
+          <div class="ant-form-item-control">
+            <div class="ant-select" id="resume_awardList_0_awardLevel">
+              <div class="ant-select-selector"><span class="ant-select-selection-item" data-code=""></span></div>
+              <div class="ant-select-dropdown" id="resume_awardList_0_awardLevel_list" role="listbox">
+          <div class="ant-select-item-option" role="option" data-code="AL002" aria-selected="false">院校级</div>
+          <div class="ant-select-item-option" role="option" data-code="AL003" aria-selected="false">县市级</div>
+          <div class="ant-select-item-option" role="option" data-code="AL004" aria-selected="false">省区级</div>
+          <div class="ant-select-item-option" role="option" data-code="AL005" aria-selected="false">国家级</div>
+          <div class="ant-select-item-option" role="option" data-code="AL006" aria-selected="false">国际级</div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="ant-form-item" data-field="获奖时间" data-dom="harvested-text-not-filled">
+          <div class="ant-form-item-label"><label for="resume_awardList_0_awardDate">获奖时间</label></div>
+          <div class="ant-form-item-control">
+            <input id="resume_awardList_0_awardDate" class="ant-input" placeholder="请选择时间" value="" />
+          </div>
+        </div>
+
         <button type="button" id="save-btn" class="ant-btn ant-btn-primary" disabled>保存</button>
       </form>
     </div>

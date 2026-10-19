@@ -163,6 +163,23 @@ export const CMB_RELATIONSHIP_TYPE_LIST_ID = 'resume_familyList_0_relationship_l
 export const CMB_RELATIONSHIP_TYPE_ROW1_SELECT_ID = 'resume_familyList_1_relationship';
 export const CMB_RELATIONSHIP_TYPE_ROW1_LIST_ID = 'resume_familyList_1_relationship_list';
 
+/**
+ * AwardsLevel from cmb-dictmap-full-20261019.json.
+ * Five rows, AL002–AL006. No 请选择 and no AL000/AL001 placeholder.
+ * Level is never inferred from an award name. Only award row 0 was harvested.
+ */
+export const CMB_AWARD_LEVEL_OPTIONS = Object.freeze([
+  Object.freeze({"text":"院校级","code":"AL002"}),
+  Object.freeze({"text":"县市级","code":"AL003"}),
+  Object.freeze({"text":"省区级","code":"AL004"}),
+  Object.freeze({"text":"国家级","code":"AL005"}),
+  Object.freeze({"text":"国际级","code":"AL006"})
+]);
+
+/** Harvested 2026-10-19. List id comes from aria-controls. Live click is not claimed. */
+export const CMB_AWARD_LEVEL_SELECT_ID = 'resume_awardList_0_awardLevel';
+export const CMB_AWARD_LEVEL_LIST_ID = 'resume_awardList_0_awardLevel_list';
+
 /** Kind + fill hint only. No synthetic DatePicker DOM. */
 export const CMB_BIRTHDATE_HINT = Object.freeze({
   key: 'birthDate',

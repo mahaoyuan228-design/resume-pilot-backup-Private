@@ -12,6 +12,7 @@ import {
   isCmbBirthDateLabel,
   isCmbEducationLevelLabel,
   isCmbRelationshipLabel,
+  isCmbAwardLevelLabel,
   isCmbEthnicityLabel,
   isCmbIdCardTypeLabel,
   isCmbHeightLabel,
@@ -183,6 +184,17 @@ const GATED_SPECS = {
       code: 'RT0003',
       invalid: '其他'
     }
+  },
+  award: {
+    label: '获奖级别',
+    fn: 'fillAwardLevel',
+    path: 'awardLevel',
+    selectId: 'resume_awardList_0_awardLevel',
+    invalid: '国家级奖学金',
+    explicitReason: 'invalid_award_level',
+    liveReason: 'live_award_level_select_fill_unclaimed',
+    first: { text: '院校级', code: 'AL002' },
+    second: { text: '国家级', code: 'AL005' }
   }
 };
 
@@ -198,6 +210,7 @@ function onlyKind(value) {
   if (isCmbIdCardTypeLabel(text)) return 'idCard';
   if (isCmbEducationLevelLabel(text)) return 'education';
   if (text === '家庭关系' || isCmbRelationshipLabel(text)) return 'relationship';
+  if (isCmbAwardLevelLabel(text)) return 'award';
   if (isCmbBirthDateLabel(text)) return 'birthDate';
   return '';
 }
@@ -1167,6 +1180,9 @@ async function runSyntheticGated(kind) {
         education: read('resume_educationHistoryList_0_educationLevelCode'),
         relationship: read('resume_familyList_0_relationship'),
         relationshipRow1: read('resume_familyList_1_relationship'),
+        award: read('resume_awardList_0_awardLevel'),
+        awardName: document.getElementById('resume_awardList_0_awardName')?.value ?? null,
+        awardDate: document.getElementById('resume_awardList_0_awardDate')?.value ?? null,
         familyName0: document.getElementById('resume_familyList_0_name')?.value ?? null,
         familyPhone0: document.getElementById('resume_familyList_0_phone')?.value ?? null,
         familyName1: document.getElementById('resume_familyList_1_name')?.value ?? null,
@@ -1243,7 +1259,7 @@ async function runSyntheticGated(kind) {
       && planReady?.values?.relationshipTypeRow1 === ''
     );
     const fieldResult = basic?.results?.find((row) => row.label === spec.label && (spec.row1 ? row.rowIndex === 0 : true));
-    const othersEmpty = ['marital', 'politics', 'ethnicity', 'idCard', 'education', 'relationship', 'relationshipRow1'].every((name) => {
+    const othersEmpty = ['marital', 'politics', 'ethnicity', 'idCard', 'education', 'relationship', 'relationshipRow1', 'award'].every((name) => {
       const row = neighbor?.[name];
       if (name === kind) return row?.text === spec.second.text && row?.code === spec.second.code;
       return row?.text === '' && row?.code === '';
@@ -1287,6 +1303,8 @@ async function runSyntheticGated(kind) {
       && (neighbor?.familyPhone0 ?? '') === ''
       && (neighbor?.familyName1 ?? '') === ''
       && (neighbor?.familyPhone1 ?? '') === ''
+      && (neighbor?.awardName ?? '') === ''
+      && (neighbor?.awardDate ?? '') === ''
       && planReady?.ok === true
       && planReady?.values?.[spec.path] === spec.second.text
       && planReady?.blockers?.some((row) => row.path === 'birthDate' && row.reason === 'datepicker_hint_only')
@@ -1350,6 +1368,7 @@ function printHelp() {
     node scripts/auto-cmb-basic.mjs --only 证件类型
     node scripts/auto-cmb-basic.mjs --only 学历
     node scripts/auto-cmb-basic.mjs --only 关系类型
+    node scripts/auto-cmb-basic.mjs --only 获奖级别
     node scripts/auto-cmb-basic.mjs --only 出生日期
   Gender is offline synthetic only. Live radio DOM is not harvested.
   Formal work (是否参加过正式工作) is offline synthetic radio only. Options are field-map 是/否.
@@ -1368,6 +1387,8 @@ function printHelp() {
   关系类型 uses harvested ids resume_familyList_0_relationship and resume_familyList_1_relationship.
   Row 0 and row 1 are filled separately. Family name and phone are not filled.
   --only 关系类型 --live refuses live_relationship_select_fill_unclaimed.
+  获奖级别 uses harvested row-0 id resume_awardList_0_awardLevel.
+  The level is not inferred from 奖项名称. --only 获奖级别 --live refuses live_award_level_select_fill_unclaimed.
   Live portal fingerprint only (no fill claim):
     MODE=readiness node scripts/auto-cmb-basic.mjs --live
     Extension path (Edge + SW message CMB_BASIC_AUTO):
@@ -1398,7 +1419,7 @@ async function main() {
   }
   const kind = args.only == null ? '' : onlyKind(args.only);
   if (args.only != null && !kind) {
-    console.error('Only 性别, 是否参加过正式工作, 身高, 体重, 婚姻状况, 政治面貌, 民族, 证件类型, 学历, 关系类型, and 出生日期 are in this knife.');
+    console.error('Only 性别, 是否参加过正式工作, 身高, 体重, 婚姻状况, 政治面貌, 民族, 证件类型, 学历, 关系类型, 获奖级别, and 出生日期 are in this knife.');
     process.exit(2);
   }
   if (kind === 'height' && args.live && !args.synthetic) {

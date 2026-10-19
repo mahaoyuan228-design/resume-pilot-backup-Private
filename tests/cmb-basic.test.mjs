@@ -26,6 +26,9 @@ import {
   CMB_RELATIONSHIP_TYPE_ROW1_LIST_ID,
   CMB_RELATIONSHIP_TYPE_ROW1_SELECT_ID,
   CMB_RELATIONSHIP_TYPE_SELECT_ID,
+  CMB_AWARD_LEVEL_LIST_ID,
+  CMB_AWARD_LEVEL_OPTIONS,
+  CMB_AWARD_LEVEL_SELECT_ID,
   CMB_ETHNICITY_OPTIONS,
   CMB_ID_CARD_TYPE_LIST_ID,
   CMB_ID_CARD_TYPE_OPTIONS,
@@ -35,6 +38,7 @@ import {
   isCmbHeightLabel,
   isCmbEducationLevelLabel,
   isCmbRelationshipLabel,
+  isCmbAwardLevelLabel,
   isCmbIdCardTypeLabel,
   isCmbWeightLabel,
   isCmbMaritalLabel,
@@ -678,6 +682,7 @@ test('harvested gated dicts match the live evidence and are not invented', () =>
   assert.deepEqual(parsed.idCardType, [...CMB_ID_CARD_TYPE_OPTIONS]);
   assert.deepEqual(parsed.educationLevel, [...CMB_EDUCATION_LEVEL_OPTIONS]);
   assert.deepEqual(parsed.relationshipType, [...CMB_RELATIONSHIP_TYPE_OPTIONS]);
+  assert.deepEqual(parsed.awardLevel, [...CMB_AWARD_LEVEL_OPTIONS]);
 
   assert.match(fixture, /id="resume_basicInfo_maritalStatus"/);
   assert.match(fixture, /id="resume_basicInfo_politicalAffinity"/);
@@ -717,6 +722,7 @@ test('gated select plan maps harvested text or code and does not fill birth date
   assert.equal(absent.values.educationLevel, '');
   assert.equal(absent.values.relationshipType, '');
   assert.equal(absent.values.relationshipTypeRow1, '');
+  assert.equal(absent.values.awardLevel, '');
   assert.equal(absent.fields.some((row) => row.path === 'birthDate'), false);
 
   const ready = planCmbBasicFromProfile({
@@ -1095,6 +1101,75 @@ test('synthetic harness relationship select isolates row 0 from row 1 and --live
   assert.equal(payload.indexIsolation?.afterRow0?.familyName0, '');
   assert.equal(payload.indexIsolation?.afterRow0?.familyPhone1, '');
   assert.equal(payload.planReady?.values?.relationshipTypeRow1, '');
+});
+
+test('AwardsLevel options use the harvested row-0 select and ignore award names', () => {
+  const full = JSON.parse(readFileSync(resolve(root, 'dist/site-probes/cmb-dictmap-full-20261019.json'), 'utf8'));
+  const dom = JSON.parse(readFileSync(resolve(root, 'dist/site-probes/cmb-remaining-dom-ids-20261019.json'), 'utf8'));
+  const hint = dom.labelHints.find((row) => row.label === '获奖级别');
+  assert.equal(hint.inputId, CMB_AWARD_LEVEL_SELECT_ID);
+  assert.equal(hint.ariaControls, CMB_AWARD_LEVEL_LIST_ID);
+  const kept = full.dicts.AwardsLevel.filter((row) => row.name !== '请选择' && row.code !== 'AL000' && row.code !== 'AL001');
+  assert.equal(kept.length, 5);
+  assert.deepEqual(
+    [...CMB_AWARD_LEVEL_OPTIONS],
+    kept.map((row) => ({ text: row.name, code: row.code }))
+  );
+  assert.equal(resolveCmbCodedOption(CMB_AWARD_LEVEL_OPTIONS, '请选择'), null);
+  assert.equal(resolveCmbCodedOption(CMB_AWARD_LEVEL_OPTIONS, '国家'), null);
+  assert.equal(resolveCmbCodedOption(CMB_AWARD_LEVEL_OPTIONS, '国家级奖学金'), null);
+  assert.equal(resolveCmbCodedOption(CMB_AWARD_LEVEL_OPTIONS, '国际'), null);
+  assert.equal(resolveCmbCodedOption(CMB_AWARD_LEVEL_OPTIONS, 'AL001'), null);
+  assert.equal(resolveCmbCodedOption(CMB_AWARD_LEVEL_OPTIONS, 'AL005')?.text, '国家级');
+  assert.equal(resolveCmbCodedOption(CMB_AWARD_LEVEL_OPTIONS, '省区级')?.code, 'AL004');
+  assert.match(fixture, /id="resume_awardList_0_awardLevel"/);
+  assert.match(fixture, /id="resume_awardList_0_awardLevel_list"/);
+  assert.equal((fixture.match(/data-code="AL00/g) || []).length, 5);
+  assert.doesNotMatch(fixture, /id="resume_awardList_0_awardLevel"[^>]*show-search/);
+  assert.doesNotMatch(fixture, /resume_awardList_1_awardLevel/);
+  assert.match(source, /fillAwardLevel/);
+  assert.match(source, /invalid_award_level/);
+  assert.match(harness, /live_award_level_select_fill_unclaimed/);
+  assert.equal(isCmbAwardLevelLabel('获奖级别'), true);
+  assert.equal(isCmbAwardLevelLabel('奖项名称'), false);
+  const store = readFileSync(resolve(root, 'src/profile/store.js'), 'utf8');
+  assert.doesNotMatch(store, /awardLevel/);
+  const base = {
+    fullName: '测试甲',
+    phone: '13800138000',
+    email: 'cmb.user@example.com',
+    confirmedFields: ['fullName', 'phone', 'email', 'awardLevel']
+  };
+  const named = planCmbBasicFromProfile({ ...base, awardName: '国家级奖学金' });
+  assert.equal(named.values.awardLevel, '');
+  assert.equal(named.fields.some((row) => row.path === 'awardLevel'), false);
+  const ready = planCmbBasicFromProfile({ ...base, awardLevel: ' AL005 ', awardName: '国家级奖学金' });
+  assert.equal(ready.values.awardLevel, '国家级');
+  assert.equal(ready.fields.find((row) => row.path === 'awardLevel')?.code, 'AL005');
+  const dropped = planCmbBasicFromProfile({ ...base, awardLevel: '国家级奖学金' });
+  assert.equal(dropped.values.awardLevel, '');
+  assert.equal(dropped.blockers.find((row) => row.path === 'awardLevel')?.reason, 'invalid_profile_value');
+});
+
+test('synthetic harness award level select maps text and code and --live refuses the click', { timeout: 120000 }, () => {
+  assertGatedSelectKnife(
+    '获奖级别',
+    'live_award_level_select_fill_unclaimed',
+    'synthetic_award_select_pass',
+    'cmb-award-select-latest.json',
+    '国家级',
+    'AL005'
+  );
+  const payload = JSON.parse(readFileSync(resolve(root, 'dist/auto-runs/cmb-award-select-latest.json'), 'utf8'));
+  assert.equal(payload.optionListHarvested, true);
+  assert.equal(payload.liveSelectFillClaimed, false);
+  assert.equal(payload.formFillClaimed, false);
+  assert.equal(payload.neighbor?.awardName, '');
+  assert.equal(payload.neighbor?.awardDate, '');
+  assert.equal(payload.byText?.after, '院校级');
+  assert.equal(payload.byText?.afterCode, 'AL002');
+  assert.equal(payload.explicitInvalid?.reason, 'invalid_award_level');
+  assert.equal(payload.explicitInvalid?.writeAttempted, false);
 });
 
 test('birth date knife records the DatePicker hint and does not write', () => {

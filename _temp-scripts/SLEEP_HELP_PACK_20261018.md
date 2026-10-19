@@ -17,7 +17,7 @@
 2. **可选 ATS DOM**：广发飞书 / **小米 ATSX** `https://xiaomi.jobs.f.mioffice.cn/newretailing/?spread=M1SXHJC`（登录后停在简历编辑页即可；host 已接线；Never Save） / 君乐宝北森 / TI(Moka) → 采真实 DOM 后再 fill-wo-save；同族备选：中科创达飞书 / 乐牛·正泰 Moka / 现代牧业·北芯北森。
 3. **可选中信 live**：`careers.citics.com/my/jl` 上户口类型 + 证件类型 + 民族（synthetic 已绿；民族若全量/可搜则 skip）。
 4. **可选**：付费 Edge **9239**；Codex Cloud 环境发布。
-5. **付费 Edge 9239 预客户 QA（Codex F 裁剪·2026-10-19）**：授权有效 + CDP=9239；CMS+GTH Never Save 试填读回；与试填 9237 结果隔离；失败记环境契约；不碰私钥。详 `dist/site-probes/CODEX_TRIM_PAID_EDGE_QA_F_20261019.md`。
+5. **付费 Edge 9239 预客户 QA（Codex F 裁剪·2026-10-19）**：授权有效 + CDP=9239；CMS+GTH Never Save 试填读回；与试填 9237 结果隔离；失败记环境契约；不碰私钥。详 `dist/site-probes/PAID_EDGE_9239_QA_CHECKLIST_20261019.md`（Codex N 裁剪）。
 6. **招行 live Select（2026-10-19 已做）**：试填 9237 上 10 字段点击证据已齐；仍 **未宣称招行已支持**。详见 `CMB_LIVE_SELECT_CLICK_EVIDENCE_20261019.md`。
 7. **中信 `/my/jl` 学历采选项（离线包已备·2026-10-19）**：登录 careers.citics.com → 打开 `/my/jl`；按 `dist/site-probes/CITICS_EDUCATION_HARVEST_PACK_20261019.md` 仅展开学历 Ant Select、滚虚拟列表、dump text+value；学位另轮；Never Save；不宣称支持。当前 `live_education_options_unharvested`。
 

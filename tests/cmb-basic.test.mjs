@@ -1020,37 +1020,46 @@ test('Education options keep live 博士后 and the fixture stays a narrow subse
   assert.equal(postdoc.blockers.some((row) => row.path === 'educationLevel'), false);
 });
 
-test('live select click stubs lock the ten claimed select ids', () => {
+test('live select click evidence locks the ten claimed select ids', () => {
   const rows = [
-    ['cmb-live-select-marital-latest.json', 'resume_basicInfo_maritalStatus', ''],
-    ['cmb-live-select-politics-latest.json', 'resume_basicInfo_politicalAffinity', ''],
-    ['cmb-live-select-ethnicity-latest.json', 'resume_basicInfo_nation', ''],
-    ['cmb-live-select-idCardType-latest.json', 'resume_basicInfo_idCardType', ''],
-    ['cmb-live-select-educationLevel-latest.json', 'resume_educationHistoryList_0_educationLevelCode', ''],
-    ['cmb-live-select-channelType-latest.json', 'resume_basicInfo_channelType', ''],
-    ['cmb-live-select-interviewCity-latest.json', 'resume_basicInfo_expectedInterviewCity', ''],
-    ['cmb-live-select-awardLevel-latest.json', CMB_AWARD_LEVEL_SELECT_ID, ''],
-    ['cmb-live-select-relationship-latest.json', CMB_RELATIONSHIP_TYPE_SELECT_ID, CMB_RELATIONSHIP_TYPE_ROW1_SELECT_ID],
-    ['cmb-live-select-englishLevel-latest.json', CMB_ENGLISH_LEVEL_SELECT_ID, '']
+    ['cmb-live-select-marital-latest.json', 'resume_basicInfo_maritalStatus'],
+    ['cmb-live-select-politics-latest.json', 'resume_basicInfo_politicalAffinity'],
+    ['cmb-live-select-ethnicity-latest.json', 'resume_basicInfo_nation'],
+    ['cmb-live-select-idCardType-latest.json', 'resume_basicInfo_idCardType'],
+    ['cmb-live-select-educationLevel-latest.json', 'resume_educationHistoryList_0_educationLevelCode'],
+    ['cmb-live-select-channelType-latest.json', 'resume_basicInfo_channelType'],
+    ['cmb-live-select-interviewCity-latest.json', 'resume_basicInfo_expectedInterviewCity'],
+    ['cmb-live-select-awardLevel-latest.json', CMB_AWARD_LEVEL_SELECT_ID],
+    ['cmb-live-select-relationship-latest.json', CMB_RELATIONSHIP_TYPE_SELECT_ID],
+    ['cmb-live-select-englishLevel-latest.json', CMB_ENGLISH_LEVEL_SELECT_ID]
   ];
   assert.equal(CMB_RELATIONSHIP_TYPE_SELECT_ID, 'resume_familyList_0_relationship');
   assert.equal(CMB_RELATIONSHIP_TYPE_ROW1_SELECT_ID, 'resume_familyList_1_relationship');
   assert.equal(CMB_AWARD_LEVEL_SELECT_ID, 'resume_awardList_0_awardLevel');
   assert.equal(CMB_ENGLISH_LEVEL_SELECT_ID, 'resume_skill_0_englishLevel');
-  for (const [name, selectId, row1] of rows) {
-    const data = JSON.parse(readFileSync(resolve(root, 'dist/auto-runs', name), 'utf8'));
-    assert.equal(data.source, 'trial-edge-9237-20261019');
-    assert.equal(data.clickClaimed, true);
+  for (const [name, selectId] of rows) {
+    const raw = readFileSync(resolve(root, 'dist/auto-runs', name), 'utf8');
+    assert.doesNotMatch(raw, /"stub"\s*:/);
+    const data = JSON.parse(raw);
+    assert.notEqual(data.stub, true);
+    assert.equal(data.siteId, 'cmb');
     assert.equal(data.neverSave, true);
-    assert.equal(data.saved, false);
     assert.equal(data.formFillClaimed, false);
-    assert.equal(data.selectId, selectId);
-    if (row1) assert.equal(data.row1SelectId, row1);
+    assert.equal(data.liveSelectFillClaimed, true);
+    assert.equal(data.probe?.ok, true);
+    assert.equal(data.probe?.saved, false);
+    assert.equal(data.probe?.neverSave, true);
+    assert.equal(data.probe?.selectId, selectId);
+    assert.match(data.probe?.href || '', /career\.cmbchina\.com\/center\/resume/);
   }
   const ethnicity = JSON.parse(readFileSync(resolve(root, 'dist/auto-runs/cmb-live-select-ethnicity-latest.json'), 'utf8'));
-  assert.equal(ethnicity.showSearch, true);
+  const classes = [ethnicity.probe.before, ethnicity.probe.after, ethnicity.probe.final]
+    .map((row) => row?.classes || '')
+    .join(' ');
+  assert.match(classes, /ant-select-show-search/);
   const education = JSON.parse(readFileSync(resolve(root, 'dist/auto-runs/cmb-live-select-educationLevel-latest.json'), 'utf8'));
-  assert.match(education.note, /博士后/);
+  const educationTexts = (education.probe.pick?.optionsSample || []).map((row) => row.text);
+  assert.ok(educationTexts.includes('博士后'));
   const check = spawnSync(process.execPath, ['_temp-scripts/live-cmb-select-click.mjs', '--check'], {
     cwd: root,
     encoding: 'utf8',

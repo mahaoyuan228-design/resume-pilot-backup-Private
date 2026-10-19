@@ -19,7 +19,7 @@
 15. **2026-10-19 招行招聘信息来源**：只接 `#resume_basicInfo_channelType`。15 项原名原 code，不做模糊归并。`其他` 保留。`--live` 拒 `live_channel_type_select_fill_unclaimed`。Never Save。未宣称已支持招行。下一刀 InterviewCity。
 16. **2026-10-19 招行面试期望城市**：只接 `#resume_basicInfo_expectedInterviewCity`。44 个完整城市名，首项北京市、末项重庆市。简称不匹配。`--live` 拒 `live_interview_city_select_fill_unclaimed`。Never Save。未宣称已支持招行。RankingMajor 仍是 `DOM_CONTROL_MISSING`。
 17. **2026-10-19 招行 live 点击最小矩阵**（只文档）：全文 `dist/site-probes/CMB_LIVE_CLICK_MATRIX_20261019.md`。Never Save。一次一字段。试填 Edge CDP 9237。停在 `/center/resume`。未宣称已支持招行。整体进度口径由主脑报。
-18. **2026-10-19 招行 live Select 10 字段已做**：实采表 `dist/site-probes/CMB_LIVE_SELECT_CLICK_EVIDENCE_20261019.md`。E 草稿过时，见 `CODEX_TRIM_CMB_LIVE_MATRIX_E_20261019.md`。Cloud 仍未见 box 原始 JSON，仓内 JSON 仍是交接 stub，未编造读回。Never Save。仍未宣称已支持招行。
+18. **2026-10-19 招行 live Select 10 字段已做**：实采表 `dist/site-probes/CMB_LIVE_SELECT_CLICK_EVIDENCE_20261019.md`。E 草稿过时，见 `CODEX_TRIM_CMB_LIVE_MATRIX_E_20261019.md`。`dist/auto-runs` 10 份 JSON 已换成试填 Edge 9237 真实证据，不是 stub。Never Save。仍未宣称已支持招行。
 
 ## 1b. 招行 live 点击验收最小矩阵（2026-10-19）
 

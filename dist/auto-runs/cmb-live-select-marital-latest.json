@@ -1,18 +1,73 @@
 {
-  "source": "trial-edge-9237-20261019",
-  "stub": true,
-  "stubReason": "Cloud checkout had no trial JSON. This stub records the handoff points only. It does not invent option text, click coordinates, or readback.",
   "siteId": "cmb",
   "field": "marital",
   "label": "婚姻状况",
-  "selectId": "resume_basicInfo_maritalStatus",
-  "showSearch": false,
-  "clickClaimed": true,
-  "liveSelectClickClaimed": true,
+  "refuseCodeWas": "live_marital_select_fill_unclaimed",
+  "liveSelectFillClaimed": true,
   "formFillClaimed": false,
-  "saved": false,
   "neverSave": true,
-  "page": "https://career.cmbchina.com/center/resume",
-  "cdpPort": 9237,
-  "oneField": true
+  "ts": "2026-10-19T05:59:13.365Z",
+  "probe": {
+    "ok": true,
+    "reason": "matched",
+    "href": "https://career.cmbchina.com/center/resume",
+    "selectId": "resume_basicInfo_maritalStatus",
+    "targetText": "未婚",
+    "targetCode": "MS001",
+    "before": {
+      "text": "未婚",
+      "title": "未婚",
+      "code": "",
+      "placeholder": "",
+      "open": false,
+      "classes": "ant-select ant-select-in-form-item ant-select-status-success ant-select-focused ant-select-single ant-select-allow-clear ant-select-show-arrow"
+    },
+    "after": {
+      "text": "未婚",
+      "title": "未婚",
+      "code": "",
+      "placeholder": "",
+      "open": false,
+      "classes": "ant-select ant-select-in-form-item ant-select-status-success ant-select-focused ant-select-single ant-select-allow-clear ant-select-show-arrow"
+    },
+    "final": {
+      "text": "未婚",
+      "title": "未婚",
+      "code": "",
+      "placeholder": "",
+      "open": false,
+      "classes": "ant-select ant-select-in-form-item ant-select-status-success ant-select-focused ant-select-single ant-select-allow-clear ant-select-show-arrow"
+    },
+    "pick": {
+      "ok": true,
+      "reason": "clicked",
+      "optionsSample": [
+        {
+          "text": "请选择",
+          "title": "请选择"
+        },
+        {
+          "text": "未婚",
+          "title": "未婚"
+        },
+        {
+          "text": "已婚",
+          "title": "已婚"
+        },
+        {
+          "text": "离异",
+          "title": "离异"
+        },
+        {
+          "text": "已育",
+          "title": "已育"
+        }
+      ],
+      "optionsCount": 5
+    },
+    "restored": null,
+    "saveButtonCount": 0,
+    "neverSave": true,
+    "saved": false
+  }
 }

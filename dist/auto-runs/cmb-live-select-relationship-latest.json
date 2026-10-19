@@ -1,19 +1,85 @@
 {
-  "source": "trial-edge-9237-20261019",
-  "stub": true,
-  "stubReason": "Cloud checkout had no trial JSON. This stub records the handoff points only. It does not invent option text, click coordinates, or readback.",
   "siteId": "cmb",
   "field": "relationship",
   "label": "关系类型",
-  "selectId": "resume_familyList_0_relationship",
-  "showSearch": false,
-  "clickClaimed": true,
-  "liveSelectClickClaimed": true,
+  "refuseCodeWas": "live_relationship_select_fill_unclaimed",
+  "liveSelectFillClaimed": true,
   "formFillClaimed": false,
-  "saved": false,
   "neverSave": true,
-  "page": "https://career.cmbchina.com/center/resume",
-  "cdpPort": 9237,
-  "oneField": true,
-  "row1SelectId": "resume_familyList_1_relationship"
+  "ts": "2026-10-19T06:00:48.903Z",
+  "probe": {
+    "ok": true,
+    "reason": "matched",
+    "href": "https://career.cmbchina.com/center/resume",
+    "selectId": "resume_familyList_0_relationship",
+    "targetText": "父亲",
+    "targetCode": "RT0002",
+    "before": {
+      "text": "父亲",
+      "title": "父亲",
+      "code": "",
+      "placeholder": "",
+      "open": false,
+      "classes": "ant-select ant-select-in-form-item ant-select-single ant-select-allow-clear ant-select-show-arrow"
+    },
+    "after": {
+      "text": "父亲",
+      "title": "父亲",
+      "code": "",
+      "placeholder": "",
+      "open": false,
+      "classes": "ant-select ant-select-in-form-item ant-select-focused ant-select-single ant-select-allow-clear ant-select-show-arrow"
+    },
+    "final": {
+      "text": "父亲",
+      "title": "父亲",
+      "code": "",
+      "placeholder": "",
+      "open": false,
+      "classes": "ant-select ant-select-in-form-item ant-select-focused ant-select-single ant-select-allow-clear ant-select-show-arrow"
+    },
+    "pick": {
+      "ok": true,
+      "reason": "clicked",
+      "optionsSample": [
+        {
+          "text": "配偶",
+          "title": "配偶"
+        },
+        {
+          "text": "父亲",
+          "title": "父亲"
+        },
+        {
+          "text": "母亲",
+          "title": "母亲"
+        },
+        {
+          "text": "子女",
+          "title": "子女"
+        },
+        {
+          "text": "紧急联络人",
+          "title": "紧急联络人"
+        },
+        {
+          "text": "兄弟",
+          "title": "兄弟"
+        },
+        {
+          "text": "姐妹",
+          "title": "姐妹"
+        },
+        {
+          "text": "其他相关人员",
+          "title": "其他相关人员"
+        }
+      ],
+      "optionsCount": 8
+    },
+    "restored": null,
+    "saveButtonCount": 0,
+    "neverSave": true,
+    "saved": false
+  }
 }

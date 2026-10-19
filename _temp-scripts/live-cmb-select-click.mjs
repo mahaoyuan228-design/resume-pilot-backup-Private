@@ -1,8 +1,7 @@
 #!/usr/bin/env node
 // CMB live select click evidence check.
-// Measured 10/10 on trial Edge 9237. The original click script body and the
-// box JSON bytes were still not in this cloud checkout, so --check reads the
-// handoff stubs. This file does not click 保存 and does not invent readback.
+// Measured 10/10 on trial Edge 9237. --check reads the real probe JSON in
+// dist/auto-runs. This file does not click 保存 and does not invent readback.
 // --only <页面标签> delegates to scripts/auto-cmb-basic.mjs --live (fill-wo-save).
 import fs from 'node:fs';
 import path from 'node:path';
@@ -27,14 +26,19 @@ function check() {
   const rows = files.map((name) => {
     const file = path.join(root, 'dist/auto-runs', name);
     const data = JSON.parse(fs.readFileSync(file, 'utf8'));
-    const ok = data.source === 'trial-edge-9237-20261019'
-      && data.clickClaimed === true
+    const probe = data.probe && typeof data.probe === 'object' ? data.probe : {};
+    const ok = data.stub !== true
+      && data.siteId === 'cmb'
       && data.neverSave === true
-      && data.saved === false
       && data.formFillClaimed === false
-      && typeof data.selectId === 'string'
-      && data.selectId.length > 0;
-    return { name, ok, selectId: data.selectId, stub: data.stub === true };
+      && data.liveSelectFillClaimed === true
+      && probe.neverSave === true
+      && probe.saved === false
+      && probe.ok === true
+      && typeof probe.selectId === 'string'
+      && probe.selectId.length > 0
+      && String(probe.href || '').includes('career.cmbchina.com/center/resume');
+    return { name, ok, selectId: probe.selectId, stub: data.stub === true };
   });
   const ready = rows.length === 10 && rows.every((row) => row.ok);
   console.log(JSON.stringify({

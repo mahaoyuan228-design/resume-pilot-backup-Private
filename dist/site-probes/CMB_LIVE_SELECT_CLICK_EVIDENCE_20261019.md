@@ -4,7 +4,7 @@ Never Save。未宣称招行已支持。一次一字段。试填 Edge CDP **9237
 
 实测 **10/10**。Codex 矩阵草稿 E 已过时，以本表为准。见 [`CODEX_TRIM_CMB_LIVE_MATRIX_E_20261019.md`](CODEX_TRIM_CMB_LIVE_MATRIX_E_20261019.md)。
 
-Cloud 检出仍看不到主脑 box 的原始 JSON 字节。同名文件因此仍是交接 stub（`source=trial-edge-9237-20261019`，`stub: true`）。本表只列交接已确认的字段和 select id，不编造选项全文、点击坐标或读回。主脑再贴真实 JSON 时，用原文覆盖同名文件。
+`dist/auto-runs` 下这 10 份 JSON 现为试填 Edge 9237 真实证据，不是 stub。Never Save。未宣称招行已支持。
 
 ## 10/10 实采表
 

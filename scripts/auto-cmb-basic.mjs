@@ -234,7 +234,8 @@ const GATED_SPECS = {
   }
 };
 
-// Trial Edge 9237 click evidence. Missing file keeps the unclaimed refuse.
+// Trial Edge 9237 click evidence. Files are the attached probe JSON.
+// Missing or non-matching files keep the unclaimed refuse.
 const LIVE_SELECT_EVIDENCE = {
   marital: 'cmb-live-select-marital-latest.json',
   politics: 'cmb-live-select-politics-latest.json',
@@ -248,6 +249,12 @@ const LIVE_SELECT_EVIDENCE = {
   interview: 'cmb-live-select-interviewCity-latest.json'
 };
 
+function liveProbeClasses(probe) {
+  return [probe.before, probe.after, probe.final]
+    .map((row) => (row && typeof row.classes === 'string' ? row.classes : ''))
+    .join(' ');
+}
+
 function readLiveSelectClaim(kind) {
   const spec = GATED_SPECS[kind];
   const name = LIVE_SELECT_EVIDENCE[kind];
@@ -260,12 +267,15 @@ function readLiveSelectClaim(kind) {
   } catch {
     return null;
   }
-  if (data.source !== 'trial-edge-9237-20261019') return null;
-  if (data.clickClaimed !== true || data.neverSave !== true) return null;
-  if (data.saved !== false || data.formFillClaimed !== false) return null;
-  if (data.selectId !== spec.selectId) return null;
-  if (spec.row1 && data.row1SelectId !== spec.row1.selectId) return null;
-  if (kind === 'ethnicity' && data.showSearch !== true) return null;
+  const probe = data.probe;
+  if (!probe || typeof probe !== 'object') return null;
+  if (data.stub === true) return null;
+  if (data.siteId !== 'cmb' || data.neverSave !== true || data.formFillClaimed !== false) return null;
+  if (data.liveSelectFillClaimed !== true) return null;
+  if (probe.neverSave !== true || probe.saved !== false || probe.ok !== true) return null;
+  if (probe.selectId !== spec.selectId) return null;
+  if (!String(probe.href || '').includes('career.cmbchina.com/center/resume')) return null;
+  if (kind === 'ethnicity' && !liveProbeClasses(probe).includes('ant-select-show-search')) return null;
   return { file, data };
 }
 

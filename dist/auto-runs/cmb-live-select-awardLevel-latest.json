@@ -1,18 +1,76 @@
 {
-  "source": "trial-edge-9237-20261019",
-  "stub": true,
-  "stubReason": "Cloud checkout had no trial JSON. This stub records the handoff points only. It does not invent option text, click coordinates, or readback.",
   "siteId": "cmb",
   "field": "awardLevel",
   "label": "获奖级别",
-  "selectId": "resume_awardList_0_awardLevel",
-  "showSearch": false,
-  "clickClaimed": true,
-  "liveSelectClickClaimed": true,
+  "refuseCodeWas": "live_award_level_select_fill_unclaimed",
+  "liveSelectFillClaimed": true,
   "formFillClaimed": false,
-  "saved": false,
   "neverSave": true,
-  "page": "https://career.cmbchina.com/center/resume",
-  "cdpPort": 9237,
-  "oneField": true
+  "ts": "2026-10-19T06:00:47.693Z",
+  "probe": {
+    "ok": true,
+    "reason": "matched",
+    "href": "https://career.cmbchina.com/center/resume",
+    "selectId": "resume_awardList_0_awardLevel",
+    "targetText": "院校级",
+    "targetCode": "AL002",
+    "before": {
+      "text": "",
+      "title": "",
+      "code": "",
+      "placeholder": "请选择",
+      "open": false,
+      "classes": "ant-select ant-select-in-form-item ant-select-single ant-select-allow-clear ant-select-show-arrow"
+    },
+    "after": {
+      "text": "院校级",
+      "title": "院校级",
+      "code": "",
+      "placeholder": "",
+      "open": false,
+      "classes": "ant-select ant-select-in-form-item ant-select-status-success ant-select-single ant-select-allow-clear ant-select-show-arrow"
+    },
+    "final": {
+      "text": "院校级",
+      "title": "院校级",
+      "code": "",
+      "placeholder": "",
+      "open": false,
+      "classes": "ant-select ant-select-in-form-item ant-select-status-success ant-select-single ant-select-allow-clear ant-select-show-arrow"
+    },
+    "pick": {
+      "ok": true,
+      "reason": "clicked",
+      "optionsSample": [
+        {
+          "text": "院校级",
+          "title": "院校级"
+        },
+        {
+          "text": "县市级",
+          "title": "县市级"
+        },
+        {
+          "text": "省区级",
+          "title": "省区级"
+        },
+        {
+          "text": "国家级",
+          "title": "国家级"
+        },
+        {
+          "text": "国际级",
+          "title": "国际级"
+        }
+      ],
+      "optionsCount": 5
+    },
+    "restored": {
+      "ok": true,
+      "reason": "restore_skipped_empty_before"
+    },
+    "saveButtonCount": 0,
+    "neverSave": true,
+    "saved": false
+  }
 }

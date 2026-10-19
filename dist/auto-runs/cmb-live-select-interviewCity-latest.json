@@ -1,18 +1,96 @@
 {
-  "source": "trial-edge-9237-20261019",
-  "stub": true,
-  "stubReason": "Cloud checkout had no trial JSON. This stub records the handoff points only. It does not invent option text, click coordinates, or readback.",
   "siteId": "cmb",
   "field": "interviewCity",
   "label": "面试期望城市",
-  "selectId": "resume_basicInfo_expectedInterviewCity",
-  "showSearch": false,
-  "clickClaimed": true,
-  "liveSelectClickClaimed": true,
+  "refuseCodeWas": "live_interview_city_select_fill_unclaimed",
+  "liveSelectFillClaimed": true,
   "formFillClaimed": false,
-  "saved": false,
   "neverSave": true,
-  "page": "https://career.cmbchina.com/center/resume",
-  "cdpPort": 9237,
-  "oneField": true
+  "ts": "2026-10-19T05:59:36.448Z",
+  "probe": {
+    "ok": true,
+    "reason": "matched",
+    "href": "https://career.cmbchina.com/center/resume",
+    "selectId": "resume_basicInfo_expectedInterviewCity",
+    "targetText": "北京市",
+    "targetCode": "P00271",
+    "before": {
+      "text": "",
+      "title": "",
+      "code": "",
+      "placeholder": "请选择",
+      "open": false,
+      "classes": "ant-select ant-select-in-form-item ant-select-status-success ant-select-single ant-select-allow-clear ant-select-show-arrow"
+    },
+    "after": {
+      "text": "北京市",
+      "title": "北京市",
+      "code": "",
+      "placeholder": "",
+      "open": false,
+      "classes": "ant-select ant-select-in-form-item ant-select-status-success ant-select-focused ant-select-single ant-select-allow-clear ant-select-show-arrow"
+    },
+    "final": {
+      "text": "北京市",
+      "title": "北京市",
+      "code": "",
+      "placeholder": "",
+      "open": false,
+      "classes": "ant-select ant-select-in-form-item ant-select-status-success ant-select-focused ant-select-single ant-select-allow-clear ant-select-show-arrow"
+    },
+    "pick": {
+      "ok": true,
+      "reason": "clicked",
+      "optionsSample": [
+        {
+          "text": "北京市",
+          "title": "北京市"
+        },
+        {
+          "text": "长春市",
+          "title": "长春市"
+        },
+        {
+          "text": "长沙市",
+          "title": "长沙市"
+        },
+        {
+          "text": "成都市",
+          "title": "成都市"
+        },
+        {
+          "text": "大连市",
+          "title": "大连市"
+        },
+        {
+          "text": "东莞市",
+          "title": "东莞市"
+        },
+        {
+          "text": "佛山市",
+          "title": "佛山市"
+        },
+        {
+          "text": "福州市",
+          "title": "福州市"
+        },
+        {
+          "text": "广州市",
+          "title": "广州市"
+        },
+        {
+          "text": "贵阳市",
+          "title": "贵阳市"
+        }
+      ],
+      "optionsCount": 10
+    },
+    "restored": {
+      "ok": true,
+      "reason": "restore_skipped_empty_before"
+    },
+    "saveButtonCount": 0,
+    "neverSave": true,
+    "saved": false
+  }
 }

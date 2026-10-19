@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 // CMB live select click evidence check.
-// The trial Edge click script body was not in the cloud checkout.
-// This file does not click 保存 and does not invent a click procedure.
-// --check reads the ten stub/evidence JSON files.
+// Measured 10/10 on trial Edge 9237. The original click script body and the
+// box JSON bytes were still not in this cloud checkout, so --check reads the
+// handoff stubs. This file does not click 保存 and does not invent readback.
 // --only <页面标签> delegates to scripts/auto-cmb-basic.mjs --live (fill-wo-save).
 import fs from 'node:fs';
 import path from 'node:path';

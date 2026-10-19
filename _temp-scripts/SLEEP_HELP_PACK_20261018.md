@@ -19,7 +19,7 @@
 15. **2026-10-19 招行招聘信息来源**：只接 `#resume_basicInfo_channelType`。15 项原名原 code，不做模糊归并。`其他` 保留。`--live` 拒 `live_channel_type_select_fill_unclaimed`。Never Save。未宣称已支持招行。下一刀 InterviewCity。
 16. **2026-10-19 招行面试期望城市**：只接 `#resume_basicInfo_expectedInterviewCity`。44 个完整城市名，首项北京市、末项重庆市。简称不匹配。`--live` 拒 `live_interview_city_select_fill_unclaimed`。Never Save。未宣称已支持招行。RankingMajor 仍是 `DOM_CONTROL_MISSING`。
 17. **2026-10-19 招行 live 点击最小矩阵**（只文档）：全文 `dist/site-probes/CMB_LIVE_CLICK_MATRIX_20261019.md`。Never Save。一次一字段。试填 Edge CDP 9237。停在 `/center/resume`。未宣称已支持招行。整体进度口径由主脑报。
-18. **2026-10-19 招行 live Select 点击 10/10**：`dist/site-probes/CMB_LIVE_SELECT_CLICK_EVIDENCE_20261019.md`。Cloud 未见原始 JSON，入库的是 `source=trial-edge-9237-20261019` stub。`--live` 不再因 unclaimed 硬拒。Never Save。未宣称已支持招行。
+18. **2026-10-19 招行 live Select 10 字段已做**：实采表 `dist/site-probes/CMB_LIVE_SELECT_CLICK_EVIDENCE_20261019.md`。E 草稿过时，见 `CODEX_TRIM_CMB_LIVE_MATRIX_E_20261019.md`。Cloud 仍未见 box 原始 JSON，仓内 JSON 仍是交接 stub，未编造读回。Never Save。仍未宣称已支持招行。
 
 ## 1b. 招行 live 点击验收最小矩阵（2026-10-19）
 
@@ -47,5 +47,5 @@ RankingMajor：`DOM_CONTROL_MISSING`。不做，不猜 selector。关系两行�
 1. **可选登录**（主阻塞）：Celebright / 国盛 / **caict** / **opple**（+ 备选 longi/haitian/tsmc/tclmj/horizon/yls/haguo/yunigu）→ 登录后停在猜壳页 → **一键** `scripts\run-hotjob-tenant.cmd <key>`（壳键已齐；Never Save）。南粤 basic 已有 2026-10-19 partial live（verified=8）；剩余跳过见 `HOTJOB_NANYUE_REMAINING_SKIPS_20261019.md`，不要当成全站已支持。
 2. **可选 ATS DOM**：广发飞书 / **小米 ATSX** `https://xiaomi.jobs.f.mioffice.cn/newretailing/?spread=M1SXHJC`（登录后停在简历编辑页即可；host 已接线；Never Save） / 君乐宝北森 / TI(Moka) → 采真实 DOM 后再 fill-wo-save；同族备选：中科创达飞书 / 乐牛·正泰 Moka / 现代牧业·北芯北森。
 3. **可选中信 live**：`careers.citics.com/my/jl` 上户口类型 + 证件类型 + 民族（synthetic 已绿；民族若全量/可搜则 skip）。
-4. **可选**：付费 Edge **9239**；Codex Cloud 环境发布。
-5. **招行 live 点击**（见上文 §1b 与 `dist/site-probes/CMB_LIVE_CLICK_MATRIX_20261019.md`）：登录保持，停在 `/center/resume`。允许助手在试填 Edge CDP 9237 做 fill-wo-save 点击读回（不点保存）。一次一字段。RankingMajor 不做（`DOM_CONTROL_MISSING`）。未宣称已支持招行。
+4. **付费 Edge 9239 QA**（见 `dist/site-probes/CODEX_TRIM_PAID_EDGE_QA_F_20261019.md`）：只用授权版 9239，不用试用 9237 代替。Cookie 不互通。当时 CMS/GTH 未登录，8 段 fill 停在 `blocked_login`。需要时在 9239 登录招商 `resumeOperation.html` 与国泰 `https://hr.gtht.com/resume/edit/`，再 MODE=fill，不点保存。Codex Cloud 环境发布仍可选。
+5. **招行 live 10 字段已做**（试填 9237，停在 `/center/resume`，不点保存）。仍未宣称已支持。不要重做这 10 个点击。RankingMajor 仍是 `DOM_CONTROL_MISSING`，不做。这不是 9239 付费 QA。

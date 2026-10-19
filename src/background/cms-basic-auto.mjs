@@ -11,6 +11,8 @@ const PAGE=CMS_QUESTION_PAGE;
 const ORIGIN=new URL(PAGE).origin;
 const SECTION='个人基本信息必填';
 const SIGNATURE=['个人基本信息必填','自我评价必填','教育经历必填'];
+// Same-shell tenants (南粤 live 2026-10-19) omit 自我评价必填. Baseline 招商 keeps SIGNATURE.
+const TENANT_SIGNATURE=['个人基本信息必填'];
 const BASIC_TEMPLATES=CMS_QUESTION_TEMPLATES.filter(row=>row.sectionName===SECTION);
 const pendingKey=tabId=>`resumePendingFillReview:${tabId}`;
 const fail=reason=>{throw Error(reason);};
@@ -195,8 +197,8 @@ export function createCmsBasicAutoRunner({api=globalThis.chrome,verifyBeforeFill
     await sleep(250);
   }
 
-  async function probe(tabId,PAGE){
-    const rows=await api.scripting.executeScript({target:{tabId},world:'MAIN',func:probePageFunc,args:[SIGNATURE,PAGE]});
+  async function probe(tabId,PAGE,signature=SIGNATURE){
+    const rows=await api.scripting.executeScript({target:{tabId},world:'MAIN',func:probePageFunc,args:[signature,PAGE]});
     const doc=rows?.length===1&&rows[0].frameId===0?rows[0].result:null;
     if(!doc)fail('cms_basic_probe_failed');
     return doc;
@@ -349,9 +351,12 @@ export function createCmsBasicAutoRunner({api=globalThis.chrome,verifyBeforeFill
     }catch(error){
       report.steps.push({cms_page_focus:safe(error)});
     }
-    let probeResult=await probe(found.tab.id,target.page);
+    const signatureMode=target.baseline?'baseline':'tenant';
+    const signature=target.baseline?SIGNATURE:TENANT_SIGNATURE;
+    report.steps.push({signatureMode,signature});
+    let probeResult=await probe(found.tab.id,target.page,signature);
     if(!probeResult.ok){
-      for(let i=0;i<8&&!probeResult.ok;i+=1){await sleep(500);probeResult=await probe(found.tab.id,target.page);}
+      for(let i=0;i<8&&!probeResult.ok;i+=1){await sleep(500);probeResult=await probe(found.tab.id,target.page,signature);}
     }
     report.steps.push({probe:probeResult.reason,ok:probeResult.ok===true,itemCount:probeResult.itemCount??null});
     if(!probeResult.ok){

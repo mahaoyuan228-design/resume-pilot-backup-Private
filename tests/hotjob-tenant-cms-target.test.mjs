@@ -13,7 +13,8 @@ import path from 'node:path';
 import { spawnSync, spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import {
-  resolveCmsTarget, parseCmsPage, CMS_BASELINE_PAGE, CMS_BASELINE_SU, HOTJOB_TENANTS, tenantEvidenceName
+  resolveCmsTarget, parseCmsPage, CMS_BASELINE_PAGE, CMS_BASELINE_SU, HOTJOB_TENANTS, tenantEvidenceName,
+  cmsPageForSu
 } from '../scripts/lib/cms-page-target.mjs';
 import { createCmsBasicAutoRunner, resolveCmsBasicTarget } from '../src/background/cms-basic-auto.mjs';
 import { CMS_QUESTION_PAGE } from '../src/profile/site-question-templates.js';
@@ -116,7 +117,7 @@ function swHarness({ tabUrl, trusted = [] }) {
     set: async (values) => Object.assign(data, clone(values)),
     remove: async (keys) => { for (const k of Array.isArray(keys) ? keys : [keys]) delete data[k]; }
   };
-  const stats = { fill: 0, probeArgs: [], created: [] };
+  const stats = { fill: 0, probeArgs: [], probeSigs: [], created: [] };
   const sender = { id: 'ext', url: 'chrome-extension://ext/src/auto/cms-basic-auto.html?mode=readiness' };
   const tabBase = (() => { const u = new URL(tabUrl); return u.origin + u.pathname; })();
   const api = {
@@ -141,6 +142,7 @@ function swHarness({ tabUrl, trusted = [] }) {
         if (req.files) return [];
         if (String(req.func).includes('hasFocus')) return [{ frameId: 0, result: { hasFocus: true, visible: true } }];
         stats.probeArgs.push(req.args?.[1]);
+        stats.probeSigs.push(req.args?.[0]);
         const pageUrl = req.args?.[1];
         return [{ frameId: 0, result: tabBase === pageUrl
           ? { ok: true, reason: 'cms_page_ready', sectionPresent: true, itemCount: 9 }
@@ -165,7 +167,39 @@ test('SW tenant cmsPage: readiness finds tenant tab and probes tenant page', asy
   assert.equal(r.baselineSu, false);
   assert.equal(r.readiness.pageState, 'ready');
   assert.ok(h.stats.probeArgs.every((p) => p === ZL_PAGE));
+  assert.deepEqual(h.stats.probeSigs[0], ['个人基本信息必填']);
+  const sig = r.steps.find((step) => step && step.signatureMode);
+  assert.equal(sig.signatureMode, 'tenant');
+  assert.deepEqual(sig.signature, ['个人基本信息必填']);
   assert.equal(h.stats.fill, 0);
+});
+
+test('SW 南粤 cmsPage uses the short tenant signature and never Save', async () => {
+  const page = cmsPageForSu(HOTJOB_TENANTS.nanyue.su);
+  const h = swHarness({ tabUrl: page + '?r=1' });
+  const r = await h.invoke({ type: 'CMS_BASIC_AUTO', mode: 'readiness', cmsPage: page });
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.equal(r.tenantSu, HOTJOB_TENANTS.nanyue.su);
+  assert.equal(r.baselineSu, false);
+  assert.equal(r.saveAttempted, false);
+  assert.equal(r.writeAttempted, false);
+  assert.deepEqual(h.stats.probeSigs[0], ['个人基本信息必填']);
+  const sig = r.steps.find((step) => step && step.signatureMode);
+  assert.equal(sig.signatureMode, 'tenant');
+  assert.deepEqual(sig.signature, ['个人基本信息必填']);
+  assert.equal(h.stats.fill, 0);
+});
+
+test('SW baseline probe keeps the full three-heading signature', async () => {
+  const h = swHarness({ tabUrl: CMS_BASELINE_PAGE + '?r=1' });
+  const r = await h.invoke({ type: 'CMS_BASIC_AUTO', mode: 'readiness' });
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.equal(r.baselineSu, true);
+  assert.equal(r.tenantSu, CMS_BASELINE_SU);
+  assert.deepEqual(h.stats.probeSigs[0], ['个人基本信息必填', '自我评价必填', '教育经历必填']);
+  const sig = r.steps.find((step) => step && step.signatureMode);
+  assert.equal(sig.signatureMode, 'baseline');
+  assert.deepEqual(sig.signature, ['个人基本信息必填', '自我评价必填', '教育经历必填']);
 });
 
 test('SW without cmsPage still rejects a tenant tab (baseline unchanged)', async () => {

@@ -171,7 +171,10 @@
     const headings = [...scope.querySelectorAll(".form-cell > .tit-wrap .tit")]
       .map((item) => M.normalize(item.textContent));
     const signature = ["个人基本信息必填", "自我评价必填", "教育经历必填"];
-    if (!signature.every((name) => headings.includes(name))) return null;
+    // 南粤 same-shell headings omit 自我评价必填. 个人基本信息必填 + 教育经历必填 still binds.
+    const tenantMin = ["个人基本信息必填", "教育经历必填"];
+    if (!signature.every((name) => headings.includes(name))
+      && !tenantMin.every((name) => headings.includes(name))) return null;
     return { element: section, name: M.normalize(heading.textContent) };
   }
 

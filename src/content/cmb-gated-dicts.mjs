@@ -140,6 +140,29 @@ export const CMB_EDUCATION_LEVEL_OPTIONS = Object.freeze([
 export const CMB_EDUCATION_LEVEL_SELECT_ID = 'resume_educationHistoryList_0_educationLevelCode';
 export const CMB_EDUCATION_LEVEL_LIST_ID = 'resume_educationHistoryList_0_educationLevelCode_list';
 
+/**
+ * RelationshipType from cmb-dictmap-full-20261019.json.
+ * Eight rows, no 请选择 and no placeholder code. Text+code only.
+ * Row 0 and row 1 are separate harvested selects. A value for one index
+ * is never written to the other.
+ */
+export const CMB_RELATIONSHIP_TYPE_OPTIONS = Object.freeze([
+  Object.freeze({"text":"配偶","code":"RT0001"}),
+  Object.freeze({"text":"父亲","code":"RT0002"}),
+  Object.freeze({"text":"母亲","code":"RT0003"}),
+  Object.freeze({"text":"子女","code":"RT0004"}),
+  Object.freeze({"text":"紧急联络人","code":"RT0005"}),
+  Object.freeze({"text":"兄弟","code":"RT0006"}),
+  Object.freeze({"text":"姐妹","code":"RT0007"}),
+  Object.freeze({"text":"其他相关人员","code":"RT0008"})
+]);
+
+/** Harvested 2026-10-19. List ids come from aria-controls. Live click is not claimed. */
+export const CMB_RELATIONSHIP_TYPE_SELECT_ID = 'resume_familyList_0_relationship';
+export const CMB_RELATIONSHIP_TYPE_LIST_ID = 'resume_familyList_0_relationship_list';
+export const CMB_RELATIONSHIP_TYPE_ROW1_SELECT_ID = 'resume_familyList_1_relationship';
+export const CMB_RELATIONSHIP_TYPE_ROW1_LIST_ID = 'resume_familyList_1_relationship_list';
+
 /** Kind + fill hint only. No synthetic DatePicker DOM. */
 export const CMB_BIRTHDATE_HINT = Object.freeze({
   key: 'birthDate',

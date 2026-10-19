@@ -10,7 +10,7 @@ id 清单与教育经历邻居不在这里重复。见 [`CMB_REMAINING_DOM_20261
 |---|---|---|
 | Education | `#resume_educationHistoryList_0_educationLevelCode` | 已离线接线。剔除占位 `ED000`（博士后）。`--live` 拒 `live_education_level_select_fill_unclaimed`。学校名称等同行控件不填。 |
 | EnglishLevel | `#resume_skill_0_englishLevel` | 未接线 |
-| RelationshipType | `#resume_familyList_0_relationship`（另有 `_1_`） | 未接线。下一刀从这里起。 |
+| RelationshipType | `#resume_familyList_0_relationship`（另有 `_1_`） | 已离线接线。两行索引隔离。`--live` 拒 `live_relationship_select_fill_unclaimed`。姓名和电话不填。 |
 | AwardsLevel | `#resume_awardList_0_awardLevel` | 未接线 |
 | InterviewCity | `#resume_basicInfo_expectedInterviewCity` | 未接线，可延后 |
 | ChannelType | `#resume_basicInfo_channelType` | 未接线，可延后 |
@@ -26,6 +26,6 @@ id 清单与教育经历邻居不在这里重复。见 [`CMB_REMAINING_DOM_20261
 
 ## 下一刀顺序
 
-RelationshipType → AwardsLevel → EnglishLevel → ChannelType → InterviewCity
+AwardsLevel → EnglishLevel → ChannelType → InterviewCity
 
-Education 已在 `1d3c1a0` 离线落地，不重做。RankingMajor 停在 `DOM_CONTROL_MISSING`，不进入这条顺序。
+Education 与 RelationshipType 已离线落地，不重做。RelationshipType 的 `_0_` / `_1_` 保持索引隔离。RankingMajor 停在 `DOM_CONTROL_MISSING`，不进入这条顺序。Never Save。未宣称已支持招行。

@@ -13,6 +13,7 @@
 9. **2026-10-19 招行 live gated**：四字段已采齐（`dist/site-probes/CMB_LIVE_GATED_HARVEST_20261019.md`，Never Save）。婚姻状况 / 政治面貌 / 民族已按采到的中文名+code 做离线合成 Select；出生日期只记 DatePicker kind+填法提示，未硬编假 DOM，未 live 填。未宣称已支持招行。验收仍 **85%**。
 10. **2026-10-19 招行证件类型**：完整 dictmap 摘要 `dist/site-probes/CMB_DICTMAP_FULL_20261019.md`。gated 四字段已完成。IdCardType 15 项离线合成 Select。DOM 已采到 `#resume_basicInfo_idCardType`（无 show-search，`CMB_IDCARDTYPE_DOM_20261019.md`）。`--live` 仍拒 `live_id_card_type_select_fill_unclaimed`（live 点击未证明）。证件号 `#resume_basicInfo_idCard` 不填。未宣称已支持招行。验收仍 **85%**。
 11. **2026-10-19 招行剩余 DOM + 学历**：`dist/site-probes/CMB_REMAINING_DOM_20261019.md`。Education 离线 Select 只接第 0 行，剔除 ED000；`--live` 拒 `live_education_level_select_fill_unclaimed`。下一刀：RelationshipType → AwardsLevel → EnglishLevel。InterviewCity / ChannelType 可延后。RankingMajor 当前页无控件。未宣称已支持招行。验收仍 **85%**。裁剪笔记 `dist/site-probes/CMB_DICT_REMAINING_TRIM_20261019.md`：顺序延到 ChannelType → InterviewCity；RankingMajor 记 `DOM_CONTROL_MISSING`。Education 不重做。
+12. **2026-10-19 招行关系类型**：`_0_` 与 `_1_` 离线 Select 索引隔离。8 项 RT0001–RT0008。`--live` 拒 `live_relationship_select_fill_unclaimed`。姓名和电话不填。Never Save。未宣称已支持招行。下一刀 AwardsLevel。
 
 ## 2. 仍需 Jeremy 有空时（TODO，均可选）
 

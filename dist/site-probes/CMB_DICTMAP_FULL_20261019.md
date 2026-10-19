@@ -16,7 +16,7 @@ Birth date is not in this map. It stays the harvested DatePicker hint (`resume_b
 | MaritalStatus | 5 | 1 | marital select (offline; 请选择 dropped; harvested DOM id resume_basicInfo_maritalStatus) |
 | EnglishLevel | 10 | 0 | unwired |
 | Education | 8 | 0 | offline select on row 0; ED000 dropped; `--live` refuses `live_education_level_select_fill_unclaimed` |
-| RelationshipType | 8 | 0 | unwired |
+| RelationshipType | 8 | 0 | offline select on family rows 0 and 1; indexes stay isolated; `--live` refuses `live_relationship_select_fill_unclaimed` |
 | InterviewCity | 44 | 0 | unwired |
 | AwardsLevel | 5 | 0 | unwired |
 | PoliticalAffinity | 13 | 0 | politics select (offline; harvested DOM id resume_basicInfo_politicalAffinity) |

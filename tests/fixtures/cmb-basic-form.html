@@ -357,6 +357,57 @@
           </div>
         </div>
 
+        <!--
+          Family relationship rows 0 and 1. Options are the eight RelationshipType
+          rows. No placeholder. Ids harvested 2026-10-19. Select root class was not
+          captured, so each stand-in is non-search. Option rows are synthetic.
+          Each row is filled only by its own select id. --live refuses
+          live_relationship_select_fill_unclaimed.
+          Name and phone ids are present and are not filled. They have no 姓名 label
+          so the basic 姓名 field stays unique in this fixture.
+          Never Save. 招行 is not supported.
+        -->
+        <div class="ant-form-item" data-field="关系类型" data-row="0" data-dom="synthetic-harvested-options">
+          <div class="ant-form-item-label"><label for="resume_familyList_0_relationship">关系类型</label></div>
+          <div class="ant-form-item-control">
+            <div class="ant-select" id="resume_familyList_0_relationship">
+              <div class="ant-select-selector"><span class="ant-select-selection-item" data-code=""></span></div>
+              <div class="ant-select-dropdown" id="resume_familyList_0_relationship_list" role="listbox">
+          <div class="ant-select-item-option" role="option" data-code="RT0001" aria-selected="false">配偶</div>
+          <div class="ant-select-item-option" role="option" data-code="RT0002" aria-selected="false">父亲</div>
+          <div class="ant-select-item-option" role="option" data-code="RT0003" aria-selected="false">母亲</div>
+          <div class="ant-select-item-option" role="option" data-code="RT0004" aria-selected="false">子女</div>
+          <div class="ant-select-item-option" role="option" data-code="RT0005" aria-selected="false">紧急联络人</div>
+          <div class="ant-select-item-option" role="option" data-code="RT0006" aria-selected="false">兄弟</div>
+          <div class="ant-select-item-option" role="option" data-code="RT0007" aria-selected="false">姐妹</div>
+          <div class="ant-select-item-option" role="option" data-code="RT0008" aria-selected="false">其他相关人员</div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="ant-form-item" data-field="关系类型" data-row="1" data-dom="synthetic-harvested-options">
+          <div class="ant-form-item-label"><label for="resume_familyList_1_relationship">关系类型</label></div>
+          <div class="ant-form-item-control">
+            <div class="ant-select" id="resume_familyList_1_relationship">
+              <div class="ant-select-selector"><span class="ant-select-selection-item" data-code=""></span></div>
+              <div class="ant-select-dropdown" id="resume_familyList_1_relationship_list" role="listbox">
+          <div class="ant-select-item-option" role="option" data-code="RT0001" aria-selected="false">配偶</div>
+          <div class="ant-select-item-option" role="option" data-code="RT0002" aria-selected="false">父亲</div>
+          <div class="ant-select-item-option" role="option" data-code="RT0003" aria-selected="false">母亲</div>
+          <div class="ant-select-item-option" role="option" data-code="RT0004" aria-selected="false">子女</div>
+          <div class="ant-select-item-option" role="option" data-code="RT0005" aria-selected="false">紧急联络人</div>
+          <div class="ant-select-item-option" role="option" data-code="RT0006" aria-selected="false">兄弟</div>
+          <div class="ant-select-item-option" role="option" data-code="RT0007" aria-selected="false">姐妹</div>
+          <div class="ant-select-item-option" role="option" data-code="RT0008" aria-selected="false">其他相关人员</div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <input id="resume_familyList_0_name" class="ant-input" placeholder="请输入" value="" data-dom="harvested-text-not-filled" />
+        <input id="resume_familyList_0_phone" class="ant-input" placeholder="请输入" value="" data-dom="harvested-text-not-filled" />
+        <input id="resume_familyList_1_name" class="ant-input" placeholder="请输入" value="" data-dom="harvested-text-not-filled" />
+        <input id="resume_familyList_1_phone" class="ant-input" placeholder="请输入" value="" data-dom="harvested-text-not-filled" />
+
         <button type="button" id="save-btn" class="ant-btn ant-btn-primary" disabled>保存</button>
       </form>
     </div>

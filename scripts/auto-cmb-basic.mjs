@@ -11,6 +11,7 @@ import { fileURLToPath } from 'node:url';
 import {
   isCmbBirthDateLabel,
   isCmbEducationLevelLabel,
+  isCmbRelationshipLabel,
   isCmbEthnicityLabel,
   isCmbIdCardTypeLabel,
   isCmbHeightLabel,
@@ -164,6 +165,24 @@ const GATED_SPECS = {
     liveReason: 'live_education_level_select_fill_unclaimed',
     first: { text: '本科', code: 'ED004' },
     second: { text: '硕士研究生', code: 'ED003' }
+  },
+  relationship: {
+    label: '关系类型',
+    fn: 'fillRelationshipType',
+    path: 'relationshipType',
+    selectId: 'resume_familyList_0_relationship',
+    invalid: '父',
+    explicitReason: 'invalid_relationship_type',
+    liveReason: 'live_relationship_select_fill_unclaimed',
+    first: { text: '父亲', code: 'RT0002' },
+    second: { text: '配偶', code: 'RT0001' },
+    row1: {
+      fn: 'fillRelationshipTypeRow1',
+      selectId: 'resume_familyList_1_relationship',
+      text: '母亲',
+      code: 'RT0003',
+      invalid: '其他'
+    }
   }
 };
 
@@ -178,6 +197,7 @@ function onlyKind(value) {
   if (isCmbEthnicityLabel(text)) return 'ethnicity';
   if (isCmbIdCardTypeLabel(text)) return 'idCard';
   if (isCmbEducationLevelLabel(text)) return 'education';
+  if (text === '家庭关系' || isCmbRelationshipLabel(text)) return 'relationship';
   if (isCmbBirthDateLabel(text)) return 'birthDate';
   return '';
 }
@@ -1145,6 +1165,12 @@ async function runSyntheticGated(kind) {
         ethnicity: read('resume_basicInfo_nation'),
         idCard: read('resume_basicInfo_idCardType'),
         education: read('resume_educationHistoryList_0_educationLevelCode'),
+        relationship: read('resume_familyList_0_relationship'),
+        relationshipRow1: read('resume_familyList_1_relationship'),
+        familyName0: document.getElementById('resume_familyList_0_name')?.value ?? null,
+        familyPhone0: document.getElementById('resume_familyList_0_phone')?.value ?? null,
+        familyName1: document.getElementById('resume_familyList_1_name')?.value ?? null,
+        familyPhone1: document.getElementById('resume_familyList_1_phone')?.value ?? null,
         idNumber: document.getElementById('resume_basicInfo_idCard')?.value ?? null,
         genderChecked: checkedValues('性别'),
         workedChecked: checkedValues('是否参加过正式工作'),
@@ -1162,8 +1188,62 @@ async function runSyntheticGated(kind) {
       birthDate: '1990-01-02',
       confirmedFields: ['fullName', 'phone', 'email', ${JSON.stringify(spec.path)}, 'birthDate']
     })`);
-    const fieldResult = basic?.results?.find((row) => row.label === spec.label);
-    const othersEmpty = ['marital', 'politics', 'ethnicity', 'idCard', 'education'].every((name) => {
+    const readFamilyRows = `(() => {
+      const norm = (value) => String(value ?? '').replace(/\\s+/g, ' ').trim();
+      const read = (id) => {
+        const root = document.getElementById(id);
+        const shown = root?.querySelector('.ant-select-selection-item');
+        return { text: norm(shown?.textContent), code: shown?.getAttribute('data-code') || '' };
+      };
+      return {
+        row0: read('resume_familyList_0_relationship'),
+        row1: read('resume_familyList_1_relationship'),
+        familyName0: document.getElementById('resume_familyList_0_name')?.value ?? '',
+        familyPhone0: document.getElementById('resume_familyList_0_phone')?.value ?? '',
+        familyName1: document.getElementById('resume_familyList_1_name')?.value ?? '',
+        familyPhone1: document.getElementById('resume_familyList_1_phone')?.value ?? ''
+      };
+    })()`;
+    let indexIsolation = null;
+    if (spec.row1) {
+      const row1Fill = await call(`ResumeCmbBasic.${spec.row1.fn}(${JSON.stringify(spec.row1.code)}, { synthetic: true })`);
+      const afterRow1 = await call(readFamilyRows);
+      const row1Bad = await call(`ResumeCmbBasic.${spec.row1.fn}(${JSON.stringify(spec.row1.invalid)}, { synthetic: true })`);
+      const afterBad = await call(readFamilyRows);
+      const row0Again = await call(`ResumeCmbBasic.${spec.fn}(${JSON.stringify(spec.first.text)}, { synthetic: true })`);
+      const afterRow0 = await call(readFamilyRows);
+      indexIsolation = { row1Fill, afterRow1, row1Bad, afterBad, row0Again, afterRow0 };
+    }
+    const namesUntouched = (snap) => snap
+      && snap.familyName0 === ''
+      && snap.familyPhone0 === ''
+      && snap.familyName1 === ''
+      && snap.familyPhone1 === '';
+    const isolationOk = !spec.row1 || (
+      indexIsolation?.row1Fill?.ok === true
+      && indexIsolation.row1Fill.rowIndex === 1
+      && indexIsolation.row1Fill.selectId === spec.row1.selectId
+      && indexIsolation.afterRow1?.row0?.text === spec.second.text
+      && indexIsolation.afterRow1?.row0?.code === spec.second.code
+      && indexIsolation.afterRow1?.row1?.text === spec.row1.text
+      && indexIsolation.afterRow1?.row1?.code === spec.row1.code
+      && namesUntouched(indexIsolation.afterRow1)
+      && indexIsolation.row1Bad?.ok === false
+      && indexIsolation.row1Bad?.reason === 'invalid_profile_value'
+      && indexIsolation.afterBad?.row0?.code === spec.second.code
+      && indexIsolation.afterBad?.row1?.code === spec.row1.code
+      && indexIsolation.row0Again?.ok === true
+      && indexIsolation.row0Again.rowIndex === 0
+      && indexIsolation.row0Again.selectId === spec.selectId
+      && indexIsolation.afterRow0?.row0?.text === spec.first.text
+      && indexIsolation.afterRow0?.row0?.code === spec.first.code
+      && indexIsolation.afterRow0?.row1?.text === spec.row1.text
+      && indexIsolation.afterRow0?.row1?.code === spec.row1.code
+      && namesUntouched(indexIsolation.afterRow0)
+      && planReady?.values?.relationshipTypeRow1 === ''
+    );
+    const fieldResult = basic?.results?.find((row) => row.label === spec.label && (spec.row1 ? row.rowIndex === 0 : true));
+    const othersEmpty = ['marital', 'politics', 'ethnicity', 'idCard', 'education', 'relationship', 'relationshipRow1'].every((name) => {
       const row = neighbor?.[name];
       if (name === kind) return row?.text === spec.second.text && row?.code === spec.second.code;
       return row?.text === '' && row?.code === '';
@@ -1203,10 +1283,15 @@ async function runSyntheticGated(kind) {
       && neighbor?.birthdayNode === false
       && neighbor?.ethnicity?.search === ''
       && neighbor?.idNumber === ''
+      && (neighbor?.familyName0 ?? '') === ''
+      && (neighbor?.familyPhone0 ?? '') === ''
+      && (neighbor?.familyName1 ?? '') === ''
+      && (neighbor?.familyPhone1 ?? '') === ''
       && planReady?.ok === true
       && planReady?.values?.[spec.path] === spec.second.text
       && planReady?.blockers?.some((row) => row.path === 'birthDate' && row.reason === 'datepicker_hint_only')
-      && !planReady?.values?.birthDate;
+      && !planReady?.values?.birthDate
+      && isolationOk;
 
     const payload = basePayload({
       ok,
@@ -1234,7 +1319,8 @@ async function runSyntheticGated(kind) {
       explicitInvalid,
       fillBasic: basic,
       neighbor,
-      planReady
+      planReady,
+      indexIsolation
     });
     const { file, latest } = gatedEvidencePaths(kind);
     fs.writeFileSync(file, JSON.stringify(payload, null, 2), 'utf8');
@@ -1263,6 +1349,7 @@ function printHelp() {
     node scripts/auto-cmb-basic.mjs --only 民族
     node scripts/auto-cmb-basic.mjs --only 证件类型
     node scripts/auto-cmb-basic.mjs --only 学历
+    node scripts/auto-cmb-basic.mjs --only 关系类型
     node scripts/auto-cmb-basic.mjs --only 出生日期
   Gender is offline synthetic only. Live radio DOM is not harvested.
   Formal work (是否参加过正式工作) is offline synthetic radio only. Options are field-map 是/否.
@@ -1278,6 +1365,9 @@ function printHelp() {
   --only 证件类型 --live still refuses live_id_card_type_select_fill_unclaimed.
   学历 uses harvested row-0 id resume_educationHistoryList_0_educationLevelCode.
   ED000 is excluded. --only 学历 --live refuses live_education_level_select_fill_unclaimed.
+  关系类型 uses harvested ids resume_familyList_0_relationship and resume_familyList_1_relationship.
+  Row 0 and row 1 are filled separately. Family name and phone are not filled.
+  --only 关系类型 --live refuses live_relationship_select_fill_unclaimed.
   Live portal fingerprint only (no fill claim):
     MODE=readiness node scripts/auto-cmb-basic.mjs --live
     Extension path (Edge + SW message CMB_BASIC_AUTO):
@@ -1308,7 +1398,7 @@ async function main() {
   }
   const kind = args.only == null ? '' : onlyKind(args.only);
   if (args.only != null && !kind) {
-    console.error('Only 性别, 是否参加过正式工作, 身高, 体重, 婚姻状况, 政治面貌, 民族, 证件类型, 学历, and 出生日期 are in this knife.');
+    console.error('Only 性别, 是否参加过正式工作, 身高, 体重, 婚姻状况, 政治面貌, 民族, 证件类型, 学历, 关系类型, and 出生日期 are in this knife.');
     process.exit(2);
   }
   if (kind === 'height' && args.live && !args.synthetic) {

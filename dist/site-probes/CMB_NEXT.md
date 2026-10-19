@@ -84,3 +84,5 @@ Jeremy 登录招行招聘账号并停在 `/center/resume` 后，才能 harvest l
 剩余字典 DOM 见 `CMB_REMAINING_DOM_20261019.md`（Never Save，67 个 resume_* id）。学历 Education 已按字典中文名+code 做离线合成 Select，只接教育经历第 0 行 `#resume_educationHistoryList_0_educationLevelCode`；剔除占位 `ED000`（博士后）。`--live` 仍拒 `live_education_level_select_fill_unclaimed`。学校名称等同行控件不填。下一刀顺序建议：RelationshipType → AwardsLevel → EnglishLevel。InterviewCity / ChannelType 可延后。RankingMajor 当前简历页无控件。未宣称已支持招行。验收仍 **85%**。
 
 裁剪笔记 `CMB_DICT_REMAINING_TRIM_20261019.md`（Never Save）与上面交叉。下一刀从 RelationshipType 起，顺序 RelationshipType → AwardsLevel → EnglishLevel → ChannelType → InterviewCity。RankingMajor 记 `DOM_CONTROL_MISSING`，不猜 selector。Education 已落地，不重做。未宣称已支持招行。验收仍 **85%**。
+
+关系类型 RelationshipType 已离线接线。`#resume_familyList_0_relationship` 与 `#resume_familyList_1_relationship` 各自绑定，索引隔离，不把一行的值写到另一行。选项是字典 8 项（RT0001–RT0008），无占位可剔。简称「父」「其他」拒填。家庭姓名和电话不填。`--only 关系类型 --live` 拒 `live_relationship_select_fill_unclaimed`。Never Save。未宣称已支持招行。下一刀 AwardsLevel。

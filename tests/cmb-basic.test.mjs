@@ -21,6 +21,11 @@ import {
   CMB_EDUCATION_LEVEL_LIST_ID,
   CMB_EDUCATION_LEVEL_OPTIONS,
   CMB_EDUCATION_LEVEL_SELECT_ID,
+  CMB_RELATIONSHIP_TYPE_LIST_ID,
+  CMB_RELATIONSHIP_TYPE_OPTIONS,
+  CMB_RELATIONSHIP_TYPE_ROW1_LIST_ID,
+  CMB_RELATIONSHIP_TYPE_ROW1_SELECT_ID,
+  CMB_RELATIONSHIP_TYPE_SELECT_ID,
   CMB_ETHNICITY_OPTIONS,
   CMB_ID_CARD_TYPE_LIST_ID,
   CMB_ID_CARD_TYPE_OPTIONS,
@@ -29,6 +34,7 @@ import {
   CMB_POLITICS_OPTIONS,
   isCmbHeightLabel,
   isCmbEducationLevelLabel,
+  isCmbRelationshipLabel,
   isCmbIdCardTypeLabel,
   isCmbWeightLabel,
   isCmbMaritalLabel,
@@ -671,6 +677,7 @@ test('harvested gated dicts match the live evidence and are not invented', () =>
   assert.deepEqual(parsed.ethnicity, [...CMB_ETHNICITY_OPTIONS]);
   assert.deepEqual(parsed.idCardType, [...CMB_ID_CARD_TYPE_OPTIONS]);
   assert.deepEqual(parsed.educationLevel, [...CMB_EDUCATION_LEVEL_OPTIONS]);
+  assert.deepEqual(parsed.relationshipType, [...CMB_RELATIONSHIP_TYPE_OPTIONS]);
 
   assert.match(fixture, /id="resume_basicInfo_maritalStatus"/);
   assert.match(fixture, /id="resume_basicInfo_politicalAffinity"/);
@@ -708,6 +715,8 @@ test('gated select plan maps harvested text or code and does not fill birth date
   assert.equal(absent.values.ethnicity, '');
   assert.equal(absent.values.idCardType, '');
   assert.equal(absent.values.educationLevel, '');
+  assert.equal(absent.values.relationshipType, '');
+  assert.equal(absent.values.relationshipTypeRow1, '');
   assert.equal(absent.fields.some((row) => row.path === 'birthDate'), false);
 
   const ready = planCmbBasicFromProfile({
@@ -992,6 +1001,100 @@ test('synthetic harness education select maps text and code and --live refuses t
   assert.equal(payload.byText?.after, '本科');
   assert.equal(payload.byText?.afterCode, 'ED004');
   assert.equal(payload.explicitInvalid?.reason, 'invalid_education_level');
+});
+
+test('RelationshipType options use both harvested family rows and do not cross indexes', () => {
+  const full = JSON.parse(readFileSync(resolve(root, 'dist/site-probes/cmb-dictmap-full-20261019.json'), 'utf8'));
+  const dom = JSON.parse(readFileSync(resolve(root, 'dist/site-probes/cmb-remaining-dom-ids-20261019.json'), 'utf8'));
+  const hints = dom.labelHints.filter((row) => row.label === '关系类型');
+  assert.deepEqual(hints.map((row) => row.inputId), [
+    CMB_RELATIONSHIP_TYPE_SELECT_ID,
+    CMB_RELATIONSHIP_TYPE_ROW1_SELECT_ID
+  ]);
+  assert.deepEqual(hints.map((row) => row.ariaControls), [
+    CMB_RELATIONSHIP_TYPE_LIST_ID,
+    CMB_RELATIONSHIP_TYPE_ROW1_LIST_ID
+  ]);
+  const kept = full.dicts.RelationshipType.filter((row) => row.name !== '请选择' && row.code !== 'RT000');
+  assert.equal(kept.length, 8);
+  assert.deepEqual(
+    [...CMB_RELATIONSHIP_TYPE_OPTIONS],
+    kept.map((row) => ({ text: row.name, code: row.code }))
+  );
+  assert.equal(resolveCmbCodedOption(CMB_RELATIONSHIP_TYPE_OPTIONS, '请选择'), null);
+  assert.equal(resolveCmbCodedOption(CMB_RELATIONSHIP_TYPE_OPTIONS, '父'), null);
+  assert.equal(resolveCmbCodedOption(CMB_RELATIONSHIP_TYPE_OPTIONS, '其他'), null);
+  assert.equal(resolveCmbCodedOption(CMB_RELATIONSHIP_TYPE_OPTIONS, 'RT000'), null);
+  assert.equal(resolveCmbCodedOption(CMB_RELATIONSHIP_TYPE_OPTIONS, '父亲')?.code, 'RT0002');
+  assert.equal(resolveCmbCodedOption(CMB_RELATIONSHIP_TYPE_OPTIONS, 'RT0008')?.text, '其他相关人员');
+  assert.equal(resolveCmbCodedOption(CMB_RELATIONSHIP_TYPE_OPTIONS, '兄弟')?.code, 'RT0006');
+  assert.match(fixture, /id="resume_familyList_0_relationship"/);
+  assert.match(fixture, /id="resume_familyList_1_relationship_list"/);
+  assert.equal((fixture.match(/data-code="RT000/g) || []).length, 16);
+  assert.doesNotMatch(fixture, /id="resume_familyList_0_relationship"[^>]*show-search/);
+  assert.doesNotMatch(fixture, /id="resume_familyList_1_relationship"[^>]*show-search/);
+  assert.match(source, /fillRelationshipTypeRow1/);
+  assert.match(source, /invalid_relationship_type_row1/);
+  assert.match(harness, /live_relationship_select_fill_unclaimed/);
+  assert.equal(isCmbRelationshipLabel('关系类型'), true);
+  assert.equal(isCmbRelationshipLabel('姓名'), false);
+  assert.equal(isCmbRelationshipLabel('家庭关系'), false);
+  const store = readFileSync(resolve(root, 'src/profile/store.js'), 'utf8');
+  assert.doesNotMatch(store, /relationshipType/);
+  const base = {
+    fullName: '测试甲',
+    phone: '13800138000',
+    email: 'cmb.user@example.com',
+    confirmedFields: ['fullName', 'phone', 'email', 'relationshipType', 'relationshipTypeRow1']
+  };
+  const row0 = planCmbBasicFromProfile({ ...base, relationshipType: ' RT0002 ' });
+  assert.equal(row0.values.relationshipType, '父亲');
+  assert.equal(row0.values.relationshipTypeRow1, '');
+  assert.equal(row0.fields.some((row) => row.path === 'relationshipTypeRow1'), false);
+  const row1 = planCmbBasicFromProfile({ ...base, relationshipTypeRow1: '母亲' });
+  assert.equal(row1.values.relationshipType, '');
+  assert.equal(row1.values.relationshipTypeRow1, '母亲');
+  assert.equal(row1.fields.some((row) => row.path === 'relationshipType'), false);
+  const both = planCmbBasicFromProfile({ ...base, relationshipType: '配偶', relationshipTypeRow1: 'RT0004' });
+  assert.equal(both.values.relationshipType, '配偶');
+  assert.equal(both.values.relationshipTypeRow1, '子女');
+  const dropped = planCmbBasicFromProfile({ ...base, relationshipType: '父', relationshipTypeRow1: '其他' });
+  assert.equal(dropped.values.relationshipType, '');
+  assert.equal(dropped.values.relationshipTypeRow1, '');
+  assert.equal(dropped.blockers.find((row) => row.path === 'relationshipType')?.reason, 'invalid_profile_value');
+  assert.equal(dropped.blockers.find((row) => row.path === 'relationshipTypeRow1')?.reason, 'invalid_profile_value');
+});
+
+test('synthetic harness relationship select isolates row 0 from row 1 and --live refuses the click', { timeout: 120000 }, () => {
+  assertGatedSelectKnife(
+    '关系类型',
+    'live_relationship_select_fill_unclaimed',
+    'synthetic_relationship_select_pass',
+    'cmb-relationship-select-latest.json',
+    '配偶',
+    'RT0001'
+  );
+  const payload = JSON.parse(readFileSync(resolve(root, 'dist/auto-runs/cmb-relationship-select-latest.json'), 'utf8'));
+  assert.equal(payload.optionListHarvested, true);
+  assert.equal(payload.liveSelectFillClaimed, false);
+  assert.equal(payload.formFillClaimed, false);
+  assert.equal(payload.neighbor?.relationshipRow1?.text, '');
+  assert.equal(payload.neighbor?.relationshipRow1?.code, '');
+  assert.equal(payload.neighbor?.familyName0, '');
+  assert.equal(payload.neighbor?.familyPhone1, '');
+  assert.equal(payload.byText?.after, '父亲');
+  assert.equal(payload.byText?.afterCode, 'RT0002');
+  assert.equal(payload.explicitInvalid?.reason, 'invalid_relationship_type');
+  assert.equal(payload.indexIsolation?.row1Fill?.selectId, 'resume_familyList_1_relationship');
+  assert.equal(payload.indexIsolation?.afterRow1?.row0?.code, 'RT0001');
+  assert.equal(payload.indexIsolation?.afterRow1?.row1?.text, '母亲');
+  assert.equal(payload.indexIsolation?.afterRow1?.row1?.code, 'RT0003');
+  assert.equal(payload.indexIsolation?.row1Bad?.reason, 'invalid_profile_value');
+  assert.equal(payload.indexIsolation?.afterRow0?.row0?.text, '父亲');
+  assert.equal(payload.indexIsolation?.afterRow0?.row1?.code, 'RT0003');
+  assert.equal(payload.indexIsolation?.afterRow0?.familyName0, '');
+  assert.equal(payload.indexIsolation?.afterRow0?.familyPhone1, '');
+  assert.equal(payload.planReady?.values?.relationshipTypeRow1, '');
 });
 
 test('birth date knife records the DatePicker hint and does not write', () => {

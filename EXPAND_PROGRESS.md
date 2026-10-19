@@ -15,7 +15,7 @@
 | E0 | 授权版 Edge 上 CMS+GTH 不回退 | [ ] | 本任务未跑验收；勿与扩站指纹混淆 |
 | E1 | 中信 + 招行站点指纹 | [x] | 2026-10-18：CDP 实页完成，见 `probe-20261018-summary.md` |
 | E2 | 腾讯 + 阿里公开入口摸底 | [x] | 2026-10-18：公开页完成；**登录后简历编辑未探** |
-| E3 | 抽样共用 ATS / hotjob 租户 | [x] | 2026-10-18：候选清单 + **租户路径复用验证** |
+| E3 | 抽样共用 ATS / hotjob 租户 | [x] | 2026-10-18 复用验证；**2026-10-19 南粤 CMS_BASIC fill Never Save verified=8** |
 | E4 | 字节 + 美团 + 京东公开门户指纹（腾讯/阿里刷新） | [x] | 2026-10-18 晚：见 `probe-big5-public-20261018.md`；**登录后表单未探** |
 
 ## E1 明细
@@ -44,6 +44,7 @@
 - [x] 候选租户未登录路径验证 → `dist/site-probes/hotjob-tenant-verify-20261018.md`（11/11 reuse-CMS **yes**；登录后 fill 未做）
 - [x] 下一实验计划（fill-wo-save + 脚本清单）→ `dist/site-probes/HOTJOB_TENANT_NEXT_EXPERIMENT.md`（首选中联 `SU661f…`；**未** live CDP）
 - [x] 任一新 SU 白名单试填（fill-without-save）→ 中联 mc `hotjob-mc` 第一切片 live PASS（姓名/移动电话/电子邮箱；restore；Never Save）
+- [x] **南粤** `SU670a…` pb CMS_BASIC **fill Never Save** live basic verified **8** failed=0（2026-10-19 ~09:00 Asia/Shanghai；姓名+移动电话 readback；证据 `dist/auto-runs/hotjob-tenant-670a29-cms-basic-20261019-090052.json`；验收仍 85%；勿对外写南粤可填）
 - [x] 北森 / Moka / 飞书招聘抽样指纹 → `dist/site-probes/shared-ats-fingerprint-zhiye-moka-feishu-20261018.md`（4 zhiye + 1 moka + 1 feishu；皆非 hotjob）
 
 
@@ -206,15 +207,21 @@
 - **Live tonight only**：中信 partial（婚姻状况+政治面貌）+ 中联 mc（文本+性别+证件类型）。**Sellable** 仍仅 CMS+GTH。**Acceptance 仍 85%**（不抬）。
 - **Plateau**：再 expand live 需 Jeremy 登录 — 见 `_temp-scripts/SLEEP_HELP_PACK_20261018.md` §2。状态板：`_temp-scripts/NIGHT_STATUS_20261018.md` §8。无新适配器；Never Save。
 
-## 2026-10-19 · 南粤 CMS basic live PASS（partial）
 
-- [x] 试用 Edge CDP 9237，`SU670a291d6202cc7666c744bc` `/pb/resumeOperation.html`。Readiness PASS。MODE=fill Never Save。~09:00 Asia/Shanghai：`personalVerified=8` `failed=0`（DOM 姓名、移动电话已读回）。证据文件名 `hotjob-tenant-670a29-cms-basic-20261019-090052.json`（在试用机，未随本提交入库）。
-- 代码：`TENANT_SIGNATURE`、`cmsSection` tenantMin、`cmsDecision` 姓名/电话/专业消歧。见 `dist/site-probes/HOTJOB_NANYUE_CMS_BASIC_LIVE_20261019.md` 与 `HOTJOB_NANYUE_REMAINING_SKIPS_20261019.md`。
-- **不是**全站支持。Celebright/国盛及其它壳猜仍未 live。**Acceptance 仍 85%**。可卖仍只招商 CMS + 国泰 GTH。
+## 2026-10-19 晨 · 南粤 CMS_BASIC live fill Never Save（Asia/Shanghai ~09:00）
+
+- [x] 广东南粤银行 `SU670a291d6202cc7666c744bc` `/pb/resumeOperation.html`：Trial Edge CDP **9237** · EXT `hhembhoojafdefnkonmgoejfedgloanc` · load `edge-internal-v0.1.0-20261013-130219`。
+- [x] MODE=**fill** · **Never Save** · outcome `verified_partial` · **personalVerified=8** · **failed=0** · `softwareClickedSave=false`。
+- [x] DOM：姓名=马颢原；移动电话=15811077639；另 birthDate / identityNumber / email / gender / 民族 / 证件类型 verified（多为 preexisting_same）。
+- [x] 证据 JSON：`dist/auto-runs/hotjob-tenant-670a29-cms-basic-20261019-090052.json`；摘要 `dist/site-probes/HOTJOB_NANYUE_CMS_BASIC_LIVE_20261019.md`。
+- [x] Patches（box）：`cms-basic-auto.mjs` TENANT_SIGNATURE；`engine.js` cmsSection tenantMin；`engine.js` cmsDecision（fullName only 个人基本信息；phone prefer 移动电话；basic 专业 `section_requires_mapping`）。CloudAgent `bc-d7c6ac75` 推码 — **未**另开 PR。
+- 剩余 skip（非 blocker）：`question_scope_mismatch` 国籍/婚姻/毕业院校；`ambiguous_profile_fact` 政治面貌；region；教育专业仍可能需 work。
+- **Acceptance 仍 85%**（不抬）。销售口径不变：对外仍仅招商 CMS + 国泰 GTH。下一可选 live：**Celebright** → 国盛 / caict / opple。
+
 
 ## 2026-10-19 晨 · 招行 CMB offline scaffold（Asia/Shanghai）
 
-- [x] 公开指纹刷新：`career.cmbchina.com` SPA shell 同 `main.d37c8446.js`；**更正** CDP `vue:true` → **React+antd**；证据 `dist/site-probes/CMB_FINGERPRINT_REFRESH_20261019.md` + `_cmb-js-class-hints-20261019.txt`。`_raw-cmb-20261019/` 未随本切片入库。
+- [x] 公开指纹刷新：`career.cmbchina.com` SPA shell 同 `main.d37c8446.js`；**更正** CDP `vue:true` → **React+antd**；证据 `dist/site-probes/CMB_FINGERPRINT_REFRESH_20261019.md` + `_raw-cmb-20261019/`。
 - [x] 字段图：`dist/site-probes/cmb-field-map-20261019.md`（+`.json`）；第一切片 **姓名/手机号/邮箱**；强调保存后姓名/证件锁死 → **Never Save**。
 - [x] 设计：`EXPAND_CMB_ADAPTER_DESIGN.md`；说明 `dist/site-probes/CMB_NEXT.md`。
 - [x] Offline scaffold：`siteId=cmb` · `src/content/cmb-basic.js` + `cmb-profile-map.mjs` · fixture · `scripts/auto-cmb-basic.mjs` · `tests/cmb-basic.test.mjs`；manifest host `https://career.cmbchina.com/*`。**SW/popup 未接线**。

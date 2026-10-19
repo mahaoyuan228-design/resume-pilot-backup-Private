@@ -1,7 +1,7 @@
 # 招行 career.cmbchina.com 指纹刷新 · 2026-10-19（Asia/Shanghai）
 
 **范围**：公开 HTTP（box curl）+ 对照 E1 CDP（2026-10-18）。无 Jeremy 打断；**未** login；**未** Save；验收仍 **85%**。  
-**原始**：探针机 `dist/site-probes/_raw-cmb-20261019/`（该目录未随本切片入库）· hints：`_cmb-js-class-hints-20261019.txt`
+**原始**：`dist/site-probes/_raw-cmb-20261019/` · hints：`_cmb-js-class-hints-20261019.txt`
 
 ## 结果
 

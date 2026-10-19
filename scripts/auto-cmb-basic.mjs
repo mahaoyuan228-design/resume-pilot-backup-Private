@@ -112,8 +112,6 @@ async function launchChrome(port) {
   const child = spawn(chromePath(), [
     '--headless=new',
     '--disable-gpu',
-    '--no-sandbox',
-    '--disable-dev-shm-usage',
     '--no-first-run',
     `--user-data-dir=${userData}`,
     `--remote-debugging-port=${port}`,

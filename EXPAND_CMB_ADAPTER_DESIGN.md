@@ -79,7 +79,7 @@ DOM 合同（CSS-confirmed，live 未证实）：`.ant-form-item` / `.ant-form-i
 
 1. [x] 指纹刷新 + 字段图 + 本设计  
 2. [x] offline scaffold（map + content + fixture + harness + test）  
-3. [x] manifest host（`https://career.cmbchina.com/*`；未加 `tabs`；SW/popup 仍未接线）  
+3. [ ] manifest host（本刀一并加）  
 4. [ ] SW/popup 接线（可选下一刀）  
 5. [ ] Jeremy 登录后 live DOM harvest → fill-wo-save  
 6. [ ] 稳定后才改客户「已支持」口径

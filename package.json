@@ -2,7 +2,8 @@
   "name": "resume-pilot",
   "private": true,
   "scripts": {
-    "test:paid-qa": "node --test tests/paid-qa-runner.test.mjs"
+    "test:paid-qa": "node --test tests/paid-qa-runner.test.mjs",
+    "test:paid-rebuild": "node --test tests/build-paid-rebuild.test.mjs tests/guard-worker-auto-runners.test.mjs tests/product-paths-whitelist.test.mjs"
   },
   "dependencies": {
     "ws": "^8.18.3"

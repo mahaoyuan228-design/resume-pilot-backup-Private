@@ -205,3 +205,9 @@
 - [x] **Night close board**：hotjob shell-class **11/11** complete；non-hotjob 公开 fingerprint 批完成（小米=`feishu-atsx` ATSX 孪生；其余自建）；小米 `*.jobs.f.mioffice.cn` host 已接线 feishu-atsx（login-gated；**无 live claim**）；CITICS **民族** Ant Select synthetic PASS（live pending；全量/可搜 → fail-closed）；PR #3 draft 累积中。
 - **Live tonight only**：中信 partial（婚姻状况+政治面貌）+ 中联 mc（文本+性别+证件类型）。**Sellable** 仍仅 CMS+GTH。**Acceptance 仍 85%**（不抬）。
 - **Plateau**：再 expand live 需 Jeremy 登录 — 见 `_temp-scripts/SLEEP_HELP_PACK_20261018.md` §2。状态板：`_temp-scripts/NIGHT_STATUS_20261018.md` §8。无新适配器；Never Save。
+
+## 2026-10-19 · 南粤 CMS basic live PASS（partial）
+
+- [x] 试用 Edge CDP 9237，`SU670a291d6202cc7666c744bc` `/pb/resumeOperation.html`。Readiness PASS。MODE=fill Never Save。~09:00 Asia/Shanghai：`personalVerified=8` `failed=0`（DOM 姓名、移动电话已读回）。证据文件名 `hotjob-tenant-670a29-cms-basic-20261019-090052.json`（在试用机，未随本提交入库）。
+- 代码：`TENANT_SIGNATURE`、`cmsSection` tenantMin、`cmsDecision` 姓名/电话/专业消歧。见 `dist/site-probes/HOTJOB_NANYUE_CMS_BASIC_LIVE_20261019.md` 与 `HOTJOB_NANYUE_REMAINING_SKIPS_20261019.md`。
+- **不是**全站支持。Celebright/国盛及其它壳猜仍未 live。**Acceptance 仍 85%**。可卖仍只招商 CMS + 国泰 GTH。

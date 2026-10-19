@@ -1,7 +1,7 @@
 # hotjob 租户 CMS 复用 · 下一实验计划（fill-wo-save）
 
 日期：2026-10-18（Asia/Shanghai）  
-状态：**离线计划 + 公开壳分类已更新（含信通院/欧普/隆基/海天/台积电/TCL茂佳/地平线/宇量昇/哈锅/云谷；verify-list 11/11 keys）** — 本文件不代替 live fill；壳探测用 box curl（无登录、无多开 Edge）。  
+状态：**离线计划 + 公开壳分类已更新（含信通院/欧普/隆基/海天/台积电/TCL茂佳/地平线/宇量昇/哈锅/云谷；verify-list 11/11 keys）** — 壳探测用 box curl。例外：南粤 2026-10-19 CMS basic **partial live PASS**（verified=8，Never Save，非全站，验收仍 85%）。本文件仍不把其它租户写成已 live。  
 前置证据：`hotjob-tenants-20261018.md` · `hotjob-tenant-verify-20261018.md`（11/11 reuse-CMS **yes**；登录后 fill **未做**）· `hotjob-feishu-tenants-fingerprint-20261018.md`（飞书扩站：南粤/Celebright 同壳；国盛 SLD→`SU6879…`）  
 产品基线：招商 `SU629dbc0c0dcad452299bc0f7` 现网可填；`isCmsResumePage` = `wecruit.hotjob.cn` + `/SU*/pb/resumeOperation.html`。
 
@@ -32,10 +32,10 @@
 
 | # | 公司 | SU | 门户（未登录） | resumeOperation（登录后目标） | 备注 |
 | --- | --- | --- | --- | --- | --- |
-| **1b（中联后）** | **广东南粤银行** | `SU670a291d6202cc7666c744bc` | https://wecruit.hotjob.cn/SU670a291d6202cc7666c744bc/pb/school.html | https://wecruit.hotjob.cn/SU670a291d6202cc7666c744bc/pb/resumeOperation.html | **壳猜 pb**；飞书截止约 2026/11/04；resumeOp 200=`a1541…`；兼开 mc；`nanyue` ready |
+| **1b（中联后）** | **广东南粤银行** | `SU670a291d6202cc7666c744bc` | https://wecruit.hotjob.cn/SU670a291d6202cc7666c744bc/pb/school.html | https://wecruit.hotjob.cn/SU670a291d6202cc7666c744bc/pb/resumeOperation.html | **2026-10-19 live partial PASS**（pb resumeOp；verified=8；Never Save；非全站）。公开壳笔记仍在；`nanyue` ready |
 | **1c** | **Celebright 曼领** | `SU6279c916bef57c3ac0d49671` | https://wecruit.hotjob.cn/SU6279c916bef57c3ac0d49671/pb/index.html | https://wecruit.hotjob.cn/SU6279c916bef57c3ac0d49671/pb/resumeOperation.html | **壳猜 pb**（同信通院族）；resumeOp 200 同壳；兼开 mc；`celebright` ready |
 
-**Live 序（建议）**：① 中联重科（已 live=mc）→ ② 南粤银行 → ③ Celebright → （可选）国盛 → **再** 信通院（pb 猜）/ 欧普（mc 猜）。信通院/欧普 **仍排南粤队列之后**；本轮不 live。
+**Live 序**：① 中联重科（已 live=mc）→ ② 南粤银行（**2026-10-19 CMS basic partial live**，verified=8，非全站）→ ③ Celebright → （可选）国盛 → **再** 信通院（pb 猜）/ 欧普（mc 猜）。信通院/欧普仍未 live。验收仍 85%。
 
 **国盛证券（非 wecruit 根域，旁注）**：`https://gszq.hotjob.cn/` → getSLD → SU `SU6879a7b3e57172288b60df9d` · link=`…/pb/index.html#/` → **壳猜 pb**。`isCmsResumePage` 钉死 `wecruit.hotjob.cn`；试填用  
 `https://wecruit.hotjob.cn/SU6879a7b3e57172288b60df9d/pb/resumeOperation.html`（勿用 `gszq` host）。`guosheng` key ready；#4 备选。兼开 mc → 若 live 为 operationResumer 则 hotjob-mc 候选。
@@ -54,7 +54,7 @@
 
 | 公司 | SU | 壳猜测 | 非 login-only？ | Harness |
 | --- | --- | --- | --- | --- |
-| 南粤 | `SU670a…` | **pb**（门户 `/pb/school.html`；resumeOp hash=`a1541…`=招商） | 是（pb+mc 双 200） | **`nanyue` key ready** → CMS_BASIC |
+| 南粤 | `SU670a…` | **pb**（2026-10-19 live 停在 resumeOp；公开 hash=`a1541…`=招商） | 是（pb+mc 双 200） | **`nanyue` live partial** → CMS_BASIC verified=8；见 `HOTJOB_NANYUE_CMS_BASIC_LIVE_20261019.md` |
 | Celebright | `SU6279…` | **pb**（门户 `/pb/index.html`） | 是 | **`celebright` key ready** → CMS_BASIC |
 | 国盛 | `SU6879…` | **pb**（getSLD→`…/pb/index.html#/`；实验用 **wecruit** host） | 是 | **`guosheng` key ready** → CMS_BASIC |
 
@@ -120,7 +120,7 @@
 
 ### 1.7 Verify-list shell-class complete
 
-`hotjob-tenant-verify-20261018.md` 候选 **11/11** 均已公开壳分类并接线 `run-hotjob-tenant.cmd` 键（含本轮 `yls`/`haguo`/`yunigu`）。飞书扩站南粤/Celebright/国盛另键，不在该表。**仍非客户可填**。
+`hotjob-tenant-verify-20261018.md` 候选 **11/11** 均已公开壳分类并接线 `run-hotjob-tenant.cmd` 键（含本轮 `yls`/`haguo`/`yunigu`）。飞书扩站南粤/Celebright/国盛另键，不在该表。南粤另有 2026-10-19 CMS basic partial live（verified=8，非全站）。**仍非客户可填**。验收仍 85%。
 
 
 ---

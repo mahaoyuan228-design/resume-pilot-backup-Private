@@ -300,7 +300,8 @@ export const CMB_BIRTHDATE_HINT = Object.freeze({
   readOnly: true,
   fillHint: 'antd DatePicker readonly; format likely YYYY-MM-DD; Never Save',
   syntheticDom: false,
-  liveFillClaimed: false
+  liveFillClaimed: false,
+  saveAllowed: false
 });
 
 /** Exact harvested Chinese text or exact code. 请选择 and abbreviations do not match. */

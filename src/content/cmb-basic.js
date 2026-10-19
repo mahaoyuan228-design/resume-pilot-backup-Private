@@ -422,7 +422,8 @@
     readOnly: true,
     fillHint: 'antd DatePicker readonly; format likely YYYY-MM-DD; Never Save',
     syntheticDom: false,
-    liveFillClaimed: false
+    liveFillClaimed: false,
+    saveAllowed: false
   });
   const SELECT_SPECS = {
     maritalStatus: {
@@ -712,13 +713,28 @@
     return fillCodedSelect(SELECT_SPECS.interviewCity, value, options);
   }
 
+  function refuseHintSave(options) {
+    const bag = options && typeof options === 'object' ? options : null;
+    if (bag) {
+      void bag.save;
+      void bag.onSave;
+      void bag.submit;
+      void bag.onSubmit;
+    }
+    return {
+      saveAllowed: false,
+      saveRefused: true,
+      saved: false,
+      skippedSave: true
+    };
+  }
+
   function birthDateHint() {
     return {
       ...BIRTHDATE_HINT,
       ok: false,
       reason: 'datepicker_hint_only',
-      saved: false,
-      skippedSave: true,
+      ...refuseHintSave(null),
       writeAttempted: false
     };
   }
@@ -873,7 +889,10 @@
         ready: false,
         reason: confirmed.has('birthDate') ? 'datepicker_hint_only' : 'profile_fact_unconfirmed',
         kind: BIRTHDATE_HINT.kind,
-        fillHint: BIRTHDATE_HINT.fillHint
+        fillHint: BIRTHDATE_HINT.fillHint,
+        saveAllowed: false,
+        saved: false,
+        skippedSave: true
       });
     }
     const fields = [
@@ -1077,10 +1096,9 @@
           reason: 'datepicker_hint_only',
           href: location.href,
           results: [],
-          saved: false,
-          skippedSave: true,
           writeAttempted: false,
-          birthDateHint: birthDateHint()
+          birthDateHint: birthDateHint(),
+          ...refuseHintSave(options)
         };
       }
       if (gender && !GENDER_VALUES.includes(gender)) {
@@ -1297,6 +1315,7 @@
     } else {
       plan = planFromProfile(profile);
       if (!plan.ok) {
+        const birthBlocked = (plan.blockers || []).some((row) => row.path === 'birthDate');
         return {
           ok: false,
           siteId: SITE_ID,
@@ -1315,7 +1334,8 @@
           blockers: plan.blockers,
           saved: false,
           skippedSave: true,
-          writeAttempted: false
+          writeAttempted: false,
+          ...(birthBlocked ? refuseHintSave(options) : {})
         };
       }
       values = plan.values;
@@ -1354,6 +1374,8 @@
     if (values.channelType) results.push(await fillChannelType(values.channelType, options));
     if (values.interviewCity) results.push(await fillInterviewCity(values.interviewCity, options));
     const ok = results.every((row) => row.ok);
+    const birthRow = plan?.blockers?.find((row) => row.path === 'birthDate');
+    const birthHintOnly = birthRow?.reason === 'datepicker_hint_only';
     return {
       ok,
       siteId: SITE_ID,
@@ -1366,7 +1388,9 @@
       planSummary: plan
         ? { reason: plan.reason, readyCount: plan.fields.filter((f) => f.ready).length, blockerCount: plan.blockers.length }
         : { reason: 'explicit_override' },
-      results
+      results,
+      ...(birthRow ? refuseHintSave(options) : {}),
+      ...(birthHintOnly ? { birthDateHint: birthDateHint() } : {})
     };
   }
 

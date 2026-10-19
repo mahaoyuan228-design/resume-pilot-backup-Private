@@ -23,6 +23,8 @@ import {
   isCmbPoliticsLabel,
   isCmbWeightLabel
 } from '../src/content/cmb-profile-map.mjs';
+import { assessCmbRankingMajor } from '../src/content/cmb-rankingmajor-gate.mjs';
+import { CMB_BIRTHDATE_OFFLINE_GATE } from '../src/content/cmb-birthdate-hint-gate.mjs';
 if (typeof globalThis.WebSocket === 'undefined') {
   const { default: WS } = await import('ws');
   globalThis.WebSocket = WS;
@@ -306,6 +308,7 @@ function readLiveSelectClaim(kind) {
 
 function onlyKind(value) {
   const text = String(value ?? '').replace(/[\s\u00a0]+/gu, ' ').trim();
+  if (text === 'RankingMajor' || text === '专业排名') return 'rankingMajor';
   if (text === '性别') return 'gender';
   if (text === '是否参加过正式工作') return 'formalWork';
   if (isCmbHeightLabel(text)) return 'height';
@@ -1587,6 +1590,7 @@ function printHelp() {
     node scripts/auto-cmb-basic.mjs --only 招聘信息来源
     node scripts/auto-cmb-basic.mjs --only 面试期望城市
     node scripts/auto-cmb-basic.mjs --only 出生日期
+    node scripts/auto-cmb-basic.mjs --only RankingMajor
   Gender is offline synthetic only. Live radio DOM is not harvested.
   Formal work (是否参加过正式工作) is offline synthetic radio only. Options are field-map 是/否.
   Live formal-work radio DOM is not harvested. --only 是否参加过正式工作 --live refuses.
@@ -1675,6 +1679,27 @@ async function main() {
   if (args.only != null && !kind) {
     console.error('Only 性别, 是否参加过正式工作, 身高, 体重, 婚姻状况, 政治面貌, 民族, 证件类型, 学历, 关系类型, 获奖级别, 最高英语水平, 招聘信息来源, 面试期望城市, and 出生日期 are in this knife.');
     process.exit(2);
+  }
+  if (kind === 'rankingMajor') {
+    const gate = assessCmbRankingMajor(null);
+    const payload = basePayload({
+      ok: false,
+      reason: gate.verdict,
+      surface: 'offline-gate',
+      liveEdge: false,
+      formFillClaimed: false,
+      writeAttempted: false,
+      supported: gate.supported,
+      liveFillClaimed: gate.liveFillClaimed,
+      fillAllowed: gate.fillAllowed,
+      wireAllowed: gate.wireAllowed,
+      saveAllowed: gate.saveAllowed,
+      saveRefused: gate.saveRefused,
+      selector: null,
+      hint: 'RankingMajor is DOM_CONTROL_MISSING. No selector was recorded. Never Save. 招行 is not supported.'
+    });
+    console.log(JSON.stringify({ event: 'refused', ...payload }, null, 2));
+    process.exit(3);
   }
   if (kind === 'height' && args.live && !args.synthetic) {
     const payload = basePayload({
@@ -1767,6 +1792,7 @@ async function main() {
     }
   }
   if (kind === 'birthDate') {
+    const gate = CMB_BIRTHDATE_OFFLINE_GATE;
     const payload = basePayload({
       ok: false,
       reason: 'datepicker_hint_only',
@@ -1776,6 +1802,10 @@ async function main() {
       writeAttempted: false,
       syntheticDom: false,
       liveFillClaimed: false,
+      supported: gate.supported,
+      saveAllowed: gate.saveAllowed,
+      saveRefused: gate.saveRefused,
+      selector: gate.selector,
       label: '出生日期',
       kind: 'DatePicker',
       selectId: 'resume_basicInfo_birthday',

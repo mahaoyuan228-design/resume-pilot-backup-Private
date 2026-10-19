@@ -1,0 +1,39 @@
+{
+  "schema": "cmb-birthdate-harvest/1",
+  "synthetic": true,
+  "autoSaveExcluded": true,
+  "labelLocated": true,
+  "labelText": "出生日期",
+  "controlObserved": true,
+  "control": {
+    "observedId": "fixtureDobNode",
+    "inputType": "text",
+    "role": null,
+    "readOnly": true,
+    "disabled": false,
+    "placeholder": "请选择日期",
+    "calendarEntryObserved": true
+  },
+  "hint": {
+    "placeholder": "请选择日期",
+    "formatNote": "",
+    "pattern": "",
+    "conflicting": false
+  },
+  "interaction": { "openedManually": true, "autoClicked": false, "daySelected": false },
+  "format": { "described": true, "verified": false },
+  "actions": { "fieldChanged": false, "saveAttempted": false, "submitAttempted": false },
+  "files": {
+    "context": true,
+    "locator": true,
+    "controlImage": true,
+    "controlHtml": true,
+    "hints": true,
+    "interaction": true,
+    "popup": true,
+    "format": true,
+    "actions": true,
+    "verdict": true
+  },
+  "note": "Manual open was recorded. Format is not verified. Still cannot Save."
+}

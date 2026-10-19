@@ -15,6 +15,8 @@ import {
   CMB_HEIGHT_VALUE_RE,
   CMB_WEIGHT_LABEL,
   CMB_WEIGHT_VALUE_RE,
+  CMB_FORMAL_WORK_LABEL,
+  CMB_FORMAL_WORK_VALUES,
   isCmbHeightLabel,
   isCmbWeightLabel,
   numericCmbHeight,
@@ -491,6 +493,140 @@ test('synthetic harness weight readback is numeric and --live refuses', { timeou
   assert.equal(payload.neighbor?.heightSuffix, 'CM');
   assert.equal(payload.neighbor?.weight, '58');
   assert.equal(payload.neighbor?.weightHasUnit, false);
+  assert.equal(payload.neighbor?.weightSuffix, 'KG');
+  assert.equal(payload.neighbor?.saveDisabled, true);
+});
+
+test('formal-work plan is optional and allowlists 是/否 only', () => {
+  assert.equal(CMB_FORMAL_WORK_LABEL, '是否参加过正式工作');
+  assert.deepEqual([...CMB_FORMAL_WORK_VALUES], ['是', '否']);
+  const base = {
+    fullName: '测试甲',
+    phone: '13800138000',
+    email: 'cmb.user@example.com',
+    confirmedFields: ['fullName', 'phone', 'email']
+  };
+  const absent = planCmbBasicFromProfile(base);
+  assert.equal(absent.ok, true);
+  assert.equal(absent.values.formalWork, '');
+  assert.equal(absent.values.gender, '');
+  assert.equal(absent.values.height, '');
+  assert.equal(absent.values.weight, '');
+  assert.equal(absent.fields.some((row) => row.label === '是否参加过正式工作'), false);
+  assert.equal(absent.blockers.length, 0);
+
+  const ready = planCmbBasicFromProfile({
+    ...base,
+    formalWork: ' 是 ',
+    confirmedFields: [...base.confirmedFields, 'formalWork']
+  });
+  assert.equal(ready.ok, true);
+  assert.equal(ready.values.formalWork, '是');
+  assert.equal(ready.values.gender, '');
+  assert.equal(ready.fields.find((row) => row.label === '是否参加过正式工作')?.ready, true);
+
+  const readyNo = planCmbBasicFromProfile({
+    ...base,
+    formalWork: '否',
+    confirmedFields: [...base.confirmedFields, 'formalWork']
+  });
+  assert.equal(readyNo.ok, true);
+  assert.equal(readyNo.values.formalWork, '否');
+
+  const unconfirmed = planCmbBasicFromProfile({ ...base, formalWork: '是' });
+  assert.equal(unconfirmed.ok, true);
+  assert.equal(unconfirmed.values.formalWork, '');
+  assert.equal(unconfirmed.blockers.find((row) => row.label === '是否参加过正式工作')?.reason, 'profile_fact_unconfirmed');
+
+  const invalid = planCmbBasicFromProfile({
+    ...base,
+    formalWork: '未知',
+    confirmedFields: [...base.confirmedFields, 'formalWork']
+  });
+  assert.equal(invalid.ok, true);
+  assert.equal(invalid.values.formalWork, '');
+  assert.equal(invalid.blockers.find((row) => row.label === '是否参加过正式工作')?.reason, 'invalid_profile_value');
+});
+
+test('formal-work fixture is synthetic radio scoped to its own form item', () => {
+  assert.match(fixture, /SYNTHETIC formal-work radio/);
+  assert.match(fixture, /data-field="是否参加过正式工作"/);
+  assert.match(fixture, /name="cmb-synthetic-worked"/);
+  assert.match(fixture, /name="cmb-synthetic-gender"/);
+  assert.match(fixture, />是</);
+  assert.match(fixture, />否</);
+  assert.match(fixture, /value="否" checked/);
+  assert.match(fixture, /data-synthetic-neighbor="true"/);
+  assert.match(fixture, /Live formal-work radio DOM was not harvested/);
+  assert.match(fixture, /Field-map options only: 是 \/ 否/);
+  assert.match(source, /FORMAL_WORK_LABEL = '是否参加过正式工作'/);
+  assert.match(source, /FORMAL_WORK_VALUES = \['是', '否'\]/);
+  assert.match(source, /findItem\(FORMAL_WORK_LABEL\)/);
+  assert.match(source, /fillFormalWork/);
+  assert.match(source, /radio_structure_changed/);
+  assert.doesNotMatch(source, /出生日期|政治面貌|婚姻状况|民族/);
+  assert.doesNotMatch(source, /birthDate|political|ethnicity|marital/);
+  assert.match(harness, /--only 是否参加过正式工作/);
+  assert.match(harness, /live_formal_work_radio_unharvested/);
+  assert.match(harness, /formFillClaimed: false/);
+  assert.doesNotMatch(source, /click\(.*保存|保存.*\.click/);
+});
+
+test('synthetic harness formal-work radio selects 是/否 and --live refuses', { timeout: 120000 }, () => {
+  const live = spawnSync(process.execPath, ['scripts/auto-cmb-basic.mjs', '--only', '是否参加过正式工作', '--live'], {
+    cwd: root,
+    encoding: 'utf8',
+    timeout: 20000
+  });
+  assert.equal(live.status, 3, live.stderr || live.stdout);
+  const refused = JSON.parse(live.stdout);
+  assert.equal(refused.ok, false);
+  assert.equal(refused.reason, 'live_formal_work_radio_unharvested');
+  assert.equal(refused.saved, false);
+  assert.equal(refused.skippedSave, true);
+  assert.equal(refused.formFillClaimed, false);
+  assert.equal(refused.liveRadioDomHarvested, false);
+  assert.equal(refused.liveEdge, false);
+  assert.equal(refused.label, '是否参加过正式工作');
+
+  const run = spawnSync(process.execPath, ['scripts/auto-cmb-basic.mjs', '--only', '是否参加过正式工作'], {
+    cwd: root,
+    encoding: 'utf8',
+    timeout: 110000
+  });
+  assert.equal(run.status, 0, run.stderr || run.stdout);
+  const payload = JSON.parse(readFileSync(resolve(root, 'dist/auto-runs/cmb-formal-work-radio-latest.json'), 'utf8'));
+  assert.equal(payload.ok, true);
+  assert.equal(payload.saved, false);
+  assert.equal(payload.skippedSave, true);
+  assert.equal(payload.liveEdge, false);
+  assert.equal(payload.formFillClaimed, false);
+  assert.equal(payload.liveRadioDomHarvested, false);
+  assert.equal(payload.reason, 'synthetic_formal_work_radio_pass');
+  assert.equal(payload.label, '是否参加过正式工作');
+  assert.equal(payload.invalid?.reason, 'invalid_profile_value');
+  assert.equal(payload.explicitInvalid?.reason, 'invalid_formal_work');
+  assert.equal(payload.explicitInvalid?.writeAttempted, false);
+  assert.deepEqual(payload.afterReject?.workedChecked, ['否']);
+  assert.deepEqual(payload.afterReject?.genderChecked, []);
+  assert.equal(payload.afterReject?.height, '');
+  assert.equal(payload.afterReject?.weight, '60');
+  assert.equal(payload.afterReject?.saveDisabled, true);
+  assert.equal(payload.yes?.before, '否');
+  assert.equal(payload.yes?.after, '是');
+  assert.equal(payload.no?.before, '是');
+  assert.equal(payload.no?.after, '否');
+  assert.equal(payload.fillBasic?.results?.length, 4);
+  assert.equal(payload.fillBasic.results.find((row) => row.label === '是否参加过正式工作')?.after, '是');
+  assert.equal(payload.fillBasic.results.some((row) => row.label === '性别'), false);
+  assert.equal(payload.fillBasic.results.some((row) => row.label === '身高'), false);
+  assert.equal(payload.fillBasic.results.some((row) => row.label === '体重'), false);
+  assert.ok(payload.fillBasic.results.every((row) => row.ok));
+  assert.deepEqual(payload.neighbor?.workedChecked, ['是']);
+  assert.deepEqual(payload.neighbor?.genderChecked, []);
+  assert.equal(payload.neighbor?.height, '');
+  assert.equal(payload.neighbor?.heightSuffix, 'CM');
+  assert.equal(payload.neighbor?.weight, '60');
   assert.equal(payload.neighbor?.weightSuffix, 'KG');
   assert.equal(payload.neighbor?.saveDisabled, true);
 });

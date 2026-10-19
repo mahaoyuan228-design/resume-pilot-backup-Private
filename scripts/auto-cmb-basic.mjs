@@ -79,9 +79,17 @@ function weightEvidencePaths(now = stampIso()) {
   return { file, latest };
 }
 
+function formalWorkEvidencePaths(now = stampIso()) {
+  fs.mkdirSync(outDir, { recursive: true });
+  const file = path.join(outDir, `cmb-formal-work-radio-${now}.json`);
+  const latest = path.join(outDir, 'cmb-formal-work-radio-latest.json');
+  return { file, latest };
+}
+
 function onlyKind(value) {
   const text = String(value ?? '').replace(/[\s\u00a0]+/gu, ' ').trim();
   if (text === '性别') return 'gender';
+  if (text === '是否参加过正式工作') return 'formalWork';
   if (isCmbHeightLabel(text)) return 'height';
   if (isCmbWeightLabel(text)) return 'weight';
   return '';
@@ -768,6 +776,184 @@ async function runSyntheticWeight() {
   }
 }
 
+async function runSyntheticFormalWork() {
+  const { server, port } = await startFixtureServer();
+  const cdpPort = await freePort();
+  let child;
+  try {
+    ({ child } = await launchChrome(cdpPort));
+    const url = `http://127.0.0.1:${port}/${fixtureName}`;
+    const { socket, send } = await attachPage(cdpPort, url);
+    await injectScript(send);
+    const refused = await evaluate(send, `ResumeCmbBasic.fillFormalWork('是')`);
+    const invalid = await evaluate(send, `ResumeCmbBasic.fillFormalWork('未知', { synthetic: true })`);
+    const explicitInvalid = await evaluate(send, `ResumeCmbBasic.fillBasic({
+      allowExplicitValues: true,
+      fullName: '测试甲',
+      mobile: '13800138000',
+      email: 'cmb.fixture@example.com',
+      formalWork: '男'
+    }, { synthetic: true })`);
+    const afterReject = await evaluate(send, `(() => {
+      const norm = (value) => String(value ?? '').replace(/\\s+/g, ' ').trim();
+      const items = [...document.querySelectorAll('.ant-form-item')];
+      const labelOf = (item) => {
+        const label = item.querySelector('.ant-form-item-label label, .ant-form-item-label');
+        return norm(label?.textContent || '');
+      };
+      const byText = (want) => items.find((item) => labelOf(item) === want);
+      const checkedValues = (item) => [...(item?.querySelectorAll('input[type="radio"]') || [])]
+        .filter((node) => node.checked)
+        .map((node) => node.value);
+      return {
+        workedChecked: checkedValues(byText('是否参加过正式工作')),
+        genderChecked: checkedValues(byText('性别')),
+        name: byText('姓名')?.querySelector('input')?.value ?? null,
+        height: items.find((item) => /^身高(?:\\s*(?:[（(]\\s*)?cm(?:\\s*[）)])?)?$/iu.test(labelOf(item)))?.querySelector('input')?.value ?? null,
+        weight: items.find((item) => /^体重(?:\\s*(?:[（(]\\s*)?kg(?:\\s*[）)])?)?$/iu.test(labelOf(item)))?.querySelector('input')?.value ?? null,
+        saveDisabled: document.getElementById('save-btn')?.disabled === true
+      };
+    })()`);
+    const planReady = await evaluate(send, `ResumeCmbBasic.planFromProfile({
+      fullName: '测试甲',
+      phone: '13800138000',
+      email: 'cmb.fixture@example.com',
+      formalWork: ' 是 ',
+      confirmedFields: ['fullName', 'phone', 'email', 'formalWork']
+    })`);
+    const planInvalid = await evaluate(send, `ResumeCmbBasic.planFromProfile({
+      fullName: '测试甲',
+      phone: '13800138000',
+      email: 'cmb.fixture@example.com',
+      formalWork: '未知',
+      confirmedFields: ['fullName', 'phone', 'email', 'formalWork']
+    })`);
+    const yes = await evaluate(send, `ResumeCmbBasic.fillFormalWork('是', { synthetic: true })`);
+    const no = await evaluate(send, `ResumeCmbBasic.fillFormalWork('否', { synthetic: true })`);
+    const basic = await evaluate(send, `ResumeCmbBasic.fillBasic({
+      allowExplicitValues: true,
+      fullName: '测试甲',
+      mobile: '13800138000',
+      email: 'cmb.fixture@example.com',
+      formalWork: '是'
+    }, { synthetic: true })`);
+    const neighbor = await evaluate(send, `(() => {
+      const norm = (value) => String(value ?? '').replace(/\\s+/g, ' ').trim();
+      const items = [...document.querySelectorAll('.ant-form-item')];
+      const labelOf = (item) => {
+        const label = item.querySelector('.ant-form-item-label label, .ant-form-item-label');
+        return norm(label?.textContent || '');
+      };
+      const byText = (want) => items.find((item) => labelOf(item) === want);
+      const checkedValues = (item) => [...(item?.querySelectorAll('input[type="radio"]') || [])]
+        .filter((node) => node.checked)
+        .map((node) => node.value);
+      const heightItem = items.find((item) => /^身高(?:\\s*(?:[（(]\\s*)?cm(?:\\s*[）)])?)?$/iu.test(labelOf(item)));
+      const weightItem = items.find((item) => /^体重(?:\\s*(?:[（(]\\s*)?kg(?:\\s*[）)])?)?$/iu.test(labelOf(item)));
+      return {
+        workedChecked: checkedValues(byText('是否参加过正式工作')),
+        genderChecked: checkedValues(byText('性别')),
+        height: heightItem?.querySelector('input')?.value ?? null,
+        heightSuffix: heightItem?.querySelector('[data-unit]')?.textContent || '',
+        weight: weightItem?.querySelector('input')?.value ?? null,
+        weightSuffix: weightItem?.querySelector('[data-unit]')?.textContent || '',
+        saveDisabled: document.getElementById('save-btn')?.disabled === true,
+        saveText: document.getElementById('save-btn')?.textContent || ''
+      };
+    })()`);
+
+    const formalResult = basic?.results?.find((row) => row.label === '是否参加过正式工作');
+    const ok = refused?.reason === 'wrong_page'
+      && refused?.ok === false
+      && invalid?.reason === 'invalid_profile_value'
+      && invalid?.ok === false
+      && explicitInvalid?.reason === 'invalid_formal_work'
+      && explicitInvalid?.ok === false
+      && explicitInvalid?.writeAttempted === false
+      && afterReject?.workedChecked?.length === 1
+      && afterReject.workedChecked[0] === '否'
+      && Array.isArray(afterReject?.genderChecked)
+      && afterReject.genderChecked.length === 0
+      && afterReject?.name === ''
+      && afterReject?.height === ''
+      && afterReject?.weight === '60'
+      && afterReject?.saveDisabled === true
+      && planReady?.ok === true
+      && planReady?.values?.formalWork === '是'
+      && planReady?.values?.gender === ''
+      && planReady?.values?.height === ''
+      && planReady?.values?.weight === ''
+      && planInvalid?.ok === true
+      && planInvalid?.values?.formalWork === ''
+      && planInvalid?.blockers?.some((row) => row.label === '是否参加过正式工作' && row.reason === 'invalid_profile_value')
+      && yes?.ok === true
+      && yes?.before === '否'
+      && yes?.after === '是'
+      && yes?.saved === false
+      && yes?.skippedSave === true
+      && no?.ok === true
+      && no?.before === '是'
+      && no?.after === '否'
+      && basic?.ok === true
+      && basic?.saved === false
+      && basic?.skippedSave === true
+      && basic?.results?.length === 4
+      && formalResult?.ok === true
+      && formalResult?.after === '是'
+      && basic?.results?.some((row) => row.label === '性别') === false
+      && basic?.results?.some((row) => row.label === '身高') === false
+      && basic?.results?.some((row) => row.label === '体重') === false
+      && neighbor?.workedChecked?.length === 1
+      && neighbor.workedChecked[0] === '是'
+      && Array.isArray(neighbor?.genderChecked)
+      && neighbor.genderChecked.length === 0
+      && neighbor?.height === ''
+      && neighbor?.heightSuffix === 'CM'
+      && neighbor?.weight === '60'
+      && neighbor?.weightSuffix === 'KG'
+      && neighbor?.saveDisabled === true
+      && normSave(neighbor?.saveText) === '保存';
+
+    const payload = basePayload({
+      ok,
+      reason: ok ? 'synthetic_formal_work_radio_pass' : 'synthetic_formal_work_radio_fail',
+      surface: 'synthetic-fixture',
+      liveEdge: false,
+      formFillClaimed: false,
+      liveRadioDomHarvested: false,
+      fixture: 'synthetic-public-css-candidates',
+      label: '是否参加过正式工作',
+      assumptions: [
+        'label-scoped .ant-form-item whose label is exactly 是否参加过正式工作',
+        '.ant-radio-wrapper text is exactly 是 or 否 (field map, not a live option list)',
+        '.ant-radio wraps input[type=radio]',
+        'readback is input.checked, not .ant-radio-checked',
+        'shared radio name is a synthetic stand-in for single-select',
+        '性别 / 身高 / 体重 stay untouched'
+      ],
+      refused,
+      invalid,
+      explicitInvalid,
+      afterReject,
+      planReady,
+      planInvalid,
+      yes,
+      no,
+      fillBasic: basic,
+      neighbor
+    });
+    const { file, latest } = formalWorkEvidencePaths();
+    const json = JSON.stringify(payload, null, 2);
+    fs.writeFileSync(file, json, 'utf8');
+    fs.copyFileSync(file, latest);
+    socket.close();
+    return { payload, written: { file, latest } };
+  } finally {
+    try { child?.kill(); } catch {}
+    try { server.close(); } catch {}
+  }
+}
+
 function normSave(value) {
   return String(value ?? '').replace(/\s+/g, ' ').trim();
 }
@@ -818,9 +1004,12 @@ function printHelp() {
     MODE=fill node scripts/auto-cmb-basic.mjs --synthetic
     MODE=readiness node scripts/auto-cmb-basic.mjs --synthetic
     node scripts/auto-cmb-basic.mjs --only 性别
+    node scripts/auto-cmb-basic.mjs --only 是否参加过正式工作
     node scripts/auto-cmb-basic.mjs --only 身高
     node scripts/auto-cmb-basic.mjs --only 体重
   Gender is offline synthetic only. Live radio DOM is not harvested.
+  Formal work (是否参加过正式工作) is offline synthetic radio only. Options are field-map 是/否.
+  Live formal-work radio DOM is not harvested. --only 是否参加过正式工作 --live refuses.
   Height is offline synthetic text only. The value is numeric; CM is not written.
   Live height DOM is not harvested. --only 身高 --live refuses.
   Weight is offline synthetic text only. The value is numeric kilograms; KG is not written.
@@ -855,7 +1044,7 @@ async function main() {
   }
   const kind = args.only == null ? '' : onlyKind(args.only);
   if (args.only != null && !kind) {
-    console.error('Only 性别, 身高, and 体重 are in this knife. Other second-slice labels are not implemented.');
+    console.error('Only 性别, 是否参加过正式工作, 身高, and 体重 are in this knife. Other second-slice labels are not implemented.');
     process.exit(2);
   }
   if (kind === 'height' && args.live && !args.synthetic) {
@@ -963,6 +1152,51 @@ async function main() {
     fs.copyFileSync(file, latest);
     console.log(JSON.stringify({ event: 'refused', file, latest, ...payload }, null, 2));
     process.exit(3);
+  }
+  if (kind === 'formalWork' && args.live && !args.synthetic) {
+    const payload = basePayload({
+      ok: false,
+      reason: 'live_formal_work_radio_unharvested',
+      surface: 'cdp',
+      liveEdge: false,
+      formFillClaimed: false,
+      liveRadioDomHarvested: false,
+      label: '是否参加过正式工作',
+      hint: 'Formal-work radio DOM was not harvested. Use --only 是否参加过正式工作 without --live.'
+    });
+    const { file, latest } = formalWorkEvidencePaths();
+    fs.writeFileSync(file, JSON.stringify(payload, null, 2), 'utf8');
+    fs.copyFileSync(file, latest);
+    console.log(JSON.stringify({ event: 'refused', file, latest, ...payload }, null, 2));
+    process.exit(3);
+  }
+  if (kind === 'formalWork') {
+    try {
+      const { payload, written } = await runSyntheticFormalWork();
+      console.log(JSON.stringify({
+        event: 'saved',
+        ...written,
+        ok: payload.ok,
+        reason: payload.reason,
+        label: '是否参加过正式工作'
+      }, null, 2));
+      process.exit(payload.ok ? 0 : 2);
+    } catch (error) {
+      const payload = basePayload({
+        ok: false,
+        reason: String(error?.message || error).slice(0, 300),
+        surface: 'synthetic-fixture',
+        liveEdge: false,
+        formFillClaimed: false,
+        liveRadioDomHarvested: false,
+        error: String(error?.stack || error).slice(0, 800)
+      });
+      const { file, latest } = formalWorkEvidencePaths();
+      fs.writeFileSync(file, JSON.stringify(payload, null, 2), 'utf8');
+      fs.copyFileSync(file, latest);
+      console.error(JSON.stringify({ event: 'error', file, latest, ...payload }, null, 2));
+      process.exit(1);
+    }
   }
   if (kind === 'gender') {
     try {

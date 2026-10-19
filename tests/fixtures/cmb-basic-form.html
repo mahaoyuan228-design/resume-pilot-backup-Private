@@ -55,7 +55,11 @@
         Live height DOM was not harvested. The 体重 block is also <strong>synthetic</strong>:
         the same <code>.ant-form-item</code> / <code>input.ant-input</code> candidates.
         The label may include a KG suffix. The input value is numeric kilograms only.
-        Live weight DOM was not harvested. Do not claim live support.</p>
+        Live weight DOM was not harvested. The 是否参加过正式工作 block is also
+        <strong>synthetic</strong>: the same public CSS candidates as 性别
+        (<code>.ant-form-item</code> / <code>.ant-radio-wrapper</code> / <code>.ant-radio</code>),
+        scoped by that label. Options are field-map 是 / 否 only.
+        Live formal-work radio DOM was not harvested. Do not claim live support.</p>
       <p class="warn">页上提示：姓名 / 证件类型 / 证件号在简历<strong>保存后无法再次修改</strong> — 本脚手架永不点保存。</p>
 
       <form class="ant-form" action="#" onsubmit="return false;">
@@ -140,8 +144,20 @@
           </div>
         </div>
 
-        <!-- Neighbor radio group. Not a supported field. Must stay on 否. -->
-        <div class="ant-form-item" data-field="是否参加过正式工作" data-synthetic-neighbor="true">
+        <!--
+          SYNTHETIC formal-work radio. Not live CMB DOM.
+          Field-map options only: 是 / 否. Live radio DOM was not harvested.
+          Assumptions (same public CSS candidates as 性别, label-scoped):
+          1. 是否参加过正式工作 is its own .ant-form-item. Label text is exactly that.
+          2. Each option is a label.ant-radio-wrapper whose remaining text is exactly 是 or 否.
+          3. The wrapper contains .ant-radio and a native input[type=radio].
+          4. Readback is input.checked, not .ant-radio-checked.
+          5. Radios in this item share a name so the browser clears the sibling.
+             Live Ant Radio.Group may be React-controlled and unnamed — unverified.
+          6. 性别 / 身高 / 体重 are separate items and must not be written by this fill.
+          Default checked 否 is the untouched baseline for the 性别 / 身高 / 体重 knives.
+        -->
+        <div class="ant-form-item" data-field="是否参加过正式工作" data-dom="synthetic-public-css-candidate" data-synthetic-neighbor="true">
           <div class="ant-form-item-label"><label>是否参加过正式工作</label></div>
           <div class="ant-form-item-control">
             <label class="ant-radio-wrapper">

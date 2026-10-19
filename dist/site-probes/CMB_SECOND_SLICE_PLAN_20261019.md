@@ -4,6 +4,7 @@
 **性别补记（2026-10-19）**：offline synthetic 已落地（`cmb-basic.js` `fillGender` + `tests/fixtures/cmb-basic-form.html`）。仍是合成 fixture，**不是** live 支持。  
 **身高补记（2026-10-19）**：offline synthetic 已落地（`fillHeight` + 同一 fixture）。标签按「身高」或带 CM 后缀匹配；写入值只有数字，**不**把 CM 写进 value。仍是合成 fixture，**不是** live 支持。  
 **体重补记（2026-10-19）**：offline synthetic 已落地（`fillWeight` + 同一 fixture）。标签按「体重」或带 KG 后缀匹配；写入值只有数字公斤，**不**把 `60kg` / `60KG` 写进 value。`profile.weight` 仅在调用方传入时读取，**未**改 `emptyProfile`。仍是合成 fixture，**不是** live 支持。  
+**是否参加过正式工作补记（2026-10-19）**：offline synthetic radio 已落地（`fillFormalWork` + 同一 fixture）。标签作用域一个 `.ant-form-item`；选项只有字段图「是 / 否」。`profile.formalWork` 仅在调用方传入时读取，**未**改 `emptyProfile`。`--live` 拒绝（`live_formal_work_radio_unharvested`）。仍是合成 fixture，**不是** live 支持。婚姻、政治面貌、民族、出生日期本刀不碰。  
 体重 offline 已落地（同身高：`.ant-form-item` + `input.ant-input`；只写数字公斤；拒 `60kg`/`60KG`；`--live` 拒 `live_weight_text_unharvested`；套件 34/34；Never Save）。性别/身高/体重合成齐；下一刀需 live 的四字段：婚姻、政治面貌、民族、出生日期。未宣称已支持招行。验收仍 **85%**。  
 **输入**：`cmb-field-map-20261019.md` · `EXPAND_CMB_ADAPTER_DESIGN.md` · `CMB_NEXT.md` · `CMB_FINGERPRINT_REFRESH_20261019.md` · `_cmb-js-class-hints-20261019.txt` · 第一切片 `cmb-basic.js` / `cmb-profile-map.mjs`  
 **页**：`https://career.cmbchina.com/center/resume` · 栈 React + ant-design（`main.d37c8446.js` / `main.02cda64a.css`）· **非** hotjob  
@@ -44,7 +45,7 @@
 - 证件类型 / 证件号（锁死字段；比中信更忌误填后保存）
 - 生源地 / 出生地 / 现居住地（级联嫌疑）
 - 招聘信息来源 / 面试期望城市（选项未知）
-- 是否参加过正式工作（可留第三拍；radio 但业务语义弱于性别）
+- 是否参加过正式工作：2026-10-19 起为 offline synthetic（字段图 是/否；live radio DOM 未采）。见下方假设。婚姻 / 政治面貌 / 民族 / 出生日期仍不做。
 - 任何「保存」「提交」点击；真站策略仍 **fill-wo-save**
 
 ---
@@ -128,13 +129,26 @@ L5 仍然开放：需要登录后的身高 label 文本和空控件 value，才�
 
 体重的 live 标签精确串仍然开放：需要登录后的体重 label 文本和控件 value，才能把上述假设收成 live 合同。
 
+### 是否参加过正式工作 synthetic 假设（不阻塞登录）
+
+字段图写 radio「是/否」。公开 CSS 只有类名，没有登录后的 radio 树。因此在同一合成 fixture 上把这一项从「只作邻项对照」改成可填，**不**把它写成 live 合同：
+
+1. 「是否参加过正式工作」是单独一个 `.ant-form-item`，标签文本恰好为该句（不点「性别」）。
+2. 选项是 `label.ant-radio-wrapper`，去掉 `.ant-radio` 后文本恰好为「是」或「否」。这两个字来自字段图，不是 live 选项采集。
+3. wrapper 内有 `.ant-radio` 和原生 `input[type=radio]`。读回用 `input.checked`。
+4. 同一项里的 radio 共用 `name`，只为让浏览器取消另一项。Live Ant Radio.Group 可能无 name、由 React 受控 — **未核实**。
+5. 结构不是「恰好两个、是+否、各自有 `.ant-radio` 与 radio input」时返回 `radio_structure_changed`，不乱点。
+6. 运行：`node scripts/auto-cmb-basic.mjs --only 是否参加过正式工作`。`--live` 直接拒绝（`live_formal_work_radio_unharvested`）。Never Save。`formalWork` 不写入 `emptyProfile`。
+
+Live 节点仍然开放：需要登录后的该项 outerHTML，才能把上述假设收成 live 合同。
+
 ---
 
 ## 5. 与第一切片关系
 
 | 项 | 第一切片 | 第二拍（本文件） |
 | --- | --- | --- |
-| 字段 | 姓名 / 手机号 / 邮箱 | 性别、身高、体重 **offline synthetic**；出生日期 / 政治面貌 / 民族 / 婚姻状况仍未实现 |
+| 字段 | 姓名 / 手机号 / 邮箱 | 性别、身高、体重、是否参加过正式工作 **offline synthetic**；出生日期 / 政治面貌 / 民族 / 婚姻状况仍未实现 |
 | DOM 合同 | CSS-confirmed text | 性别 / 身高 / 体重 fixture = 公开 CSS **候选**（非 live）；picker/select 仍只是候选 |
 | SW/popup | 未接线 | **仍不接线**（本分析不写工程替装） |
 | 保存 | Never Save | Never Save |

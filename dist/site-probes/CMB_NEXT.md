@@ -23,6 +23,7 @@
 | 性别 | gender（男/女） | **offline synthetic only**。公开 CSS 候选 fixture；**live radio DOM 仍未采** |
 | 身高 | height（数字厘米；标签可带 CM） | **offline synthetic only**。公开 CSS 候选 `input.ant-input`；value **不含** CM。**live 标签精确串仍未采** |
 | 体重 | weight（数字公斤；调用方传入。标签可带 KG。未写入 emptyProfile） | **offline synthetic only**。公开 CSS 候选 `input.ant-input`；value **不含** KG。**live 标签精确串仍未采** |
+| 是否参加过正式工作 | formalWork（是/否；调用方传入。未写入 emptyProfile） | **offline synthetic only**。标签作用域 `.ant-form-item`；选项来自字段图，**不是** live 合同 |
 
 DOM 合同：**CSS-confirmed** `.ant-form-item` / `input.ant-input`（`main.02cda64a.css`）。Live 结构未采。
 
@@ -32,6 +33,8 @@ DOM 合同：**CSS-confirmed** `.ant-form-item` / `input.ant-input`（`main.02cd
 
 体重文本 **不是** live 合同。同一 fixture 上复用 `.ant-form-item` + `input.ant-input`（公开 CSS 候选）。标签可以是「体重」或带 KG 后缀（字段图写「体重 KG」）。读回只有数字公斤，**不**把 KG 写入 value（`60kg` / `60KG` 拒填）。`--only 体重 --live` 拒绝（`live_weight_text_unharvested`）。**未**宣称已支持招行。
 
+是否参加过正式工作 **不是** live 合同。同一 fixture 上按标签锁一个 `.ant-form-item`，选项只有字段图里的「是 / 否」。读回是 `input.checked`。`--only 是否参加过正式工作 --live` 拒绝（`live_formal_work_radio_unharvested`）。**未**宣称已支持招行。
+
 ## 3. How to run
 
 ```bash
@@ -40,6 +43,7 @@ MODE=fill node scripts/auto-cmb-basic.mjs --synthetic
 node scripts/auto-cmb-basic.mjs --only 性别
 node scripts/auto-cmb-basic.mjs --only 身高
 node scripts/auto-cmb-basic.mjs --only 体重
+node scripts/auto-cmb-basic.mjs --only 是否参加过正式工作
 node --test tests/cmb-basic.test.mjs
 ```
 
@@ -61,8 +65,8 @@ Jeremy 登录招行招聘账号并停在 `/center/resume` 后，才能 harvest l
 
 离线分析草稿（SW/popup 未接线；未宣称已支持招行；Never Save）：`dist/site-probes/CMB_SECOND_SLICE_PLAN_20261019.md`。
 
-其中 **性别**、**身高** 与 **体重** 已有 offline synthetic。出生日期 / 政治面貌 / 民族 / 婚姻状况 **未**做。Live 性别 radio DOM，以及身高、体重标签精确串，仍要登录后 harvest。身高和体重 **不是** live 支持。
+其中 **性别**、**身高**、**体重** 与 **是否参加过正式工作** 已有 offline synthetic。出生日期 / 政治面貌 / 民族 / 婚姻状况 **未**做。Live radio DOM，以及身高、体重标签精确串，仍要登录后 harvest。这些合成 **不是** live 支持。
 
-体重 offline 已落地（同身高：`.ant-form-item` + `input.ant-input`；只写数字公斤；拒 `60kg`/`60KG`；`--live` 拒 `live_weight_text_unharvested`；套件 34/34；Never Save）。性别/身高/体重合成齐；下一刀需 live 的四字段：婚姻、政治面貌、民族、出生日期。未宣称已支持招行。验收仍 **85%**。
+体重 offline 已落地（同身高：`.ant-form-item` + `input.ant-input`；只写数字公斤；拒 `60kg`/`60KG`；`--live` 拒 `live_weight_text_unharvested`；套件 34/34；Never Save）。是否参加过正式工作 offline radio 已落地（对齐性别：标签作用域 `.ant-form-item`；字段图 是/否；`--live` 拒 `live_formal_work_radio_unharvested`；未改 emptyProfile；Never Save）。婚姻、政治面貌、民族、出生日期仍缺 live 选项，本刀不碰。未宣称已支持招行。验收仍 **85%**。
 
 下一刀 live 采数顺序见 `CMB_LIVE_GATED_FIELDS_DRAFT_20261019.md`：婚姻状况 → 政治面貌 → 民族 → 出生日期。这四字段的真实选项不能离线合成。未宣称已支持招行。验收仍 **85%**。

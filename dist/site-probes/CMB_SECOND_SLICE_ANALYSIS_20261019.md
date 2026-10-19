@@ -1,7 +1,7 @@
 # 招行第二拍字段优先级分析 · 2026-10-19（Asia/Shanghai）
 
 **状态**：离线分析草稿。招行 **没有** 已支持。没有 live 填写。SW / popup **没有** 接线。**永不** 点保存或提交。  
-**2026-10-19 补记**：体重 offline 已落地（同身高：`.ant-form-item` + `input.ant-input`；只写数字公斤；拒 `60kg`/`60KG`；`--live` 拒 `live_weight_text_unharvested`；套件 34/34；Never Save）。性别/身高/体重合成齐；下一刀需 live 的四字段：婚姻、政治面貌、民族、出生日期。未宣称已支持招行。验收仍 **85%**。下文「本拍不排 / 只选性别」是落地前的分析，以本句为准。  
+**2026-10-19 补记**：体重 offline 已落地。是否参加过正式工作 offline radio 已落地（对齐性别：`.ant-form-item` 标签作用域；字段图 是/否；`--live` 拒 `live_formal_work_radio_unharvested`；未改 emptyProfile；Never Save）。婚姻、政治面貌、民族、出生日期仍缺 live 选项，不在本刀。未宣称已支持招行。验收仍 **85%**。下文「本拍不填是否参加过正式工作」是落地前的分析，以本句为准。  
 **本文件不写** 扩展替装，不改 `cmb-basic.js`，不把招行逻辑塞进 CMS / GTH。  
 **输入**（只读仓库已有材料）：
 
@@ -25,7 +25,8 @@
 | 性别 | `fillGender` + 合成 fixture 已在本分支 | live radio DOM 未采；`--live` 拒绝（`live_gender_radio_unharvested`） |
 | 身高 | `fillHeight` + 同一 fixture 已在本分支 | live 标签精确串未采；`--live` 拒绝（`live_height_text_unharvested`） |
 | 体重 | `fillWeight` + 同一 fixture 已在本分支。只写数字公斤 | live 标签精确串未采；`--live` 拒绝（`live_weight_text_unharvested`）。未宣称已支持招行 |
-| 出生日期 / 政治面貌 / 民族 / 婚姻状况 | **没有** 实现。`cmb-basic.js` 源码不含这些标签 | 下一刀需 live 采这四字段。选项或日期格式都没采到 |
+| 是否参加过正式工作 | `fillFormalWork` + 同一 fixture。字段图 是/否。`formalWork` 仅调用方传入 | live radio DOM 未采；`--live` 拒绝（`live_formal_work_radio_unharvested`）。未宣称已支持招行 |
+| 出生日期 / 政治面貌 / 民族 / 婚姻状况 | **没有** 实现。`cmb-basic.js` 源码不含这些标签 | 仍需 live 采这四字段。选项或日期格式都没采到 |
 
 合成 fixture 标了 `synthetic-public-css-candidate`。它证明「按公开 CSS 类名搭的最小 HTML 能读回」，**不** 证明登录后的页面长这样。
 
@@ -33,7 +34,7 @@
 
 ## 1. 第二拍优先级（6 行）
 
-顺序是「下一刀有多安全」，不是页面从上到下。性别、身高、体重已经有合成填法，仍列在表里，避免把它们说成 live 完成。下一刀是婚姻、政治面貌、民族、出生日期的 live，不是再写一格合成。  
+顺序是「下一刀有多安全」，不是页面从上到下。性别、身高、体重，以及是否参加过正式工作，已经有合成填法，仍不要说成 live 完成。婚姻、政治面貌、民族、出生日期仍要 live，选项不在仓库里。  
 三个下拉的选项正文，仓库里只有「请选择」。表里的 profile 路径是 **猜测**。`emptyProfile` 顶层只有 `gender` / `birthDate` / `height` 这一类键，**没有** `political` / `ethnicity` / `marital`。本分析不建议加键。
 
 | 标签 | profile 路径猜测 | 控件类型 | 失败模式 | 选择器候选（公开 CSS 或需 live） | 是否依赖登录 |
@@ -73,7 +74,7 @@ CDP 计数：`selects: 0`。原生 `<select>` 基本不存在。下拉若存在�
 - 证件类型 / 证件号：页文案写保存后不能再改。误填再被人保存，不可逆。
 - 生源地 / 出生地 / 现居住地：bodyText 也是「请选择」，和 flat select 长得像。级联嫌疑。整类不做。
 - 招聘信息来源 / 面试期望城市：选项未知，可能很长。
-- 是否参加过正式工作：也是 radio，但是性别的邻项。本拍不填，只把它当成性别点错时的对照。
+- 是否参加过正式工作：也是 radio。落地前只当性别邻项对照；2026-10-19 起 offline synthetic 可填字段图「是/否」，live DOM 仍未采。
 - 体重：offline synthetic 已落地（同身高，只写数字公斤）。见文首补记。仍非 live，未宣称已支持招行。
 - 上传、家庭、教育：不在这 6 行里。
 

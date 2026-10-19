@@ -6,6 +6,9 @@
 // Weight (体重) is optional and offline-synthetic text only: numeric kilograms.
 // The page label may include a KG suffix. That unit is never part of the value.
 // `weight` is read only when the caller supplies it. emptyProfile is unchanged.
+// Formal work (是否参加过正式工作) is optional and offline-synthetic radio only.
+// Allowlist is 是 / 否 from the field map. `formalWork` is read only when the
+// caller supplies it. emptyProfile is unchanged. Live radio DOM is not harvested.
 // Live radio DOM and the live height/weight label/value are not harvested.
 // Used by tests + harness. Content script mirrors the same rules.
 
@@ -37,6 +40,15 @@ export const CMB_WEIGHT_LABEL = '体重';
 export const CMB_WEIGHT_VALUE_RE = /^\d+(?:\.\d+)?$/u;
 const CMB_WEIGHT_LABEL_RE = /^体重(?:\s*(?:[（(]\s*)?kg(?:\s*[）)])?)?$/iu;
 
+/**
+ * Optional radio. Canonical label is 是否参加过正式工作.
+ * Allowlist is 是 / 否 from the field map, not a harvested live option list.
+ * `formalWork` is read only when the caller supplies it. emptyProfile is unchanged.
+ * Not a live DOM contract. Scope is one label-matched .ant-form-item.
+ */
+export const CMB_FORMAL_WORK_LABEL = '是否参加过正式工作';
+export const CMB_FORMAL_WORK_VALUES = Object.freeze(['是', '否']);
+
 const norm = (value) => String(value ?? '').replace(/[\s\u00a0]+/gu, ' ').trim();
 
 function normMeasure(value) {
@@ -59,6 +71,10 @@ function normMeasure(value) {
  * confirmed numeric kilogram value is included. Unconfirmed, or any value that
  * is not digits (including a KG suffix such as 60kg / 60KG), is a blocker and
  * is not filled. This does not add `weight` to emptyProfile.
+ * Formal work is optional radio on the gender rule: absent stays out of the plan;
+ * a confirmed 是 or 否 is included. Unconfirmed, or any other value, is a blocker
+ * and is not filled. This does not add `formalWork` to emptyProfile.
+ * Options are the field-map pair 是/否, not a harvested live list.
  */
 export function planCmbBasicFromProfile(profile) {
   if (!profile || typeof profile !== 'object' || Array.isArray(profile)) {
@@ -87,6 +103,7 @@ export function planCmbBasicFromProfile(profile) {
   const genderRaw = norm(profile.gender || '');
   const heightRaw = normMeasure(profile.height || '');
   const weightRaw = normMeasure(profile.weight || '');
+  const formalWorkRaw = norm(profile.formalWork || '');
 
   const core = [
     { label: '姓名', path: 'fullName', value: fullName },
@@ -141,30 +158,46 @@ export function planCmbBasicFromProfile(profile) {
     });
   }
 
-  const fields = [...core, ...genderFields, ...heightFields, ...weightFields];
+  const formalWorkFields = [];
+  if (formalWorkRaw) {
+    let reason = null;
+    if (!confirmed.has('formalWork')) reason = 'profile_fact_unconfirmed';
+    else if (!CMB_FORMAL_WORK_VALUES.includes(formalWorkRaw)) reason = 'invalid_profile_value';
+    formalWorkFields.push({
+      label: CMB_FORMAL_WORK_LABEL,
+      path: 'formalWork',
+      value: formalWorkRaw,
+      ready: reason === null,
+      reason
+    });
+  }
+
+  const fields = [...core, ...genderFields, ...heightFields, ...weightFields, ...formalWorkFields];
   const coreBlockers = core.filter((row) => !row.ready);
   const genderBlockers = genderFields.filter((row) => !row.ready);
   const heightBlockers = heightFields.filter((row) => !row.ready);
   const weightBlockers = weightFields.filter((row) => !row.ready);
+  const formalWorkBlockers = formalWorkFields.filter((row) => !row.ready);
   if (coreBlockers.length) {
     return {
       ok: false,
       reason: 'profile_fields_unavailable',
       values: null,
       fields,
-      blockers: [...coreBlockers, ...genderBlockers, ...heightBlockers, ...weightBlockers]
+      blockers: [...coreBlockers, ...genderBlockers, ...heightBlockers, ...weightBlockers, ...formalWorkBlockers]
     };
   }
 
   const gender = genderFields.find((row) => row.ready)?.value || '';
   const height = heightFields.find((row) => row.ready)?.value || '';
   const weight = weightFields.find((row) => row.ready)?.value || '';
+  const formalWork = formalWorkFields.find((row) => row.ready)?.value || '';
   return {
     ok: true,
     reason: 'profile_ready',
-    values: { fullName, mobile, email, gender, height, weight },
+    values: { fullName, mobile, email, gender, height, weight, formalWork },
     fields,
-    blockers: [...genderBlockers, ...heightBlockers, ...weightBlockers]
+    blockers: [...genderBlockers, ...heightBlockers, ...weightBlockers, ...formalWorkBlockers]
   };
 }
 

@@ -11,6 +11,9 @@
 // Weight (体重) is offline/synthetic text only. The label may include a KG suffix.
 // The written value is numeric kilograms. Never write a KG suffix into the value.
 // Live weight label string and input DOM were NOT harvested.
+// Formal work (是否参加过正式工作) is offline/synthetic radio only: 是 / 否.
+// Those two words come from the field map, not a harvested live option list.
+// Label scope is one .ant-form-item. Live radio DOM was NOT harvested.
 //
 // DOM contract (CSS-confirmed in public main.02cda64a.css; live form layout unproven):
 //   `.ant-form-item` + `.ant-form-item-label` + `input.ant-input`
@@ -20,6 +23,8 @@
 //   `.ant-form-item` scoped by label 身高, optional CM suffix, + `input.ant-input`
 // Weight reuses the text path above (synthetic fixture, not a live contract):
 //   `.ant-form-item` scoped by label 体重, optional KG suffix, + `input.ant-input`
+// Formal-work candidates (public CSS only, synthetic fixture, not a live contract):
+//   `.ant-form-item` scoped by label 是否参加过正式工作 + `.ant-radio-wrapper` + `.ant-radio`
 // CDP fingerprint wrongly flagged vue; public bundle is React createRoot + ant-design.
 // Hard warning: page copy says 姓名/证件* 保存后不可再改 — Never Save is mandatory.
 (() => {
@@ -42,6 +47,8 @@
   const WEIGHT_VALUE_RE = /^\d+(?:\.\d+)?$/u;
   /** 体重, or 体重 plus an optional KG suffix. Not a harvested live label string. */
   const WEIGHT_LABEL_RE = /^体重(?:\s*(?:[（(]\s*)?kg(?:\s*[）)])?)?$/iu;
+  const FORMAL_WORK_LABEL = '是否参加过正式工作';
+  const FORMAL_WORK_VALUES = ['是', '否'];
   /** CSS-confirmed ant-design classes in public main.02cda64a.css — live resume DOM may still differ. */
   const ITEM_SEL = '.ant-form-item';
   const LABEL_SEL = '.ant-form-item-label, label';
@@ -220,6 +227,74 @@
     };
   }
 
+  function formalWorkOptions(item) {
+    return [...item.querySelectorAll(RADIO_WRAP_SEL)].map((wrap) => {
+      const mark = wrap.querySelector(RADIO_MARK_SEL);
+      const control = wrap.querySelector('input[type="radio"]');
+      const clone = wrap.cloneNode(true);
+      clone.querySelectorAll(RADIO_MARK_SEL).forEach((node) => node.remove());
+      return { wrap, mark, control, text: norm(clone.textContent) };
+    }).filter((row) => row.text === '是' || row.text === '否');
+  }
+
+  function formalWorkStructureOk(options) {
+    if (options.length !== 2) return false;
+    const texts = new Set(options.map((row) => row.text));
+    if (texts.size !== 2 || !texts.has('是') || !texts.has('否')) return false;
+    return options.every((row) => row.mark && row.control && row.control.type === 'radio' && !row.control.disabled);
+  }
+
+  function readFormalWork(item) {
+    const options = formalWorkOptions(item);
+    if (!formalWorkStructureOk(options)) return { ok: false, value: '', reason: 'radio_structure_changed' };
+    const checked = options.filter((row) => row.control.checked);
+    if (checked.length > 1) return { ok: false, value: '', reason: 'radio_readback_ambiguous' };
+    return { ok: true, value: checked[0]?.text || '', reason: checked.length ? 'checked' : 'empty' };
+  }
+
+  async function fillFormalWork(value, options = {}) {
+    const want = norm(value);
+    const base = {
+      label: FORMAL_WORK_LABEL,
+      saved: false,
+      skippedSave: true,
+      expected: want,
+      before: '',
+      after: ''
+    };
+    if (!pageAllowed(options)) return { ...base, ok: false, reason: 'wrong_page' };
+    if (!FORMAL_WORK_VALUES.includes(want)) {
+      return { ...base, ok: false, reason: 'invalid_profile_value' };
+    }
+    const item = findItem(FORMAL_WORK_LABEL);
+    if (!item) return { ...base, ok: false, reason: 'item_not_found' };
+    const radios = formalWorkOptions(item);
+    if (!formalWorkStructureOk(radios)) {
+      return { ...base, ok: false, reason: 'radio_structure_changed' };
+    }
+    const beforeRead = readFormalWork(item);
+    const before = beforeRead.ok ? beforeRead.value : '';
+    const target = radios.find((row) => row.text === want);
+    if (!target) {
+      return { ...base, ok: false, reason: 'option_not_found', before, after: before };
+    }
+    target.wrap.click();
+    if (!target.control.checked) target.control.click();
+    target.control.dispatchEvent(new Event('input', { bubbles: true }));
+    target.control.dispatchEvent(new Event('change', { bubbles: true }));
+    await pause(80);
+    const afterRead = readFormalWork(item);
+    const after = afterRead.ok ? afterRead.value : '';
+    const matched = afterRead.ok && after === want;
+    return {
+      ...base,
+      ok: matched,
+      reason: matched ? 'matched' : (afterRead.ok ? 'readback_mismatch' : afterRead.reason),
+      before,
+      after
+    };
+  }
+
   async function fillHeight(value, options = {}) {
     const raw = norm(value);
     const want = HEIGHT_VALUE_RE.test(raw) ? raw : '';
@@ -326,6 +401,7 @@
     const genderRaw = norm(profile.gender || '');
     const heightRaw = norm(profile.height || '');
     const weightRaw = norm(profile.weight || '');
+    const formalWorkRaw = norm(profile.formalWork || '');
     const core = [
       { label: '姓名', path: 'fullName', value: fullName },
       { label: '手机号', path: 'phone', value: mobile },
@@ -375,18 +451,32 @@
         reason
       });
     }
-    const fields = [...core, ...genderFields, ...heightFields, ...weightFields];
+    const formalWorkFields = [];
+    if (formalWorkRaw) {
+      let reason = null;
+      if (!confirmed.has('formalWork')) reason = 'profile_fact_unconfirmed';
+      else if (!FORMAL_WORK_VALUES.includes(formalWorkRaw)) reason = 'invalid_profile_value';
+      formalWorkFields.push({
+        label: FORMAL_WORK_LABEL,
+        path: 'formalWork',
+        value: formalWorkRaw,
+        ready: reason === null,
+        reason
+      });
+    }
+    const fields = [...core, ...genderFields, ...heightFields, ...weightFields, ...formalWorkFields];
     const coreBlockers = core.filter((row) => !row.ready);
     const genderBlockers = genderFields.filter((row) => !row.ready);
     const heightBlockers = heightFields.filter((row) => !row.ready);
     const weightBlockers = weightFields.filter((row) => !row.ready);
+    const formalWorkBlockers = formalWorkFields.filter((row) => !row.ready);
     if (coreBlockers.length) {
       return {
         ok: false,
         reason: 'profile_fields_unavailable',
         values: null,
         fields,
-        blockers: [...coreBlockers, ...genderBlockers, ...heightBlockers, ...weightBlockers]
+        blockers: [...coreBlockers, ...genderBlockers, ...heightBlockers, ...weightBlockers, ...formalWorkBlockers]
       };
     }
     return {
@@ -398,10 +488,11 @@
         email,
         gender: genderFields.find((row) => row.ready)?.value || '',
         height: heightFields.find((row) => row.ready)?.value || '',
-        weight: weightFields.find((row) => row.ready)?.value || ''
+        weight: weightFields.find((row) => row.ready)?.value || '',
+        formalWork: formalWorkFields.find((row) => row.ready)?.value || ''
       },
       fields,
-      blockers: [...genderBlockers, ...heightBlockers, ...weightBlockers]
+      blockers: [...genderBlockers, ...heightBlockers, ...weightBlockers, ...formalWorkBlockers]
     };
   }
 
@@ -484,6 +575,7 @@
       const gender = rawValues.gender == null ? '' : norm(rawValues.gender);
       const height = rawValues.height == null ? '' : norm(rawValues.height);
       const weight = rawValues.weight == null ? '' : norm(rawValues.weight);
+      const formalWork = rawValues.formalWork == null ? '' : norm(rawValues.formalWork);
       if (gender && !GENDER_VALUES.includes(gender)) {
         return {
           ok: false,
@@ -520,13 +612,26 @@
           writeAttempted: false
         };
       }
+      if (formalWork && !FORMAL_WORK_VALUES.includes(formalWork)) {
+        return {
+          ok: false,
+          siteId: SITE_ID,
+          reason: 'invalid_formal_work',
+          href: location.href,
+          results: [],
+          saved: false,
+          skippedSave: true,
+          writeAttempted: false
+        };
+      }
       values = {
         fullName: norm(rawValues.fullName || ''),
         mobile: norm(rawValues.mobile || rawValues.phone || ''),
         email: norm(rawValues.email || ''),
         gender,
         height,
-        weight
+        weight,
+        formalWork
       };
       if (!values.fullName || !values.mobile || !values.email) {
         return {
@@ -584,6 +689,9 @@
     if (WEIGHT_VALUE_RE.test(values.weight || '')) {
       results.push(await fillWeight(values.weight, options));
     }
+    if (FORMAL_WORK_VALUES.includes(values.formalWork || '')) {
+      results.push(await fillFormalWork(values.formalWork, options));
+    }
     const ok = results.every((row) => row.ok);
     return {
       ok,
@@ -610,6 +718,8 @@
     HEIGHT_VALUE_RE,
     WEIGHT_LABEL,
     WEIGHT_VALUE_RE,
+    FORMAL_WORK_LABEL,
+    FORMAL_WORK_VALUES,
     ITEM_SEL,
     RADIO_WRAP_SEL,
     RADIO_MARK_SEL,
@@ -619,6 +729,7 @@
     textControl,
     fillText,
     fillGender,
+    fillFormalWork,
     fillHeight,
     fillWeight,
     fillBasic,

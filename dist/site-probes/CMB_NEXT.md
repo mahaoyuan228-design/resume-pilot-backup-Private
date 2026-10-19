@@ -92,3 +92,5 @@ Jeremy 登录招行招聘账号并停在 `/center/resume` 后，才能 harvest l
 最高英语水平 EnglishLevel 已离线接线，只接技能第 0 行 `#resume_skill_0_englishLevel`。选项是字典 10 项（TOEFL EL001 至其他 EL010）。字典里没有「请选择」或 EL000；`其他` 是真实项，保留。不把托福、雅思、四级或分数换算成考试名。分数控件不填。`--only 最高英语水平 --live` 拒 `live_english_level_select_fill_unclaimed`。Never Save。未宣称已支持招行。ChannelType / InterviewCity 仍可延后。RankingMajor 仍是 `DOM_CONTROL_MISSING`。
 
 招聘信息来源 ChannelType 已离线接线，控件 `#resume_basicInfo_channelType`。选项是字典 15 项，名称和 code 保持原样，不做模糊归并。字典里没有「请选择」或 CT000；`其他`（CT0016）是真实项，保留。带引号的 `"招商银行招聘"微信公众号`（CT002）按原文匹配；「微信」「官网」「智联」拒填。`--only 招聘信息来源 --live` 拒 `live_channel_type_select_fill_unclaimed`。Never Save。未宣称已支持招行。下一刀 InterviewCity。RankingMajor 仍是 `DOM_CONTROL_MISSING`。
+
+面试期望城市 InterviewCity 已离线接线，控件 `#resume_basicInfo_expectedInterviewCity`。选项是字典 44 个完整城市名，从北京市（P00271）到重庆市（P00291）。没有「请选择」。简称「北京」「上海」「重庆」不匹配带「市」的全称。`--only 面试期望城市 --live` 拒 `live_interview_city_select_fill_unclaimed`。Never Save。未宣称已支持招行。RankingMajor 仍是 `DOM_CONTROL_MISSING`，本刀不做。

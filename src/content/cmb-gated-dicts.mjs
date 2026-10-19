@@ -231,6 +231,63 @@ export const CMB_CHANNEL_TYPE_OPTIONS = Object.freeze([
 export const CMB_CHANNEL_TYPE_SELECT_ID = 'resume_basicInfo_channelType';
 export const CMB_CHANNEL_TYPE_LIST_ID = 'resume_basicInfo_channelType_list';
 
+/**
+ * InterviewCity from cmb-dictmap-full-20261019.json.
+ * Forty-four full city names. No 请选择. A shorter name does not match.
+ * First row is 北京市 (P00271). Last row is 重庆市 (P00291).
+ * Live click is not claimed. RankingMajor is not wired here.
+ */
+export const CMB_INTERVIEW_CITY_OPTIONS = Object.freeze([
+  Object.freeze({"text":"北京市","code":"P00271"}),
+  Object.freeze({"text":"长春市","code":"C0035"}),
+  Object.freeze({"text":"长沙市","code":"C00164"}),
+  Object.freeze({"text":"成都市","code":"C00216"}),
+  Object.freeze({"text":"大连市","code":"C10002"}),
+  Object.freeze({"text":"东莞市","code":"C00194"}),
+  Object.freeze({"text":"佛山市","code":"C00182"}),
+  Object.freeze({"text":"福州市","code":"C0097"}),
+  Object.freeze({"text":"广州市","code":"C00178"}),
+  Object.freeze({"text":"贵阳市","code":"C00237"}),
+  Object.freeze({"text":"哈尔滨市","code":"C0044"}),
+  Object.freeze({"text":"海口市","code":"C00213"}),
+  Object.freeze({"text":"杭州市","code":"C0070"}),
+  Object.freeze({"text":"合肥市","code":"C0081"}),
+  Object.freeze({"text":"呼和浩特市","code":"C0023"}),
+  Object.freeze({"text":"济南市","code":"C00117"}),
+  Object.freeze({"text":"昆明市","code":"C00246"}),
+  Object.freeze({"text":"兰州市","code":"C00279"}),
+  Object.freeze({"text":"南昌市","code":"C00106"}),
+  Object.freeze({"text":"南京市","code":"C0057"}),
+  Object.freeze({"text":"南宁市","code":"C00199"}),
+  Object.freeze({"text":"南通市","code":"C0062"}),
+  Object.freeze({"text":"宁波市","code":"C0071"}),
+  Object.freeze({"text":"青岛市","code":"C00118"}),
+  Object.freeze({"text":"泉州市","code":"C0099"}),
+  Object.freeze({"text":"上海市","code":"P00281"}),
+  Object.freeze({"text":"深圳市","code":"C00179"}),
+  Object.freeze({"text":"沈阳市","code":"C10001"}),
+  Object.freeze({"text":"石家庄市","code":"C001"}),
+  Object.freeze({"text":"苏州市","code":"C0061"}),
+  Object.freeze({"text":"太原市","code":"C0012"}),
+  Object.freeze({"text":"唐山市","code":"C002"}),
+  Object.freeze({"text":"天津市","code":"P00301"}),
+  Object.freeze({"text":"温州市","code":"C0072"}),
+  Object.freeze({"text":"乌鲁木齐市","code":"C00306"}),
+  Object.freeze({"text":"无锡市","code":"C0058"}),
+  Object.freeze({"text":"武汉市","code":"C00151"}),
+  Object.freeze({"text":"西安市","code":"C00269"}),
+  Object.freeze({"text":"西宁市","code":"C00293"}),
+  Object.freeze({"text":"厦门市","code":"C00100"}),
+  Object.freeze({"text":"烟台市","code":"C00122"}),
+  Object.freeze({"text":"银川市","code":"C00301"}),
+  Object.freeze({"text":"郑州市","code":"C00134"}),
+  Object.freeze({"text":"重庆市","code":"P00291"})
+]);
+
+/** Harvested 2026-10-19. List id comes from aria-controls. Live click is not claimed. */
+export const CMB_INTERVIEW_CITY_SELECT_ID = 'resume_basicInfo_expectedInterviewCity';
+export const CMB_INTERVIEW_CITY_LIST_ID = 'resume_basicInfo_expectedInterviewCity_list';
+
 /** Kind + fill hint only. No synthetic DatePicker DOM. */
 export const CMB_BIRTHDATE_HINT = Object.freeze({
   key: 'birthDate',

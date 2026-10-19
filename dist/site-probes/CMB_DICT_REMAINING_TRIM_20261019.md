@@ -12,7 +12,7 @@ id 清单与教育经历邻居不在这里重复。见 [`CMB_REMAINING_DOM_20261
 | EnglishLevel | `#resume_skill_0_englishLevel` | 已离线接线。只接技能第 0 行。不自行换算等级。`--live` 拒 `live_english_level_select_fill_unclaimed`。 |
 | RelationshipType | `#resume_familyList_0_relationship`（另有 `_1_`） | 已离线接线。两行索引隔离。`--live` 拒 `live_relationship_select_fill_unclaimed`。姓名和电话不填。 |
 | AwardsLevel | `#resume_awardList_0_awardLevel` | 已离线接线。只接第 0 行。不按奖项名推断级别。`--live` 拒 `live_award_level_select_fill_unclaimed`。 |
-| InterviewCity | `#resume_basicInfo_expectedInterviewCity` | 未接线，可延后 |
+| InterviewCity | `#resume_basicInfo_expectedInterviewCity` | 已离线接线。44 个完整城市名，首项北京市、末项重庆市。简称不匹配。`--live` 拒 `live_interview_city_select_fill_unclaimed`。 |
 | ChannelType | `#resume_basicInfo_channelType` | 已离线接线。15 项原名原 code，不做模糊归并。`其他` CT0016 保留。`--live` 拒 `live_channel_type_select_fill_unclaimed`。 |
 | RankingMajor | 当前简历页无此控件 | `DOM_CONTROL_MISSING`。只保留字典夹具，不猜 selector。 |
 
@@ -26,6 +26,6 @@ id 清单与教育经历邻居不在这里重复。见 [`CMB_REMAINING_DOM_20261
 
 ## 下一刀顺序
 
-InterviewCity
+这条裁剪顺序里的 Select 已离线落地。RankingMajor 停在 `DOM_CONTROL_MISSING`，不猜 selector。
 
-Education、RelationshipType、AwardsLevel、EnglishLevel、ChannelType 已离线落地，不重做。InterviewCity 可延后。RankingMajor 停在 `DOM_CONTROL_MISSING`。Never Save。未宣称已支持招行。
+Education、RelationshipType、AwardsLevel、EnglishLevel、ChannelType、InterviewCity 已离线落地，不重做。Never Save。未宣称已支持招行。

@@ -37,6 +37,9 @@ import {
   CMB_CHANNEL_TYPE_OPTIONS,
   CMB_CHANNEL_TYPE_LIST_ID,
   CMB_CHANNEL_TYPE_SELECT_ID,
+  CMB_INTERVIEW_CITY_OPTIONS,
+  CMB_INTERVIEW_CITY_LIST_ID,
+  CMB_INTERVIEW_CITY_SELECT_ID,
   CMB_ETHNICITY_OPTIONS,
   CMB_ID_CARD_TYPE_OPTIONS,
   CMB_ID_CARD_TYPE_LIST_ID,
@@ -65,6 +68,9 @@ export {
   CMB_CHANNEL_TYPE_OPTIONS,
   CMB_CHANNEL_TYPE_LIST_ID,
   CMB_CHANNEL_TYPE_SELECT_ID,
+  CMB_INTERVIEW_CITY_OPTIONS,
+  CMB_INTERVIEW_CITY_LIST_ID,
+  CMB_INTERVIEW_CITY_SELECT_ID,
   CMB_ETHNICITY_OPTIONS,
   CMB_ID_CARD_TYPE_OPTIONS,
   CMB_ID_CARD_TYPE_LIST_ID,
@@ -112,6 +118,7 @@ export const CMB_RELATIONSHIP_TYPE_LABEL = '关系类型';
 export const CMB_AWARD_LEVEL_LABEL = '获奖级别';
 export const CMB_ENGLISH_LEVEL_LABEL = '最高英语水平';
 export const CMB_CHANNEL_TYPE_LABEL = '招聘信息来源';
+export const CMB_INTERVIEW_CITY_LABEL = '面试期望城市';
 
 /**
  * Optional radio. Canonical label is 是否参加过正式工作.
@@ -171,6 +178,10 @@ function normMeasure(value) {
  * The allowlist is the fifteen ChannelType rows, including 其他 (CT0016).
  * Names stay exact. A shorter name is not merged into a longer one.
  * The select id is the harvested resume_basicInfo_channelType. Live click is not claimed.
+ * Interview city is caller-supplied (`interviewCity`). It is not an emptyProfile field.
+ * The allowlist is the forty-four InterviewCity names. A shorter name does not match.
+ * The select id is the harvested resume_basicInfo_expectedInterviewCity.
+ * Live click is not claimed. RankingMajor is not planned here.
  * Birth date is never filled here. A present birthDate is a blocker with
  * reason datepicker_hint_only (confirmed) and is not written.
  */
@@ -212,6 +223,7 @@ export function planCmbBasicFromProfile(profile) {
   const awardLevelRaw = normMeasure(profile.awardLevel || '');
   const englishLevelRaw = normMeasure(profile.englishLevel || '');
   const channelTypeRaw = normMeasure(profile.channelType || '');
+  const interviewCityRaw = normMeasure(profile.interviewCity || '');
   const birthRaw = normMeasure(profile.birthDate || '');
 
   const core = [
@@ -306,6 +318,7 @@ export function planCmbBasicFromProfile(profile) {
   const awardLevelFields = codedFields(awardLevelRaw, 'awardLevel', CMB_AWARD_LEVEL_LABEL, CMB_AWARD_LEVEL_OPTIONS);
   const englishLevelFields = codedFields(englishLevelRaw, 'englishLevel', CMB_ENGLISH_LEVEL_LABEL, CMB_ENGLISH_LEVEL_OPTIONS);
   const channelTypeFields = codedFields(channelTypeRaw, 'channelType', CMB_CHANNEL_TYPE_LABEL, CMB_CHANNEL_TYPE_OPTIONS);
+  const interviewCityFields = codedFields(interviewCityRaw, 'interviewCity', CMB_INTERVIEW_CITY_LABEL, CMB_INTERVIEW_CITY_OPTIONS);
   const birthFields = [];
   if (birthRaw) {
     birthFields.push({
@@ -335,6 +348,7 @@ export function planCmbBasicFromProfile(profile) {
     ...awardLevelFields,
     ...englishLevelFields,
     ...channelTypeFields,
+    ...interviewCityFields,
     ...birthFields
   ];
   const coreBlockers = core.filter((row) => !row.ready);
@@ -352,6 +366,7 @@ export function planCmbBasicFromProfile(profile) {
   const awardLevelBlockers = awardLevelFields.filter((row) => !row.ready);
   const englishLevelBlockers = englishLevelFields.filter((row) => !row.ready);
   const channelTypeBlockers = channelTypeFields.filter((row) => !row.ready);
+  const interviewCityBlockers = interviewCityFields.filter((row) => !row.ready);
   const birthBlockers = birthFields.filter((row) => !row.ready);
   const optionalBlockers = [
     ...genderBlockers,
@@ -368,6 +383,7 @@ export function planCmbBasicFromProfile(profile) {
     ...awardLevelBlockers,
     ...englishLevelBlockers,
     ...channelTypeBlockers,
+    ...interviewCityBlockers,
     ...birthBlockers
   ];
   if (coreBlockers.length) {
@@ -394,10 +410,11 @@ export function planCmbBasicFromProfile(profile) {
   const awardLevel = awardLevelFields.find((row) => row.ready)?.value || '';
   const englishLevel = englishLevelFields.find((row) => row.ready)?.value || '';
   const channelType = channelTypeFields.find((row) => row.ready)?.value || '';
+  const interviewCity = interviewCityFields.find((row) => row.ready)?.value || '';
   return {
     ok: true,
     reason: 'profile_ready',
-    values: { fullName, mobile, email, gender, height, weight, formalWork, maritalStatus, politics, ethnicity, idCardType, educationLevel, relationshipType, relationshipTypeRow1, awardLevel, englishLevel, channelType },
+    values: { fullName, mobile, email, gender, height, weight, formalWork, maritalStatus, politics, ethnicity, idCardType, educationLevel, relationshipType, relationshipTypeRow1, awardLevel, englishLevel, channelType, interviewCity },
     fields,
     blockers: optionalBlockers,
     birthDateHint: CMB_BIRTHDATE_HINT
@@ -470,6 +487,11 @@ export function isCmbEnglishLevelLabel(raw) {
 /** Exact 招聘信息来源. 渠道 does not match. */
 export function isCmbChannelTypeLabel(raw) {
   return normalizeCmbLabelText(normMeasure(raw)) === CMB_CHANNEL_TYPE_LABEL;
+}
+
+/** Exact 面试期望城市. 北京 and 城市 do not match. */
+export function isCmbInterviewCityLabel(raw) {
+  return normalizeCmbLabelText(normMeasure(raw)) === CMB_INTERVIEW_CITY_LABEL;
 }
 
 export function isCmbBirthDateLabel(raw) {

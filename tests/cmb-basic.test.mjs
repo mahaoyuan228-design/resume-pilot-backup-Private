@@ -35,6 +35,9 @@ import {
   CMB_CHANNEL_TYPE_LIST_ID,
   CMB_CHANNEL_TYPE_OPTIONS,
   CMB_CHANNEL_TYPE_SELECT_ID,
+  CMB_INTERVIEW_CITY_LIST_ID,
+  CMB_INTERVIEW_CITY_OPTIONS,
+  CMB_INTERVIEW_CITY_SELECT_ID,
   CMB_ETHNICITY_OPTIONS,
   CMB_ID_CARD_TYPE_LIST_ID,
   CMB_ID_CARD_TYPE_OPTIONS,
@@ -47,6 +50,7 @@ import {
   isCmbAwardLevelLabel,
   isCmbEnglishLevelLabel,
   isCmbChannelTypeLabel,
+  isCmbInterviewCityLabel,
   isCmbIdCardTypeLabel,
   isCmbWeightLabel,
   isCmbMaritalLabel,
@@ -700,6 +704,7 @@ test('harvested gated dicts match the live evidence and are not invented', () =>
   assert.deepEqual(parsed.awardLevel, [...CMB_AWARD_LEVEL_OPTIONS]);
   assert.deepEqual(parsed.englishLevel, [...CMB_ENGLISH_LEVEL_OPTIONS]);
   assert.deepEqual(parsed.channelType, [...CMB_CHANNEL_TYPE_OPTIONS]);
+  assert.deepEqual(parsed.interviewCity, [...CMB_INTERVIEW_CITY_OPTIONS]);
 
   assert.match(fixture, /id="resume_basicInfo_maritalStatus"/);
   assert.match(fixture, /id="resume_basicInfo_politicalAffinity"/);
@@ -742,6 +747,7 @@ test('gated select plan maps harvested text or code and does not fill birth date
   assert.equal(absent.values.awardLevel, '');
   assert.equal(absent.values.englishLevel, '');
   assert.equal(absent.values.channelType, '');
+  assert.equal(absent.values.interviewCity, '');
   assert.equal(absent.fields.some((row) => row.path === 'birthDate'), false);
 
   const ready = planCmbBasicFromProfile({
@@ -1341,6 +1347,90 @@ test('synthetic harness channel type select keeps the quoted name and --live ref
   assert.equal(payload.explicitInvalid?.writeAttempted, false);
   assert.equal(payload.neighbor?.channel?.text, quoted);
   assert.equal(payload.neighbor?.english?.text, '');
+});
+
+test('InterviewCity options keep the full dict names and cover the first and last rows', () => {
+  const full = JSON.parse(readFileSync(resolve(root, 'dist/site-probes/cmb-dictmap-full-20261019.json'), 'utf8'));
+  const dom = JSON.parse(readFileSync(resolve(root, 'dist/site-probes/cmb-remaining-dom-ids-20261019.json'), 'utf8'));
+  const hint = dom.fields.find((row) => row.id === 'resume_basicInfo_expectedInterviewCity');
+  assert.equal(hint.labelText, '面试期望城市');
+  assert.equal(hint.ariaControls, CMB_INTERVIEW_CITY_LIST_ID);
+  assert.equal(CMB_INTERVIEW_CITY_SELECT_ID, 'resume_basicInfo_expectedInterviewCity');
+  const kept = full.dicts.InterviewCity.filter((row) => row.name !== '请选择');
+  assert.equal(kept.length, 44);
+  assert.deepEqual(
+    [...CMB_INTERVIEW_CITY_OPTIONS],
+    kept.map((row) => ({ text: row.name, code: row.code }))
+  );
+  assert.equal(CMB_INTERVIEW_CITY_OPTIONS[0].text, '北京市');
+  assert.equal(CMB_INTERVIEW_CITY_OPTIONS[0].code, 'P00271');
+  assert.equal(CMB_INTERVIEW_CITY_OPTIONS.at(-1).text, '重庆市');
+  assert.equal(CMB_INTERVIEW_CITY_OPTIONS.at(-1).code, 'P00291');
+  assert.equal(resolveCmbCodedOption(CMB_INTERVIEW_CITY_OPTIONS, '请选择'), null);
+  assert.equal(resolveCmbCodedOption(CMB_INTERVIEW_CITY_OPTIONS, '北京'), null);
+  assert.equal(resolveCmbCodedOption(CMB_INTERVIEW_CITY_OPTIONS, '上海'), null);
+  assert.equal(resolveCmbCodedOption(CMB_INTERVIEW_CITY_OPTIONS, '重庆'), null);
+  assert.equal(resolveCmbCodedOption(CMB_INTERVIEW_CITY_OPTIONS, '深圳'), null);
+  assert.equal(resolveCmbCodedOption(CMB_INTERVIEW_CITY_OPTIONS, 'P000'), null);
+  assert.equal(resolveCmbCodedOption(CMB_INTERVIEW_CITY_OPTIONS, '北京市')?.code, 'P00271');
+  assert.equal(resolveCmbCodedOption(CMB_INTERVIEW_CITY_OPTIONS, 'P00291')?.text, '重庆市');
+  assert.equal(resolveCmbCodedOption(CMB_INTERVIEW_CITY_OPTIONS, '深圳市')?.code, 'C00179');
+  const block = fixture.slice(
+    fixture.indexOf('id="resume_basicInfo_expectedInterviewCity_list"'),
+    fixture.indexOf('id="save-btn"')
+  );
+  assert.equal((block.match(/role="option"/g) || []).length, 44);
+  assert.equal(block.includes('>北京市</div>'), true);
+  assert.equal(block.includes('>重庆市</div>'), true);
+  assert.equal(block.includes('>北京</div>'), false);
+  assert.match(fixture, /id="resume_basicInfo_expectedInterviewCity"/);
+  assert.doesNotMatch(fixture, /id="resume_basicInfo_expectedInterviewCity"[^>]*show-search/);
+  assert.match(source, /fillInterviewCity/);
+  assert.match(source, /invalid_interview_city/);
+  assert.match(harness, /live_interview_city_select_fill_unclaimed/);
+  assert.equal(isCmbInterviewCityLabel('面试期望城市'), true);
+  assert.equal(isCmbInterviewCityLabel('北京'), false);
+  assert.equal(isCmbInterviewCityLabel('城市'), false);
+  assert.equal(isCmbInterviewCityLabel('招聘信息来源'), false);
+  const store = readFileSync(resolve(root, 'src/profile/store.js'), 'utf8');
+  assert.doesNotMatch(store, /interviewCity/);
+  const base = {
+    fullName: '测试甲',
+    phone: '13800138000',
+    email: 'cmb.user@example.com',
+    confirmedFields: ['fullName', 'phone', 'email', 'interviewCity']
+  };
+  const ready = planCmbBasicFromProfile({ ...base, interviewCity: ' P00271 ' });
+  assert.equal(ready.values.interviewCity, '北京市');
+  assert.equal(ready.fields.find((row) => row.path === 'interviewCity')?.code, 'P00271');
+  const last = planCmbBasicFromProfile({ ...base, interviewCity: '重庆市' });
+  assert.equal(last.values.interviewCity, '重庆市');
+  assert.equal(last.fields.find((row) => row.path === 'interviewCity')?.code, 'P00291');
+  const dropped = planCmbBasicFromProfile({ ...base, interviewCity: '北京' });
+  assert.equal(dropped.values.interviewCity, '');
+  assert.equal(dropped.blockers.find((row) => row.path === 'interviewCity')?.reason, 'invalid_profile_value');
+});
+
+test('synthetic harness interview city select covers the first and last cities and --live refuses the click', { timeout: 120000 }, () => {
+  assertGatedSelectKnife(
+    '面试期望城市',
+    'live_interview_city_select_fill_unclaimed',
+    'synthetic_interview_select_pass',
+    'cmb-interview-select-latest.json',
+    '重庆市',
+    'P00291'
+  );
+  const payload = JSON.parse(readFileSync(resolve(root, 'dist/auto-runs/cmb-interview-select-latest.json'), 'utf8'));
+  assert.equal(payload.optionListHarvested, true);
+  assert.equal(payload.liveSelectFillClaimed, false);
+  assert.equal(payload.formFillClaimed, false);
+  assert.equal(payload.byText?.after, '北京市');
+  assert.equal(payload.byText?.afterCode, 'P00271');
+  assert.equal(payload.byCode?.after, '重庆市');
+  assert.equal(payload.explicitInvalid?.reason, 'invalid_interview_city');
+  assert.equal(payload.explicitInvalid?.writeAttempted, false);
+  assert.equal(payload.neighbor?.interview?.text, '重庆市');
+  assert.equal(payload.neighbor?.channel?.text, '');
 });
 
 test('birth date knife records the DatePicker hint and does not write', () => {

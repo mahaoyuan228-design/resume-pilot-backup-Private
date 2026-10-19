@@ -17,6 +17,7 @@
 13. **2026-10-19 招行获奖级别**：只接 `#resume_awardList_0_awardLevel`。5 项 AL002–AL006。不按奖项名推断。`--live` 拒 `live_award_level_select_fill_unclaimed`。Never Save。未宣称已支持招行。下一刀 EnglishLevel。
 14. **2026-10-19 招行英语等级**：只接 `#resume_skill_0_englishLevel`。10 项 EL001–EL010，`其他` 保留。不换算托福/四级/分数。`--live` 拒 `live_english_level_select_fill_unclaimed`。Never Save。未宣称已支持招行。ChannelType / InterviewCity 可延后。
 15. **2026-10-19 招行招聘信息来源**：只接 `#resume_basicInfo_channelType`。15 项原名原 code，不做模糊归并。`其他` 保留。`--live` 拒 `live_channel_type_select_fill_unclaimed`。Never Save。未宣称已支持招行。下一刀 InterviewCity。
+16. **2026-10-19 招行面试期望城市**：只接 `#resume_basicInfo_expectedInterviewCity`。44 个完整城市名，首项北京市、末项重庆市。简称不匹配。`--live` 拒 `live_interview_city_select_fill_unclaimed`。Never Save。未宣称已支持招行。RankingMajor 仍是 `DOM_CONTROL_MISSING`。
 
 ## 2. 仍需 Jeremy 有空时（TODO，均可选）
 

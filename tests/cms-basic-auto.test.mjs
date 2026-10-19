@@ -432,3 +432,30 @@ test('CMS_BASIC_AUTO fill rejects softwareClickedSave as policy violation', asyn
   assert.equal(response.reason, 'cms_basic_save_policy_violated');
   assert.equal(response.saveAttempted, false);
 });
+
+test('CMS_BASIC_AUTO excludes path-null education 学历 duplicate_target from personal failures', async () => {
+  const h = await harness({ fillResponse: { ok: true, data: {
+    fields: [
+      {
+        id: 'cms-academic-__cms_basic_education_level', labels: ['学历*'],
+        path: 'customAnswers.__cms_basic_education_level', status: 'skipped',
+        reason: 'existing_value', kind: 'cms_ant_v3_select',
+        scope: { sectionName: '个人基本信息必填', rowContext: 'single' },
+      },
+      {
+        id: 'cms-ant-v3-学历', labels: ['学历*'], path: null, status: 'failed',
+        reason: 'duplicate_target', kind: 'cms_ant_v3_select',
+        scope: { sectionName: '教育经历必填', rowContext: 'multiple' },
+      },
+    ], softwareClickedSave: false, softwareClickedSubmit: false,
+  } } });
+  const response = await h.invoke({ type: 'CMS_BASIC_AUTO', mode: 'fill', originConfirmed: true });
+  assert.equal(response.ok, true);
+  assert.equal(response.job.summary.personalCount, 1);
+  assert.equal(response.job.summary.skipped, 1);
+  assert.equal(response.job.summary.failed, 0);
+  assert.equal(response.job.summary.totalReturned, 2);
+  assert.equal(response.saveAttempted, false);
+  assert.equal(response.job.softwareClickedSave, false);
+  assert.equal(response.job.softwareClickedSubmit, false);
+});

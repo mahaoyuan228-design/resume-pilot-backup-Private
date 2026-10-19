@@ -3,9 +3,10 @@
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
-import { resolve } from 'node:path';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
 import {
   CMB_SITE_ID,
   CMB_TEXT_LABELS,
@@ -873,6 +874,12 @@ function assertGatedSelectKnife(label, liveReason, passReason, latestName, text,
     assert.equal(refused.liveSelectFillClaimed, false);
     assert.equal(refused.liveEdge, false);
   }
+  if (refused.reason === 'live_select_click_readback_unverified' || refused.reason === 'live_select_click_readback_failed') {
+    assert.equal(live.status, 2);
+    assert.equal(refused.liveSelectFillClaimed, false);
+    assert.equal(refused.formFillClaimed, false);
+    assert.equal(refused.syntheticDomMutation, false);
+  }
 
   const run = spawnSync(process.execPath, ['scripts/auto-cmb-basic.mjs', '--only', label], {
     cwd: root,
@@ -1066,6 +1073,89 @@ test('live select click evidence locks the ten claimed select ids', () => {
     timeout: 10000
   });
   assert.equal(check.status, 0, check.stderr || check.stdout);
+});
+
+test('live select gate rejects stub evidence and accepts one non-stub field', () => {
+  const real = JSON.parse(readFileSync(resolve(root, 'dist/auto-runs/cmb-live-select-marital-latest.json'), 'utf8'));
+  assert.notEqual(real.stub, true);
+  assert.equal(real.siteId, 'cmb');
+  assert.equal(real.field, 'marital');
+  const dir = mkdtempSync(join(tmpdir(), 'cmb-live-gate-'));
+  const name = join(dir, 'cmb-live-select-marital-latest.json');
+  const write = (data) => writeFileSync(name, JSON.stringify(data));
+  const run = () => spawnSync(process.execPath, ['scripts/auto-cmb-basic.mjs', '--only', '婚姻状况', '--live'], {
+    cwd: root,
+    encoding: 'utf8',
+    timeout: 20000,
+    env: { ...process.env, AUTO_RUNS_DIR: dir }
+  });
+  try {
+    write({ ...real, stub: true });
+    const stubbed = run();
+    const stubPayload = JSON.parse(stubbed.stdout);
+    assert.equal(stubbed.status, 3, stubbed.stderr || stubbed.stdout);
+    assert.equal(stubPayload.reason, 'live_marital_select_fill_unclaimed');
+    assert.equal(stubPayload.clickEvidenceClaimed, false);
+    assert.equal(stubPayload.formFillClaimed, false);
+    assert.equal(stubPayload.liveSelectFillClaimed, false);
+    assert.equal(stubPayload.saved, false);
+
+    write({ ...real, siteId: 'citics' });
+    assert.equal(JSON.parse(run().stdout).reason, 'live_marital_select_fill_unclaimed');
+
+    write({ ...real, field: 'politics' });
+    assert.equal(JSON.parse(run().stdout).reason, 'live_marital_select_fill_unclaimed');
+
+    const missing = structuredClone(real);
+    delete missing.probe.selectId;
+    write(missing);
+    assert.equal(JSON.parse(run().stdout).reason, 'live_marital_select_fill_unclaimed');
+
+    const wrongIndex = structuredClone(real);
+    wrongIndex.probe.selectId = 'resume_familyList_1_relationship';
+    write(wrongIndex);
+    assert.equal(JSON.parse(run().stdout).reason, 'live_marital_select_fill_unclaimed');
+
+    write(real);
+    const happy = run();
+    const happyPayload = JSON.parse(happy.stdout);
+    assert.notEqual(happy.status, 3, happy.stderr || happy.stdout);
+    assert.notEqual(happyPayload.reason, 'live_marital_select_fill_unclaimed');
+    assert.notEqual(happyPayload.reason, 'live_select_fill_wo_save');
+    assert.equal(happyPayload.clickEvidenceClaimed, true);
+    assert.equal(happyPayload.formFillClaimed, false);
+    assert.equal(happyPayload.liveSelectFillClaimed, false);
+    assert.equal(happyPayload.saved, false);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+
+  const multi = spawnSync(process.execPath, [
+    'scripts/auto-cmb-basic.mjs',
+    '--only',
+    '婚姻状况',
+    '--only',
+    '政治面貌',
+    '--live'
+  ], {
+    cwd: root,
+    encoding: 'utf8',
+    timeout: 20000
+  });
+  const multiPayload = JSON.parse(multi.stdout);
+  assert.equal(multi.status, 2, multi.stderr || multi.stdout);
+  assert.equal(multiPayload.reason, 'live_select_one_field_only');
+  assert.equal(multiPayload.formFillClaimed, false);
+  assert.equal(multiPayload.liveSelectFillClaimed, false);
+  assert.equal(multiPayload.saved, false);
+
+  const liveFn = harness.slice(
+    harness.indexOf('async function runLiveSelectFill'),
+    harness.indexOf('async function runSyntheticGated')
+  );
+  assert.doesNotMatch(liveFn, /ResumeCmbBasic/);
+  assert.match(harness, /RankingMajor is DOM_CONTROL_MISSING/);
+  assert.doesNotMatch(harness, /resume_[A-Za-z0-9_]*[Rr]anking/);
 });
 
 test('synthetic harness education select maps text and code and --live refuses the click', { timeout: 120000 }, () => {

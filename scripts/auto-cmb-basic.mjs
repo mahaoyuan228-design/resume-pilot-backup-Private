@@ -48,14 +48,16 @@ function pause(ms) {
 }
 
 function parseArgs(argv) {
-  const args = { synthetic: false, live: false, help: false, extension: false, only: null };
+  const args = { synthetic: false, live: false, help: false, extension: false, only: null, onlyCount: 0 };
   for (let index = 0; index < argv.length; index += 1) {
     const token = argv[index];
     if (token === '--synthetic') args.synthetic = true;
     else if (token === '--live') args.live = true;
     else if (token === '--extension') args.extension = true;
-    else if (token === '--only') args.only = argv[++index] || '';
-    else if (token === '--help' || token === '-h') args.help = true;
+    else if (token === '--only') {
+      args.onlyCount += 1;
+      args.only = argv[++index] || '';
+    } else if (token === '--help' || token === '-h') args.help = true;
   }
   return args;
 }
@@ -235,7 +237,8 @@ const GATED_SPECS = {
 };
 
 // Trial Edge 9237 click evidence. Files are the attached probe JSON.
-// Missing or non-matching files keep the unclaimed refuse.
+// Missing, stub, or mismatched files keep that field's original liveReason.
+// RankingMajor is DOM_CONTROL_MISSING and is not in this map.
 const LIVE_SELECT_EVIDENCE = {
   marital: 'cmb-live-select-marital-latest.json',
   politics: 'cmb-live-select-politics-latest.json',
@@ -247,6 +250,19 @@ const LIVE_SELECT_EVIDENCE = {
   english: 'cmb-live-select-englishLevel-latest.json',
   channel: 'cmb-live-select-channelType-latest.json',
   interview: 'cmb-live-select-interviewCity-latest.json'
+};
+
+const LIVE_SELECT_FIELD = {
+  marital: 'marital',
+  politics: 'politics',
+  ethnicity: 'ethnicity',
+  idCard: 'idCardType',
+  education: 'educationLevel',
+  relationship: 'relationship',
+  award: 'awardLevel',
+  english: 'englishLevel',
+  channel: 'channelType',
+  interview: 'interviewCity'
 };
 
 function liveProbeClasses(probe) {
@@ -270,10 +286,19 @@ function readLiveSelectClaim(kind) {
   const probe = data.probe;
   if (!probe || typeof probe !== 'object') return null;
   if (data.stub === true) return null;
-  if (data.siteId !== 'cmb' || data.neverSave !== true || data.formFillClaimed !== false) return null;
-  if (data.liveSelectFillClaimed !== true) return null;
+  if (data.siteId !== 'cmb' || data.field !== LIVE_SELECT_FIELD[kind] || data.label !== spec.label) return null;
+  if (data.neverSave !== true || data.formFillClaimed !== false) return null;
+  if (data.liveSelectFillClaimed !== true || data.refuseCodeWas !== spec.liveReason) return null;
+  const required = ['selectId', 'href', 'targetText', 'targetCode', 'before', 'after', 'final', 'pick', 'saved', 'neverSave', 'ok'];
+  if (required.some((key) => probe[key] == null)) return null;
+  if (typeof probe.selectId !== 'string' || probe.selectId !== spec.selectId) return null;
+  if (probe.selectId.includes('_1_')) return null;
+  if (spec.selectId.includes('_0_') && !probe.selectId.includes('_0_')) return null;
+  if (typeof probe.targetText !== 'string' || probe.targetText.length === 0) return null;
+  if (typeof probe.targetCode !== 'string' || probe.targetCode.length === 0) return null;
+  if (probe.after?.text !== probe.targetText) return null;
+  if (probe.pick?.ok !== true || probe.pick?.reason !== 'clicked') return null;
   if (probe.neverSave !== true || probe.saved !== false || probe.ok !== true) return null;
-  if (probe.selectId !== spec.selectId) return null;
   if (!String(probe.href || '').includes('career.cmbchina.com/center/resume')) return null;
   if (kind === 'ethnicity' && !liveProbeClasses(probe).includes('ant-select-show-search')) return null;
   return { file, data };
@@ -1245,51 +1270,53 @@ async function runLiveSelectFill(kind, cdpPort) {
     fs.copyFileSync(file, latest);
     return { payload, written: { file, latest }, exitCode: 3 };
   }
+  let attached = false;
   try {
-    const { socket, send, page } = await attachOpenResumePage(cdpPort);
-    try {
-      await injectScript(send);
-      const fill = await evaluate(send, `ResumeCmbBasic.${spec.fn}(${JSON.stringify(spec.second.text)})`);
-      const payload = basePayload({
-        ok: fill?.ok === true,
-        reason: fill?.ok === true ? 'live_select_fill_wo_save' : (fill?.reason || 'live_select_fill_failed'),
-        surface: 'cdp-live-resume',
-        liveEdge: true,
-        formFillClaimed: false,
-        liveSelectFillClaimed: fill?.ok === true,
-        clickEvidenceClaimed: true,
-        saved: false,
-        label: spec.label,
-        selectId: spec.selectId,
-        pageUrl: page.url || '',
-        evidenceFile: path.relative(repoRoot, claim.file),
-        fill
-      });
-      const file = path.join(outDir, `cmb-${kind}-live-fill-latest.json`);
-      fs.mkdirSync(outDir, { recursive: true });
-      fs.writeFileSync(file, JSON.stringify(payload, null, 2), 'utf8');
-      try { socket.close(); } catch {}
-      return { payload, written: { file, latest: file }, exitCode: payload.ok ? 0 : 2 };
-    } catch (error) {
-      try { socket.close(); } catch {}
-      throw error;
-    }
-  } catch (error) {
-    const code = error?.code === 'live_resume_page_missing' ? 'live_resume_page_missing' : 'live_cdp_unavailable';
+    const { socket, page } = await attachOpenResumePage(cdpPort);
+    attached = true;
+    try { socket.close(); } catch {}
+    // applyCodedSelect writes textContent / data-code / aria-selected. That is not a live click.
     const payload = basePayload({
       ok: false,
-      reason: code,
-      surface: 'cdp',
-      liveEdge: false,
+      reason: 'live_select_click_readback_unverified',
+      surface: 'cdp-live-resume',
+      liveEdge: true,
       formFillClaimed: false,
       liveSelectFillClaimed: false,
       clickEvidenceClaimed: true,
+      syntheticDomMutation: false,
+      saved: false,
+      label: spec.label,
+      selectId: spec.selectId,
+      pageUrl: page.url || '',
+      evidenceFile: path.relative(repoRoot, claim.file),
+      hint: 'Evidence passed the gate. This run did not click the menu and did not call applyCodedSelect. Never Save. 招行 is not supported.'
+    });
+    const file = path.join(outDir, `cmb-${kind}-live-fill-latest.json`);
+    fs.mkdirSync(outDir, { recursive: true });
+    fs.writeFileSync(file, JSON.stringify(payload, null, 2), 'utf8');
+    return { payload, written: { file, latest: file }, exitCode: 2 };
+  } catch (error) {
+    const code = !attached
+      ? (error?.code === 'live_resume_page_missing' ? 'live_resume_page_missing' : 'live_cdp_unavailable')
+      : 'live_select_click_readback_failed';
+    const payload = basePayload({
+      ok: false,
+      reason: code,
+      surface: attached ? 'cdp-live-resume' : 'cdp',
+      liveEdge: attached,
+      formFillClaimed: false,
+      liveSelectFillClaimed: false,
+      clickEvidenceClaimed: true,
+      syntheticDomMutation: false,
       saved: false,
       label: spec.label,
       selectId: spec.selectId,
       evidenceFile: path.relative(repoRoot, claim.file),
       error: String(error?.message || error).slice(0, 300),
-      hint: 'Click evidence is on file. This attempt did not inject. Never Save. 招行 is not supported.'
+      hint: attached
+        ? 'The resume tab was open. This run did not record a menu-click readback. Never Save. 招行 is not supported.'
+        : 'Click evidence is on file. This attempt did not inject. Never Save. 招行 is not supported.'
     });
     const file = path.join(outDir, `cmb-${kind}-live-fill-latest.json`);
     fs.mkdirSync(outDir, { recursive: true });
@@ -1584,9 +1611,14 @@ function printHelp() {
   Names stay exact, including quotation marks. 微信 / 官网 / 智联 are not merged.
   面试期望城市 uses harvested id resume_basicInfo_expectedInterviewCity.
   All 44 names stay complete. 北京 does not match 北京市. 重庆 does not match 重庆市.
-  With dist/auto-runs/cmb-live-select-*-latest.json on file, --only <select> --live
-  does not exit live_*_select_fill_unclaimed. It injects fill-wo-save on the
-  existing /center/resume tab at CDP 9237 and never clicks 保存.
+  With a non-stub dist/auto-runs/cmb-live-select-*-latest.json, exactly one
+  --only <select> --live no longer exits that field's live_*_select_fill_unclaimed.
+  Stub, wrong siteId, wrong field, a row-1 id, or a missing probe field keeps the
+  original liveReason. More than one --only is refused. applyCodedSelect is not
+  live success. An open resume tab without a menu-click readback returns
+  live_select_click_readback_unverified. No Edge is live_cdp_unavailable.
+  RankingMajor stays DOM_CONTROL_MISSING and is not in this gate.
+  Never clicks 保存.
   Fallback reasons if that evidence file is missing:
   live_marital_select_fill_unclaimed
   live_politics_select_fill_unclaimed
@@ -1625,6 +1657,19 @@ async function main() {
     const written = writeEvidence(modeFromEnv(), payload);
     console.log(JSON.stringify({ event: 'refused', ...written, ...payload }, null, 2));
     process.exit(3);
+  }
+  if (args.live && !args.synthetic && args.onlyCount > 1) {
+    const payload = basePayload({
+      ok: false,
+      reason: 'live_select_one_field_only',
+      surface: 'cdp',
+      liveEdge: false,
+      formFillClaimed: false,
+      liveSelectFillClaimed: false,
+      hint: 'Live select fill accepts one --only field. Never Save. 招行 is not supported.'
+    });
+    console.log(JSON.stringify({ event: 'refused', ...payload }, null, 2));
+    process.exit(2);
   }
   const kind = args.only == null ? '' : onlyKind(args.only);
   if (args.only != null && !kind) {

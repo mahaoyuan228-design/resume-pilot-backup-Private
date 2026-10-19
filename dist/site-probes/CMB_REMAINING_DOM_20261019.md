@@ -16,11 +16,11 @@ Option text and codes stay in `cmb-dictmap-full-20261019.json`. This file does n
 | AwardsLevel | 获奖级别 | `#resume_awardList_0_awardLevel` | `resume_awardList_0_awardLevel_list` | not wired |
 | InterviewCity | 面试期望城市 | `#resume_basicInfo_expectedInterviewCity` | `resume_basicInfo_expectedInterviewCity_list` | not wired; defer |
 | ChannelType | 招聘信息来源 | `#resume_basicInfo_channelType` | `resume_basicInfo_channelType_list` | not wired; defer |
-| RankingMajor | — | absent on this resume page | — | no control to wire |
+| RankingMajor | — | absent on this resume page | — | `DOM_CONTROL_MISSING`. Keep the dict fixture. Do not guess a selector. |
 
 Each mapped select above is an `input.ant-select-selection-search-input` with `role=combobox` and `type=search`. The select root class was not captured in this harvest, so the Education fixture does not add `ant-select-show-search`. It uses the same non-search stand-in as 婚姻状况 / 证件类型: the harvested id sits on `.ant-select`, and the list id sits on the listbox. Option-row markup is synthetic. A live click is not claimed.
 
-Suggested next offline order: RelationshipType → AwardsLevel → EnglishLevel. InterviewCity and ChannelType can wait. RankingMajor stays blocked until a control exists on the page.
+Suggested next offline order: RelationshipType → AwardsLevel → EnglishLevel → ChannelType → InterviewCity. InterviewCity and ChannelType can wait. RankingMajor is `DOM_CONTROL_MISSING` and stays out of that order. The trimmed note is `CMB_DICT_REMAINING_TRIM_20261019.md`.
 
 ## Education neighbors that are not filled
 

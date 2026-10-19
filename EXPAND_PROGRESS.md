@@ -226,4 +226,5 @@
 - [x] 设计：`EXPAND_CMB_ADAPTER_DESIGN.md`；说明 `dist/site-probes/CMB_NEXT.md`。
 - [x] Offline scaffold：`siteId=cmb` · `src/content/cmb-basic.js` + `cmb-profile-map.mjs` · fixture · `scripts/auto-cmb-basic.mjs` · `tests/cmb-basic.test.mjs`；manifest host `https://career.cmbchina.com/*`。**SW/popup 未接线**。
 - [ ] Live：Jeremy 登录 `/center/resume` → DOM harvest → fill-wo-save。
+- [x] 第二拍字段计划（offline draft only，未实现、未接线 SW/popup、未宣称已支持招行）：`dist/site-probes/CMB_SECOND_SLICE_PLAN_20261019.md`。
 - **Acceptance 仍 85%**。勿对外写已支持招行。与南粤 live / Celebright 登录队列并行、不插队打断 Jeremy。

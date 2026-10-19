@@ -44,3 +44,7 @@ Jeremy 登录招行招聘账号并停在 `/center/resume` 后，才能 harvest l
 - Fail-closed profile。  
 - 不改 cms/gth/citics。  
 - 对外仍仅 CMS + GTH 可卖。
+
+## 6. Second-slice plan
+
+离线分析草稿 only（未实现 fill；SW/popup 未接线；未宣称已支持招行；Never Save）：`dist/site-probes/CMB_SECOND_SLICE_PLAN_20261019.md`。

@@ -10,6 +10,7 @@
 6. **Plateau**：公开壳刀 + non-hotjob fingerprint 已收敛；再 expand 需 Jeremy 登录后 live / ATS DOM。
 7. **2026-10-19 南粤 live PASS（partial）**：`SU670a291d6202cc7666c744bc` CMS basic，MODE=fill Never Save，`personalVerified=8` `failed=0`。**不是**全站。验收仍 **85%**。见 `dist/site-probes/HOTJOB_NANYUE_CMS_BASIC_LIVE_20261019.md` · `HOTJOB_NANYUE_REMAINING_SKIPS_20261019.md`。
 8. **2026-10-19 招行**：体重 offline 已落地（同身高：`.ant-form-item` + `input.ant-input`；只写数字公斤；拒 `60kg`/`60KG`；`--live` 拒 `live_weight_text_unharvested`；套件 34/34；Never Save）。性别/身高/体重合成齐；下一刀需 live 的四字段：婚姻、政治面貌、民族、出生日期。未宣称已支持招行。验收仍 **85%**。对照草稿 `dist/site-probes/CMB_LIVE_GATED_FIELDS_DRAFT_20261019.md`：下一刀 live 采数顺序婚姻状况 → 政治面貌 → 民族 → 出生日期；不能离线合成选项。
+9. **2026-10-19 招行 live gated**：四字段已采齐（`dist/site-probes/CMB_LIVE_GATED_HARVEST_20261019.md`，Never Save）。婚姻状况 / 政治面貌 / 民族已按采到的中文名+code 做离线合成 Select；出生日期只记 DatePicker kind+填法提示，未硬编假 DOM，未 live 填。未宣称已支持招行。验收仍 **85%**。
 
 ## 2. 仍需 Jeremy 有空时（TODO，均可选）
 

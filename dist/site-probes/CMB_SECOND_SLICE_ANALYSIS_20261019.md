@@ -1,7 +1,9 @@
 # 招行第二拍字段优先级分析 · 2026-10-19（Asia/Shanghai）
 
 **状态**：离线分析草稿。招行 **没有** 已支持。没有 live 填写。SW / popup **没有** 接线。**永不** 点保存或提交。  
-**2026-10-19 补记**：体重 offline 已落地。是否参加过正式工作 offline radio 已落地（对齐性别：`.ant-form-item` 标签作用域；字段图 是/否；`--live` 拒 `live_formal_work_radio_unharvested`；未改 emptyProfile；Never Save；套件 37/37）。婚姻、政治面貌、民族、出生日期仍缺 live 选项，不在本刀。未宣称已支持招行。验收仍 **85%**。下文「本拍不填是否参加过正式工作」是落地前的分析，以本句为准。  
+**2026-10-19 补记**：体重 offline 已落地。是否参加过正式工作 offline radio 已落地（对齐性别：`.ant-form-item` 标签作用域；字段图 是/否；`--live` 拒 `live_formal_work_radio_unharvested`；未改 emptyProfile；Never Save）。下文「本拍不填是否参加过正式工作」是落地前的分析，以本句为准。
+
+2026-10-19 live gated 四字段已采齐（`CMB_LIVE_GATED_HARVEST_20261019.md`，Never Save）。婚姻状况 / 政治面貌 / 民族已按采到的中文名+code 做离线合成 Select；出生日期只记 DatePicker kind+填法提示，未硬编假 DOM，未 live 填。未宣称已支持招行。验收仍 **85%**。
 **本文件不写** 扩展替装，不改 `cmb-basic.js`，不把招行逻辑塞进 CMS / GTH。  
 **输入**（只读仓库已有材料）：
 

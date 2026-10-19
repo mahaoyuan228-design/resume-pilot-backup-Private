@@ -17,10 +17,16 @@ import {
   CMB_WEIGHT_VALUE_RE,
   CMB_FORMAL_WORK_LABEL,
   CMB_FORMAL_WORK_VALUES,
+  CMB_BIRTHDATE_HINT,
+  CMB_ETHNICITY_OPTIONS,
+  CMB_MARITAL_OPTIONS,
+  CMB_POLITICS_OPTIONS,
   isCmbHeightLabel,
   isCmbWeightLabel,
+  isCmbMaritalLabel,
   numericCmbHeight,
   numericCmbWeight,
+  resolveCmbCodedOption,
   planCmbBasicFromProfile,
   normalizeCmbLabelText,
   isCmbHost,
@@ -164,7 +170,6 @@ test('gender fixture is synthetic and scoped away from the neighbor radio group'
   assert.match(source, /RADIO_MARK_SEL = '\.ant-radio'/);
   assert.match(source, /fillGender/);
   assert.match(source, /radio_structure_changed/);
-  assert.doesNotMatch(source, /出生日期|政治面貌|婚姻状况|民族/);
   assert.match(harness, /--only 性别/);
   assert.match(harness, /live_gender_radio_unharvested/);
   assert.match(harness, /formFillClaimed: false/);
@@ -285,8 +290,6 @@ test('height fixture is synthetic text and does not ship other second-slice fiel
   assert.match(source, /fillHeight/);
   assert.match(source, /Never write a CM suffix into the value/);
   assert.match(source, /input\.ant-input/);
-  assert.doesNotMatch(source, /出生日期|政治面貌|婚姻状况|民族/);
-  assert.doesNotMatch(source, /birthDate|political|ethnicity|marital/);
   assert.match(harness, /--only 身高/);
   assert.match(harness, /live_height_text_unharvested/);
   assert.match(harness, /formFillClaimed: false/);
@@ -428,8 +431,6 @@ test('weight fixture is synthetic text and does not ship other second-slice fiel
   assert.match(source, /fillWeight/);
   assert.match(source, /Never write a KG suffix into the value/);
   assert.match(source, /input\.ant-input/);
-  assert.doesNotMatch(source, /出生日期|政治面貌|婚姻状况|民族/);
-  assert.doesNotMatch(source, /birthDate|political|ethnicity|marital/);
   assert.match(harness, /--only 体重/);
   assert.match(harness, /live_weight_text_unharvested/);
   assert.match(harness, /formFillClaimed: false/);
@@ -564,8 +565,6 @@ test('formal-work fixture is synthetic radio scoped to its own form item', () =>
   assert.match(source, /findItem\(FORMAL_WORK_LABEL\)/);
   assert.match(source, /fillFormalWork/);
   assert.match(source, /radio_structure_changed/);
-  assert.doesNotMatch(source, /出生日期|政治面貌|婚姻状况|民族/);
-  assert.doesNotMatch(source, /birthDate|political|ethnicity|marital/);
   assert.match(harness, /--only 是否参加过正式工作/);
   assert.match(harness, /live_formal_work_radio_unharvested/);
   assert.match(harness, /formFillClaimed: false/);
@@ -629,4 +628,211 @@ test('synthetic harness formal-work radio selects 是/否 and --live refuses', {
   assert.equal(payload.neighbor?.weight, '60');
   assert.equal(payload.neighbor?.weightSuffix, 'KG');
   assert.equal(payload.neighbor?.saveDisabled, true);
+});
+
+test('harvested gated dicts match the live evidence and are not invented', () => {
+  const harvest = JSON.parse(readFileSync(resolve(root, 'dist/site-probes/cmb-live-gated-harvest-20261019.json'), 'utf8'));
+  assert.equal(harvest.neverSave, true);
+  assert.equal(harvest.url, 'https://career.cmbchina.com/center/resume');
+  assert.equal(harvest.fields.maritalStatus.optionCount, 4);
+  assert.equal(harvest.fields.politics.optionCount, 13);
+  assert.equal(harvest.fields.ethnicity.optionCount, 57);
+  assert.equal(harvest.fields.birthDate.kindGuess, 'DatePicker');
+  assert.equal(harvest.fields.birthDate.input.readOnly, true);
+  assert.equal(harvest.fields.birthDate.input.placeholder, '请选择日期');
+  assert.match(harvest.notes.join('\n'), /Do NOT claim live fill/);
+
+  const pairs = (field) => field.options.map((row) => ({ text: row.text, code: row.code }));
+  assert.deepEqual([...CMB_MARITAL_OPTIONS], pairs(harvest.fields.maritalStatus));
+  assert.deepEqual([...CMB_POLITICS_OPTIONS], pairs(harvest.fields.politics));
+  assert.deepEqual([...CMB_ETHNICITY_OPTIONS], pairs(harvest.fields.ethnicity));
+  assert.equal(CMB_MARITAL_OPTIONS.some((row) => row.text === '请选择'), false);
+  assert.equal(resolveCmbCodedOption(CMB_MARITAL_OPTIONS, 'MS007')?.text, '已育');
+  assert.equal(resolveCmbCodedOption(CMB_POLITICS_OPTIONS, '党员'), null);
+  assert.equal(resolveCmbCodedOption(CMB_ETHNICITY_OPTIONS, '汉族')?.code, 'NA0017');
+  assert.equal(resolveCmbCodedOption(CMB_ETHNICITY_OPTIONS, '其他')?.code, 'NA0056');
+  assert.equal(CMB_BIRTHDATE_HINT.kind, 'DatePicker');
+  assert.equal(CMB_BIRTHDATE_HINT.syntheticDom, false);
+  assert.equal(CMB_BIRTHDATE_HINT.selectId, 'resume_basicInfo_birthday');
+
+  const embedded = source.match(/const GATED_DICTS = JSON\.parse\('(.*)'\);/);
+  assert.ok(embedded);
+  const parsed = JSON.parse(embedded[1]);
+  assert.deepEqual(parsed.maritalStatus, [...CMB_MARITAL_OPTIONS]);
+  assert.deepEqual(parsed.politics, [...CMB_POLITICS_OPTIONS]);
+  assert.deepEqual(parsed.ethnicity, [...CMB_ETHNICITY_OPTIONS]);
+
+  assert.match(fixture, /id="resume_basicInfo_maritalStatus"/);
+  assert.match(fixture, /id="resume_basicInfo_politicalAffinity"/);
+  assert.match(fixture, /id="resume_basicInfo_nation"/);
+  assert.match(fixture, /data-show-search="true"/);
+  assert.match(fixture, /data-code="MS001"/);
+  assert.match(fixture, /data-code="NA0056"/);
+  assert.equal((fixture.match(/data-code="MS/g) || []).length, 4);
+  assert.equal((fixture.match(/data-code="PA/g) || []).length, 13);
+  assert.equal((fixture.match(/data-code="NA/g) || []).length, 57);
+  assert.doesNotMatch(fixture, /resume_basicInfo_birthday/);
+  assert.doesNotMatch(fixture, /type="date"/);
+  assert.match(source, /fillMaritalStatus/);
+  assert.match(source, /fillPolitics/);
+  assert.match(source, /fillEthnicity/);
+  assert.match(source, /datepicker_hint_only/);
+  assert.match(source, /birthDateHint/);
+  assert.doesNotMatch(source, /click\(.*保存|保存.*\.click/);
+  assert.match(harness, /live_marital_select_fill_unclaimed/);
+  assert.match(harness, /datepicker_hint_only/);
+  assert.equal(isCmbMaritalLabel('婚姻状况（可选）'), true);
+  assert.equal(isCmbMaritalLabel('国籍'), false);
+});
+
+test('gated select plan maps harvested text or code and does not fill birth date', () => {
+  const base = {
+    fullName: '测试甲',
+    phone: '13800138000',
+    email: 'cmb.user@example.com',
+    confirmedFields: ['fullName', 'phone', 'email']
+  };
+  const absent = planCmbBasicFromProfile(base);
+  assert.equal(absent.values.maritalStatus, '');
+  assert.equal(absent.values.politics, '');
+  assert.equal(absent.values.ethnicity, '');
+  assert.equal(absent.fields.some((row) => row.path === 'birthDate'), false);
+
+  const ready = planCmbBasicFromProfile({
+    ...base,
+    maritalStatus: ' MS002 ',
+    politics: '群众',
+    ethnicity: 'NA0018',
+    confirmedFields: [...base.confirmedFields, 'maritalStatus', 'politics', 'ethnicity']
+  });
+  assert.equal(ready.ok, true);
+  assert.equal(ready.values.maritalStatus, '已婚');
+  assert.equal(ready.values.politics, '群众');
+  assert.equal(ready.values.ethnicity, '回族');
+  assert.equal(ready.fields.find((row) => row.path === 'maritalStatus')?.code, 'MS002');
+
+  const unconfirmed = planCmbBasicFromProfile({ ...base, ethnicity: '汉族' });
+  assert.equal(unconfirmed.values.ethnicity, '');
+  assert.equal(unconfirmed.blockers.find((row) => row.path === 'ethnicity')?.reason, 'profile_fact_unconfirmed');
+
+  const invalid = planCmbBasicFromProfile({
+    ...base,
+    politics: '团员',
+    confirmedFields: [...base.confirmedFields, 'politics']
+  });
+  assert.equal(invalid.ok, true);
+  assert.equal(invalid.values.politics, '');
+  assert.equal(invalid.blockers.find((row) => row.path === 'politics')?.reason, 'invalid_profile_value');
+
+  const birth = planCmbBasicFromProfile({
+    ...base,
+    birthDate: '1990-01-02',
+    confirmedFields: [...base.confirmedFields, 'birthDate']
+  });
+  assert.equal(birth.ok, true);
+  assert.equal(birth.values.birthDate, undefined);
+  assert.equal(birth.blockers.find((row) => row.path === 'birthDate')?.reason, 'datepicker_hint_only');
+  assert.equal(birth.blockers.find((row) => row.path === 'birthDate')?.kind, 'DatePicker');
+});
+
+function assertGatedSelectKnife(label, liveReason, passReason, latestName, text, code) {
+  const live = spawnSync(process.execPath, ['scripts/auto-cmb-basic.mjs', '--only', label, '--live'], {
+    cwd: root,
+    encoding: 'utf8',
+    timeout: 20000
+  });
+  assert.equal(live.status, 3, live.stderr || live.stdout);
+  const refused = JSON.parse(live.stdout);
+  assert.equal(refused.ok, false);
+  assert.equal(refused.reason, liveReason);
+  assert.equal(refused.saved, false);
+  assert.equal(refused.skippedSave, true);
+  assert.equal(refused.formFillClaimed, false);
+  assert.equal(refused.liveSelectFillClaimed, false);
+  assert.equal(refused.optionListHarvested, true);
+  assert.equal(refused.liveEdge, false);
+
+  const run = spawnSync(process.execPath, ['scripts/auto-cmb-basic.mjs', '--only', label], {
+    cwd: root,
+    encoding: 'utf8',
+    timeout: 110000
+  });
+  assert.equal(run.status, 0, run.stderr || run.stdout);
+  const payload = JSON.parse(readFileSync(resolve(root, `dist/auto-runs/${latestName}`), 'utf8'));
+  assert.equal(payload.ok, true);
+  assert.equal(payload.reason, passReason);
+  assert.equal(payload.saved, false);
+  assert.equal(payload.skippedSave, true);
+  assert.equal(payload.liveEdge, false);
+  assert.equal(payload.formFillClaimed, false);
+  assert.equal(payload.liveSelectFillClaimed, false);
+  assert.equal(payload.label, label === '婚姻状况' ? '婚姻状况' : label);
+  assert.equal(payload.byCode?.after, text);
+  assert.equal(payload.byCode?.afterCode, code);
+  assert.equal(payload.explicitInvalid?.writeAttempted, false);
+  assert.equal(payload.neighbor?.weight, '60');
+  assert.equal(payload.neighbor?.saveDisabled, true);
+  assert.equal(payload.neighbor?.birthdayNode, false);
+  assert.equal(payload.neighbor?.ethnicity?.search, '');
+  assert.deepEqual(payload.neighbor?.workedChecked, ['否']);
+  assert.equal(payload.planReady?.blockers?.some((row) => row.reason === 'datepicker_hint_only'), true);
+  assert.ok(payload.fillBasic?.results?.every((row) => row.ok));
+}
+
+test('synthetic harness marital select maps text and code and --live refuses', { timeout: 120000 }, () => {
+  assertGatedSelectKnife(
+    '婚姻状况',
+    'live_marital_select_fill_unclaimed',
+    'synthetic_marital_select_pass',
+    'cmb-marital-select-latest.json',
+    '已婚',
+    'MS002'
+  );
+});
+
+test('synthetic harness politics select maps text and code and --live refuses', { timeout: 120000 }, () => {
+  assertGatedSelectKnife(
+    '政治面貌',
+    'live_politics_select_fill_unclaimed',
+    'synthetic_politics_select_pass',
+    'cmb-politics-select-latest.json',
+    '中国共产党党员',
+    'PA001'
+  );
+});
+
+test('synthetic harness ethnicity select maps text and code and --live refuses', { timeout: 120000 }, () => {
+  assertGatedSelectKnife(
+    '民族',
+    'live_ethnicity_select_fill_unclaimed',
+    'synthetic_ethnicity_select_pass',
+    'cmb-ethnicity-select-latest.json',
+    '回族',
+    'NA0018'
+  );
+});
+
+test('birth date knife records the DatePicker hint and does not write', () => {
+  const run = spawnSync(process.execPath, ['scripts/auto-cmb-basic.mjs', '--only', '出生日期'], {
+    cwd: root,
+    encoding: 'utf8',
+    timeout: 20000
+  });
+  assert.equal(run.status, 3, run.stderr || run.stdout);
+  const payload = JSON.parse(run.stdout);
+  assert.equal(payload.ok, false);
+  assert.equal(payload.reason, 'datepicker_hint_only');
+  assert.equal(payload.kind, 'DatePicker');
+  assert.equal(payload.selectId, 'resume_basicInfo_birthday');
+  assert.equal(payload.placeholder, '请选择日期');
+  assert.equal(payload.readOnly, true);
+  assert.equal(payload.syntheticDom, false);
+  assert.equal(payload.formFillClaimed, false);
+  assert.equal(payload.writeAttempted, false);
+  assert.equal(payload.liveFillClaimed, false);
+  assert.equal(payload.saved, false);
+  assert.match(payload.fillHint, /Never Save/);
+  const latest = JSON.parse(readFileSync(resolve(root, 'dist/auto-runs/cmb-birthdate-hint-latest.json'), 'utf8'));
+  assert.equal(latest.reason, 'datepicker_hint_only');
+  assert.equal(latest.syntheticDom, false);
 });

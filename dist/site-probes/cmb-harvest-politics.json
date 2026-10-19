@@ -1,0 +1,123 @@
+{
+  "ok": true,
+  "url": "https://career.cmbchina.com/center/resume",
+  "neverSave": true,
+  "harvestedAt": "2026-10-19T04:03:02.543Z",
+  "source": "GET /api/socialRecruitmentWebsite/common/getCommonDictMap",
+  "field": {
+    "ok": true,
+    "key": "politics",
+    "label": "政治面貌",
+    "kindGuess": "Select",
+    "selectId": "resume_basicInfo_politicalAffinity",
+    "listId": "resume_basicInfo_politicalAffinity_list",
+    "optionCount": 13,
+    "options": [
+      {
+        "text": "中国共产党党员",
+        "title": "中国共产党党员",
+        "code": "PA001",
+        "id": "7236F499-97BF-44CB-80EA-F385F593283F",
+        "disabled": false,
+        "selected": false
+      },
+      {
+        "text": "九三学社社员",
+        "title": "九三学社社员",
+        "code": "PA0010",
+        "id": "08C7EB2F-1071-474A-B517-AD34608AC062",
+        "disabled": false,
+        "selected": false
+      },
+      {
+        "text": "台湾民主自治同盟盟员",
+        "title": "台湾民主自治同盟盟员",
+        "code": "PA0011",
+        "id": "98FCF2D5-4E73-46D6-950B-8D1D27F129E0",
+        "disabled": false,
+        "selected": false
+      },
+      {
+        "text": "无党派民主人士",
+        "title": "无党派民主人士",
+        "code": "PA0012",
+        "id": "9473234D-6FD7-4734-91B4-C34BF748B612",
+        "disabled": false,
+        "selected": false
+      },
+      {
+        "text": "群众",
+        "title": "群众",
+        "code": "PA0013",
+        "id": "F5D6A6A2-141C-4B7B-A8A8-283666AB5165",
+        "disabled": false,
+        "selected": false
+      },
+      {
+        "text": "中国共产党预备党员",
+        "title": "中国共产党预备党员",
+        "code": "PA002",
+        "id": "F56F377D-26A4-40D1-9483-31AA0051E159",
+        "disabled": false,
+        "selected": false
+      },
+      {
+        "text": "中国共产主义青年团团员",
+        "title": "中国共产主义青年团团员",
+        "code": "PA003",
+        "id": "F634114A-1709-4866-9ABE-1708A607F8C5",
+        "disabled": false,
+        "selected": false
+      },
+      {
+        "text": "成员/中国国民党革命委员会",
+        "title": "成员/中国国民党革命委员会",
+        "code": "PA004",
+        "id": "5CB44C8A-22E7-478B-9460-EB41D75748E3",
+        "disabled": false,
+        "selected": false
+      },
+      {
+        "text": "中国民主同盟盟员",
+        "title": "中国民主同盟盟员",
+        "code": "PA005",
+        "id": "C91D29AB-D1D3-47D5-89CE-D197D508CCE0",
+        "disabled": false,
+        "selected": false
+      },
+      {
+        "text": "成员/中国民主建国会",
+        "title": "成员/中国民主建国会",
+        "code": "PA006",
+        "id": "F4C02FD8-D620-4BE1-AFB9-C6FA07387E12",
+        "disabled": false,
+        "selected": false
+      },
+      {
+        "text": "成员/中国民主促进会",
+        "title": "成员/中国民主促进会",
+        "code": "PA007",
+        "id": "6BF9362E-6862-42EE-A1CF-13E837A71AB2",
+        "disabled": false,
+        "selected": false
+      },
+      {
+        "text": "党员/中国农工民主党",
+        "title": "党员/中国农工民主党",
+        "code": "PA008",
+        "id": "A8FBB254-137F-4F2E-9F82-61E0753AB899",
+        "disabled": false,
+        "selected": false
+      },
+      {
+        "text": "中国致公党党员",
+        "title": "中国致公党党员",
+        "code": "PA009",
+        "id": "E4DFD4F8-3408-41AE-AF6F-2E742AFD7044",
+        "disabled": false,
+        "selected": false
+      }
+    ],
+    "source": "dictmap"
+  }
+}

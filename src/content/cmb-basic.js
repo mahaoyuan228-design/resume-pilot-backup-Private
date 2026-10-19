@@ -15,6 +15,11 @@
 // Those two words come from the field map, not a harvested live option list.
 // Label scope is one .ant-form-item. Live radio DOM was NOT harvested.
 //
+// Marital / politics / ethnicity selects are offline synthetic stand-ins.
+// Option text and codes come from the 2026-10-19 getCommonDictMap harvest.
+// The option-row markup is not a live dropdown contract. --live still refuses.
+// Birth date is a harvested DatePicker hint only. This file does not build a picker.
+//
 // DOM contract (CSS-confirmed in public main.02cda64a.css; live form layout unproven):
 //   `.ant-form-item` + `.ant-form-item-label` + `input.ant-input`
 // Gender candidates (public CSS only, synthetic fixture, not a live contract):
@@ -49,6 +54,8 @@
   const WEIGHT_LABEL_RE = /^体重(?:\s*(?:[（(]\s*)?kg(?:\s*[）)])?)?$/iu;
   const FORMAL_WORK_LABEL = '是否参加过正式工作';
   const FORMAL_WORK_VALUES = ['是', '否'];
+  /** Harvested text+code tables. Same data as cmb-gated-dicts.mjs. Not a live click contract. */
+  const GATED_DICTS = JSON.parse('{"maritalStatus":[{"text":"未婚","code":"MS001"},{"text":"已婚","code":"MS002"},{"text":"离异","code":"MS004"},{"text":"已育","code":"MS007"}],"politics":[{"text":"中国共产党党员","code":"PA001"},{"text":"九三学社社员","code":"PA0010"},{"text":"台湾民主自治同盟盟员","code":"PA0011"},{"text":"无党派民主人士","code":"PA0012"},{"text":"群众","code":"PA0013"},{"text":"中国共产党预备党员","code":"PA002"},{"text":"中国共产主义青年团团员","code":"PA003"},{"text":"成员/中国国民党革命委员会","code":"PA004"},{"text":"中国民主同盟盟员","code":"PA005"},{"text":"成员/中国民主建国会","code":"PA006"},{"text":"成员/中国民主促进会","code":"PA007"},{"text":"党员/中国农工民主党","code":"PA008"},{"text":"中国致公党党员","code":"PA009"}],"ethnicity":[{"text":"汉族","code":"NA0017"},{"text":"阿昌族","code":"NA001"},{"text":"独龙族","code":"NA0010"},{"text":"达翰尔族","code":"NA0011"},{"text":"东乡族","code":"NA0012"},{"text":"鄂温克族","code":"NA0013"},{"text":"京族","code":"NA0014"},{"text":"仡佬族","code":"NA0015"},{"text":"高山族","code":"NA0016"},{"text":"回族","code":"NA0018"},{"text":"赫哲族","code":"NA0019"},{"text":"白族","code":"NA002"},{"text":"基诺族","code":"NA0020"},{"text":"景颇族","code":"NA0021"},{"text":"柯尔克孜族","code":"NA0022"},{"text":"哈萨克族","code":"NA0023"},{"text":"珞巴族","code":"NA0024"},{"text":"拉祜族","code":"NA0025"},{"text":"黎族","code":"NA0026"},{"text":"傈僳族","code":"NA0027"},{"text":"满族","code":"NA0028"},{"text":"门巴族","code":"NA0029"},{"text":"布朗族","code":"NA003"},{"text":"蒙古族","code":"NA0030"},{"text":"苗族","code":"NA0031"},{"text":"仫佬族","code":"NA0032"},{"text":"毛南族","code":"NA0033"},{"text":"怒族","code":"NA0034"},{"text":"纳西族","code":"NA0035"},{"text":"鄂伦春族","code":"NA0036"},{"text":"普米族","code":"NA0037"},{"text":"羌族","code":"NA0038"},{"text":"俄罗斯族","code":"NA0039"},{"text":"保安族","code":"NA004"},{"text":"畲族","code":"NA0040"},{"text":"萨拉族","code":"NA0041"},{"text":"水族","code":"NA0042"},{"text":"塔吉克族","code":"NA0043"},{"text":"土家族","code":"NA0044"},{"text":"塔塔尔族","code":"NA0045"},{"text":"土族","code":"NA0046"},{"text":"维吾尔族","code":"NA0047"},{"text":"乌孜别克族","code":"NA0048"},{"text":"佤族","code":"NA0049"},{"text":"布依族","code":"NA005"},{"text":"锡伯族","code":"NA0050"},{"text":"瑶族","code":"NA0051"},{"text":"裕固族","code":"NA0052"},{"text":"彝族","code":"NA0053"},{"text":"藏族","code":"NA0054"},{"text":"壮族","code":"NA0055"},{"text":"其他","code":"NA0056"},{"text":"哈尼族","code":"NA0057"},{"text":"朝鲜族","code":"NA006"},{"text":"傣族","code":"NA007"},{"text":"德昂族","code":"NA008"},{"text":"侗族","code":"NA009"}]}');
   /** CSS-confirmed ant-design classes in public main.02cda64a.css — live resume DOM may still differ. */
   const ITEM_SEL = '.ant-form-item';
   const LABEL_SEL = '.ant-form-item-label, label';
@@ -361,6 +368,194 @@
     };
   }
 
+  const MARITAL_LABEL = '婚姻状况';
+  const MARITAL_LABEL_RE = /^婚姻状况(?:（可选）|\(可选\))?$/u;
+  const POLITICS_LABEL = '政治面貌';
+  const ETHNICITY_LABEL = '民族';
+  const BIRTHDATE_HINT = Object.freeze({
+    key: 'birthDate',
+    label: '出生日期',
+    kind: 'DatePicker',
+    selectId: 'resume_basicInfo_birthday',
+    placeholder: '请选择日期',
+    readOnly: true,
+    fillHint: 'antd DatePicker readonly; format likely YYYY-MM-DD; Never Save',
+    syntheticDom: false,
+    liveFillClaimed: false
+  });
+  const SELECT_SPECS = {
+    maritalStatus: {
+      label: MARITAL_LABEL,
+      labelTest: (text) => MARITAL_LABEL_RE.test(text),
+      selectId: 'resume_basicInfo_maritalStatus',
+      listId: 'resume_basicInfo_maritalStatus_list',
+      options: GATED_DICTS.maritalStatus,
+      showSearch: false
+    },
+    politics: {
+      label: POLITICS_LABEL,
+      labelTest: (text) => text === POLITICS_LABEL,
+      selectId: 'resume_basicInfo_politicalAffinity',
+      listId: 'resume_basicInfo_politicalAffinity_list',
+      options: GATED_DICTS.politics,
+      showSearch: false
+    },
+    ethnicity: {
+      label: ETHNICITY_LABEL,
+      labelTest: (text) => text === ETHNICITY_LABEL,
+      selectId: 'resume_basicInfo_nation',
+      listId: 'resume_basicInfo_nation_list',
+      options: GATED_DICTS.ethnicity,
+      showSearch: true
+    }
+  };
+
+  function resolveCodedOption(options, raw) {
+    const text = norm(raw);
+    if (!text || text === '请选择') return null;
+    const hit = options.find((row) => row.text === text || row.code === text);
+    return hit ? { text: hit.text, code: hit.code } : null;
+  }
+
+  function findItemByLabel(labelTest) {
+    const hits = formItems().filter((item) => {
+      const label = item.querySelector(LABEL_SEL);
+      return label && labelTest(labelText(label));
+    });
+    return hits.length === 1 ? hits[0] : null;
+  }
+
+  function selectRows(item) {
+    return [...item.querySelectorAll('[role="option"]')].map((node) => ({
+      node,
+      text: norm(node.textContent),
+      code: norm(node.getAttribute('data-code'))
+    }));
+  }
+
+  function optionSetMatches(found, expected) {
+    if (found.length !== expected.length) return false;
+    const keys = new Set(found.map((row) => `${row.text}\t${row.code}`));
+    if (keys.size !== found.length) return false;
+    return expected.every((row) => keys.has(`${row.text}\t${row.code}`));
+  }
+
+  function selectStructureOk(item, spec) {
+    const root = item.querySelector('.ant-select');
+    if (!root || root.id !== spec.selectId) return false;
+    const showSearch = root.classList.contains('ant-select-show-search') || root.dataset.showSearch === 'true';
+    if (showSearch !== spec.showSearch) return false;
+    const list = item.querySelector('[role="listbox"]');
+    if (!list || list.id !== spec.listId) return false;
+    if (item.querySelectorAll('.ant-select-selection-item').length !== 1) return false;
+    const search = [...item.querySelectorAll('input.ant-select-selection-search-input')];
+    if (spec.showSearch) {
+      if (search.length !== 1 || search[0].type !== 'search') return false;
+    } else if (search.length !== 0) return false;
+    return optionSetMatches(selectRows(item), spec.options);
+  }
+
+  function readCodedSelect(item, spec) {
+    if (!selectStructureOk(item, spec)) {
+      return { ok: false, value: '', code: '', reason: 'select_structure_changed' };
+    }
+    const shown = item.querySelector('.ant-select-selection-item');
+    const text = norm(shown.textContent);
+    const code = norm(shown.getAttribute('data-code'));
+    const selected = selectRows(item).filter((row) => row.node.getAttribute('aria-selected') === 'true');
+    if (!text && !code && selected.length === 0) return { ok: true, value: '', code: '', reason: 'empty' };
+    const row = spec.options.find((option) => option.text === text && option.code === code);
+    if (!row || selected.length !== 1 || selected[0].text !== text || selected[0].code !== code) {
+      return { ok: false, value: text, code, reason: 'select_readback_ambiguous' };
+    }
+    return { ok: true, value: text, code, reason: 'selected' };
+  }
+
+  function applyCodedSelect(item, row) {
+    for (const option of selectRows(item)) {
+      option.node.setAttribute('aria-selected', option.code === row.code ? 'true' : 'false');
+    }
+    const shown = item.querySelector('.ant-select-selection-item');
+    shown.textContent = row.text;
+    shown.setAttribute('data-code', row.code);
+    const target = selectRows(item).find((option) => option.code === row.code);
+    target.node.click();
+  }
+
+  async function fillCodedSelect(spec, value, options = {}) {
+    const resolved = resolveCodedOption(spec.options, value);
+    const base = {
+      label: spec.label,
+      saved: false,
+      skippedSave: true,
+      expected: resolved?.text || norm(value),
+      code: resolved?.code || '',
+      before: '',
+      beforeCode: '',
+      after: '',
+      afterCode: ''
+    };
+    if (!pageAllowed(options)) return { ...base, ok: false, reason: 'wrong_page' };
+    if (!resolved) return { ...base, ok: false, reason: 'invalid_profile_value', code: '' };
+    const item = findItemByLabel(spec.labelTest);
+    if (!item) return { ...base, ok: false, reason: 'item_not_found' };
+    if (!selectStructureOk(item, spec)) return { ...base, ok: false, reason: 'select_structure_changed' };
+    const beforeRead = readCodedSelect(item, spec);
+    const before = beforeRead.ok ? beforeRead.value : '';
+    const beforeCode = beforeRead.ok ? beforeRead.code : '';
+    applyCodedSelect(item, resolved);
+    await pause(80);
+    const search = item.querySelector('input.ant-select-selection-search-input');
+    if (search && norm(search.value)) {
+      return {
+        ...base,
+        ok: false,
+        reason: 'search_input_written',
+        before,
+        beforeCode,
+        after: before,
+        afterCode: beforeCode
+      };
+    }
+    const afterRead = readCodedSelect(item, spec);
+    const after = afterRead.ok ? afterRead.value : '';
+    const afterCode = afterRead.ok ? afterRead.code : '';
+    const matched = afterRead.ok && after === resolved.text && afterCode === resolved.code;
+    return {
+      ...base,
+      ok: matched,
+      reason: matched ? 'matched' : (afterRead.ok ? 'readback_mismatch' : afterRead.reason),
+      before,
+      beforeCode,
+      after,
+      afterCode,
+      code: resolved.code
+    };
+  }
+
+  function fillMaritalStatus(value, options) {
+    return fillCodedSelect(SELECT_SPECS.maritalStatus, value, options);
+  }
+
+  function fillPolitics(value, options) {
+    return fillCodedSelect(SELECT_SPECS.politics, value, options);
+  }
+
+  function fillEthnicity(value, options) {
+    return fillCodedSelect(SELECT_SPECS.ethnicity, value, options);
+  }
+
+  function birthDateHint() {
+    return {
+      ...BIRTHDATE_HINT,
+      ok: false,
+      reason: 'datepicker_hint_only',
+      saved: false,
+      skippedSave: true,
+      writeAttempted: false
+    };
+  }
+
   async function fillText(label, value) {
     const item = findItem(label);
     if (!item) return { label, ok: false, reason: 'item_not_found', before: '', after: '', expected: value };
@@ -402,6 +597,10 @@
     const heightRaw = norm(profile.height || '');
     const weightRaw = norm(profile.weight || '');
     const formalWorkRaw = norm(profile.formalWork || '');
+    const maritalRaw = norm(profile.maritalStatus || '');
+    const politicsRaw = norm(profile.politics || '');
+    const ethnicityRaw = norm(profile.ethnicity || '');
+    const birthRaw = norm(profile.birthDate || '');
     const core = [
       { label: '姓名', path: 'fullName', value: fullName },
       { label: '手机号', path: 'phone', value: mobile },
@@ -464,19 +663,73 @@
         reason
       });
     }
-    const fields = [...core, ...genderFields, ...heightFields, ...weightFields, ...formalWorkFields];
+    const codedPlan = (raw, path, spec) => {
+      if (!raw) return [];
+      const resolved = resolveCodedOption(spec.options, raw);
+      let reason = null;
+      if (!confirmed.has(path)) reason = 'profile_fact_unconfirmed';
+      else if (!resolved) reason = 'invalid_profile_value';
+      return [{
+        label: spec.label,
+        path,
+        value: resolved?.text || raw,
+        code: resolved?.code || '',
+        ready: reason === null,
+        reason
+      }];
+    };
+    const maritalFields = codedPlan(maritalRaw, 'maritalStatus', SELECT_SPECS.maritalStatus);
+    const politicsFields = codedPlan(politicsRaw, 'politics', SELECT_SPECS.politics);
+    const ethnicityFields = codedPlan(ethnicityRaw, 'ethnicity', SELECT_SPECS.ethnicity);
+    const birthFields = [];
+    if (birthRaw) {
+      birthFields.push({
+        label: BIRTHDATE_HINT.label,
+        path: 'birthDate',
+        value: '',
+        ready: false,
+        reason: confirmed.has('birthDate') ? 'datepicker_hint_only' : 'profile_fact_unconfirmed',
+        kind: BIRTHDATE_HINT.kind,
+        fillHint: BIRTHDATE_HINT.fillHint
+      });
+    }
+    const fields = [
+      ...core,
+      ...genderFields,
+      ...heightFields,
+      ...weightFields,
+      ...formalWorkFields,
+      ...maritalFields,
+      ...politicsFields,
+      ...ethnicityFields,
+      ...birthFields
+    ];
     const coreBlockers = core.filter((row) => !row.ready);
     const genderBlockers = genderFields.filter((row) => !row.ready);
     const heightBlockers = heightFields.filter((row) => !row.ready);
     const weightBlockers = weightFields.filter((row) => !row.ready);
     const formalWorkBlockers = formalWorkFields.filter((row) => !row.ready);
+    const maritalBlockers = maritalFields.filter((row) => !row.ready);
+    const politicsBlockers = politicsFields.filter((row) => !row.ready);
+    const ethnicityBlockers = ethnicityFields.filter((row) => !row.ready);
+    const birthBlockers = birthFields.filter((row) => !row.ready);
+    const optionalBlockers = [
+      ...genderBlockers,
+      ...heightBlockers,
+      ...weightBlockers,
+      ...formalWorkBlockers,
+      ...maritalBlockers,
+      ...politicsBlockers,
+      ...ethnicityBlockers,
+      ...birthBlockers
+    ];
     if (coreBlockers.length) {
       return {
         ok: false,
         reason: 'profile_fields_unavailable',
         values: null,
         fields,
-        blockers: [...coreBlockers, ...genderBlockers, ...heightBlockers, ...weightBlockers, ...formalWorkBlockers]
+        blockers: [...coreBlockers, ...optionalBlockers]
       };
     }
     return {
@@ -489,10 +742,14 @@
         gender: genderFields.find((row) => row.ready)?.value || '',
         height: heightFields.find((row) => row.ready)?.value || '',
         weight: weightFields.find((row) => row.ready)?.value || '',
-        formalWork: formalWorkFields.find((row) => row.ready)?.value || ''
+        formalWork: formalWorkFields.find((row) => row.ready)?.value || '',
+        maritalStatus: maritalFields.find((row) => row.ready)?.value || '',
+        politics: politicsFields.find((row) => row.ready)?.value || '',
+        ethnicity: ethnicityFields.find((row) => row.ready)?.value || ''
       },
       fields,
-      blockers: [...genderBlockers, ...heightBlockers, ...weightBlockers, ...formalWorkBlockers]
+      blockers: optionalBlockers,
+      birthDateHint: BIRTHDATE_HINT
     };
   }
 
@@ -576,6 +833,25 @@
       const height = rawValues.height == null ? '' : norm(rawValues.height);
       const weight = rawValues.weight == null ? '' : norm(rawValues.weight);
       const formalWork = rawValues.formalWork == null ? '' : norm(rawValues.formalWork);
+      const maritalRaw = rawValues.maritalStatus == null ? '' : norm(rawValues.maritalStatus);
+      const politicsRaw = rawValues.politics == null ? '' : norm(rawValues.politics);
+      const ethnicityRaw = rawValues.ethnicity == null ? '' : norm(rawValues.ethnicity);
+      const marital = resolveCodedOption(SELECT_SPECS.maritalStatus.options, maritalRaw);
+      const politics = resolveCodedOption(SELECT_SPECS.politics.options, politicsRaw);
+      const ethnicity = resolveCodedOption(SELECT_SPECS.ethnicity.options, ethnicityRaw);
+      if (norm(rawValues.birthDate || '')) {
+        return {
+          ok: false,
+          siteId: SITE_ID,
+          reason: 'datepicker_hint_only',
+          href: location.href,
+          results: [],
+          saved: false,
+          skippedSave: true,
+          writeAttempted: false,
+          birthDateHint: birthDateHint()
+        };
+      }
       if (gender && !GENDER_VALUES.includes(gender)) {
         return {
           ok: false,
@@ -624,6 +900,42 @@
           writeAttempted: false
         };
       }
+      if (maritalRaw && !marital) {
+        return {
+          ok: false,
+          siteId: SITE_ID,
+          reason: 'invalid_marital_status',
+          href: location.href,
+          results: [],
+          saved: false,
+          skippedSave: true,
+          writeAttempted: false
+        };
+      }
+      if (politicsRaw && !politics) {
+        return {
+          ok: false,
+          siteId: SITE_ID,
+          reason: 'invalid_politics',
+          href: location.href,
+          results: [],
+          saved: false,
+          skippedSave: true,
+          writeAttempted: false
+        };
+      }
+      if (ethnicityRaw && !ethnicity) {
+        return {
+          ok: false,
+          siteId: SITE_ID,
+          reason: 'invalid_ethnicity',
+          href: location.href,
+          results: [],
+          saved: false,
+          skippedSave: true,
+          writeAttempted: false
+        };
+      }
       values = {
         fullName: norm(rawValues.fullName || ''),
         mobile: norm(rawValues.mobile || rawValues.phone || ''),
@@ -631,7 +943,10 @@
         gender,
         height,
         weight,
-        formalWork
+        formalWork,
+        maritalStatus: marital?.text || '',
+        politics: politics?.text || '',
+        ethnicity: ethnicity?.text || ''
       };
       if (!values.fullName || !values.mobile || !values.email) {
         return {
@@ -692,6 +1007,9 @@
     if (FORMAL_WORK_VALUES.includes(values.formalWork || '')) {
       results.push(await fillFormalWork(values.formalWork, options));
     }
+    if (values.maritalStatus) results.push(await fillMaritalStatus(values.maritalStatus, options));
+    if (values.politics) results.push(await fillPolitics(values.politics, options));
+    if (values.ethnicity) results.push(await fillEthnicity(values.ethnicity, options));
     const ok = results.every((row) => row.ok);
     return {
       ok,
@@ -732,6 +1050,12 @@
     fillFormalWork,
     fillHeight,
     fillWeight,
+    fillMaritalStatus,
+    fillPolitics,
+    fillEthnicity,
+    birthDateHint,
+    BIRTHDATE_HINT,
+    GATED_DICTS,
     fillBasic,
     probeLabels,
     probeFingerprint,

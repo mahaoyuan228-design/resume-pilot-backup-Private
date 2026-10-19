@@ -44,6 +44,10 @@ node scripts/auto-cmb-basic.mjs --only 性别
 node scripts/auto-cmb-basic.mjs --only 身高
 node scripts/auto-cmb-basic.mjs --only 体重
 node scripts/auto-cmb-basic.mjs --only 是否参加过正式工作
+node scripts/auto-cmb-basic.mjs --only 婚姻状况
+node scripts/auto-cmb-basic.mjs --only 政治面貌
+node scripts/auto-cmb-basic.mjs --only 民族
+node scripts/auto-cmb-basic.mjs --only 出生日期
 node --test tests/cmb-basic.test.mjs
 ```
 
@@ -65,8 +69,10 @@ Jeremy 登录招行招聘账号并停在 `/center/resume` 后，才能 harvest l
 
 离线分析草稿（SW/popup 未接线；未宣称已支持招行；Never Save）：`dist/site-probes/CMB_SECOND_SLICE_PLAN_20261019.md`。
 
-其中 **性别**、**身高**、**体重** 与 **是否参加过正式工作** 已有 offline synthetic。出生日期 / 政治面貌 / 民族 / 婚姻状况 **未**做。Live radio DOM，以及身高、体重标签精确串，仍要登录后 harvest。这些合成 **不是** live 支持。
+其中 **性别**、**身高**、**体重** 与 **是否参加过正式工作** 已有 offline synthetic。婚姻状况 / 政治面貌 / 民族另有采到的中文名+code 离线 Select；出生日期只记 DatePicker 提示。这些合成 **不是** live 支持。
 
-体重 offline 已落地（同身高：`.ant-form-item` + `input.ant-input`；只写数字公斤；拒 `60kg`/`60KG`；`--live` 拒 `live_weight_text_unharvested`；套件 34/34；Never Save）。是否参加过正式工作 offline radio 已落地（对齐性别：标签作用域 `.ant-form-item`；字段图 是/否；`--live` 拒 `live_formal_work_radio_unharvested`；未改 emptyProfile；Never Save；套件 37/37）。婚姻、政治面貌、民族、出生日期仍缺 live 选项，本刀不碰。未宣称已支持招行。验收仍 **85%**。
+体重 offline 已落地（同身高：`.ant-form-item` + `input.ant-input`；只写数字公斤；拒 `60kg`/`60KG`；`--live` 拒 `live_weight_text_unharvested`；套件 34/34；Never Save）。是否参加过正式工作 offline radio 已落地（对齐性别：标签作用域 `.ant-form-item`；字段图 是/否；`--live` 拒 `live_formal_work_radio_unharvested`；未改 emptyProfile；Never Save；套件 37/37）。未宣称已支持招行。验收仍 **85%**。
 
 下一刀 live 采数顺序见 `CMB_LIVE_GATED_FIELDS_DRAFT_20261019.md`：婚姻状况 → 政治面貌 → 民族 → 出生日期。这四字段的真实选项不能离线合成。未宣称已支持招行。验收仍 **85%**。
+
+2026-10-19 live gated 四字段已采齐（`CMB_LIVE_GATED_HARVEST_20261019.md`，Never Save）。婚姻状况 / 政治面貌 / 民族已按采到的中文名+code 做离线合成 Select；出生日期只记 DatePicker kind+填法提示，未硬编假 DOM，未 live 填。未宣称已支持招行。验收仍 **85%**。

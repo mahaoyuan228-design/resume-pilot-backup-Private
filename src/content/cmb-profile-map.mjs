@@ -10,7 +10,26 @@
 // Allowlist is 是 / 否 from the field map. `formalWork` is read only when the
 // caller supplies it. emptyProfile is unchanged. Live radio DOM is not harvested.
 // Live radio DOM and the live height/weight label/value are not harvested.
+// Marital / politics / ethnicity use harvested Chinese text + code tables.
+// They are optional caller-supplied keys and are not added to emptyProfile.
+// Birth date is hint-only: a present value is not filled.
 // Used by tests + harness. Content script mirrors the same rules.
+
+import {
+  CMB_BIRTHDATE_HINT,
+  CMB_ETHNICITY_OPTIONS,
+  CMB_MARITAL_OPTIONS,
+  CMB_POLITICS_OPTIONS,
+  resolveCmbCodedOption
+} from './cmb-gated-dicts.mjs';
+
+export {
+  CMB_BIRTHDATE_HINT,
+  CMB_ETHNICITY_OPTIONS,
+  CMB_MARITAL_OPTIONS,
+  CMB_POLITICS_OPTIONS,
+  resolveCmbCodedOption
+};
 
 export const CMB_SITE_ID = 'cmb';
 
@@ -39,6 +58,11 @@ export const CMB_WEIGHT_LABEL = '体重';
 /** Digits only. A KG suffix is invalid — the unit stays on the label. */
 export const CMB_WEIGHT_VALUE_RE = /^\d+(?:\.\d+)?$/u;
 const CMB_WEIGHT_LABEL_RE = /^体重(?:\s*(?:[（(]\s*)?kg(?:\s*[）)])?)?$/iu;
+const CMB_MARITAL_LABEL_RE = /^婚姻状况(?:（可选）|\(可选\))?$/u;
+
+export const CMB_MARITAL_LABEL = '婚姻状况';
+export const CMB_POLITICS_LABEL = '政治面貌';
+export const CMB_ETHNICITY_LABEL = '民族';
 
 /**
  * Optional radio. Canonical label is 是否参加过正式工作.
@@ -75,6 +99,10 @@ function normMeasure(value) {
  * a confirmed 是 or 否 is included. Unconfirmed, or any other value, is a blocker
  * and is not filled. This does not add `formalWork` to emptyProfile.
  * Options are the field-map pair 是/否, not a harvested live list.
+ * Marital status, politics, and ethnicity follow the same optional rule.
+ * A value must be an exact harvested Chinese name or exact code.
+ * Birth date is never filled here. A present birthDate is a blocker with
+ * reason datepicker_hint_only (confirmed) and is not written.
  */
 export function planCmbBasicFromProfile(profile) {
   if (!profile || typeof profile !== 'object' || Array.isArray(profile)) {
@@ -104,6 +132,10 @@ export function planCmbBasicFromProfile(profile) {
   const heightRaw = normMeasure(profile.height || '');
   const weightRaw = normMeasure(profile.weight || '');
   const formalWorkRaw = norm(profile.formalWork || '');
+  const maritalRaw = normMeasure(profile.maritalStatus || '');
+  const politicsRaw = normMeasure(profile.politics || '');
+  const ethnicityRaw = normMeasure(profile.ethnicity || '');
+  const birthRaw = normMeasure(profile.birthDate || '');
 
   const core = [
     { label: '姓名', path: 'fullName', value: fullName },
@@ -172,19 +204,74 @@ export function planCmbBasicFromProfile(profile) {
     });
   }
 
-  const fields = [...core, ...genderFields, ...heightFields, ...weightFields, ...formalWorkFields];
+  const codedFields = (raw, path, label, options) => {
+    if (!raw) return [];
+    const resolved = resolveCmbCodedOption(options, raw);
+    let reason = null;
+    if (!confirmed.has(path)) reason = 'profile_fact_unconfirmed';
+    else if (!resolved) reason = 'invalid_profile_value';
+    return [{
+      label,
+      path,
+      value: resolved?.text || raw,
+      code: resolved?.code || '',
+      ready: reason === null,
+      reason
+    }];
+  };
+  const maritalFields = codedFields(maritalRaw, 'maritalStatus', CMB_MARITAL_LABEL, CMB_MARITAL_OPTIONS);
+  const politicsFields = codedFields(politicsRaw, 'politics', CMB_POLITICS_LABEL, CMB_POLITICS_OPTIONS);
+  const ethnicityFields = codedFields(ethnicityRaw, 'ethnicity', CMB_ETHNICITY_LABEL, CMB_ETHNICITY_OPTIONS);
+  const birthFields = [];
+  if (birthRaw) {
+    birthFields.push({
+      label: CMB_BIRTHDATE_HINT.label,
+      path: 'birthDate',
+      value: '',
+      ready: false,
+      reason: confirmed.has('birthDate') ? 'datepicker_hint_only' : 'profile_fact_unconfirmed',
+      kind: CMB_BIRTHDATE_HINT.kind,
+      fillHint: CMB_BIRTHDATE_HINT.fillHint
+    });
+  }
+
+  const fields = [
+    ...core,
+    ...genderFields,
+    ...heightFields,
+    ...weightFields,
+    ...formalWorkFields,
+    ...maritalFields,
+    ...politicsFields,
+    ...ethnicityFields,
+    ...birthFields
+  ];
   const coreBlockers = core.filter((row) => !row.ready);
   const genderBlockers = genderFields.filter((row) => !row.ready);
   const heightBlockers = heightFields.filter((row) => !row.ready);
   const weightBlockers = weightFields.filter((row) => !row.ready);
   const formalWorkBlockers = formalWorkFields.filter((row) => !row.ready);
+  const maritalBlockers = maritalFields.filter((row) => !row.ready);
+  const politicsBlockers = politicsFields.filter((row) => !row.ready);
+  const ethnicityBlockers = ethnicityFields.filter((row) => !row.ready);
+  const birthBlockers = birthFields.filter((row) => !row.ready);
+  const optionalBlockers = [
+    ...genderBlockers,
+    ...heightBlockers,
+    ...weightBlockers,
+    ...formalWorkBlockers,
+    ...maritalBlockers,
+    ...politicsBlockers,
+    ...ethnicityBlockers,
+    ...birthBlockers
+  ];
   if (coreBlockers.length) {
     return {
       ok: false,
       reason: 'profile_fields_unavailable',
       values: null,
       fields,
-      blockers: [...coreBlockers, ...genderBlockers, ...heightBlockers, ...weightBlockers, ...formalWorkBlockers]
+      blockers: [...coreBlockers, ...optionalBlockers]
     };
   }
 
@@ -192,12 +279,16 @@ export function planCmbBasicFromProfile(profile) {
   const height = heightFields.find((row) => row.ready)?.value || '';
   const weight = weightFields.find((row) => row.ready)?.value || '';
   const formalWork = formalWorkFields.find((row) => row.ready)?.value || '';
+  const maritalStatus = maritalFields.find((row) => row.ready)?.value || '';
+  const politics = politicsFields.find((row) => row.ready)?.value || '';
+  const ethnicity = ethnicityFields.find((row) => row.ready)?.value || '';
   return {
     ok: true,
     reason: 'profile_ready',
-    values: { fullName, mobile, email, gender, height, weight, formalWork },
+    values: { fullName, mobile, email, gender, height, weight, formalWork, maritalStatus, politics, ethnicity },
     fields,
-    blockers: [...genderBlockers, ...heightBlockers, ...weightBlockers, ...formalWorkBlockers]
+    blockers: optionalBlockers,
+    birthDateHint: CMB_BIRTHDATE_HINT
   };
 }
 
@@ -226,6 +317,23 @@ export function numericCmbHeight(raw) {
  */
 export function isCmbWeightLabel(raw) {
   return CMB_WEIGHT_LABEL_RE.test(normalizeCmbLabelText(normMeasure(raw)));
+}
+
+/** 婚姻状况, optionally with the harvested （可选） suffix. */
+export function isCmbMaritalLabel(raw) {
+  return CMB_MARITAL_LABEL_RE.test(normalizeCmbLabelText(normMeasure(raw)));
+}
+
+export function isCmbPoliticsLabel(raw) {
+  return normalizeCmbLabelText(normMeasure(raw)) === CMB_POLITICS_LABEL;
+}
+
+export function isCmbEthnicityLabel(raw) {
+  return normalizeCmbLabelText(normMeasure(raw)) === CMB_ETHNICITY_LABEL;
+}
+
+export function isCmbBirthDateLabel(raw) {
+  return normalizeCmbLabelText(normMeasure(raw)) === CMB_BIRTHDATE_HINT.label;
 }
 
 /** Numeric kilogram string, or '' when empty or when a unit/other text is present. */

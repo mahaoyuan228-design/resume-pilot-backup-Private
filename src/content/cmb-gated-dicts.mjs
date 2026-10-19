@@ -1,0 +1,120 @@
+// Harvested CMB gated-field codes. Source: dist/site-probes/cmb-live-gated-harvest-20261019.json
+// GET /api/socialRecruitmentWebsite/common/getCommonDictMap on 2026-10-19.
+// Text+code only. Not a live fill contract. Never Save. 招行 is not supported.
+
+const norm = (value) => String(value ?? '')
+  .normalize('NFKC')
+  .replace(/[\u200b-\u200d\ufeff]/gu, '')
+  .replace(/[\s\u00a0]+/gu, ' ')
+  .trim();
+
+export const CMB_MARITAL_OPTIONS = Object.freeze([
+  Object.freeze({"text":"未婚","code":"MS001"}),
+  Object.freeze({"text":"已婚","code":"MS002"}),
+  Object.freeze({"text":"离异","code":"MS004"}),
+  Object.freeze({"text":"已育","code":"MS007"})
+]);
+
+export const CMB_POLITICS_OPTIONS = Object.freeze([
+  Object.freeze({"text":"中国共产党党员","code":"PA001"}),
+  Object.freeze({"text":"九三学社社员","code":"PA0010"}),
+  Object.freeze({"text":"台湾民主自治同盟盟员","code":"PA0011"}),
+  Object.freeze({"text":"无党派民主人士","code":"PA0012"}),
+  Object.freeze({"text":"群众","code":"PA0013"}),
+  Object.freeze({"text":"中国共产党预备党员","code":"PA002"}),
+  Object.freeze({"text":"中国共产主义青年团团员","code":"PA003"}),
+  Object.freeze({"text":"成员/中国国民党革命委员会","code":"PA004"}),
+  Object.freeze({"text":"中国民主同盟盟员","code":"PA005"}),
+  Object.freeze({"text":"成员/中国民主建国会","code":"PA006"}),
+  Object.freeze({"text":"成员/中国民主促进会","code":"PA007"}),
+  Object.freeze({"text":"党员/中国农工民主党","code":"PA008"}),
+  Object.freeze({"text":"中国致公党党员","code":"PA009"})
+]);
+
+export const CMB_ETHNICITY_OPTIONS = Object.freeze([
+  Object.freeze({"text":"汉族","code":"NA0017"}),
+  Object.freeze({"text":"阿昌族","code":"NA001"}),
+  Object.freeze({"text":"独龙族","code":"NA0010"}),
+  Object.freeze({"text":"达翰尔族","code":"NA0011"}),
+  Object.freeze({"text":"东乡族","code":"NA0012"}),
+  Object.freeze({"text":"鄂温克族","code":"NA0013"}),
+  Object.freeze({"text":"京族","code":"NA0014"}),
+  Object.freeze({"text":"仡佬族","code":"NA0015"}),
+  Object.freeze({"text":"高山族","code":"NA0016"}),
+  Object.freeze({"text":"回族","code":"NA0018"}),
+  Object.freeze({"text":"赫哲族","code":"NA0019"}),
+  Object.freeze({"text":"白族","code":"NA002"}),
+  Object.freeze({"text":"基诺族","code":"NA0020"}),
+  Object.freeze({"text":"景颇族","code":"NA0021"}),
+  Object.freeze({"text":"柯尔克孜族","code":"NA0022"}),
+  Object.freeze({"text":"哈萨克族","code":"NA0023"}),
+  Object.freeze({"text":"珞巴族","code":"NA0024"}),
+  Object.freeze({"text":"拉祜族","code":"NA0025"}),
+  Object.freeze({"text":"黎族","code":"NA0026"}),
+  Object.freeze({"text":"傈僳族","code":"NA0027"}),
+  Object.freeze({"text":"满族","code":"NA0028"}),
+  Object.freeze({"text":"门巴族","code":"NA0029"}),
+  Object.freeze({"text":"布朗族","code":"NA003"}),
+  Object.freeze({"text":"蒙古族","code":"NA0030"}),
+  Object.freeze({"text":"苗族","code":"NA0031"}),
+  Object.freeze({"text":"仫佬族","code":"NA0032"}),
+  Object.freeze({"text":"毛南族","code":"NA0033"}),
+  Object.freeze({"text":"怒族","code":"NA0034"}),
+  Object.freeze({"text":"纳西族","code":"NA0035"}),
+  Object.freeze({"text":"鄂伦春族","code":"NA0036"}),
+  Object.freeze({"text":"普米族","code":"NA0037"}),
+  Object.freeze({"text":"羌族","code":"NA0038"}),
+  Object.freeze({"text":"俄罗斯族","code":"NA0039"}),
+  Object.freeze({"text":"保安族","code":"NA004"}),
+  Object.freeze({"text":"畲族","code":"NA0040"}),
+  Object.freeze({"text":"萨拉族","code":"NA0041"}),
+  Object.freeze({"text":"水族","code":"NA0042"}),
+  Object.freeze({"text":"塔吉克族","code":"NA0043"}),
+  Object.freeze({"text":"土家族","code":"NA0044"}),
+  Object.freeze({"text":"塔塔尔族","code":"NA0045"}),
+  Object.freeze({"text":"土族","code":"NA0046"}),
+  Object.freeze({"text":"维吾尔族","code":"NA0047"}),
+  Object.freeze({"text":"乌孜别克族","code":"NA0048"}),
+  Object.freeze({"text":"佤族","code":"NA0049"}),
+  Object.freeze({"text":"布依族","code":"NA005"}),
+  Object.freeze({"text":"锡伯族","code":"NA0050"}),
+  Object.freeze({"text":"瑶族","code":"NA0051"}),
+  Object.freeze({"text":"裕固族","code":"NA0052"}),
+  Object.freeze({"text":"彝族","code":"NA0053"}),
+  Object.freeze({"text":"藏族","code":"NA0054"}),
+  Object.freeze({"text":"壮族","code":"NA0055"}),
+  Object.freeze({"text":"其他","code":"NA0056"}),
+  Object.freeze({"text":"哈尼族","code":"NA0057"}),
+  Object.freeze({"text":"朝鲜族","code":"NA006"}),
+  Object.freeze({"text":"傣族","code":"NA007"}),
+  Object.freeze({"text":"德昂族","code":"NA008"}),
+  Object.freeze({"text":"侗族","code":"NA009"})
+]);
+
+export const CMB_MARITAL_SELECT_ID = 'resume_basicInfo_maritalStatus';
+export const CMB_MARITAL_LIST_ID = 'resume_basicInfo_maritalStatus_list';
+export const CMB_POLITICS_SELECT_ID = 'resume_basicInfo_politicalAffinity';
+export const CMB_POLITICS_LIST_ID = 'resume_basicInfo_politicalAffinity_list';
+export const CMB_ETHNICITY_SELECT_ID = 'resume_basicInfo_nation';
+export const CMB_ETHNICITY_LIST_ID = 'resume_basicInfo_nation_list';
+
+/** Kind + fill hint only. No synthetic DatePicker DOM. */
+export const CMB_BIRTHDATE_HINT = Object.freeze({
+  key: 'birthDate',
+  label: '出生日期',
+  kind: 'DatePicker',
+  selectId: 'resume_basicInfo_birthday',
+  placeholder: '请选择日期',
+  readOnly: true,
+  fillHint: 'antd DatePicker readonly; format likely YYYY-MM-DD; Never Save',
+  syntheticDom: false,
+  liveFillClaimed: false
+});
+
+/** Exact harvested Chinese text or exact code. 请选择 and abbreviations do not match. */
+export function resolveCmbCodedOption(options, raw) {
+  const text = norm(raw);
+  if (!text || text === '请选择') return null;
+  const hit = options.find((row) => row.text === text || row.code === text);
+  return hit ? { text: hit.text, code: hit.code } : null;
+}

@@ -63,6 +63,8 @@ DOM 合同（CSS-confirmed，live 未证实）：`.ant-form-item` / `.ant-form-i
 
 刻意不做：证件类型/号、政治面貌/民族 select、日期、级联地区、家庭、教育、上传 PDF。性别 radio 仅有后续 **offline synthetic**（公开 CSS 候选 fixture，live DOM 未采，未宣称已支持）— 见 `CMB_NEXT.md`。
 
+体重 offline 已落地（同身高：`.ant-form-item` + `input.ant-input`；只写数字公斤；拒 `60kg`/`60KG`；`--live` 拒 `live_weight_text_unharvested`；套件 34/34；Never Save）。性别/身高/体重合成齐；下一刀需 live 的四字段：婚姻、政治面貌、民族、出生日期。未宣称已支持招行。验收仍 **85%**。
+
 ## 6. 安全阀：永不保存
 
 - 内容脚本不查询/点击「保存」「提交」。

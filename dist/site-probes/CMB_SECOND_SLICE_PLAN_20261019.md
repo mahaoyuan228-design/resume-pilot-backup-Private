@@ -4,6 +4,7 @@
 **性别补记（2026-10-19）**：offline synthetic 已落地（`cmb-basic.js` `fillGender` + `tests/fixtures/cmb-basic-form.html`）。仍是合成 fixture，**不是** live 支持。  
 **身高补记（2026-10-19）**：offline synthetic 已落地（`fillHeight` + 同一 fixture）。标签按「身高」或带 CM 后缀匹配；写入值只有数字，**不**把 CM 写进 value。仍是合成 fixture，**不是** live 支持。  
 **体重补记（2026-10-19）**：offline synthetic 已落地（`fillWeight` + 同一 fixture）。标签按「体重」或带 KG 后缀匹配；写入值只有数字公斤，**不**把 `60kg` / `60KG` 写进 value。`profile.weight` 仅在调用方传入时读取，**未**改 `emptyProfile`。仍是合成 fixture，**不是** live 支持。  
+体重 offline 已落地（同身高：`.ant-form-item` + `input.ant-input`；只写数字公斤；拒 `60kg`/`60KG`；`--live` 拒 `live_weight_text_unharvested`；套件 34/34；Never Save）。性别/身高/体重合成齐；下一刀需 live 的四字段：婚姻、政治面貌、民族、出生日期。未宣称已支持招行。验收仍 **85%**。  
 **输入**：`cmb-field-map-20261019.md` · `EXPAND_CMB_ADAPTER_DESIGN.md` · `CMB_NEXT.md` · `CMB_FINGERPRINT_REFRESH_20261019.md` · `_cmb-js-class-hints-20261019.txt` · 第一切片 `cmb-basic.js` / `cmb-profile-map.mjs`  
 **页**：`https://career.cmbchina.com/center/resume` · 栈 React + ant-design（`main.d37c8446.js` / `main.02cda64a.css`）· **非** hotjob  
 **第一切片已做**：姓名 / 手机号 / 邮箱（offline scaffold PASS；DOM 合同 CSS-confirmed，live 结构未采）

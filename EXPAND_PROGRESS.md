@@ -226,5 +226,6 @@
 - [x] 设计：`EXPAND_CMB_ADAPTER_DESIGN.md`；说明 `dist/site-probes/CMB_NEXT.md`。
 - [x] Offline scaffold：`siteId=cmb` · `src/content/cmb-basic.js` + `cmb-profile-map.mjs` · fixture · `scripts/auto-cmb-basic.mjs` · `tests/cmb-basic.test.mjs`；manifest host `https://career.cmbchina.com/*`。**SW/popup 未接线**。
 - [ ] Live：Jeremy 登录 `/center/resume` → DOM harvest → fill-wo-save。
-- [x] 第二拍字段计划（offline draft；SW/popup 未接线；未宣称已支持招行）：`dist/site-probes/CMB_SECOND_SLICE_PLAN_20261019.md`。性别 radio 已有 offline synthetic；出生日期 / 政治面貌 / 民族 / 身高 / 婚姻状况未做；live radio DOM 仍未采。
+- [x] 第二拍字段计划（offline draft；SW/popup 未接线；未宣称已支持招行）：`dist/site-probes/CMB_SECOND_SLICE_PLAN_20261019.md`。
+- 体重 offline 已落地（同身高：`.ant-form-item` + `input.ant-input`；只写数字公斤；拒 `60kg`/`60KG`；`--live` 拒 `live_weight_text_unharvested`；套件 34/34；Never Save）。性别/身高/体重合成齐；下一刀需 live 的四字段：婚姻、政治面貌、民族、出生日期。未宣称已支持招行。验收仍 **85%**。
 - **Acceptance 仍 85%**。勿对外写已支持招行。与南粤 live / Celebright 登录队列并行、不插队打断 Jeremy。

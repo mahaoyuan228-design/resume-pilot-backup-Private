@@ -8,6 +8,7 @@
 - Trial EXT：`hhembhoojafdefnkonmgoejfedgloanc`。
 
 ## 2. 离线刀（synthetic / fixture；未宣称 live）
+- **招行 2026-10-19**：体重 offline 已落地（同身高：`.ant-form-item` + `input.ant-input`；只写数字公斤；拒 `60kg`/`60KG`；`--live` 拒 `live_weight_text_unharvested`；套件 34/34；Never Save）。性别/身高/体重合成齐；下一刀需 live 的四字段：婚姻、政治面貌、民族、出生日期。未宣称已支持招行。验收仍 **85%**。
 - CITICS **户口类型** + **证件类型** + **民族** synthetic PASS；`FLAT_SELECT_MAX_OPTIONS` harden。**Live 未做**（民族 live 若全量≈56/可搜 → `select_search_heavy` fail-closed）。
 - PR #3 draft 累积中。https://github.com/mahaoyuan228-design/resume-pilot-backup-Private/pull/3
 - ATS fixtures + Extra fingerprints（docs only；无 live）。Family docs 已归档。

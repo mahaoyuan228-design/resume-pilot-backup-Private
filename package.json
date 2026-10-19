@@ -1,0 +1,10 @@
+{
+  "name": "resume-pilot",
+  "private": true,
+  "scripts": {
+    "test:paid-qa": "node --test tests/paid-qa-runner.test.mjs"
+  },
+  "dependencies": {
+    "ws": "^8.18.3"
+  }
+}

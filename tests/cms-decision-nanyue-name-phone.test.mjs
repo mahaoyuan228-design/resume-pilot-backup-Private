@@ -124,9 +124,22 @@ function extractFunction(src, name) {
   throw new Error(`unclosed ${name}`);
 }
 
-function loadCmsDecision() {
+function educationRow(questions) {
+  const fields = questions.map(field);
+  const row = el('div', { className: 'form-cell-inner', children: fields.map((item) => item.item) });
+  const element = el('section', {
+    className: 'form-cell',
+    children: [
+      el('div', { className: 'tit-wrap', children: [el('div', { className: 'tit', text: '教育经历必填' })] }),
+      el('div', { className: 'form-cell-right', children: [row] })
+    ]
+  });
+  return { element, name: '教育经历必填', controls: fields.map((item) => item.control), questions };
+}
+
+function loadCmsFns() {
   const src = fs.readFileSync(path.join(root, 'src/content/engine.js'), 'utf8');
-  const code = ['antSelectControl', 'formItemQuestion', 'visible', 'labelTexts', 'cmsDecision']
+  const code = ['antSelectControl', 'formItemQuestion', 'visible', 'labelTexts', 'cmsDecision', 'markDuplicateTargets']
     .map((name) => extractFunction(src, name)).join('\n');
   globalThis.HTMLInputElement = InputEl;
   globalThis.HTMLTextAreaElement = class HTMLTextAreaElement extends El {};
@@ -136,10 +149,19 @@ function loadCmsDecision() {
   const CMS_EDUCATION_SELECT_KEYS = { 学校: 'school', 学历: 'degree' };
   const cmsSchoolSearchControl = () => false;
   return new Function('M', 'RESERVED_TYPES', 'CMS_EDUCATION_SELECT_KEYS', 'cmsSchoolSearchControl',
-    `${code}\nreturn cmsDecision;`)(M, RESERVED_TYPES, CMS_EDUCATION_SELECT_KEYS, cmsSchoolSearchControl);
+    `${code}\nreturn { cmsDecision, markDuplicateTargets };`)(M, RESERVED_TYPES, CMS_EDUCATION_SELECT_KEYS, cmsSchoolSearchControl);
 }
 
-const cmsDecision = loadCmsDecision();
+const { cmsDecision, markDuplicateTargets } = loadCmsFns();
+
+function educationMajorEntry(control, section) {
+  const decision = cmsDecision(control, 'major', section);
+  if (decision.reason) return { reason: decision.reason, path: undefined };
+  const index = decision.context?.kind === 'education' ? decision.context.index : null;
+  return index === null
+    ? { reason: 'ready', path: 'major' }
+    : { reason: 'ready', path: `education.${index}.major` };
+}
 
 test('fullName binds only inside 个人基本信息必填', () => {
   const basic = section('个人基本信息必填', ['姓名']);
@@ -165,4 +187,23 @@ test('basic 专业 and 专业名称 stay unmapped; education accepts both', () =
       context: { kind: 'education', index: 0 }
     });
   }
+});
+
+test('one education row does not bind both 专业 and 专业名称 to education.0.major', () => {
+  assert.equal(M.classify(['专业']).key, 'major');
+  assert.equal(M.classify(['专业名称']).key, 'major');
+  const collided = markDuplicateTargets([
+    { reason: 'ready', path: 'education.0.major' },
+    { reason: 'ready', path: 'education.0.major' }
+  ]);
+  assert.equal(collided[0].reason, 'duplicate_target');
+  assert.equal(collided[1].reason, 'duplicate_target');
+
+  const education = educationRow(['专业', '专业名称']);
+  const entries = education.controls.map((control) => educationMajorEntry(control, education));
+  const resolved = markDuplicateTargets(entries.map((entry) => ({ ...entry })));
+  assert.deepEqual(entries[0], { reason: 'section_requires_mapping', path: undefined });
+  assert.deepEqual(entries[1], { reason: 'ready', path: 'education.0.major' });
+  assert.equal(resolved.some((entry) => entry.reason === 'duplicate_target'), false);
+  assert.equal(resolved.filter((entry) => entry.reason === 'ready' && entry.path === 'education.0.major').length, 1);
 });

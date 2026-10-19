@@ -33,12 +33,13 @@ function pause(ms) {
 }
 
 function parseArgs(argv) {
-  const args = { synthetic: false, live: false, help: false, extension: false };
+  const args = { synthetic: false, live: false, help: false, extension: false, only: null };
   for (let index = 0; index < argv.length; index += 1) {
     const token = argv[index];
     if (token === '--synthetic') args.synthetic = true;
     else if (token === '--live') args.live = true;
     else if (token === '--extension') args.extension = true;
+    else if (token === '--only') args.only = argv[++index] || '';
     else if (token === '--help' || token === '-h') args.help = true;
   }
   return args;
@@ -53,6 +54,13 @@ function evidencePaths(kind, now = stampIso()) {
   fs.mkdirSync(outDir, { recursive: true });
   const file = path.join(outDir, `cmb-basic-${kind}-${now}.json`);
   const latest = path.join(outDir, `cmb-basic-${kind}-latest.json`);
+  return { file, latest };
+}
+
+function genderEvidencePaths(now = stampIso()) {
+  fs.mkdirSync(outDir, { recursive: true });
+  const file = path.join(outDir, `cmb-gender-radio-${now}.json`);
+  const latest = path.join(outDir, 'cmb-gender-radio-latest.json');
   return { file, latest };
 }
 
@@ -277,6 +285,106 @@ async function runSynthetic(mode) {
   }
 }
 
+async function runSyntheticGender() {
+  const { server, port } = await startFixtureServer();
+  const cdpPort = await freePort();
+  let child;
+  try {
+    ({ child } = await launchChrome(cdpPort));
+    const url = `http://127.0.0.1:${port}/${fixtureName}`;
+    const { socket, send } = await attachPage(cdpPort, url);
+    await injectScript(send);
+    const refused = await evaluate(send, `ResumeCmbBasic.fillGender('男')`);
+    const invalid = await evaluate(send, `ResumeCmbBasic.fillGender('未知', { synthetic: true })`);
+    const female = await evaluate(send, `ResumeCmbBasic.fillGender('女', { synthetic: true })`);
+    const male = await evaluate(send, `ResumeCmbBasic.fillGender('男', { synthetic: true })`);
+    const basic = await evaluate(send, `ResumeCmbBasic.fillBasic({
+      allowExplicitValues: true,
+      fullName: '测试甲',
+      mobile: '13800138000',
+      email: 'cmb.fixture@example.com',
+      gender: '女'
+    }, { synthetic: true })`);
+    const neighbor = await evaluate(send, `(() => {
+      const norm = (value) => String(value ?? '').replace(/\\s+/g, ' ').trim();
+      const items = [...document.querySelectorAll('.ant-form-item')];
+      const byLabel = (want) => items.find((item) => {
+        const label = item.querySelector('.ant-form-item-label label, .ant-form-item-label');
+        return label && norm(label.textContent) === want;
+      });
+      const checkedValues = (item) => [...(item?.querySelectorAll('input[type="radio"]') || [])]
+        .filter((node) => node.checked)
+        .map((node) => node.value);
+      return {
+        workedChecked: checkedValues(byLabel('是否参加过正式工作')),
+        genderChecked: checkedValues(byLabel('性别')),
+        weight: byLabel('体重')?.querySelector('input')?.value || null,
+        saveDisabled: document.getElementById('save-btn')?.disabled === true,
+        saveText: document.getElementById('save-btn')?.textContent || ''
+      };
+    })()`);
+
+    const genderResult = basic?.results?.find((row) => row.label === '性别');
+    const ok = refused?.reason === 'wrong_page'
+      && refused?.ok === false
+      && invalid?.reason === 'invalid_profile_value'
+      && invalid?.ok === false
+      && female?.ok === true
+      && female?.after === '女'
+      && female?.before === ''
+      && male?.ok === true
+      && male?.before === '女'
+      && male?.after === '男'
+      && basic?.ok === true
+      && basic?.saved === false
+      && basic?.skippedSave === true
+      && basic?.results?.length === 4
+      && genderResult?.ok === true
+      && genderResult?.after === '女'
+      && neighbor?.workedChecked?.length === 1
+      && neighbor.workedChecked[0] === '否'
+      && neighbor?.genderChecked?.length === 1
+      && neighbor.genderChecked[0] === '女'
+      && neighbor?.weight === '60'
+      && neighbor?.saveDisabled === true
+      && male?.saved === false
+      && male?.skippedSave === true;
+
+    const payload = basePayload({
+      ok,
+      reason: ok ? 'synthetic_gender_radio_pass' : 'synthetic_gender_radio_fail',
+      surface: 'synthetic-fixture',
+      liveEdge: false,
+      formFillClaimed: false,
+      liveRadioDomHarvested: false,
+      fixture: 'synthetic-public-css-candidates',
+      label: '性别',
+      assumptions: [
+        'label-scoped .ant-form-item',
+        '.ant-radio-wrapper text is exactly 男 or 女',
+        '.ant-radio wraps input[type=radio]',
+        'readback is input.checked, not .ant-radio-checked',
+        'shared radio name is a synthetic stand-in for single-select'
+      ],
+      refused,
+      invalid,
+      female,
+      male,
+      fillBasic: basic,
+      neighbor
+    });
+    const { file, latest } = genderEvidencePaths();
+    const json = JSON.stringify(payload, null, 2);
+    fs.writeFileSync(file, json, 'utf8');
+    fs.copyFileSync(file, latest);
+    socket.close();
+    return { payload, written: { file, latest } };
+  } finally {
+    try { child?.kill(); } catch {}
+    try { server.close(); } catch {}
+  }
+}
+
 async function runLiveReadiness(cdpPort) {
   // Read-only portal fingerprint on documented public URL. Does NOT claim form readiness.
   const listRes = await fetch(`http://127.0.0.1:${cdpPort}/json/list`).catch(() => null);
@@ -322,6 +430,8 @@ function printHelp() {
   Prefer offline:
     MODE=fill node scripts/auto-cmb-basic.mjs --synthetic
     MODE=readiness node scripts/auto-cmb-basic.mjs --synthetic
+    node scripts/auto-cmb-basic.mjs --only 性别
+  Gender is offline synthetic only. Live radio DOM is not harvested.
   Live portal fingerprint only (no fill claim):
     MODE=readiness node scripts/auto-cmb-basic.mjs --live
     Extension path (Edge + SW message CMB_BASIC_AUTO):
@@ -350,6 +460,54 @@ async function main() {
     console.log(JSON.stringify({ event: 'refused', ...written, ...payload }, null, 2));
     process.exit(3);
   }
+  if (args.only != null && args.only !== '性别') {
+    console.error('Only 性别 is in this knife. Other second-slice labels are not implemented.');
+    process.exit(2);
+  }
+  if (args.only === '性别' && args.live && !args.synthetic) {
+    const payload = basePayload({
+      ok: false,
+      reason: 'live_gender_radio_unharvested',
+      surface: 'cdp',
+      liveEdge: false,
+      formFillClaimed: false,
+      liveRadioDomHarvested: false,
+      hint: 'Gender radio DOM was not harvested. Use --only 性别 without --live.'
+    });
+    const { file, latest } = genderEvidencePaths();
+    fs.writeFileSync(file, JSON.stringify(payload, null, 2), 'utf8');
+    fs.copyFileSync(file, latest);
+    console.log(JSON.stringify({ event: 'refused', file, latest, ...payload }, null, 2));
+    process.exit(3);
+  }
+  if (args.only === '性别') {
+    try {
+      const { payload, written } = await runSyntheticGender();
+      console.log(JSON.stringify({
+        event: 'saved',
+        ...written,
+        ok: payload.ok,
+        reason: payload.reason,
+        label: '性别'
+      }, null, 2));
+      process.exit(payload.ok ? 0 : 2);
+    } catch (error) {
+      const payload = basePayload({
+        ok: false,
+        reason: String(error?.message || error).slice(0, 300),
+        surface: 'synthetic-fixture',
+        liveEdge: false,
+        formFillClaimed: false,
+        error: String(error?.stack || error).slice(0, 800)
+      });
+      const { file, latest } = genderEvidencePaths();
+      fs.writeFileSync(file, JSON.stringify(payload, null, 2), 'utf8');
+      fs.copyFileSync(file, latest);
+      console.error(JSON.stringify({ event: 'error', file, latest, ...payload }, null, 2));
+      process.exit(1);
+    }
+  }
+
   const mode = modeFromEnv();
   // Default offline fixture. --live = portal readiness only. --synthetic always wins over --live.
   const useSynthetic = args.synthetic || (!args.live && process.env.CMB_SURFACE !== 'live');

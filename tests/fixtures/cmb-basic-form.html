@@ -13,6 +13,8 @@
     .ant-form-item-label { display: block; font-weight: 600; margin-bottom: 0.25rem; }
     .ant-form-item-control { line-height: 32px; }
     .ant-input { width: 100%; padding: 0.4rem 0.5rem; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; }
+    .ant-radio-wrapper { display: inline-flex; align-items: center; gap: 0.35rem; margin-right: 1rem; }
+    .ant-radio { display: inline-flex; }
     .footer { border-top: 1px solid #e5e6eb; padding: 1rem 1.25rem; color: #8f959e; font-size: 0.85rem; }
     .note { color: #666; font-size: 0.85rem; }
     .warn { color: #a61d24; font-size: 0.85rem; }
@@ -44,8 +46,10 @@
         (<code>.ant-form-item</code> / <code>.ant-form-item-label</code> / <code>.ant-form-item-control</code> /
         <code>input.ant-input</code>) are <strong>CSS-confirmed</strong> in public
         <code>main.02cda64a.css</code> (bundle also ships <code>main.d37c8446.js</code> React+antd),
-        not invented from thin air. Live resume-edit DOM was CDP-body fingerprinted 2026-10-18
-        (labels present) but structure still needs login harvest to refine. Do not claim live support.</p>
+        not invented from thin air. The 性别 block below is <strong>synthetic</strong>:
+        only the public CSS candidate names <code>.ant-form-item</code> /
+        <code>.ant-radio-wrapper</code> / <code>.ant-radio</code> are used.
+        Live radio DOM was not harvested. Do not claim live support.</p>
       <p class="warn">页上提示：姓名 / 证件类型 / 证件号在简历<strong>保存后无法再次修改</strong> — 本脚手架永不点保存。</p>
 
       <form class="ant-form" action="#" onsubmit="return false;">
@@ -70,11 +74,51 @@
           </div>
         </div>
 
+        <!--
+          SYNTHETIC gender radio. Not live CMB DOM.
+          Assumptions (public Ant Design Radio shape + public CSS class names only):
+          1. 性别 is one .ant-form-item whose label text is exactly 性别.
+          2. Each option is a label.ant-radio-wrapper whose remaining text is exactly 男 or 女.
+          3. The wrapper contains .ant-radio and a native input[type=radio].
+          4. Clicking the wrapper checks that input. Readback is input.checked, not .ant-radio-checked.
+          5. Radios in this item share a name so the browser clears the sibling.
+             Live Ant Radio.Group may be React-controlled and unnamed — unverified.
+          6. Other radio groups are separate .ant-form-item nodes and must not be clicked.
+        -->
+        <div class="ant-form-item" data-field="性别" data-dom="synthetic-public-css-candidate">
+          <div class="ant-form-item-label"><label>性别</label></div>
+          <div class="ant-form-item-control">
+            <label class="ant-radio-wrapper">
+              <span class="ant-radio"><input type="radio" name="cmb-synthetic-gender" value="男" /></span>
+              <span>男</span>
+            </label>
+            <label class="ant-radio-wrapper">
+              <span class="ant-radio"><input type="radio" name="cmb-synthetic-gender" value="女" /></span>
+              <span>女</span>
+            </label>
+          </div>
+        </div>
+
         <!-- Neighbor control: must stay untouched by fill -->
         <div class="ant-form-item" data-field="体重">
           <div class="ant-form-item-label"><label>体重</label></div>
           <div class="ant-form-item-control">
             <input class="ant-input" type="text" name="weight" value="60" />
+          </div>
+        </div>
+
+        <!-- Neighbor radio group. Not a supported field. Must stay on 否. -->
+        <div class="ant-form-item" data-field="是否参加过正式工作" data-synthetic-neighbor="true">
+          <div class="ant-form-item-label"><label>是否参加过正式工作</label></div>
+          <div class="ant-form-item-control">
+            <label class="ant-radio-wrapper">
+              <span class="ant-radio"><input type="radio" name="cmb-synthetic-worked" value="是" /></span>
+              <span>是</span>
+            </label>
+            <label class="ant-radio-wrapper">
+              <span class="ant-radio"><input type="radio" name="cmb-synthetic-worked" value="否" checked /></span>
+              <span>否</span>
+            </label>
           </div>
         </div>
 

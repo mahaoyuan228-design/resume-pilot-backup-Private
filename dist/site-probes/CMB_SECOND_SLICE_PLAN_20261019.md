@@ -1,6 +1,7 @@
 # 招行 CMB 第二拍字段计划 · 2026-10-19（Asia/Shanghai）
 
 **状态**：离线分析草稿 — **未**宣称已支持招行；**未** live fill；**未**接线 SW/popup；**永不**点保存/提交。  
+**性别补记（2026-10-19）**：offline synthetic 已落地（`cmb-basic.js` `fillGender` + `tests/fixtures/cmb-basic-form.html`）。仍是合成 fixture，**不是** live 支持。  
 **输入**：`cmb-field-map-20261019.md` · `EXPAND_CMB_ADAPTER_DESIGN.md` · `CMB_NEXT.md` · `CMB_FINGERPRINT_REFRESH_20261019.md` · `_cmb-js-class-hints-20261019.txt` · 第一切片 `cmb-basic.js` / `cmb-profile-map.mjs`  
 **页**：`https://career.cmbchina.com/center/resume` · 栈 React + ant-design（`main.d37c8446.js` / `main.02cda64a.css`）· **非** hotjob  
 **第一切片已做**：姓名 / 手机号 / 邮箱（offline scaffold PASS；DOM 合同 CSS-confirmed，live 结构未采）
@@ -14,7 +15,7 @@
 
 | 标签 | profile 路径猜测 | 控件类型 | 风险 | 是否依赖 live DOM |
 | --- | --- | --- | --- | --- |
-| 性别 | `gender`（值限「男」「女」） | radio（CDP bodyText「男/女」） | 中：antd Radio 节点结构未采；误点邻项风险 | **是**（需 live 确认 radio DOM） |
+| 性别 | `gender`（值限「男」「女」） | radio（CDP bodyText「男/女」） | 中：antd Radio 节点结构未采；误点邻项风险 | **是**（synthetic 已绿；live DOM 仍要确认） |
 | 出生日期 | `birthDate` | date / `ant-picker`（公开 CSS 候选） | **高**：DatePicker 面板/输入双路径；格式未知；易误触 | **是**（需 live 确认 picker 交互） |
 | 政治面貌 | `political`（profile 顶层暂无 → 可能 `customFacts` / `siteOptionMappings`） | select（「请选择」；`ant-select` 公开 CSS 候选） | 中：选项表未采集；可能可搜/长列表 → 对标 CITICS `select_search_heavy` 拒填 | **是**（需 live 选项+结构） |
 | 民族 | `ethnicity`（**勿**用 `nation`，避国籍碰撞；对齐 CITICS） | select（`ant-select` 公开 CSS 候选） | 中：全量民族约 56 或 showSearch 则应 skip，勿强填 | **是**（需 live 选项规模） |
@@ -70,7 +71,7 @@
 2. **文件与全局名隔离**：新增逻辑仅落 `cmb-*`（如 `cmb-basic.js`、`ResumeCmbBasic`）；`tests/cmb-basic.test.mjs` 已断言源码不含 `cms-|gth-|ResumeCitics|atsx-form` 等串 — 第二拍扩字段时此断言须继续 PASS。
 3. **授权闸门不变**：招行动作不得削弱现网 fail-closed；未授权不得自动填 CMS/GTH；勿为招行临时打开 `<all_urls>`。
 4. **Manifest / 注入面**：`host_permissions` 仅追加 `https://career.cmbchina.com/*`（若尚未加）；不得改 CMS/GTH content_scripts matches；SW 接线 `CMB_*` 时不得复用/改写 `CMS_BASIC_AUTO` / `GTH_*` 消息名语义。
-5. **测试门禁**：改招行前/后跑 `node --test tests/cmb-basic.test.mjs`（期望 8/8）以及现有 CMS/GTH 相关测试（至少 `cms-basic-auto.test.mjs`、`gth-basic-auto.test.mjs` 不因招行改动变红）；**不要**为凑绿改测试断言。
+5. **测试门禁**：改招行前/后跑 `node --test tests/cmb-basic.test.mjs`（性别 synthetic 之后期望 11/11，含原先 8 条）以及现有 CMS/GTH 相关测试（至少 `cms-basic-auto.test.mjs`、`gth-basic-auto.test.mjs` 不因招行改动变红）；**不要**为凑绿改测试断言。
 
 ---
 
@@ -87,14 +88,27 @@
 
 **阻塞**：无登录会话则无法完成 L1–L6；对外口径仍仅 **CMS + GTH** 可卖；招行保持 offline scaffold + 本计划草稿。
 
+### 性别 synthetic 假设（不阻塞登录）
+
+公开 CSS 只有类名计数（`ant-radio` 点类 118），没有登录后的 radio 树。因此用最小合成 HTML，**不**把它写成 live 合同：
+
+1. 「性别」是单独一个 `.ant-form-item`，标签文本恰好为「性别」（避免点到邻项「是否参加过正式工作」）。
+2. 选项是 `label.ant-radio-wrapper`，去掉 `.ant-radio` 后文本恰好为「男」或「女」。
+3. wrapper 内有 `.ant-radio` 和原生 `input[type=radio]`。读回用 `input.checked`，不用未证实的 `.ant-radio-checked`。
+4. 同一项里的 radio 共用 `name`，只为让浏览器取消另一项。Live Ant Radio.Group 可能无 name、由 React 受控 — **未核实**。
+5. 结构不是「恰好两个、男+女、各自有 `.ant-radio` 与 radio input」时返回 `radio_structure_changed`，不乱点。
+6. 运行：`node scripts/auto-cmb-basic.mjs --only 性别`。`--live` 直接拒绝（`live_gender_radio_unharvested`）。Never Save。
+
+L2 仍然开放：需要登录后的「性别」item outerHTML，才能把上述假设收成 live 合同。
+
 ---
 
 ## 5. 与第一切片关系
 
 | 项 | 第一切片 | 第二拍（本文件） |
 | --- | --- | --- |
-| 字段 | 姓名 / 手机号 / 邮箱 | 上表 6 行（建议）；未实现 |
-| DOM 合同 | CSS-confirmed text | 扩展 radio/picker/select **候选** |
+| 字段 | 姓名 / 手机号 / 邮箱 | 性别 **offline synthetic**；其余 5 行仍未实现 |
+| DOM 合同 | CSS-confirmed text | 性别 fixture = 公开 CSS **候选**（非 live）；picker/select 仍只是候选 |
 | SW/popup | 未接线 | **仍不接线**（本分析不写工程替装） |
 | 保存 | Never Save | Never Save |
 | 客户口径 | 未支持 | **仍未支持** |

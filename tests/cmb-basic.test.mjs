@@ -9,6 +9,8 @@ import { resolve } from 'node:path';
 import {
   CMB_SITE_ID,
   CMB_TEXT_LABELS,
+  CMB_GENDER_LABEL,
+  CMB_GENDER_VALUES,
   planCmbBasicFromProfile,
   normalizeCmbLabelText,
   isCmbHost,
@@ -94,6 +96,97 @@ test('harness defaults MODE readiness, CDP_PORT 9237, never Save', () => {
   assert.match(harness, /live_fill_refused_login_wall/);
   assert.match(harness, /career\.cmbchina\.com/);
   assert.match(harness, /extension_path_not_wired_yet/);
+});
+
+test('gender plan is optional and allowlists 男/女 only', () => {
+  assert.equal(CMB_GENDER_LABEL, '性别');
+  assert.deepEqual([...CMB_GENDER_VALUES], ['男', '女']);
+  const base = {
+    fullName: '测试甲',
+    phone: '13800138000',
+    email: 'cmb.user@example.com',
+    confirmedFields: ['fullName', 'phone', 'email']
+  };
+  const absent = planCmbBasicFromProfile(base);
+  assert.equal(absent.ok, true);
+  assert.equal(absent.values.gender, '');
+  assert.equal(absent.fields.some((row) => row.label === '性别'), false);
+  assert.equal(absent.blockers.length, 0);
+
+  const ready = planCmbBasicFromProfile({
+    ...base,
+    gender: ' 女 ',
+    confirmedFields: [...base.confirmedFields, 'gender']
+  });
+  assert.equal(ready.ok, true);
+  assert.equal(ready.values.gender, '女');
+  assert.equal(ready.fields.find((row) => row.label === '性别')?.ready, true);
+
+  const unconfirmed = planCmbBasicFromProfile({ ...base, gender: '男' });
+  assert.equal(unconfirmed.ok, true);
+  assert.equal(unconfirmed.values.gender, '');
+  assert.equal(unconfirmed.blockers.find((row) => row.label === '性别')?.reason, 'profile_fact_unconfirmed');
+
+  const invalid = planCmbBasicFromProfile({
+    ...base,
+    gender: '未知',
+    confirmedFields: [...base.confirmedFields, 'gender']
+  });
+  assert.equal(invalid.ok, true);
+  assert.equal(invalid.values.gender, '');
+  assert.equal(invalid.blockers.find((row) => row.label === '性别')?.reason, 'invalid_profile_value');
+});
+
+test('gender fixture is synthetic and scoped away from the neighbor radio group', () => {
+  assert.match(fixture, /data-dom="synthetic-public-css-candidate"/);
+  assert.match(fixture, /SYNTHETIC gender radio/);
+  assert.match(fixture, /class="ant-radio-wrapper"/);
+  assert.match(fixture, /class="ant-radio"/);
+  assert.match(fixture, /name="cmb-synthetic-gender"/);
+  assert.match(fixture, /name="cmb-synthetic-worked"/);
+  assert.match(fixture, />性别</);
+  assert.match(fixture, />男</);
+  assert.match(fixture, />女</);
+  assert.match(fixture, /data-synthetic-neighbor="true"/);
+  assert.match(fixture, /Live radio DOM was not harvested/);
+  assert.match(source, /GENDER_LABEL = '性别'/);
+  assert.match(source, /RADIO_WRAP_SEL = '\.ant-radio-wrapper'/);
+  assert.match(source, /RADIO_MARK_SEL = '\.ant-radio'/);
+  assert.match(source, /fillGender/);
+  assert.match(source, /radio_structure_changed/);
+  assert.doesNotMatch(source, /出生日期|政治面貌|婚姻状况|民族/);
+  assert.match(harness, /--only 性别/);
+  assert.match(harness, /live_gender_radio_unharvested/);
+  assert.match(harness, /formFillClaimed: false/);
+});
+
+test('synthetic harness gender radio readback 男/女 without touching the neighbor', { timeout: 120000 }, () => {
+  const run = spawnSync(process.execPath, ['scripts/auto-cmb-basic.mjs', '--only', '性别'], {
+    cwd: root,
+    encoding: 'utf8',
+    timeout: 110000
+  });
+  assert.equal(run.status, 0, run.stderr || run.stdout);
+  const payload = JSON.parse(readFileSync(resolve(root, 'dist/auto-runs/cmb-gender-radio-latest.json'), 'utf8'));
+  assert.equal(payload.ok, true);
+  assert.equal(payload.saved, false);
+  assert.equal(payload.skippedSave, true);
+  assert.equal(payload.liveEdge, false);
+  assert.equal(payload.formFillClaimed, false);
+  assert.equal(payload.liveRadioDomHarvested, false);
+  assert.equal(payload.reason, 'synthetic_gender_radio_pass');
+  assert.equal(payload.label, '性别');
+  assert.equal(payload.female?.after, '女');
+  assert.equal(payload.male?.before, '女');
+  assert.equal(payload.male?.after, '男');
+  assert.equal(payload.fillBasic?.results?.length, 4);
+  assert.equal(payload.fillBasic.results.find((row) => row.label === '性别')?.after, '女');
+  assert.equal(payload.fillBasic.results.filter((row) => row.label !== '性别').length, 3);
+  assert.ok(payload.fillBasic.results.every((row) => row.ok));
+  assert.deepEqual(payload.neighbor?.workedChecked, ['否']);
+  assert.deepEqual(payload.neighbor?.genderChecked, ['女']);
+  assert.equal(payload.neighbor?.weight, '60');
+  assert.equal(payload.neighbor?.saveDisabled, true);
 });
 
 test('synthetic harness fill-without-save readback for 3 basic fields', { timeout: 120000 }, () => {

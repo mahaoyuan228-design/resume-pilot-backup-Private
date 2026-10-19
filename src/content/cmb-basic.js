@@ -3,9 +3,13 @@
 //
 // First slice fields (labels from CDP bodyText 2026-10-18 /center/resume):
 //   姓名 (text) · 手机号 (text) · 邮箱 (text)
+// Gender (性别) is offline/synthetic only: 男 / 女 inside one label-scoped form item.
+// Live radio DOM was NOT harvested. Class names are public CSS candidates only.
 //
 // DOM contract (CSS-confirmed in public main.02cda64a.css; live form layout unproven):
 //   `.ant-form-item` + `.ant-form-item-label` + `input.ant-input`
+// Gender candidates (public CSS only, synthetic fixture, not a live contract):
+//   `.ant-form-item` scoped by label 性别 + `.ant-radio-wrapper` + `.ant-radio`
 // CDP fingerprint wrongly flagged vue; public bundle is React createRoot + ant-design.
 // Hard warning: page copy says 姓名/证件* 保存后不可再改 — Never Save is mandatory.
 (() => {
@@ -16,10 +20,15 @@
 
   const SITE_ID = 'cmb';
   const TEXT_LABELS = ['姓名', '手机号', '邮箱'];
+  const GENDER_LABEL = '性别';
+  const GENDER_VALUES = ['男', '女'];
   /** CSS-confirmed ant-design classes in public main.02cda64a.css — live resume DOM may still differ. */
   const ITEM_SEL = '.ant-form-item';
   const LABEL_SEL = '.ant-form-item-label, label';
   const INPUT_SEL = 'input.ant-input, input[type="text"], input[type="tel"], input[type="email"], input:not([type])';
+  /** Public CSS candidates only. Not harvested from a logged-in resume. */
+  const RADIO_WRAP_SEL = '.ant-radio-wrapper';
+  const RADIO_MARK_SEL = '.ant-radio';
 
   const norm = (value) => String(value ?? '')
     .normalize('NFKC')
@@ -99,6 +108,74 @@
     return control ? norm(control.value) : '';
   }
 
+  function genderOptions(item) {
+    return [...item.querySelectorAll(RADIO_WRAP_SEL)].map((wrap) => {
+      const mark = wrap.querySelector(RADIO_MARK_SEL);
+      const control = wrap.querySelector('input[type="radio"]');
+      const clone = wrap.cloneNode(true);
+      clone.querySelectorAll(RADIO_MARK_SEL).forEach((node) => node.remove());
+      return { wrap, mark, control, text: norm(clone.textContent) };
+    }).filter((row) => row.text === '男' || row.text === '女');
+  }
+
+  function genderStructureOk(options) {
+    if (options.length !== 2) return false;
+    const texts = new Set(options.map((row) => row.text));
+    if (texts.size !== 2 || !texts.has('男') || !texts.has('女')) return false;
+    return options.every((row) => row.mark && row.control && row.control.type === 'radio' && !row.control.disabled);
+  }
+
+  function readGender(item) {
+    const options = genderOptions(item);
+    if (!genderStructureOk(options)) return { ok: false, value: '', reason: 'radio_structure_changed' };
+    const checked = options.filter((row) => row.control.checked);
+    if (checked.length > 1) return { ok: false, value: '', reason: 'radio_readback_ambiguous' };
+    return { ok: true, value: checked[0]?.text || '', reason: checked.length ? 'checked' : 'empty' };
+  }
+
+  async function fillGender(value, options = {}) {
+    const want = norm(value);
+    const base = {
+      label: GENDER_LABEL,
+      saved: false,
+      skippedSave: true,
+      expected: want,
+      before: '',
+      after: ''
+    };
+    if (!pageAllowed(options)) return { ...base, ok: false, reason: 'wrong_page' };
+    if (!GENDER_VALUES.includes(want)) {
+      return { ...base, ok: false, reason: 'invalid_profile_value' };
+    }
+    const item = findItem(GENDER_LABEL);
+    if (!item) return { ...base, ok: false, reason: 'item_not_found' };
+    const radios = genderOptions(item);
+    if (!genderStructureOk(radios)) {
+      return { ...base, ok: false, reason: 'radio_structure_changed' };
+    }
+    const beforeRead = readGender(item);
+    const before = beforeRead.ok ? beforeRead.value : '';
+    const target = radios.find((row) => row.text === want);
+    if (!target) {
+      return { ...base, ok: false, reason: 'option_not_found', before, after: before };
+    }
+    target.wrap.click();
+    if (!target.control.checked) target.control.click();
+    target.control.dispatchEvent(new Event('input', { bubbles: true }));
+    target.control.dispatchEvent(new Event('change', { bubbles: true }));
+    await pause(80);
+    const afterRead = readGender(item);
+    const after = afterRead.ok ? afterRead.value : '';
+    const matched = afterRead.ok && after === want;
+    return {
+      ...base,
+      ok: matched,
+      reason: matched ? 'matched' : (afterRead.ok ? 'readback_mismatch' : afterRead.reason),
+      before,
+      after
+    };
+  }
+
   async function fillText(label, value) {
     const item = findItem(label);
     if (!item) return { label, ok: false, reason: 'item_not_found', before: '', after: '', expected: value };
@@ -136,6 +213,7 @@
     const fullName = norm(profile.fullName || '');
     const mobile = norm(profile.phone || '');
     const email = norm(profile.email || '');
+    const genderRaw = norm(profile.gender || '');
     const core = [
       { label: '姓名', path: 'fullName', value: fullName },
       { label: '手机号', path: 'phone', value: mobile },
@@ -146,16 +224,37 @@
       else if (!confirmed.has(row.path)) reason = 'profile_fact_unconfirmed';
       return { ...row, ready: reason === null, reason };
     });
-    const blockers = core.filter((row) => !row.ready);
-    if (blockers.length) {
-      return { ok: false, reason: 'profile_fields_unavailable', values: null, fields: core, blockers };
+    const genderFields = [];
+    if (genderRaw) {
+      let reason = null;
+      if (!confirmed.has('gender')) reason = 'profile_fact_unconfirmed';
+      else if (!GENDER_VALUES.includes(genderRaw)) reason = 'invalid_profile_value';
+      genderFields.push({
+        label: GENDER_LABEL,
+        path: 'gender',
+        value: genderRaw,
+        ready: reason === null,
+        reason
+      });
+    }
+    const fields = [...core, ...genderFields];
+    const coreBlockers = core.filter((row) => !row.ready);
+    const genderBlockers = genderFields.filter((row) => !row.ready);
+    if (coreBlockers.length) {
+      return {
+        ok: false,
+        reason: 'profile_fields_unavailable',
+        values: null,
+        fields,
+        blockers: [...coreBlockers, ...genderBlockers]
+      };
     }
     return {
       ok: true,
       reason: 'profile_ready',
-      values: { fullName, mobile, email },
-      fields: core,
-      blockers: []
+      values: { fullName, mobile, email, gender: genderFields.find((row) => row.ready)?.value || '' },
+      fields,
+      blockers: genderBlockers
     };
   }
 
@@ -235,10 +334,24 @@
     let plan = null;
 
     if (allowExplicit && (rawValues.fullName || rawValues.mobile || rawValues.email)) {
+      const gender = rawValues.gender == null ? '' : norm(rawValues.gender);
+      if (gender && !GENDER_VALUES.includes(gender)) {
+        return {
+          ok: false,
+          siteId: SITE_ID,
+          reason: 'invalid_gender',
+          href: location.href,
+          results: [],
+          saved: false,
+          skippedSave: true,
+          writeAttempted: false
+        };
+      }
       values = {
         fullName: norm(rawValues.fullName || ''),
         mobile: norm(rawValues.mobile || rawValues.phone || ''),
-        email: norm(rawValues.email || '')
+        email: norm(rawValues.email || ''),
+        gender
       };
       if (!values.fullName || !values.mobile || !values.email) {
         return {
@@ -287,6 +400,9 @@
     for (const [label, value] of textPlan) {
       results.push(await fillText(label, value));
     }
+    if (GENDER_VALUES.includes(values.gender)) {
+      results.push(await fillGender(values.gender, options));
+    }
     const ok = results.every((row) => row.ok);
     return {
       ok,
@@ -307,12 +423,17 @@
   const api = {
     siteId: SITE_ID,
     TEXT_LABELS,
+    GENDER_LABEL,
+    GENDER_VALUES,
     ITEM_SEL,
+    RADIO_WRAP_SEL,
+    RADIO_MARK_SEL,
     isCmbHost,
     onCmbResumeEditPage,
     findItem,
     textControl,
     fillText,
+    fillGender,
     fillBasic,
     probeLabels,
     probeFingerprint,

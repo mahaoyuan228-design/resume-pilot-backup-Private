@@ -61,7 +61,7 @@ tests/cmb-basic.test.mjs
 
 DOM 合同（CSS-confirmed，live 未证实）：`.ant-form-item` / `.ant-form-item-label` / `input.ant-input`（公开 CSS 有大量 ant-*；非发明类名）。登录后若结构不同，只改选择器。
 
-刻意不做：证件类型/号、性别 radio、政治面貌/民族 select、日期、级联地区、家庭、教育、上传 PDF。
+刻意不做：证件类型/号、政治面貌/民族 select、日期、级联地区、家庭、教育、上传 PDF。性别 radio 仅有后续 **offline synthetic**（公开 CSS 候选 fixture，live DOM 未采，未宣称已支持）— 见 `CMB_NEXT.md`。
 
 ## 6. 安全阀：永不保存
 

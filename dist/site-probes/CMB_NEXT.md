@@ -20,14 +20,18 @@
 | 姓名 | fullName | scaffold + offline synthetic |
 | 手机号 | phone | scaffold + offline synthetic |
 | 邮箱 | email | scaffold + offline synthetic |
+| 性别 | gender（男/女） | **offline synthetic only**。公开 CSS 候选 fixture；**live radio DOM 仍未采** |
 
 DOM 合同：**CSS-confirmed** `.ant-form-item` / `input.ant-input`（`main.02cda64a.css`）。Live 结构未采。
+
+性别单选 **不是** live 合同。Fixture 只用公开 CSS 候选 `.ant-form-item` / `.ant-radio-wrapper` / `.ant-radio`，并标明 synthetic。读回只在该 fixture 上断言「男」或「女」。`--only 性别` 拒绝 live fill（`live_gender_radio_unharvested`）。**未**宣称已支持招行。
 
 ## 3. How to run
 
 ```bash
 MODE=readiness node scripts/auto-cmb-basic.mjs --synthetic
 MODE=fill node scripts/auto-cmb-basic.mjs --synthetic
+node scripts/auto-cmb-basic.mjs --only 性别
 node --test tests/cmb-basic.test.mjs
 ```
 
@@ -47,4 +51,6 @@ Jeremy 登录招行招聘账号并停在 `/center/resume` 后，才能 harvest l
 
 ## 6. Second-slice plan
 
-离线分析草稿 only（未实现 fill；SW/popup 未接线；未宣称已支持招行；Never Save）：`dist/site-probes/CMB_SECOND_SLICE_PLAN_20261019.md`。
+离线分析草稿（SW/popup 未接线；未宣称已支持招行；Never Save）：`dist/site-probes/CMB_SECOND_SLICE_PLAN_20261019.md`。
+
+其中 **性别** 已有 offline synthetic（本刀）。出生日期 / 政治面貌 / 民族 / 身高 / 婚姻状况 **未**做。Live 性别 radio DOM 仍要登录后 harvest。

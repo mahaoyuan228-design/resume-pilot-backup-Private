@@ -26,3 +26,7 @@
 9. **北森 Beisen-2022 登录后 DOM（离线包已备·2026-10-19）**：登录后停简历编辑；按 `BEISEN_2022_LIVE_DOM_HARVEST_PACK_20261019.md` 采姓名→手机→邮箱；Never Save；排除 legacy CmsPortal。
 
 10. **Moka/TI 登录后 DOM（离线包已备·2026-10-19）**：登录后停简历编辑；按 `MOKA_LIVE_DOM_HARVEST_PACK_20261019.md` 采姓名→手机→邮箱；Never Save；不升格 hashed sd-*。
+
+11. **中信下一 live（户口/证件/民族·2026-10-19）**：学历仍阻塞；优先按 `CITICS_NEXT_LIVE_PRIORITY_20261019.md` 采三项证据；Never Save。
+
+12. **Celebright/国盛一键试填准备包（2026-10-19）**：登录后停简历编辑；按 `dist/site-probes/HOTJOB_CELEBRIGHT_TRIAL_PACK_20261019.md`；键名先核对；Never Save；南粤 PASS 不代替。

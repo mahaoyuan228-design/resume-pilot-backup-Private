@@ -367,16 +367,37 @@ test('CMS_BASIC_AUTO isPersonalField filters education/internship rows out of su
     labels: ['学校'],
   }), false);
   assert.equal(runner.isPersonalField({
+    path: 'education.0.major',
+    status: 'failed',
+    reason: 'duplicate_target',
+    scope: { sectionName: '教育经历必填' },
+    labels: ['专业名称'],
+  }), false);
+  assert.equal(runner.isPersonalField({
+    path: 'customAnswers.__cms_education_academic_degree',
+    scope: { sectionName: '教育经历必填' },
+    labels: ['学位'],
+  }), false);
+  assert.equal(runner.isPersonalField({
     id: 'cms-academic-__cms_basic_education_level',
     labels: ['学历'],
   }), true);
   const summary = runner.summarizeFields([
     { id: 'a', path: 'customAnswers.__cms_basic_major', status: 'verified', scope: { sectionName: '个人基本信息必填' } },
     { id: 'b', path: 'education.0.major', status: 'verified', scope: { sectionName: '教育经历必填' } },
+    {
+      id: 'c',
+      path: 'education.0.major',
+      status: 'failed',
+      reason: 'duplicate_target',
+      scope: { sectionName: '教育经历必填' },
+      labels: ['专业名称'],
+    },
   ]);
   assert.equal(summary.personalCount, 1);
   assert.equal(summary.verified, 1);
-  assert.equal(summary.totalReturned, 2);
+  assert.equal(summary.failed, 0);
+  assert.equal(summary.totalReturned, 3);
   const source = runner.basicSource({
     customAnswers: { __cms_basic_academic_degree: '硕士' },
     confirmedFields: ['customAnswers.__cms_basic_academic_degree'],

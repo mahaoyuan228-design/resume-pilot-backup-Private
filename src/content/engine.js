@@ -577,6 +577,17 @@
         || (key === "endDate" && question === "毕业时间"))) {
       return { reason: "section_requires_mapping" };
     }
+    // One education row can show both 专业 and 专业名称. Both classify as major
+    // and would share education.0.major (duplicate_target). Keep 专业名称.
+    if (section.name === "教育经历必填" && key === "major" && question === "专业") {
+      const right = section.element.querySelector(":scope > .form-cell-right");
+      const rows = [...(right?.querySelectorAll(":scope > .form-cell-inner") || [])];
+      const row = control.closest(".form-cell-inner");
+      const named = rows.length === 1 && rows[0] === row && [...row.querySelectorAll(".ant-form-item")].some((item) =>
+        visible(item) && item.closest(".form-cell-inner") === row
+        && M.normalize(formItemQuestion(item)?.textContent) === "专业名称");
+      if (named) return { reason: "section_requires_mapping" };
+    }
     if (section.name === "教育经历必填"
       && control.matches?.(".ant-select-selection.ant-select-selection--single")
       && Object.hasOwn(CMS_EDUCATION_SELECT_KEYS, question)
@@ -896,6 +907,11 @@
       if (result.reason === "ready") result.reason = controlConstraint(control, result.answer) || "ready";
       return result;
     });
+    markDuplicateTargets(entries);
+    return entries;
+  }
+
+  function markDuplicateTargets(entries) {
     const paths = new Map();
     for (const entry of entries) {
       if (entry.reason !== "ready" || !entry.path) continue;

@@ -100,8 +100,12 @@ function basicSource(profile){
 function isPersonalField(field){
   if(!field||typeof field!=='object')return false;
   const section=norm(field.scope?.sectionName||field.sectionName||'');
-  if(section===SECTION)return true;
   const path=String(field.path||'');
+  // Education/internship rows stay out of the 个人基本信息 summary even when
+  // their label aliases a basic question (专业名称, 学历, 学位, 毕业院校).
+  if(section==='教育经历必填'||section==='实习经历')return false;
+  if(/^education\.\d+\./u.test(path)||path.includes('__cms_education_'))return false;
+  if(section===SECTION)return true;
   if(/^customAnswers\.(?:__cms_basic_|毕业院校|国籍\/地区|婚姻状况|期望面试地点|现居住地|籍贯)/u.test(path))return true;
   if(path.includes('__cms_basic_'))return true;
   const labels=Array.isArray(field.labels)?field.labels.map(norm):[];

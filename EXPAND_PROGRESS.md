@@ -228,4 +228,5 @@
 - [ ] Live：Jeremy 登录 `/center/resume` → DOM harvest → fill-wo-save。
 - [x] 第二拍字段计划（offline draft；SW/popup 未接线；未宣称已支持招行）：`dist/site-probes/CMB_SECOND_SLICE_PLAN_20261019.md`。
 - 体重 offline 已落地（同身高：`.ant-form-item` + `input.ant-input`；只写数字公斤；拒 `60kg`/`60KG`；`--live` 拒 `live_weight_text_unharvested`；套件 34/34；Never Save）。性别/身高/体重合成齐；下一刀需 live 的四字段：婚姻、政治面貌、民族、出生日期。未宣称已支持招行。验收仍 **85%**。
+- 下一刀 live 采数顺序见 `dist/site-probes/CMB_LIVE_GATED_FIELDS_DRAFT_20261019.md`：婚姻状况 → 政治面貌 → 民族 → 出生日期。这四字段的真实选项不能离线合成。未宣称已支持招行。验收仍 **85%**。
 - **Acceptance 仍 85%**。勿对外写已支持招行。与南粤 live / Celebright 登录队列并行、不插队打断 Jeremy。

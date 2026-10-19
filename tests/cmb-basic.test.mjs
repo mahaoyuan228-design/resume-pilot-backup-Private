@@ -29,6 +29,9 @@ import {
   CMB_AWARD_LEVEL_LIST_ID,
   CMB_AWARD_LEVEL_OPTIONS,
   CMB_AWARD_LEVEL_SELECT_ID,
+  CMB_ENGLISH_LEVEL_LIST_ID,
+  CMB_ENGLISH_LEVEL_OPTIONS,
+  CMB_ENGLISH_LEVEL_SELECT_ID,
   CMB_ETHNICITY_OPTIONS,
   CMB_ID_CARD_TYPE_LIST_ID,
   CMB_ID_CARD_TYPE_OPTIONS,
@@ -39,6 +42,7 @@ import {
   isCmbEducationLevelLabel,
   isCmbRelationshipLabel,
   isCmbAwardLevelLabel,
+  isCmbEnglishLevelLabel,
   isCmbIdCardTypeLabel,
   isCmbWeightLabel,
   isCmbMaritalLabel,
@@ -683,6 +687,7 @@ test('harvested gated dicts match the live evidence and are not invented', () =>
   assert.deepEqual(parsed.educationLevel, [...CMB_EDUCATION_LEVEL_OPTIONS]);
   assert.deepEqual(parsed.relationshipType, [...CMB_RELATIONSHIP_TYPE_OPTIONS]);
   assert.deepEqual(parsed.awardLevel, [...CMB_AWARD_LEVEL_OPTIONS]);
+  assert.deepEqual(parsed.englishLevel, [...CMB_ENGLISH_LEVEL_OPTIONS]);
 
   assert.match(fixture, /id="resume_basicInfo_maritalStatus"/);
   assert.match(fixture, /id="resume_basicInfo_politicalAffinity"/);
@@ -723,6 +728,7 @@ test('gated select plan maps harvested text or code and does not fill birth date
   assert.equal(absent.values.relationshipType, '');
   assert.equal(absent.values.relationshipTypeRow1, '');
   assert.equal(absent.values.awardLevel, '');
+  assert.equal(absent.values.englishLevel, '');
   assert.equal(absent.fields.some((row) => row.path === 'birthDate'), false);
 
   const ready = planCmbBasicFromProfile({
@@ -1169,6 +1175,80 @@ test('synthetic harness award level select maps text and code and --live refuses
   assert.equal(payload.byText?.after, '院校级');
   assert.equal(payload.byText?.afterCode, 'AL002');
   assert.equal(payload.explicitInvalid?.reason, 'invalid_award_level');
+  assert.equal(payload.explicitInvalid?.writeAttempted, false);
+});
+
+test('EnglishLevel options use the harvested skill row and do not convert names or scores', () => {
+  const full = JSON.parse(readFileSync(resolve(root, 'dist/site-probes/cmb-dictmap-full-20261019.json'), 'utf8'));
+  const dom = JSON.parse(readFileSync(resolve(root, 'dist/site-probes/cmb-remaining-dom-ids-20261019.json'), 'utf8'));
+  const hint = dom.labelHints.find((row) => row.label === '最高英语水平');
+  assert.equal(hint.inputId, CMB_ENGLISH_LEVEL_SELECT_ID);
+  assert.equal(hint.ariaControls, CMB_ENGLISH_LEVEL_LIST_ID);
+  const kept = full.dicts.EnglishLevel.filter((row) => row.name !== '请选择' && row.code !== 'EL000');
+  assert.equal(kept.length, 10);
+  assert.deepEqual(
+    [...CMB_ENGLISH_LEVEL_OPTIONS],
+    kept.map((row) => ({ text: row.name, code: row.code }))
+  );
+  assert.equal(CMB_ENGLISH_LEVEL_OPTIONS.some((row) => row.code === 'EL010' && row.text === '其他'), true);
+  assert.equal(resolveCmbCodedOption(CMB_ENGLISH_LEVEL_OPTIONS, '请选择'), null);
+  assert.equal(resolveCmbCodedOption(CMB_ENGLISH_LEVEL_OPTIONS, '托福'), null);
+  assert.equal(resolveCmbCodedOption(CMB_ENGLISH_LEVEL_OPTIONS, '雅思'), null);
+  assert.equal(resolveCmbCodedOption(CMB_ENGLISH_LEVEL_OPTIONS, '四级'), null);
+  assert.equal(resolveCmbCodedOption(CMB_ENGLISH_LEVEL_OPTIONS, 'CET4'), null);
+  assert.equal(resolveCmbCodedOption(CMB_ENGLISH_LEVEL_OPTIONS, 'toefl'), null);
+  assert.equal(resolveCmbCodedOption(CMB_ENGLISH_LEVEL_OPTIONS, '100'), null);
+  assert.equal(resolveCmbCodedOption(CMB_ENGLISH_LEVEL_OPTIONS, 'EL000'), null);
+  assert.equal(resolveCmbCodedOption(CMB_ENGLISH_LEVEL_OPTIONS, 'EL001')?.text, 'TOEFL');
+  assert.equal(resolveCmbCodedOption(CMB_ENGLISH_LEVEL_OPTIONS, 'CET-6')?.code, 'EL006');
+  assert.equal(resolveCmbCodedOption(CMB_ENGLISH_LEVEL_OPTIONS, '其他')?.code, 'EL010');
+  assert.match(fixture, /id="resume_skill_0_englishLevel"/);
+  assert.match(fixture, /id="resume_skill_0_englishLevel_list"/);
+  assert.equal((fixture.match(/data-code="EL0/g) || []).length, 10);
+  assert.doesNotMatch(fixture, /id="resume_skill_0_englishLevel"[^>]*show-search/);
+  assert.doesNotMatch(fixture, /resume_skill_1_englishLevel/);
+  assert.match(source, /fillEnglishLevel/);
+  assert.match(source, /invalid_english_level/);
+  assert.match(harness, /live_english_level_select_fill_unclaimed/);
+  assert.equal(isCmbEnglishLevelLabel('最高英语水平'), true);
+  assert.equal(isCmbEnglishLevelLabel('分数'), false);
+  assert.equal(isCmbEnglishLevelLabel('英语等级'), false);
+  const store = readFileSync(resolve(root, 'src/profile/store.js'), 'utf8');
+  assert.doesNotMatch(store, /englishLevel/);
+  const base = {
+    fullName: '测试甲',
+    phone: '13800138000',
+    email: 'cmb.user@example.com',
+    confirmedFields: ['fullName', 'phone', 'email', 'englishLevel']
+  };
+  const scored = planCmbBasicFromProfile({ ...base, englishScore: '100' });
+  assert.equal(scored.values.englishLevel, '');
+  assert.equal(scored.fields.some((row) => row.path === 'englishLevel'), false);
+  const ready = planCmbBasicFromProfile({ ...base, englishLevel: ' EL006 ', englishScore: '500' });
+  assert.equal(ready.values.englishLevel, 'CET-6');
+  assert.equal(ready.fields.find((row) => row.path === 'englishLevel')?.code, 'EL006');
+  const dropped = planCmbBasicFromProfile({ ...base, englishLevel: '托福' });
+  assert.equal(dropped.values.englishLevel, '');
+  assert.equal(dropped.blockers.find((row) => row.path === 'englishLevel')?.reason, 'invalid_profile_value');
+});
+
+test('synthetic harness english level select maps text and code and --live refuses the click', { timeout: 120000 }, () => {
+  assertGatedSelectKnife(
+    '最高英语水平',
+    'live_english_level_select_fill_unclaimed',
+    'synthetic_english_select_pass',
+    'cmb-english-select-latest.json',
+    'TOEFL',
+    'EL001'
+  );
+  const payload = JSON.parse(readFileSync(resolve(root, 'dist/auto-runs/cmb-english-select-latest.json'), 'utf8'));
+  assert.equal(payload.optionListHarvested, true);
+  assert.equal(payload.liveSelectFillClaimed, false);
+  assert.equal(payload.formFillClaimed, false);
+  assert.equal(payload.neighbor?.englishScore, '');
+  assert.equal(payload.byText?.after, 'CET-6');
+  assert.equal(payload.byText?.afterCode, 'EL006');
+  assert.equal(payload.explicitInvalid?.reason, 'invalid_english_level');
   assert.equal(payload.explicitInvalid?.writeAttempted, false);
 });
 

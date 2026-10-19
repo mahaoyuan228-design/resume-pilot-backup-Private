@@ -180,6 +180,29 @@ export const CMB_AWARD_LEVEL_OPTIONS = Object.freeze([
 export const CMB_AWARD_LEVEL_SELECT_ID = 'resume_awardList_0_awardLevel';
 export const CMB_AWARD_LEVEL_LIST_ID = 'resume_awardList_0_awardLevel_list';
 
+/**
+ * EnglishLevel from cmb-dictmap-full-20261019.json.
+ * Ten rows, EL001–EL010. No 请选择 and no EL000. EL010（其他）is a real row.
+ * A colloquial name or a score is not converted into one of these exams.
+ * Only skill row 0 was harvested.
+ */
+export const CMB_ENGLISH_LEVEL_OPTIONS = Object.freeze([
+  Object.freeze({"text":"TOEFL","code":"EL001"}),
+  Object.freeze({"text":"GRE","code":"EL002"}),
+  Object.freeze({"text":"GMAT","code":"EL003"}),
+  Object.freeze({"text":"IELTS","code":"EL004"}),
+  Object.freeze({"text":"CET-4","code":"EL005"}),
+  Object.freeze({"text":"CET-6","code":"EL006"}),
+  Object.freeze({"text":"TEM-4","code":"EL007"}),
+  Object.freeze({"text":"TEM-8","code":"EL008"}),
+  Object.freeze({"text":"海外高中成绩","code":"EL009"}),
+  Object.freeze({"text":"其他","code":"EL010"})
+]);
+
+/** Harvested 2026-10-19. List id comes from aria-controls. Live click is not claimed. */
+export const CMB_ENGLISH_LEVEL_SELECT_ID = 'resume_skill_0_englishLevel';
+export const CMB_ENGLISH_LEVEL_LIST_ID = 'resume_skill_0_englishLevel_list';
+
 /** Kind + fill hint only. No synthetic DatePicker DOM. */
 export const CMB_BIRTHDATE_HINT = Object.freeze({
   key: 'birthDate',

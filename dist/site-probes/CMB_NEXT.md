@@ -88,3 +88,5 @@ Jeremy 登录招行招聘账号并停在 `/center/resume` 后，才能 harvest l
 关系类型 RelationshipType 已离线接线。`#resume_familyList_0_relationship` 与 `#resume_familyList_1_relationship` 各自绑定，索引隔离，不把一行的值写到另一行。选项是字典 8 项（RT0001–RT0008），无占位可剔。简称「父」「其他」拒填。家庭姓名和电话不填。`--only 关系类型 --live` 拒 `live_relationship_select_fill_unclaimed`。Never Save。未宣称已支持招行。下一刀 AwardsLevel。
 
 获奖级别 AwardsLevel 已离线接线，只接第 0 行 `#resume_awardList_0_awardLevel`。选项是字典 5 项（院校级 AL002、县市级 AL003、省区级 AL004、国家级 AL005、国际级 AL006）。字典里没有「请选择」或 AL000/AL001，没有可剔的占位。级别不从奖项名称推断；「国家级奖学金」「国家」拒填。奖项名称和获奖时间不填。`--only 获奖级别 --live` 拒 `live_award_level_select_fill_unclaimed`。Never Save。未宣称已支持招行。下一刀 EnglishLevel。
+
+最高英语水平 EnglishLevel 已离线接线，只接技能第 0 行 `#resume_skill_0_englishLevel`。选项是字典 10 项（TOEFL EL001 至其他 EL010）。字典里没有「请选择」或 EL000；`其他` 是真实项，保留。不把托福、雅思、四级或分数换算成考试名。分数控件不填。`--only 最高英语水平 --live` 拒 `live_english_level_select_fill_unclaimed`。Never Save。未宣称已支持招行。ChannelType / InterviewCity 仍可延后。RankingMajor 仍是 `DOM_CONTROL_MISSING`。

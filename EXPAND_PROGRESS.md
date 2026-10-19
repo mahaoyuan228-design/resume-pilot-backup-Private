@@ -235,4 +235,5 @@
 - 2026-10-19 剩余 dict 裁剪笔记：`dist/site-probes/CMB_DICT_REMAINING_TRIM_20261019.md`（Never Save，与 `CMB_REMAINING_DOM_20261019.md` 交叉，不重做 Education）。下一刀从 RelationshipType 起：RelationshipType → AwardsLevel → EnglishLevel → ChannelType → InterviewCity。RankingMajor 记 `DOM_CONTROL_MISSING`。未宣称已支持招行。验收仍 **85%**。
 - 2026-10-19 关系类型 RelationshipType 离线接线：家庭第 0 行与第 1 行各自绑定，索引隔离。8 项无占位。`--live` 拒 `live_relationship_select_fill_unclaimed`。姓名和电话不填。Never Save。未宣称已支持招行。下一刀 AwardsLevel。
 - 2026-10-19 获奖级别 AwardsLevel 离线接线：只接第 0 行。5 项 AL002–AL006，字典无占位可剔。不按奖项名推断级别。`--live` 拒 `live_award_level_select_fill_unclaimed`。奖项名称和获奖时间不填。Never Save。未宣称已支持招行。下一刀 EnglishLevel。
+- 2026-10-19 最高英语水平 EnglishLevel 离线接线：只接技能第 0 行。10 项 EL001–EL010，`其他` 保留。不把托福、四级或分数换算成考试名。`--live` 拒 `live_english_level_select_fill_unclaimed`。分数不填。Never Save。未宣称已支持招行。ChannelType / InterviewCity 可延后。
 - **Acceptance 仍 85%**。勿对外写已支持招行。与南粤 live / Celebright 登录队列并行、不插队打断 Jeremy。

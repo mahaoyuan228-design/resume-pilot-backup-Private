@@ -31,6 +31,9 @@ import {
   CMB_AWARD_LEVEL_OPTIONS,
   CMB_AWARD_LEVEL_LIST_ID,
   CMB_AWARD_LEVEL_SELECT_ID,
+  CMB_ENGLISH_LEVEL_OPTIONS,
+  CMB_ENGLISH_LEVEL_LIST_ID,
+  CMB_ENGLISH_LEVEL_SELECT_ID,
   CMB_ETHNICITY_OPTIONS,
   CMB_ID_CARD_TYPE_OPTIONS,
   CMB_ID_CARD_TYPE_LIST_ID,
@@ -53,6 +56,9 @@ export {
   CMB_AWARD_LEVEL_OPTIONS,
   CMB_AWARD_LEVEL_LIST_ID,
   CMB_AWARD_LEVEL_SELECT_ID,
+  CMB_ENGLISH_LEVEL_OPTIONS,
+  CMB_ENGLISH_LEVEL_LIST_ID,
+  CMB_ENGLISH_LEVEL_SELECT_ID,
   CMB_ETHNICITY_OPTIONS,
   CMB_ID_CARD_TYPE_OPTIONS,
   CMB_ID_CARD_TYPE_LIST_ID,
@@ -98,6 +104,7 @@ export const CMB_ID_CARD_TYPE_LABEL = '证件类型';
 export const CMB_EDUCATION_LEVEL_LABEL = '学历';
 export const CMB_RELATIONSHIP_TYPE_LABEL = '关系类型';
 export const CMB_AWARD_LEVEL_LABEL = '获奖级别';
+export const CMB_ENGLISH_LEVEL_LABEL = '最高英语水平';
 
 /**
  * Optional radio. Canonical label is 是否参加过正式工作.
@@ -149,6 +156,10 @@ function normMeasure(value) {
  * Award level is caller-supplied (`awardLevel`). It is not an emptyProfile field.
  * The allowlist is the five AwardsLevel rows. An award name does not select a level.
  * Award name, honor type, and award date are not planned or filled. Only row 0.
+ * English level is caller-supplied (`englishLevel`). It is not an emptyProfile field.
+ * The allowlist is the ten EnglishLevel rows, including 其他 (EL010).
+ * 托福, 雅思, 四级, and a score are not converted into an exam name.
+ * The score control is not planned or filled. Only skill row 0.
  * Birth date is never filled here. A present birthDate is a blocker with
  * reason datepicker_hint_only (confirmed) and is not written.
  */
@@ -188,6 +199,7 @@ export function planCmbBasicFromProfile(profile) {
   const relationshipTypeRaw = normMeasure(profile.relationshipType || '');
   const relationshipTypeRow1Raw = normMeasure(profile.relationshipTypeRow1 || '');
   const awardLevelRaw = normMeasure(profile.awardLevel || '');
+  const englishLevelRaw = normMeasure(profile.englishLevel || '');
   const birthRaw = normMeasure(profile.birthDate || '');
 
   const core = [
@@ -280,6 +292,7 @@ export function planCmbBasicFromProfile(profile) {
   const relationshipTypeFields = codedFields(relationshipTypeRaw, 'relationshipType', CMB_RELATIONSHIP_TYPE_LABEL, CMB_RELATIONSHIP_TYPE_OPTIONS);
   const relationshipTypeRow1Fields = codedFields(relationshipTypeRow1Raw, 'relationshipTypeRow1', CMB_RELATIONSHIP_TYPE_LABEL, CMB_RELATIONSHIP_TYPE_OPTIONS);
   const awardLevelFields = codedFields(awardLevelRaw, 'awardLevel', CMB_AWARD_LEVEL_LABEL, CMB_AWARD_LEVEL_OPTIONS);
+  const englishLevelFields = codedFields(englishLevelRaw, 'englishLevel', CMB_ENGLISH_LEVEL_LABEL, CMB_ENGLISH_LEVEL_OPTIONS);
   const birthFields = [];
   if (birthRaw) {
     birthFields.push({
@@ -307,6 +320,7 @@ export function planCmbBasicFromProfile(profile) {
     ...relationshipTypeFields,
     ...relationshipTypeRow1Fields,
     ...awardLevelFields,
+    ...englishLevelFields,
     ...birthFields
   ];
   const coreBlockers = core.filter((row) => !row.ready);
@@ -322,6 +336,7 @@ export function planCmbBasicFromProfile(profile) {
   const relationshipTypeBlockers = relationshipTypeFields.filter((row) => !row.ready);
   const relationshipTypeRow1Blockers = relationshipTypeRow1Fields.filter((row) => !row.ready);
   const awardLevelBlockers = awardLevelFields.filter((row) => !row.ready);
+  const englishLevelBlockers = englishLevelFields.filter((row) => !row.ready);
   const birthBlockers = birthFields.filter((row) => !row.ready);
   const optionalBlockers = [
     ...genderBlockers,
@@ -336,6 +351,7 @@ export function planCmbBasicFromProfile(profile) {
     ...relationshipTypeBlockers,
     ...relationshipTypeRow1Blockers,
     ...awardLevelBlockers,
+    ...englishLevelBlockers,
     ...birthBlockers
   ];
   if (coreBlockers.length) {
@@ -360,10 +376,11 @@ export function planCmbBasicFromProfile(profile) {
   const relationshipType = relationshipTypeFields.find((row) => row.ready)?.value || '';
   const relationshipTypeRow1 = relationshipTypeRow1Fields.find((row) => row.ready)?.value || '';
   const awardLevel = awardLevelFields.find((row) => row.ready)?.value || '';
+  const englishLevel = englishLevelFields.find((row) => row.ready)?.value || '';
   return {
     ok: true,
     reason: 'profile_ready',
-    values: { fullName, mobile, email, gender, height, weight, formalWork, maritalStatus, politics, ethnicity, idCardType, educationLevel, relationshipType, relationshipTypeRow1, awardLevel },
+    values: { fullName, mobile, email, gender, height, weight, formalWork, maritalStatus, politics, ethnicity, idCardType, educationLevel, relationshipType, relationshipTypeRow1, awardLevel, englishLevel },
     fields,
     blockers: optionalBlockers,
     birthDateHint: CMB_BIRTHDATE_HINT
@@ -426,6 +443,11 @@ export function isCmbRelationshipLabel(raw) {
 /** Exact 获奖级别. 奖项名称 does not match. */
 export function isCmbAwardLevelLabel(raw) {
   return normalizeCmbLabelText(normMeasure(raw)) === CMB_AWARD_LEVEL_LABEL;
+}
+
+/** Exact 最高英语水平. 分数 and 英语等级 do not match. */
+export function isCmbEnglishLevelLabel(raw) {
+  return normalizeCmbLabelText(normMeasure(raw)) === CMB_ENGLISH_LEVEL_LABEL;
 }
 
 export function isCmbBirthDateLabel(raw) {

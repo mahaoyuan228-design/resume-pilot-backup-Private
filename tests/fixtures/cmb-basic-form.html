@@ -444,6 +444,42 @@
           </div>
         </div>
 
+        <!--
+          Skill row 0 only. Options are the ten EnglishLevel rows, including 其他.
+          No placeholder. Ids harvested 2026-10-19. Select root class was not
+          captured, so this stand-in is non-search. Option rows are synthetic.
+          托福 / 四级 / a score are not converted. --live refuses
+          live_english_level_select_fill_unclaimed.
+          The score input is present and is not filled.
+          Never Save. 招行 is not supported.
+        -->
+        <div class="ant-form-item" data-field="最高英语水平" data-dom="synthetic-harvested-options">
+          <div class="ant-form-item-label"><label for="resume_skill_0_englishLevel">最高英语水平</label></div>
+          <div class="ant-form-item-control">
+            <div class="ant-select" id="resume_skill_0_englishLevel">
+              <div class="ant-select-selector"><span class="ant-select-selection-item" data-code=""></span></div>
+              <div class="ant-select-dropdown" id="resume_skill_0_englishLevel_list" role="listbox">
+          <div class="ant-select-item-option" role="option" data-code="EL001" aria-selected="false">TOEFL</div>
+          <div class="ant-select-item-option" role="option" data-code="EL002" aria-selected="false">GRE</div>
+          <div class="ant-select-item-option" role="option" data-code="EL003" aria-selected="false">GMAT</div>
+          <div class="ant-select-item-option" role="option" data-code="EL004" aria-selected="false">IELTS</div>
+          <div class="ant-select-item-option" role="option" data-code="EL005" aria-selected="false">CET-4</div>
+          <div class="ant-select-item-option" role="option" data-code="EL006" aria-selected="false">CET-6</div>
+          <div class="ant-select-item-option" role="option" data-code="EL007" aria-selected="false">TEM-4</div>
+          <div class="ant-select-item-option" role="option" data-code="EL008" aria-selected="false">TEM-8</div>
+          <div class="ant-select-item-option" role="option" data-code="EL009" aria-selected="false">海外高中成绩</div>
+          <div class="ant-select-item-option" role="option" data-code="EL010" aria-selected="false">其他</div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="ant-form-item" data-field="分数" data-dom="harvested-text-not-filled">
+          <div class="ant-form-item-label"><label for="resume_skill_0_englishScore">分数</label></div>
+          <div class="ant-form-item-control">
+            <input id="resume_skill_0_englishScore" class="ant-input" placeholder="请输入" value="" />
+          </div>
+        </div>
+
         <button type="button" id="save-btn" class="ant-btn ant-btn-primary" disabled>保存</button>
       </form>
     </div>

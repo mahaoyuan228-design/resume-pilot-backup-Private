@@ -9,7 +9,7 @@ import test from 'node:test';
 const target = resolve('src/content/cms-education-multi-select.js');
 const source = await readFile(target, 'utf8');
 const sha = createHash('sha256').update(source).digest('hex');
-assert.equal(sha, 'f4d1f679ebbe988da05d0eb1bdac3f85c242043d11dd2211f2cf4eb46b67cd20');
+assert.equal(sha, '8dc03eb69c9aed0d90025f94985e7debf3457cc7f51c038f3b90b8b2b5f708fe');
 
 test('close path enumerates HTMLInputElement type===text, not attribute selector only', () => {
   assert.match(

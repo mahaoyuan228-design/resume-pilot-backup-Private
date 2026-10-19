@@ -1,6 +1,6 @@
 {
   "version": "0.1.4.9",
-  "sumsSha256": "fb74b0eeaaf79805ab07c4db3fab2721a3ff40d54b279dc092be9b7649005968",
+  "sumsSha256": "2673a07089059af40c595c2fe649766fb154ae8af97759941153373ac6c31e3e",
   "inventory": [
     {
       "path": "manifest.json",
@@ -841,6 +841,18 @@
       "sha256": "8e476dd77014232dda7af8ff3a68bb25266a2adcf5bb4ae2fc63f64b9ae0dcde",
       "sourceSha256": "8e476dd77014232dda7af8ff3a68bb25266a2adcf5bb4ae2fc63f64b9ae0dcde",
       "kind": "public-old-blur-counterexample-only"
+    },
+    {
+      "path": "src/background/bg-ping.mjs",
+      "sha256": "e628823a1cf77f97c912799d402cdbec20df6a24d4ff2c7dbd48604386c590d2",
+      "sourceSha256": "e628823a1cf77f97c912799d402cdbec20df6a24d4ff2c7dbd48604386c590d2",
+      "kind": "frozen-product"
+    },
+    {
+      "path": "src/auto/bg-request.mjs",
+      "sha256": "c14dc581cfded150b18e2fc1e0a06698f3f0061202289c089c553a96128c3071",
+      "sourceSha256": "c14dc581cfded150b18e2fc1e0a06698f3f0061202289c089c553a96128c3071",
+      "kind": "frozen-product"
     }
   ]
 }

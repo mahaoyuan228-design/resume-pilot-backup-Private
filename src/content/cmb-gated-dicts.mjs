@@ -98,6 +98,33 @@ export const CMB_POLITICS_LIST_ID = 'resume_basicInfo_politicalAffinity_list';
 export const CMB_ETHNICITY_SELECT_ID = 'resume_basicInfo_nation';
 export const CMB_ETHNICITY_LIST_ID = 'resume_basicInfo_nation_list';
 
+/** IdCardType from cmb-dictmap-full-20261019.json. No 请选择 row. Text+code only. */
+export const CMB_ID_CARD_TYPE_OPTIONS = Object.freeze([
+  Object.freeze({"text":"身份证","code":"ID001"}),
+  Object.freeze({"text":"非公务赴台证","code":"ID0010"}),
+  Object.freeze({"text":"台胞证","code":"ID0011"}),
+  Object.freeze({"text":"签证 1","code":"ID0012"}),
+  Object.freeze({"text":"签证 2","code":"ID0013"}),
+  Object.freeze({"text":"签证 3","code":"ID0014"}),
+  Object.freeze({"text":"其他证件","code":"ID0015"}),
+  Object.freeze({"text":"暂住证","code":"ID002"}),
+  Object.freeze({"text":"人才居住证","code":"ID003"}),
+  Object.freeze({"text":"因公护照","code":"ID004"}),
+  Object.freeze({"text":"因私护照","code":"ID005"}),
+  Object.freeze({"text":"公务赴港澳长证(多次)","code":"ID006"}),
+  Object.freeze({"text":"非公务赴港澳长证","code":"ID007"}),
+  Object.freeze({"text":"临时赴港澳证","code":"ID008"}),
+  Object.freeze({"text":"公务赴台证","code":"ID009"})
+]);
+
+/**
+ * Provisional synthetic ids. The live 证件类型 select id was not harvested.
+ * These are not a resume_basicInfo_* contract.
+ */
+export const CMB_ID_CARD_TYPE_SELECT_ID = 'cmb-synthetic-idCardType';
+export const CMB_ID_CARD_TYPE_LIST_ID = 'cmb-synthetic-idCardType_list';
+export const CMB_ID_CARD_TYPE_SELECT_ID_STATUS = 'provisional';
+
 /** Kind + fill hint only. No synthetic DatePicker DOM. */
 export const CMB_BIRTHDATE_HINT = Object.freeze({
   key: 'birthDate',

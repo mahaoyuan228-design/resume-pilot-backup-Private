@@ -55,7 +55,7 @@
   const FORMAL_WORK_LABEL = '是否参加过正式工作';
   const FORMAL_WORK_VALUES = ['是', '否'];
   /** Harvested text+code tables. Same data as cmb-gated-dicts.mjs. Not a live click contract. */
-  const GATED_DICTS = JSON.parse('{"maritalStatus":[{"text":"未婚","code":"MS001"},{"text":"已婚","code":"MS002"},{"text":"离异","code":"MS004"},{"text":"已育","code":"MS007"}],"politics":[{"text":"中国共产党党员","code":"PA001"},{"text":"九三学社社员","code":"PA0010"},{"text":"台湾民主自治同盟盟员","code":"PA0011"},{"text":"无党派民主人士","code":"PA0012"},{"text":"群众","code":"PA0013"},{"text":"中国共产党预备党员","code":"PA002"},{"text":"中国共产主义青年团团员","code":"PA003"},{"text":"成员/中国国民党革命委员会","code":"PA004"},{"text":"中国民主同盟盟员","code":"PA005"},{"text":"成员/中国民主建国会","code":"PA006"},{"text":"成员/中国民主促进会","code":"PA007"},{"text":"党员/中国农工民主党","code":"PA008"},{"text":"中国致公党党员","code":"PA009"}],"ethnicity":[{"text":"汉族","code":"NA0017"},{"text":"阿昌族","code":"NA001"},{"text":"独龙族","code":"NA0010"},{"text":"达翰尔族","code":"NA0011"},{"text":"东乡族","code":"NA0012"},{"text":"鄂温克族","code":"NA0013"},{"text":"京族","code":"NA0014"},{"text":"仡佬族","code":"NA0015"},{"text":"高山族","code":"NA0016"},{"text":"回族","code":"NA0018"},{"text":"赫哲族","code":"NA0019"},{"text":"白族","code":"NA002"},{"text":"基诺族","code":"NA0020"},{"text":"景颇族","code":"NA0021"},{"text":"柯尔克孜族","code":"NA0022"},{"text":"哈萨克族","code":"NA0023"},{"text":"珞巴族","code":"NA0024"},{"text":"拉祜族","code":"NA0025"},{"text":"黎族","code":"NA0026"},{"text":"傈僳族","code":"NA0027"},{"text":"满族","code":"NA0028"},{"text":"门巴族","code":"NA0029"},{"text":"布朗族","code":"NA003"},{"text":"蒙古族","code":"NA0030"},{"text":"苗族","code":"NA0031"},{"text":"仫佬族","code":"NA0032"},{"text":"毛南族","code":"NA0033"},{"text":"怒族","code":"NA0034"},{"text":"纳西族","code":"NA0035"},{"text":"鄂伦春族","code":"NA0036"},{"text":"普米族","code":"NA0037"},{"text":"羌族","code":"NA0038"},{"text":"俄罗斯族","code":"NA0039"},{"text":"保安族","code":"NA004"},{"text":"畲族","code":"NA0040"},{"text":"萨拉族","code":"NA0041"},{"text":"水族","code":"NA0042"},{"text":"塔吉克族","code":"NA0043"},{"text":"土家族","code":"NA0044"},{"text":"塔塔尔族","code":"NA0045"},{"text":"土族","code":"NA0046"},{"text":"维吾尔族","code":"NA0047"},{"text":"乌孜别克族","code":"NA0048"},{"text":"佤族","code":"NA0049"},{"text":"布依族","code":"NA005"},{"text":"锡伯族","code":"NA0050"},{"text":"瑶族","code":"NA0051"},{"text":"裕固族","code":"NA0052"},{"text":"彝族","code":"NA0053"},{"text":"藏族","code":"NA0054"},{"text":"壮族","code":"NA0055"},{"text":"其他","code":"NA0056"},{"text":"哈尼族","code":"NA0057"},{"text":"朝鲜族","code":"NA006"},{"text":"傣族","code":"NA007"},{"text":"德昂族","code":"NA008"},{"text":"侗族","code":"NA009"}]}');
+  const GATED_DICTS = JSON.parse('{"maritalStatus":[{"text":"未婚","code":"MS001"},{"text":"已婚","code":"MS002"},{"text":"离异","code":"MS004"},{"text":"已育","code":"MS007"}],"politics":[{"text":"中国共产党党员","code":"PA001"},{"text":"九三学社社员","code":"PA0010"},{"text":"台湾民主自治同盟盟员","code":"PA0011"},{"text":"无党派民主人士","code":"PA0012"},{"text":"群众","code":"PA0013"},{"text":"中国共产党预备党员","code":"PA002"},{"text":"中国共产主义青年团团员","code":"PA003"},{"text":"成员/中国国民党革命委员会","code":"PA004"},{"text":"中国民主同盟盟员","code":"PA005"},{"text":"成员/中国民主建国会","code":"PA006"},{"text":"成员/中国民主促进会","code":"PA007"},{"text":"党员/中国农工民主党","code":"PA008"},{"text":"中国致公党党员","code":"PA009"}],"ethnicity":[{"text":"汉族","code":"NA0017"},{"text":"阿昌族","code":"NA001"},{"text":"独龙族","code":"NA0010"},{"text":"达翰尔族","code":"NA0011"},{"text":"东乡族","code":"NA0012"},{"text":"鄂温克族","code":"NA0013"},{"text":"京族","code":"NA0014"},{"text":"仡佬族","code":"NA0015"},{"text":"高山族","code":"NA0016"},{"text":"回族","code":"NA0018"},{"text":"赫哲族","code":"NA0019"},{"text":"白族","code":"NA002"},{"text":"基诺族","code":"NA0020"},{"text":"景颇族","code":"NA0021"},{"text":"柯尔克孜族","code":"NA0022"},{"text":"哈萨克族","code":"NA0023"},{"text":"珞巴族","code":"NA0024"},{"text":"拉祜族","code":"NA0025"},{"text":"黎族","code":"NA0026"},{"text":"傈僳族","code":"NA0027"},{"text":"满族","code":"NA0028"},{"text":"门巴族","code":"NA0029"},{"text":"布朗族","code":"NA003"},{"text":"蒙古族","code":"NA0030"},{"text":"苗族","code":"NA0031"},{"text":"仫佬族","code":"NA0032"},{"text":"毛南族","code":"NA0033"},{"text":"怒族","code":"NA0034"},{"text":"纳西族","code":"NA0035"},{"text":"鄂伦春族","code":"NA0036"},{"text":"普米族","code":"NA0037"},{"text":"羌族","code":"NA0038"},{"text":"俄罗斯族","code":"NA0039"},{"text":"保安族","code":"NA004"},{"text":"畲族","code":"NA0040"},{"text":"萨拉族","code":"NA0041"},{"text":"水族","code":"NA0042"},{"text":"塔吉克族","code":"NA0043"},{"text":"土家族","code":"NA0044"},{"text":"塔塔尔族","code":"NA0045"},{"text":"土族","code":"NA0046"},{"text":"维吾尔族","code":"NA0047"},{"text":"乌孜别克族","code":"NA0048"},{"text":"佤族","code":"NA0049"},{"text":"布依族","code":"NA005"},{"text":"锡伯族","code":"NA0050"},{"text":"瑶族","code":"NA0051"},{"text":"裕固族","code":"NA0052"},{"text":"彝族","code":"NA0053"},{"text":"藏族","code":"NA0054"},{"text":"壮族","code":"NA0055"},{"text":"其他","code":"NA0056"},{"text":"哈尼族","code":"NA0057"},{"text":"朝鲜族","code":"NA006"},{"text":"傣族","code":"NA007"},{"text":"德昂族","code":"NA008"},{"text":"侗族","code":"NA009"}],"idCardType":[{"text":"身份证","code":"ID001"},{"text":"非公务赴台证","code":"ID0010"},{"text":"台胞证","code":"ID0011"},{"text":"签证 1","code":"ID0012"},{"text":"签证 2","code":"ID0013"},{"text":"签证 3","code":"ID0014"},{"text":"其他证件","code":"ID0015"},{"text":"暂住证","code":"ID002"},{"text":"人才居住证","code":"ID003"},{"text":"因公护照","code":"ID004"},{"text":"因私护照","code":"ID005"},{"text":"公务赴港澳长证(多次)","code":"ID006"},{"text":"非公务赴港澳长证","code":"ID007"},{"text":"临时赴港澳证","code":"ID008"},{"text":"公务赴台证","code":"ID009"}]}');
   /** CSS-confirmed ant-design classes in public main.02cda64a.css — live resume DOM may still differ. */
   const ITEM_SEL = '.ant-form-item';
   const LABEL_SEL = '.ant-form-item-label, label';
@@ -372,6 +372,10 @@
   const MARITAL_LABEL_RE = /^婚姻状况(?:（可选）|\(可选\))?$/u;
   const POLITICS_LABEL = '政治面貌';
   const ETHNICITY_LABEL = '民族';
+  const ID_CARD_TYPE_LABEL = '证件类型';
+  // Provisional. Live 证件类型 id was not harvested. Not a resume_basicInfo_* contract.
+  const ID_CARD_TYPE_SELECT_ID = 'cmb-synthetic-idCardType';
+  const ID_CARD_TYPE_LIST_ID = 'cmb-synthetic-idCardType_list';
   const BIRTHDATE_HINT = Object.freeze({
     key: 'birthDate',
     label: '出生日期',
@@ -407,6 +411,15 @@
       listId: 'resume_basicInfo_nation_list',
       options: GATED_DICTS.ethnicity,
       showSearch: true
+    },
+    idCardType: {
+      label: ID_CARD_TYPE_LABEL,
+      labelTest: (text) => text === ID_CARD_TYPE_LABEL,
+      selectId: ID_CARD_TYPE_SELECT_ID,
+      listId: ID_CARD_TYPE_LIST_ID,
+      selectIdStatus: 'provisional',
+      options: GATED_DICTS.idCardType,
+      showSearch: false
     }
   };
 
@@ -545,6 +558,10 @@
     return fillCodedSelect(SELECT_SPECS.ethnicity, value, options);
   }
 
+  function fillIdCardType(value, options) {
+    return fillCodedSelect(SELECT_SPECS.idCardType, value, options);
+  }
+
   function birthDateHint() {
     return {
       ...BIRTHDATE_HINT,
@@ -600,6 +617,7 @@
     const maritalRaw = norm(profile.maritalStatus || '');
     const politicsRaw = norm(profile.politics || '');
     const ethnicityRaw = norm(profile.ethnicity || '');
+    const idCardTypeRaw = norm(profile.idCardType || '');
     const birthRaw = norm(profile.birthDate || '');
     const core = [
       { label: '姓名', path: 'fullName', value: fullName },
@@ -681,6 +699,7 @@
     const maritalFields = codedPlan(maritalRaw, 'maritalStatus', SELECT_SPECS.maritalStatus);
     const politicsFields = codedPlan(politicsRaw, 'politics', SELECT_SPECS.politics);
     const ethnicityFields = codedPlan(ethnicityRaw, 'ethnicity', SELECT_SPECS.ethnicity);
+    const idCardTypeFields = codedPlan(idCardTypeRaw, 'idCardType', SELECT_SPECS.idCardType);
     const birthFields = [];
     if (birthRaw) {
       birthFields.push({
@@ -702,6 +721,7 @@
       ...maritalFields,
       ...politicsFields,
       ...ethnicityFields,
+      ...idCardTypeFields,
       ...birthFields
     ];
     const coreBlockers = core.filter((row) => !row.ready);
@@ -712,6 +732,7 @@
     const maritalBlockers = maritalFields.filter((row) => !row.ready);
     const politicsBlockers = politicsFields.filter((row) => !row.ready);
     const ethnicityBlockers = ethnicityFields.filter((row) => !row.ready);
+    const idCardTypeBlockers = idCardTypeFields.filter((row) => !row.ready);
     const birthBlockers = birthFields.filter((row) => !row.ready);
     const optionalBlockers = [
       ...genderBlockers,
@@ -721,6 +742,7 @@
       ...maritalBlockers,
       ...politicsBlockers,
       ...ethnicityBlockers,
+      ...idCardTypeBlockers,
       ...birthBlockers
     ];
     if (coreBlockers.length) {
@@ -745,7 +767,8 @@
         formalWork: formalWorkFields.find((row) => row.ready)?.value || '',
         maritalStatus: maritalFields.find((row) => row.ready)?.value || '',
         politics: politicsFields.find((row) => row.ready)?.value || '',
-        ethnicity: ethnicityFields.find((row) => row.ready)?.value || ''
+        ethnicity: ethnicityFields.find((row) => row.ready)?.value || '',
+        idCardType: idCardTypeFields.find((row) => row.ready)?.value || ''
       },
       fields,
       blockers: optionalBlockers,
@@ -836,9 +859,11 @@
       const maritalRaw = rawValues.maritalStatus == null ? '' : norm(rawValues.maritalStatus);
       const politicsRaw = rawValues.politics == null ? '' : norm(rawValues.politics);
       const ethnicityRaw = rawValues.ethnicity == null ? '' : norm(rawValues.ethnicity);
+      const idCardTypeRaw = rawValues.idCardType == null ? '' : norm(rawValues.idCardType);
       const marital = resolveCodedOption(SELECT_SPECS.maritalStatus.options, maritalRaw);
       const politics = resolveCodedOption(SELECT_SPECS.politics.options, politicsRaw);
       const ethnicity = resolveCodedOption(SELECT_SPECS.ethnicity.options, ethnicityRaw);
+      const idCardType = resolveCodedOption(SELECT_SPECS.idCardType.options, idCardTypeRaw);
       if (norm(rawValues.birthDate || '')) {
         return {
           ok: false,
@@ -936,6 +961,18 @@
           writeAttempted: false
         };
       }
+      if (idCardTypeRaw && !idCardType) {
+        return {
+          ok: false,
+          siteId: SITE_ID,
+          reason: 'invalid_id_card_type',
+          href: location.href,
+          results: [],
+          saved: false,
+          skippedSave: true,
+          writeAttempted: false
+        };
+      }
       values = {
         fullName: norm(rawValues.fullName || ''),
         mobile: norm(rawValues.mobile || rawValues.phone || ''),
@@ -946,7 +983,8 @@
         formalWork,
         maritalStatus: marital?.text || '',
         politics: politics?.text || '',
-        ethnicity: ethnicity?.text || ''
+        ethnicity: ethnicity?.text || '',
+        idCardType: idCardType?.text || ''
       };
       if (!values.fullName || !values.mobile || !values.email) {
         return {
@@ -1010,6 +1048,7 @@
     if (values.maritalStatus) results.push(await fillMaritalStatus(values.maritalStatus, options));
     if (values.politics) results.push(await fillPolitics(values.politics, options));
     if (values.ethnicity) results.push(await fillEthnicity(values.ethnicity, options));
+    if (values.idCardType) results.push(await fillIdCardType(values.idCardType, options));
     const ok = results.every((row) => row.ok);
     return {
       ok,
@@ -1053,6 +1092,7 @@
     fillMaritalStatus,
     fillPolitics,
     fillEthnicity,
+    fillIdCardType,
     birthDateHint,
     BIRTHDATE_HINT,
     GATED_DICTS,

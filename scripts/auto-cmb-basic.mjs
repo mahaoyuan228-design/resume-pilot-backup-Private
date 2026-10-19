@@ -11,6 +11,7 @@ import { fileURLToPath } from 'node:url';
 import {
   isCmbBirthDateLabel,
   isCmbEthnicityLabel,
+  isCmbIdCardTypeLabel,
   isCmbHeightLabel,
   isCmbMaritalLabel,
   isCmbPoliticsLabel,
@@ -140,6 +141,21 @@ const GATED_SPECS = {
     liveReason: 'live_ethnicity_select_fill_unclaimed',
     first: { text: '汉族', code: 'NA0017' },
     second: { text: '回族', code: 'NA0018' }
+  },
+  idCard: {
+    label: '证件类型',
+    fn: 'fillIdCardType',
+    path: 'idCardType',
+    selectId: 'cmb-synthetic-idCardType',
+    selectIdStatus: 'provisional',
+    domHarvested: false,
+    optionListHarvested: true,
+    invalid: '请选择',
+    explicitReason: 'invalid_id_card_type',
+    liveReason: 'live_id_card_type_dom_unharvested',
+    liveHint: 'IdCardType text and codes were harvested. The select DOM id was not harvested; the fixture id is provisional. Live select click is not claimed.',
+    first: { text: '身份证', code: 'ID001' },
+    second: { text: '台胞证', code: 'ID0011' }
   }
 };
 
@@ -152,6 +168,7 @@ function onlyKind(value) {
   if (isCmbMaritalLabel(text)) return 'marital';
   if (isCmbPoliticsLabel(text)) return 'politics';
   if (isCmbEthnicityLabel(text)) return 'ethnicity';
+  if (isCmbIdCardTypeLabel(text)) return 'idCard';
   if (isCmbBirthDateLabel(text)) return 'birthDate';
   return '';
 }
@@ -1117,6 +1134,7 @@ async function runSyntheticGated(kind) {
         marital: read('resume_basicInfo_maritalStatus'),
         politics: read('resume_basicInfo_politicalAffinity'),
         ethnicity: read('resume_basicInfo_nation'),
+        idCard: read('cmb-synthetic-idCardType'),
         genderChecked: checkedValues('性别'),
         workedChecked: checkedValues('是否参加过正式工作'),
         height: document.querySelector('[data-field="身高"] input')?.value ?? null,
@@ -1134,7 +1152,7 @@ async function runSyntheticGated(kind) {
       confirmedFields: ['fullName', 'phone', 'email', ${JSON.stringify(spec.path)}, 'birthDate']
     })`);
     const fieldResult = basic?.results?.find((row) => row.label === spec.label);
-    const othersEmpty = ['marital', 'politics', 'ethnicity'].every((name) => {
+    const othersEmpty = ['marital', 'politics', 'ethnicity', 'idCard'].every((name) => {
       const row = neighbor?.[name];
       if (name === kind) return row?.text === spec.second.text && row?.code === spec.second.code;
       return row?.text === '' && row?.code === '';
@@ -1185,14 +1203,22 @@ async function runSyntheticGated(kind) {
       liveEdge: false,
       formFillClaimed: false,
       liveSelectFillClaimed: false,
-      optionListHarvested: true,
+      optionListHarvested: spec.optionListHarvested !== false,
       label: spec.label,
-      fixture: 'synthetic-harvested-options',
+      fixture: spec.selectIdStatus === 'provisional' ? 'synthetic-provisional-id' : 'synthetic-harvested-options',
+      ...(spec.selectIdStatus ? {
+        selectIdStatus: spec.selectIdStatus,
+        selectId: spec.selectId,
+        domHarvested: spec.domHarvested === true
+      } : {}),
       assumptions: [
         'option text and code come from the 2026-10-19 dict harvest',
         'option-row markup is a synthetic stand-in, not a live dropdown contract',
         'readback is the selection item text plus data-code',
-        'show-search typing is not used; ethnicity search input stays empty'
+        'show-search typing is not used; ethnicity search input stays empty',
+        ...(spec.selectIdStatus === 'provisional'
+          ? ['证件类型 select id is provisional; live DOM id was not harvested']
+          : [])
       ],
       refused,
       invalid,
@@ -1229,6 +1255,7 @@ function printHelp() {
     node scripts/auto-cmb-basic.mjs --only 婚姻状况
     node scripts/auto-cmb-basic.mjs --only 政治面貌
     node scripts/auto-cmb-basic.mjs --only 民族
+    node scripts/auto-cmb-basic.mjs --only 证件类型
     node scripts/auto-cmb-basic.mjs --only 出生日期
   Gender is offline synthetic only. Live radio DOM is not harvested.
   Formal work (是否参加过正式工作) is offline synthetic radio only. Options are field-map 是/否.
@@ -1239,6 +1266,8 @@ function printHelp() {
   Live weight DOM is not harvested. --only 体重 --live refuses.
   Marital / politics / ethnicity selects use harvested text+code on a synthetic option list.
   --live still refuses. Birth date records the DatePicker hint and does not write.
+  证件类型 uses IdCardType text+code. Its fixture id is provisional (DOM not harvested).
+  --only 证件类型 --live refuses live_id_card_type_dom_unharvested.
   Live portal fingerprint only (no fill claim):
     MODE=readiness node scripts/auto-cmb-basic.mjs --live
     Extension path (Edge + SW message CMB_BASIC_AUTO):
@@ -1269,7 +1298,7 @@ async function main() {
   }
   const kind = args.only == null ? '' : onlyKind(args.only);
   if (args.only != null && !kind) {
-    console.error('Only 性别, 是否参加过正式工作, 身高, 体重, 婚姻状况, 政治面貌, 民族, and 出生日期 are in this knife.');
+    console.error('Only 性别, 是否参加过正式工作, 身高, 体重, 婚姻状况, 政治面貌, 民族, 证件类型, and 出生日期 are in this knife.');
     process.exit(2);
   }
   if (kind === 'height' && args.live && !args.synthetic) {
@@ -1394,9 +1423,14 @@ async function main() {
       liveEdge: false,
       formFillClaimed: false,
       liveSelectFillClaimed: false,
-      optionListHarvested: true,
+      optionListHarvested: spec.optionListHarvested !== false,
       label: spec.label,
-      hint: 'Option text and codes were harvested. Live select click is not claimed. Use --only without --live.'
+      ...(spec.selectIdStatus ? {
+        selectIdStatus: spec.selectIdStatus,
+        selectId: spec.selectId,
+        domHarvested: spec.domHarvested === true
+      } : {}),
+      hint: spec.liveHint || 'Option text and codes were harvested. Live select click is not claimed. Use --only without --live.'
     });
     const { file, latest } = gatedEvidencePaths(kind);
     fs.writeFileSync(file, JSON.stringify(payload, null, 2), 'utf8');

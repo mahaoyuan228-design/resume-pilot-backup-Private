@@ -12,12 +12,18 @@
 // Live radio DOM and the live height/weight label/value are not harvested.
 // Marital / politics / ethnicity use harvested Chinese text + code tables.
 // They are optional caller-supplied keys and are not added to emptyProfile.
+// Id card type uses the full-dictmap IdCardType text+code table. The select id
+// is provisional (DOM was not harvested) and is not added to emptyProfile.
 // Birth date is hint-only: a present value is not filled.
 // Used by tests + harness. Content script mirrors the same rules.
 
 import {
   CMB_BIRTHDATE_HINT,
   CMB_ETHNICITY_OPTIONS,
+  CMB_ID_CARD_TYPE_OPTIONS,
+  CMB_ID_CARD_TYPE_LIST_ID,
+  CMB_ID_CARD_TYPE_SELECT_ID,
+  CMB_ID_CARD_TYPE_SELECT_ID_STATUS,
   CMB_MARITAL_OPTIONS,
   CMB_POLITICS_OPTIONS,
   resolveCmbCodedOption
@@ -26,6 +32,10 @@ import {
 export {
   CMB_BIRTHDATE_HINT,
   CMB_ETHNICITY_OPTIONS,
+  CMB_ID_CARD_TYPE_OPTIONS,
+  CMB_ID_CARD_TYPE_LIST_ID,
+  CMB_ID_CARD_TYPE_SELECT_ID,
+  CMB_ID_CARD_TYPE_SELECT_ID_STATUS,
   CMB_MARITAL_OPTIONS,
   CMB_POLITICS_OPTIONS,
   resolveCmbCodedOption
@@ -63,6 +73,7 @@ const CMB_MARITAL_LABEL_RE = /^婚姻状况(?:（可选）|\(可选\))?$/u;
 export const CMB_MARITAL_LABEL = '婚姻状况';
 export const CMB_POLITICS_LABEL = '政治面貌';
 export const CMB_ETHNICITY_LABEL = '民族';
+export const CMB_ID_CARD_TYPE_LABEL = '证件类型';
 
 /**
  * Optional radio. Canonical label is 是否参加过正式工作.
@@ -99,8 +110,10 @@ function normMeasure(value) {
  * a confirmed 是 or 否 is included. Unconfirmed, or any other value, is a blocker
  * and is not filled. This does not add `formalWork` to emptyProfile.
  * Options are the field-map pair 是/否, not a harvested live list.
- * Marital status, politics, and ethnicity follow the same optional rule.
+ * Marital status, politics, ethnicity, and id card type follow the same optional rule.
  * A value must be an exact harvested Chinese name or exact code.
+ * Id card type is caller-supplied (`idCardType`). It is not an emptyProfile field.
+ * Its fixture select id is provisional because the live DOM id was not harvested.
  * Birth date is never filled here. A present birthDate is a blocker with
  * reason datepicker_hint_only (confirmed) and is not written.
  */
@@ -135,6 +148,7 @@ export function planCmbBasicFromProfile(profile) {
   const maritalRaw = normMeasure(profile.maritalStatus || '');
   const politicsRaw = normMeasure(profile.politics || '');
   const ethnicityRaw = normMeasure(profile.ethnicity || '');
+  const idCardTypeRaw = normMeasure(profile.idCardType || '');
   const birthRaw = normMeasure(profile.birthDate || '');
 
   const core = [
@@ -222,6 +236,7 @@ export function planCmbBasicFromProfile(profile) {
   const maritalFields = codedFields(maritalRaw, 'maritalStatus', CMB_MARITAL_LABEL, CMB_MARITAL_OPTIONS);
   const politicsFields = codedFields(politicsRaw, 'politics', CMB_POLITICS_LABEL, CMB_POLITICS_OPTIONS);
   const ethnicityFields = codedFields(ethnicityRaw, 'ethnicity', CMB_ETHNICITY_LABEL, CMB_ETHNICITY_OPTIONS);
+  const idCardTypeFields = codedFields(idCardTypeRaw, 'idCardType', CMB_ID_CARD_TYPE_LABEL, CMB_ID_CARD_TYPE_OPTIONS);
   const birthFields = [];
   if (birthRaw) {
     birthFields.push({
@@ -244,6 +259,7 @@ export function planCmbBasicFromProfile(profile) {
     ...maritalFields,
     ...politicsFields,
     ...ethnicityFields,
+    ...idCardTypeFields,
     ...birthFields
   ];
   const coreBlockers = core.filter((row) => !row.ready);
@@ -254,6 +270,7 @@ export function planCmbBasicFromProfile(profile) {
   const maritalBlockers = maritalFields.filter((row) => !row.ready);
   const politicsBlockers = politicsFields.filter((row) => !row.ready);
   const ethnicityBlockers = ethnicityFields.filter((row) => !row.ready);
+  const idCardTypeBlockers = idCardTypeFields.filter((row) => !row.ready);
   const birthBlockers = birthFields.filter((row) => !row.ready);
   const optionalBlockers = [
     ...genderBlockers,
@@ -263,6 +280,7 @@ export function planCmbBasicFromProfile(profile) {
     ...maritalBlockers,
     ...politicsBlockers,
     ...ethnicityBlockers,
+    ...idCardTypeBlockers,
     ...birthBlockers
   ];
   if (coreBlockers.length) {
@@ -282,10 +300,11 @@ export function planCmbBasicFromProfile(profile) {
   const maritalStatus = maritalFields.find((row) => row.ready)?.value || '';
   const politics = politicsFields.find((row) => row.ready)?.value || '';
   const ethnicity = ethnicityFields.find((row) => row.ready)?.value || '';
+  const idCardType = idCardTypeFields.find((row) => row.ready)?.value || '';
   return {
     ok: true,
     reason: 'profile_ready',
-    values: { fullName, mobile, email, gender, height, weight, formalWork, maritalStatus, politics, ethnicity },
+    values: { fullName, mobile, email, gender, height, weight, formalWork, maritalStatus, politics, ethnicity, idCardType },
     fields,
     blockers: optionalBlockers,
     birthDateHint: CMB_BIRTHDATE_HINT
@@ -330,6 +349,10 @@ export function isCmbPoliticsLabel(raw) {
 
 export function isCmbEthnicityLabel(raw) {
   return normalizeCmbLabelText(normMeasure(raw)) === CMB_ETHNICITY_LABEL;
+}
+
+export function isCmbIdCardTypeLabel(raw) {
+  return normalizeCmbLabelText(normMeasure(raw)) === CMB_ID_CARD_TYPE_LABEL;
 }
 
 export function isCmbBirthDateLabel(raw) {

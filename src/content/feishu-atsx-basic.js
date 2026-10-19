@@ -68,23 +68,63 @@
     return [...document.querySelectorAll(ITEM_SEL)];
   }
 
-  function findItem(wanted) {
+  function matchingItems(wanted) {
     const want = cleanLabel(wanted);
-    const hits = formItems().filter((item) => {
+    return formItems().filter((item) => {
       const label = item.querySelector(LABEL_SEL);
       return label && labelText(label) === want;
     });
+  }
+
+  /** Unique label only. Zero or many matches fail closed (no guessed item). */
+  function findItem(wanted) {
+    const hits = matchingItems(wanted);
     return hits.length === 1 ? hits[0] : null;
   }
 
-  function textControl(item) {
-    const inputs = [...item.querySelectorAll(INPUT_SEL)].filter((node) => {
+  function visibleTextInputs(item) {
+    return [...item.querySelectorAll(INPUT_SEL)].filter((node) => {
       if (node.type === 'hidden' || node.type === 'radio' || node.type === 'checkbox') return false;
       if (node.disabled) return false;
       const style = getComputedStyle(node);
       return style.display !== 'none' && style.visibility !== 'hidden';
     });
+  }
+
+  function textControl(item) {
+    const inputs = visibleTextInputs(item);
     return inputs.length === 1 ? inputs[0] : null;
+  }
+
+  /**
+   * Existing JS-confirmed `.atsx-*` contract only. Does not invent a new live class.
+   * missing → item_not_found; duplicate label → field_ambiguous;
+   * zero inputs → control_not_found; several inputs → control_ambiguous.
+   */
+  function classifyField(label) {
+    const hits = matchingItems(label);
+    if (hits.length === 0) {
+      return { label, ready: false, reason: 'item_not_found', matchCount: 0 };
+    }
+    if (hits.length !== 1) {
+      return { label, ready: false, reason: 'field_ambiguous', matchCount: hits.length };
+    }
+    const inputs = visibleTextInputs(hits[0]);
+    if (inputs.length === 0) {
+      return { label, ready: false, reason: 'control_not_found', matchCount: 1, controlCount: 0, item: hits[0] };
+    }
+    if (inputs.length !== 1) {
+      return { label, ready: false, reason: 'control_ambiguous', matchCount: 1, controlCount: inputs.length, item: hits[0] };
+    }
+    return {
+      label,
+      ready: true,
+      reason: 'unique',
+      matchCount: 1,
+      controlCount: 1,
+      item: hits[0],
+      control: inputs[0]
+    };
   }
 
   function setNativeValue(input, value) {
@@ -104,10 +144,21 @@
   }
 
   async function fillText(label, value) {
-    const item = findItem(label);
-    if (!item) return { label, ok: false, reason: 'item_not_found', before: '', after: '', expected: value };
-    const control = textControl(item);
-    if (!control) return { label, ok: false, reason: 'control_not_found', before: '', after: '', expected: value };
+    const row = classifyField(label);
+    if (!row.ready) {
+      return {
+        label,
+        ok: false,
+        reason: row.reason,
+        matchCount: row.matchCount,
+        controlCount: row.controlCount ?? null,
+        before: '',
+        after: '',
+        expected: norm(value)
+      };
+    }
+    const item = row.item;
+    const control = row.control;
     const before = norm(control.value);
     control.focus();
     setNativeValue(control, String(value ?? ''));
@@ -285,6 +336,30 @@
       ['手机号码', values.mobile],
       ['邮箱', values.email]
     ];
+    const classified = textPlan.map(([label, value]) => ({ ...classifyField(label), expected: norm(value) }));
+    if (classified.some((row) => !row.ready)) {
+      return {
+        ok: false,
+        siteId: SITE_ID,
+        href: location.href,
+        title: document.title,
+        reason: 'form_not_ready',
+        saved: false,
+        skippedSave: true,
+        writeAttempted: false,
+        profileSource: allowExplicit ? 'explicit' : 'resumeProfile',
+        results: classified.map((row) => ({
+          label: row.label,
+          ok: false,
+          reason: row.ready ? 'skipped_form_not_ready' : row.reason,
+          matchCount: row.matchCount,
+          controlCount: row.controlCount ?? null,
+          before: '',
+          after: '',
+          expected: row.expected
+        }))
+      };
+    }
     const results = [];
     for (const [label, value] of textPlan) {
       results.push(await fillText(label, value));

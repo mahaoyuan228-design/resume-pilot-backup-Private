@@ -27,6 +27,10 @@ test('siteId and labels stay isolated from CMS/GTH/citics', () => {
   assert.doesNotMatch(source, /cms-|gth-|careers\.citics|ResumeCitics/);
   assert.match(source, /skippedSave:\s*true/);
   assert.doesNotMatch(source, /click\(.*保存|保存.*\.click/);
+  assert.doesNotMatch(source, /性别|证件|学历/);
+  assert.match(source, /field_ambiguous/);
+  assert.match(source, /form_not_ready/);
+  assert.match(source, /ITEM_SEL = '\.atsx-form-item'/);
 });
 
 test('fixture carries JS-confirmed atsx-form-item selectors + public portal chrome', () => {
@@ -115,6 +119,45 @@ test('synthetic harness fill-without-save readback for 3 basic fields', { timeou
   assert.equal(evidence.fill?.results?.length, 3);
   assert.ok(evidence.fill.results.every((row) => row.ok === true));
   assert.equal(evidence.neighbor?.value, '0');
+  assert.equal(evidence.neverSave?.clicks, 0);
+  assert.deepEqual(evidence.neverSave?.labels, []);
+});
+
+test('ambiguous or missing JS-confirmed fields fail closed and never save', { timeout: 120000 }, () => {
+  const run = spawnSync(process.execPath, [
+    'scripts/auto-feishu-atsx-basic.mjs',
+    '--synthetic',
+    '--case',
+    'ambiguous'
+  ], {
+    cwd: root,
+    encoding: 'utf8',
+    timeout: 90000,
+    env: { ...process.env, MODE: 'fill' }
+  });
+  assert.equal(run.status, 0, run.stderr || run.stdout);
+  const evidence = JSON.parse(
+    readFileSync(resolve(root, 'dist/auto-runs/feishu-atsx-basic-ambiguous-latest.json'), 'utf8')
+  );
+  assert.equal(evidence.siteId, 'feishu-atsx');
+  assert.equal(evidence.ok, true);
+  assert.equal(evidence.reason, 'ambiguous_fail_closed');
+  assert.equal(evidence.saved, false);
+  assert.equal(evidence.skippedSave, true);
+  assert.equal(evidence.formFillClaimed, false);
+  assert.equal(evidence.liveEdge, false);
+  assert.equal(evidence.fill?.ok, false);
+  assert.equal(evidence.fill?.reason, 'form_not_ready');
+  assert.equal(evidence.fill?.writeAttempted, false);
+  const reasons = Object.fromEntries((evidence.fill?.results || []).map((row) => [row.label, row.reason]));
+  assert.equal(reasons['姓名'], 'field_ambiguous');
+  assert.equal(reasons['邮箱'], 'item_not_found');
+  assert.equal(reasons['手机号码'], 'skipped_form_not_ready');
+  assert.equal(evidence.unchanged, true);
+  assert.equal(evidence.neverSave?.clicks, 0);
+  const ambiguous = readFileSync(resolve(root, 'tests/fixtures/feishu-atsx-basic-ambiguous.html'), 'utf8');
+  assert.match(ambiguous, /class="atsx-form-item"/);
+  assert.match(ambiguous, /class="atsx-input"/);
 });
 
 test('synthetic readiness finds three labels', { timeout: 120000 }, () => {

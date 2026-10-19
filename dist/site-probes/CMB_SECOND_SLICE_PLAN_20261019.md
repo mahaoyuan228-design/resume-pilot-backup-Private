@@ -3,6 +3,7 @@
 **状态**：离线分析草稿 — **未**宣称已支持招行；**未** live fill；**未**接线 SW/popup；**永不**点保存/提交。  
 **性别补记（2026-10-19）**：offline synthetic 已落地（`cmb-basic.js` `fillGender` + `tests/fixtures/cmb-basic-form.html`）。仍是合成 fixture，**不是** live 支持。  
 **身高补记（2026-10-19）**：offline synthetic 已落地（`fillHeight` + 同一 fixture）。标签按「身高」或带 CM 后缀匹配；写入值只有数字，**不**把 CM 写进 value。仍是合成 fixture，**不是** live 支持。  
+**体重补记（2026-10-19）**：offline synthetic 已落地（`fillWeight` + 同一 fixture）。标签按「体重」或带 KG 后缀匹配；写入值只有数字公斤，**不**把 `60kg` / `60KG` 写进 value。`profile.weight` 仅在调用方传入时读取，**未**改 `emptyProfile`。仍是合成 fixture，**不是** live 支持。  
 **输入**：`cmb-field-map-20261019.md` · `EXPAND_CMB_ADAPTER_DESIGN.md` · `CMB_NEXT.md` · `CMB_FINGERPRINT_REFRESH_20261019.md` · `_cmb-js-class-hints-20261019.txt` · 第一切片 `cmb-basic.js` / `cmb-profile-map.mjs`  
 **页**：`https://career.cmbchina.com/center/resume` · 栈 React + ant-design（`main.d37c8446.js` / `main.02cda64a.css`）· **非** hotjob  
 **第一切片已做**：姓名 / 手机号 / 邮箱（offline scaffold PASS；DOM 合同 CSS-confirmed，live 结构未采）
@@ -21,6 +22,7 @@
 | 政治面貌 | `political`（profile 顶层暂无 → 可能 `customFacts` / `siteOptionMappings`） | select（「请选择」；`ant-select` 公开 CSS 候选） | 中：选项表未采集；可能可搜/长列表 → 对标 CITICS `select_search_heavy` 拒填 | **是**（需 live 选项+结构） |
 | 民族 | `ethnicity`（**勿**用 `nation`，避国籍碰撞；对齐 CITICS） | select（`ant-select` 公开 CSS 候选） | 中：全量民族约 56 或 showSearch 则应 skip，勿强填 | **是**（需 live 选项规模） |
 | 身高 CM | `height`（已有 profile 顶层键） | text（`input.ant-input` 公开 CSS 候选） | 低：文本；注意标签带「CM」单位后缀，勿把单位写入 value | synthetic 已绿（公开 CSS 候选；标签可带 CM；value 只有数字）。**live 标签精确串仍要确认** |
+| 体重 KG | `weight`（调用方传入；**未**写入 emptyProfile，以免动 CMS/GTH 档案形状） | text（`input.ant-input` 公开 CSS 候选） | 低：文本；注意标签带「KG」单位后缀，勿把 `60kg` / `60KG` 写入 value | synthetic 已绿（公开 CSS 候选；标签可带 KG；value 只有数字）。**live 标签精确串仍要确认** |
 | 婚姻状况（可选） | `marital`（对齐 CITICS allowlist） | select（标签含「可选」；`ant-select` 公开 CSS 候选） | 低–中：flat select 若选项少可做；级联/搜索则拒 | **是**（需 live 确认 flat vs 其他） |
 
 ### 选择器候选（仅候选 · 勿当成 live 合同）
@@ -42,7 +44,6 @@
 - 生源地 / 出生地 / 现居住地（级联嫌疑）
 - 招聘信息来源 / 面试期望城市（选项未知）
 - 是否参加过正式工作（可留第三拍；radio 但业务语义弱于性别）
-- 体重（fixture 邻项已占；profile 无 `weight` 顶层键 — 若要做需先扩 profile 或走 customFacts，本拍不排）
 - 任何「保存」「提交」点击；真站策略仍 **fill-wo-save**
 
 ---
@@ -72,7 +73,7 @@
 2. **文件与全局名隔离**：新增逻辑仅落 `cmb-*`（如 `cmb-basic.js`、`ResumeCmbBasic`）；`tests/cmb-basic.test.mjs` 已断言源码不含 `cms-|gth-|ResumeCitics|atsx-form` 等串 — 第二拍扩字段时此断言须继续 PASS。
 3. **授权闸门不变**：招行动作不得削弱现网 fail-closed；未授权不得自动填 CMS/GTH；勿为招行临时打开 `<all_urls>`。
 4. **Manifest / 注入面**：`host_permissions` 仅追加 `https://career.cmbchina.com/*`（若尚未加）；不得改 CMS/GTH content_scripts matches；SW 接线 `CMB_*` 时不得复用/改写 `CMS_BASIC_AUTO` / `GTH_*` 消息名语义。
-5. **测试门禁**：改招行前/后跑 `node --test tests/cmb-basic.test.mjs`（身高 synthetic 之后期望 14/14：原先 8 + 性别 3 + 身高 3）以及现有 CMS/GTH 相关测试（至少 `cms-basic-auto.test.mjs`、`gth-basic-auto.test.mjs` 不因招行改动变红）；**不要**为凑绿改测试断言。
+5. **测试门禁**：改招行前/后跑 `node --test tests/cmb-basic.test.mjs`（体重 synthetic 之后期望 17/17：原先 8 + 性别 3 + 身高 3 + 体重 3）以及现有 CMS/GTH 相关测试（至少 `cms-basic-auto.test.mjs`、`gth-basic-auto.test.mjs` 不因招行改动变红）；**不要**为凑绿改测试断言。
 
 ---
 
@@ -114,14 +115,26 @@ L2 仍然开放：需要登录后的「性别」item outerHTML，才能把上述
 
 L5 仍然开放：需要登录后的身高 label 文本和空控件 value，才能把上述假设收成 live 合同。
 
+### 体重 synthetic 假设（不阻塞登录）
+
+公开 CSS 只有 `input.ant-input` 点类计数，没有登录后的体重节点，也没有证实标签是「体重」还是「体重 KG」。因此在同一合成 fixture 上加一项，**不**把它写成 live 合同：
+
+1. 「体重」是单独一个 `.ant-form-item`，与「身高」「性别」分开。
+2. 标签文本是「体重」，或「体重」后带可选 KG 后缀（字段图写「体重 KG」；也接受括号形式）。
+3. 控件是单个 `input.ant-input`，与姓名 / 手机号 / 邮箱 / 身高同一条公开 CSS 候选路径。
+4. 写入和读回都是数字公斤。KG 留在标签上，**永不**写入 value。带单位的 profile 值（如 `60kg`、`60KG`）拒填。
+5. 运行：`node scripts/auto-cmb-basic.mjs --only 体重`。`--live` 直接拒绝（`live_weight_text_unharvested`）。Never Save。
+
+体重的 live 标签精确串仍然开放：需要登录后的体重 label 文本和控件 value，才能把上述假设收成 live 合同。
+
 ---
 
 ## 5. 与第一切片关系
 
 | 项 | 第一切片 | 第二拍（本文件） |
 | --- | --- | --- |
-| 字段 | 姓名 / 手机号 / 邮箱 | 性别、身高 **offline synthetic**；出生日期 / 政治面貌 / 民族 / 婚姻状况仍未实现 |
-| DOM 合同 | CSS-confirmed text | 性别 / 身高 fixture = 公开 CSS **候选**（非 live）；picker/select 仍只是候选 |
+| 字段 | 姓名 / 手机号 / 邮箱 | 性别、身高、体重 **offline synthetic**；出生日期 / 政治面貌 / 民族 / 婚姻状况仍未实现 |
+| DOM 合同 | CSS-confirmed text | 性别 / 身高 / 体重 fixture = 公开 CSS **候选**（非 live）；picker/select 仍只是候选 |
 | SW/popup | 未接线 | **仍不接线**（本分析不写工程替装） |
 | 保存 | Never Save | Never Save |
 | 客户口径 | 未支持 | **仍未支持** |

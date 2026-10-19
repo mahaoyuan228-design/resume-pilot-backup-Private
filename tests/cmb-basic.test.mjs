@@ -13,8 +13,12 @@ import {
   CMB_GENDER_VALUES,
   CMB_HEIGHT_LABEL,
   CMB_HEIGHT_VALUE_RE,
+  CMB_WEIGHT_LABEL,
+  CMB_WEIGHT_VALUE_RE,
   isCmbHeightLabel,
+  isCmbWeightLabel,
   numericCmbHeight,
+  numericCmbWeight,
   planCmbBasicFromProfile,
   normalizeCmbLabelText,
   isCmbHost,
@@ -338,5 +342,155 @@ test('synthetic harness height readback is numeric and --live refuses', { timeou
   assert.equal(payload.neighbor?.height, '175');
   assert.equal(payload.neighbor?.heightHasUnit, false);
   assert.equal(payload.neighbor?.heightSuffix, 'CM');
+  assert.equal(payload.neighbor?.saveDisabled, true);
+});
+
+test('weight plan is optional numeric kilograms and rejects a KG suffix', () => {
+  assert.equal(CMB_WEIGHT_LABEL, '体重');
+  assert.equal(CMB_WEIGHT_VALUE_RE.test('60'), true);
+  assert.equal(CMB_WEIGHT_VALUE_RE.test('60kg'), false);
+  assert.equal(CMB_WEIGHT_VALUE_RE.test('60KG'), false);
+  assert.equal(isCmbWeightLabel('体重'), true);
+  assert.equal(isCmbWeightLabel('体重 KG'), true);
+  assert.equal(isCmbWeightLabel('体重KG'), true);
+  assert.equal(isCmbWeightLabel('体重（KG）'), true);
+  assert.equal(isCmbWeightLabel('*体重 KG：'), true);
+  assert.equal(isCmbWeightLabel('身高'), false);
+  assert.equal(isCmbWeightLabel('身高 CM'), false);
+  assert.equal(isCmbWeightLabel('身高体重'), false);
+  assert.equal(isCmbHeightLabel('体重 KG'), false);
+  assert.equal(numericCmbWeight(' 60 '), '60');
+  assert.equal(numericCmbWeight('62.5'), '62.5');
+  assert.equal(numericCmbWeight('60kg'), '');
+  assert.equal(numericCmbWeight('60KG'), '');
+  assert.equal(numericCmbWeight('60 kg'), '');
+  assert.equal(numericCmbWeight(''), '');
+
+  const base = {
+    fullName: '测试甲',
+    phone: '13800138000',
+    email: 'cmb.user@example.com',
+    confirmedFields: ['fullName', 'phone', 'email']
+  };
+  const absent = planCmbBasicFromProfile(base);
+  assert.equal(absent.ok, true);
+  assert.equal(absent.values.weight, '');
+  assert.equal(absent.values.height, '');
+  assert.equal(absent.fields.some((row) => row.label === '体重'), false);
+
+  const ready = planCmbBasicFromProfile({
+    ...base,
+    weight: ' 60 ',
+    confirmedFields: [...base.confirmedFields, 'weight']
+  });
+  assert.equal(ready.ok, true);
+  assert.equal(ready.values.weight, '60');
+  assert.equal(ready.values.height, '');
+  assert.equal(ready.values.gender, '');
+  assert.equal(ready.fields.find((row) => row.label === '体重')?.ready, true);
+
+  const unconfirmed = planCmbBasicFromProfile({ ...base, weight: '60' });
+  assert.equal(unconfirmed.ok, true);
+  assert.equal(unconfirmed.values.weight, '');
+  assert.equal(unconfirmed.blockers.find((row) => row.label === '体重')?.reason, 'profile_fact_unconfirmed');
+
+  const invalidLower = planCmbBasicFromProfile({
+    ...base,
+    weight: '60kg',
+    confirmedFields: [...base.confirmedFields, 'weight']
+  });
+  assert.equal(invalidLower.ok, true);
+  assert.equal(invalidLower.values.weight, '');
+  assert.equal(invalidLower.blockers.find((row) => row.label === '体重')?.reason, 'invalid_profile_value');
+
+  const invalidUpper = planCmbBasicFromProfile({
+    ...base,
+    weight: '60KG',
+    confirmedFields: [...base.confirmedFields, 'weight']
+  });
+  assert.equal(invalidUpper.ok, true);
+  assert.equal(invalidUpper.values.weight, '');
+  assert.equal(invalidUpper.blockers.find((row) => row.label === '体重')?.reason, 'invalid_profile_value');
+});
+
+test('weight fixture is synthetic text and does not ship other second-slice fields', () => {
+  assert.match(fixture, /SYNTHETIC weight text/);
+  assert.match(fixture, /data-field="体重"/);
+  assert.match(fixture, />体重 KG</);
+  assert.match(fixture, /name="weight"/);
+  assert.match(fixture, /data-unit="KG"/);
+  assert.match(fixture, /value="60"/);
+  assert.match(fixture, /Live weight DOM was not harvested/);
+  assert.match(source, /WEIGHT_LABEL = '体重'/);
+  assert.match(source, /WEIGHT_VALUE_RE/);
+  assert.match(source, /fillWeight/);
+  assert.match(source, /Never write a KG suffix into the value/);
+  assert.match(source, /input\.ant-input/);
+  assert.doesNotMatch(source, /出生日期|政治面貌|婚姻状况|民族/);
+  assert.doesNotMatch(source, /birthDate|political|ethnicity|marital/);
+  assert.match(harness, /--only 体重/);
+  assert.match(harness, /live_weight_text_unharvested/);
+  assert.match(harness, /formFillClaimed: false/);
+  assert.doesNotMatch(source, /click\(.*保存|保存.*\.click/);
+});
+
+test('synthetic harness weight readback is numeric and --live refuses', { timeout: 120000 }, () => {
+  const live = spawnSync(process.execPath, ['scripts/auto-cmb-basic.mjs', '--only', '体重', '--live'], {
+    cwd: root,
+    encoding: 'utf8',
+    timeout: 20000
+  });
+  assert.equal(live.status, 3, live.stderr || live.stdout);
+  const refused = JSON.parse(live.stdout);
+  assert.equal(refused.ok, false);
+  assert.equal(refused.reason, 'live_weight_text_unharvested');
+  assert.equal(refused.saved, false);
+  assert.equal(refused.skippedSave, true);
+  assert.equal(refused.formFillClaimed, false);
+  assert.equal(refused.liveWeightDomHarvested, false);
+  assert.equal(refused.liveEdge, false);
+
+  const run = spawnSync(process.execPath, ['scripts/auto-cmb-basic.mjs', '--only', '体重'], {
+    cwd: root,
+    encoding: 'utf8',
+    timeout: 110000
+  });
+  assert.equal(run.status, 0, run.stderr || run.stdout);
+  const payload = JSON.parse(readFileSync(resolve(root, 'dist/auto-runs/cmb-weight-text-latest.json'), 'utf8'));
+  assert.equal(payload.ok, true);
+  assert.equal(payload.saved, false);
+  assert.equal(payload.skippedSave, true);
+  assert.equal(payload.liveEdge, false);
+  assert.equal(payload.formFillClaimed, false);
+  assert.equal(payload.liveWeightDomHarvested, false);
+  assert.equal(payload.reason, 'synthetic_weight_text_pass');
+  assert.equal(payload.label, '体重');
+  assert.equal(payload.invalid?.reason, 'invalid_profile_value');
+  assert.equal(payload.invalidUpper?.reason, 'invalid_profile_value');
+  assert.equal(payload.explicitInvalid?.reason, 'invalid_weight');
+  assert.equal(payload.explicitInvalid?.writeAttempted, false);
+  assert.equal(payload.afterReject?.weight, '60');
+  assert.equal(payload.afterReject?.height, '');
+  assert.deepEqual(payload.afterReject?.genderChecked, []);
+  assert.equal(payload.afterReject?.saveDisabled, true);
+  assert.equal(payload.first?.before, '60');
+  assert.equal(payload.first?.after, '70');
+  assert.equal(payload.second?.before, '70');
+  assert.equal(payload.second?.after, '65');
+  assert.equal(payload.decimal?.after, '62.5');
+  assert.equal(payload.fillBasic?.results?.length, 4);
+  assert.equal(payload.fillBasic.results.find((row) => row.label === '体重')?.after, '58');
+  assert.equal(/kg/iu.test(payload.fillBasic.results.find((row) => row.label === '体重')?.after || ''), false);
+  assert.equal(payload.fillBasic.results.some((row) => row.label === '性别'), false);
+  assert.equal(payload.fillBasic.results.some((row) => row.label === '身高'), false);
+  assert.ok(payload.fillBasic.results.every((row) => row.ok));
+  assert.deepEqual(payload.neighbor?.genderChecked, []);
+  assert.deepEqual(payload.neighbor?.workedChecked, ['否']);
+  assert.equal(payload.neighbor?.height, '');
+  assert.equal(payload.neighbor?.heightHasUnit, false);
+  assert.equal(payload.neighbor?.heightSuffix, 'CM');
+  assert.equal(payload.neighbor?.weight, '58');
+  assert.equal(payload.neighbor?.weightHasUnit, false);
+  assert.equal(payload.neighbor?.weightSuffix, 'KG');
   assert.equal(payload.neighbor?.saveDisabled, true);
 });

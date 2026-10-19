@@ -3,7 +3,10 @@
 // Gender (性别) is optional and offline-synthetic only: values 男 / 女.
 // Height (身高) is optional and offline-synthetic text only: numeric centimeters.
 // The page label may include a CM suffix. That unit is never part of the value.
-// Live radio DOM and the live height label/value are not harvested.
+// Weight (体重) is optional and offline-synthetic text only: numeric kilograms.
+// The page label may include a KG suffix. That unit is never part of the value.
+// `weight` is read only when the caller supplies it. emptyProfile is unchanged.
+// Live radio DOM and the live height/weight label/value are not harvested.
 // Used by tests + harness. Content script mirrors the same rules.
 
 export const CMB_SITE_ID = 'cmb';
@@ -24,9 +27,19 @@ export const CMB_HEIGHT_LABEL = '身高';
 export const CMB_HEIGHT_VALUE_RE = /^\d+(?:\.\d+)?$/u;
 const CMB_HEIGHT_LABEL_RE = /^身高(?:\s*(?:[（(]\s*)?cm(?:\s*[）)])?)?$/iu;
 
+/**
+ * Optional text. Canonical profile label is 体重.
+ * Live label may be 体重 or 体重 plus a KG suffix (field map writes 体重 KG). Not a live DOM contract.
+ * Planner key is `weight` when the caller passes it. Not an emptyProfile field.
+ */
+export const CMB_WEIGHT_LABEL = '体重';
+/** Digits only. A KG suffix is invalid — the unit stays on the label. */
+export const CMB_WEIGHT_VALUE_RE = /^\d+(?:\.\d+)?$/u;
+const CMB_WEIGHT_LABEL_RE = /^体重(?:\s*(?:[（(]\s*)?kg(?:\s*[）)])?)?$/iu;
+
 const norm = (value) => String(value ?? '').replace(/[\s\u00a0]+/gu, ' ').trim();
 
-function normHeight(value) {
+function normMeasure(value) {
   return String(value ?? '')
     .normalize('NFKC')
     .replace(/[\u200b-\u200d\ufeff]/gu, '')
@@ -42,6 +55,10 @@ function normHeight(value) {
  * Height is optional text: absent stays out of the plan; a confirmed numeric
  * centimeter value is included. Unconfirmed, or any value that is not digits
  * (including a CM suffix), is a blocker and is not filled.
+ * Weight is optional text on the same rule: absent stays out of the plan; a
+ * confirmed numeric kilogram value is included. Unconfirmed, or any value that
+ * is not digits (including a KG suffix such as 60kg / 60KG), is a blocker and
+ * is not filled. This does not add `weight` to emptyProfile.
  */
 export function planCmbBasicFromProfile(profile) {
   if (!profile || typeof profile !== 'object' || Array.isArray(profile)) {
@@ -68,7 +85,8 @@ export function planCmbBasicFromProfile(profile) {
   const mobile = norm(profile.phone || '');
   const email = norm(profile.email || '');
   const genderRaw = norm(profile.gender || '');
-  const heightRaw = normHeight(profile.height || '');
+  const heightRaw = normMeasure(profile.height || '');
+  const weightRaw = normMeasure(profile.weight || '');
 
   const core = [
     { label: '姓名', path: 'fullName', value: fullName },
@@ -109,28 +127,44 @@ export function planCmbBasicFromProfile(profile) {
     });
   }
 
-  const fields = [...core, ...genderFields, ...heightFields];
+  const weightFields = [];
+  if (weightRaw) {
+    let reason = null;
+    if (!confirmed.has('weight')) reason = 'profile_fact_unconfirmed';
+    else if (!CMB_WEIGHT_VALUE_RE.test(weightRaw)) reason = 'invalid_profile_value';
+    weightFields.push({
+      label: CMB_WEIGHT_LABEL,
+      path: 'weight',
+      value: weightRaw,
+      ready: reason === null,
+      reason
+    });
+  }
+
+  const fields = [...core, ...genderFields, ...heightFields, ...weightFields];
   const coreBlockers = core.filter((row) => !row.ready);
   const genderBlockers = genderFields.filter((row) => !row.ready);
   const heightBlockers = heightFields.filter((row) => !row.ready);
+  const weightBlockers = weightFields.filter((row) => !row.ready);
   if (coreBlockers.length) {
     return {
       ok: false,
       reason: 'profile_fields_unavailable',
       values: null,
       fields,
-      blockers: [...coreBlockers, ...genderBlockers, ...heightBlockers]
+      blockers: [...coreBlockers, ...genderBlockers, ...heightBlockers, ...weightBlockers]
     };
   }
 
   const gender = genderFields.find((row) => row.ready)?.value || '';
   const height = heightFields.find((row) => row.ready)?.value || '';
+  const weight = weightFields.find((row) => row.ready)?.value || '';
   return {
     ok: true,
     reason: 'profile_ready',
-    values: { fullName, mobile, email, gender, height },
+    values: { fullName, mobile, email, gender, height, weight },
     fields,
-    blockers: [...genderBlockers, ...heightBlockers]
+    blockers: [...genderBlockers, ...heightBlockers, ...weightBlockers]
   };
 }
 
@@ -144,13 +178,27 @@ export function normalizeCmbLabelText(raw) {
  * 体重 and other items do not match. Not proof of the live label string.
  */
 export function isCmbHeightLabel(raw) {
-  return CMB_HEIGHT_LABEL_RE.test(normalizeCmbLabelText(normHeight(raw)));
+  return CMB_HEIGHT_LABEL_RE.test(normalizeCmbLabelText(normMeasure(raw)));
 }
 
 /** Numeric centimeter string, or '' when empty or when a unit/other text is present. */
 export function numericCmbHeight(raw) {
-  const text = normHeight(raw);
+  const text = normMeasure(raw);
   return CMB_HEIGHT_VALUE_RE.test(text) ? text : '';
+}
+
+/**
+ * True when the label is 体重, optionally with a KG unit suffix.
+ * 身高 and other items do not match. Not proof of the live label string.
+ */
+export function isCmbWeightLabel(raw) {
+  return CMB_WEIGHT_LABEL_RE.test(normalizeCmbLabelText(normMeasure(raw)));
+}
+
+/** Numeric kilogram string, or '' when empty or when a unit/other text is present. */
+export function numericCmbWeight(raw) {
+  const text = normMeasure(raw);
+  return CMB_WEIGHT_VALUE_RE.test(text) ? text : '';
 }
 
 /** Host match for 招商银行自建招聘 SPA (not 招商证券 hotjob CMS). */

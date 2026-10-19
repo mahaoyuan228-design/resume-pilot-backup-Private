@@ -8,6 +8,9 @@
 // Height (身高) is offline/synthetic text only. The label may include a CM suffix.
 // The written value is numeric centimeters. Never write a CM suffix into the value.
 // Live height label string and input DOM were NOT harvested.
+// Weight (体重) is offline/synthetic text only. The label may include a KG suffix.
+// The written value is numeric kilograms. Never write a KG suffix into the value.
+// Live weight label string and input DOM were NOT harvested.
 //
 // DOM contract (CSS-confirmed in public main.02cda64a.css; live form layout unproven):
 //   `.ant-form-item` + `.ant-form-item-label` + `input.ant-input`
@@ -15,6 +18,8 @@
 //   `.ant-form-item` scoped by label 性别 + `.ant-radio-wrapper` + `.ant-radio`
 // Height reuses the text path above (synthetic fixture, not a live contract):
 //   `.ant-form-item` scoped by label 身高, optional CM suffix, + `input.ant-input`
+// Weight reuses the text path above (synthetic fixture, not a live contract):
+//   `.ant-form-item` scoped by label 体重, optional KG suffix, + `input.ant-input`
 // CDP fingerprint wrongly flagged vue; public bundle is React createRoot + ant-design.
 // Hard warning: page copy says 姓名/证件* 保存后不可再改 — Never Save is mandatory.
 (() => {
@@ -32,6 +37,11 @@
   const HEIGHT_VALUE_RE = /^\d+(?:\.\d+)?$/u;
   /** 身高, or 身高 plus an optional CM suffix. Not a harvested live label string. */
   const HEIGHT_LABEL_RE = /^身高(?:\s*(?:[（(]\s*)?cm(?:\s*[）)])?)?$/iu;
+  const WEIGHT_LABEL = '体重';
+  /** Digits only. A KG suffix is rejected so the unit is never written into the value. */
+  const WEIGHT_VALUE_RE = /^\d+(?:\.\d+)?$/u;
+  /** 体重, or 体重 plus an optional KG suffix. Not a harvested live label string. */
+  const WEIGHT_LABEL_RE = /^体重(?:\s*(?:[（(]\s*)?kg(?:\s*[）)])?)?$/iu;
   /** CSS-confirmed ant-design classes in public main.02cda64a.css — live resume DOM may still differ. */
   const ITEM_SEL = '.ant-form-item';
   const LABEL_SEL = '.ant-form-item-label, label';
@@ -100,6 +110,18 @@
     const hits = formItems().filter((item) => {
       const label = item.querySelector(LABEL_SEL);
       return label && isHeightLabel(labelText(label));
+    });
+    return hits.length === 1 ? hits[0] : null;
+  }
+
+  function isWeightLabel(text) {
+    return WEIGHT_LABEL_RE.test(cleanLabel(text));
+  }
+
+  function findWeightItem() {
+    const hits = formItems().filter((item) => {
+      const label = item.querySelector(LABEL_SEL);
+      return label && isWeightLabel(labelText(label));
     });
     return hits.length === 1 ? hits[0] : null;
   }
@@ -231,6 +253,39 @@
     };
   }
 
+  async function fillWeight(value, options = {}) {
+    const raw = norm(value);
+    const want = WEIGHT_VALUE_RE.test(raw) ? raw : '';
+    const base = {
+      label: WEIGHT_LABEL,
+      saved: false,
+      skippedSave: true,
+      expected: want || raw,
+      before: '',
+      after: ''
+    };
+    if (!pageAllowed(options)) return { ...base, ok: false, reason: 'wrong_page' };
+    if (!want) return { ...base, ok: false, reason: 'invalid_profile_value', expected: raw };
+    const item = findWeightItem();
+    if (!item) return { ...base, ok: false, reason: 'item_not_found' };
+    const control = textControl(item);
+    if (!control) return { ...base, ok: false, reason: 'control_not_found' };
+    const before = norm(control.value);
+    control.focus();
+    setNativeValue(control, want);
+    await pause(80);
+    const after = readText(item);
+    const matched = after === want && !/kg/iu.test(after);
+    return {
+      ...base,
+      ok: matched,
+      reason: matched ? 'matched' : 'readback_mismatch',
+      before,
+      after,
+      expected: want
+    };
+  }
+
   async function fillText(label, value) {
     const item = findItem(label);
     if (!item) return { label, ok: false, reason: 'item_not_found', before: '', after: '', expected: value };
@@ -270,6 +325,7 @@
     const email = norm(profile.email || '');
     const genderRaw = norm(profile.gender || '');
     const heightRaw = norm(profile.height || '');
+    const weightRaw = norm(profile.weight || '');
     const core = [
       { label: '姓名', path: 'fullName', value: fullName },
       { label: '手机号', path: 'phone', value: mobile },
@@ -306,17 +362,31 @@
         reason
       });
     }
-    const fields = [...core, ...genderFields, ...heightFields];
+    const weightFields = [];
+    if (weightRaw) {
+      let reason = null;
+      if (!confirmed.has('weight')) reason = 'profile_fact_unconfirmed';
+      else if (!WEIGHT_VALUE_RE.test(weightRaw)) reason = 'invalid_profile_value';
+      weightFields.push({
+        label: WEIGHT_LABEL,
+        path: 'weight',
+        value: weightRaw,
+        ready: reason === null,
+        reason
+      });
+    }
+    const fields = [...core, ...genderFields, ...heightFields, ...weightFields];
     const coreBlockers = core.filter((row) => !row.ready);
     const genderBlockers = genderFields.filter((row) => !row.ready);
     const heightBlockers = heightFields.filter((row) => !row.ready);
+    const weightBlockers = weightFields.filter((row) => !row.ready);
     if (coreBlockers.length) {
       return {
         ok: false,
         reason: 'profile_fields_unavailable',
         values: null,
         fields,
-        blockers: [...coreBlockers, ...genderBlockers, ...heightBlockers]
+        blockers: [...coreBlockers, ...genderBlockers, ...heightBlockers, ...weightBlockers]
       };
     }
     return {
@@ -327,10 +397,11 @@
         mobile,
         email,
         gender: genderFields.find((row) => row.ready)?.value || '',
-        height: heightFields.find((row) => row.ready)?.value || ''
+        height: heightFields.find((row) => row.ready)?.value || '',
+        weight: weightFields.find((row) => row.ready)?.value || ''
       },
       fields,
-      blockers: [...genderBlockers, ...heightBlockers]
+      blockers: [...genderBlockers, ...heightBlockers, ...weightBlockers]
     };
   }
 
@@ -412,6 +483,7 @@
     if (allowExplicit && (rawValues.fullName || rawValues.mobile || rawValues.email)) {
       const gender = rawValues.gender == null ? '' : norm(rawValues.gender);
       const height = rawValues.height == null ? '' : norm(rawValues.height);
+      const weight = rawValues.weight == null ? '' : norm(rawValues.weight);
       if (gender && !GENDER_VALUES.includes(gender)) {
         return {
           ok: false,
@@ -436,12 +508,25 @@
           writeAttempted: false
         };
       }
+      if (weight && !WEIGHT_VALUE_RE.test(weight)) {
+        return {
+          ok: false,
+          siteId: SITE_ID,
+          reason: 'invalid_weight',
+          href: location.href,
+          results: [],
+          saved: false,
+          skippedSave: true,
+          writeAttempted: false
+        };
+      }
       values = {
         fullName: norm(rawValues.fullName || ''),
         mobile: norm(rawValues.mobile || rawValues.phone || ''),
         email: norm(rawValues.email || ''),
         gender,
-        height
+        height,
+        weight
       };
       if (!values.fullName || !values.mobile || !values.email) {
         return {
@@ -496,6 +581,9 @@
     if (HEIGHT_VALUE_RE.test(values.height || '')) {
       results.push(await fillHeight(values.height, options));
     }
+    if (WEIGHT_VALUE_RE.test(values.weight || '')) {
+      results.push(await fillWeight(values.weight, options));
+    }
     const ok = results.every((row) => row.ok);
     return {
       ok,
@@ -520,6 +608,8 @@
     GENDER_VALUES,
     HEIGHT_LABEL,
     HEIGHT_VALUE_RE,
+    WEIGHT_LABEL,
+    WEIGHT_VALUE_RE,
     ITEM_SEL,
     RADIO_WRAP_SEL,
     RADIO_MARK_SEL,
@@ -530,6 +620,7 @@
     fillText,
     fillGender,
     fillHeight,
+    fillWeight,
     fillBasic,
     probeLabels,
     probeFingerprint,

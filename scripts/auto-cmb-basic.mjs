@@ -8,7 +8,7 @@ import net from 'node:net';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { isCmbHeightLabel } from '../src/content/cmb-profile-map.mjs';
+import { isCmbHeightLabel, isCmbWeightLabel } from '../src/content/cmb-profile-map.mjs';
 if (typeof globalThis.WebSocket === 'undefined') {
   const { default: WS } = await import('ws');
   globalThis.WebSocket = WS;
@@ -72,10 +72,18 @@ function heightEvidencePaths(now = stampIso()) {
   return { file, latest };
 }
 
+function weightEvidencePaths(now = stampIso()) {
+  fs.mkdirSync(outDir, { recursive: true });
+  const file = path.join(outDir, `cmb-weight-text-${now}.json`);
+  const latest = path.join(outDir, 'cmb-weight-text-latest.json');
+  return { file, latest };
+}
+
 function onlyKind(value) {
   const text = String(value ?? '').replace(/[\s\u00a0]+/gu, ' ').trim();
   if (text === '性别') return 'gender';
   if (isCmbHeightLabel(text)) return 'height';
+  if (isCmbWeightLabel(text)) return 'weight';
   return '';
 }
 
@@ -333,7 +341,10 @@ async function runSyntheticGender() {
       return {
         workedChecked: checkedValues(byLabel('是否参加过正式工作')),
         genderChecked: checkedValues(byLabel('性别')),
-        weight: byLabel('体重')?.querySelector('input')?.value || null,
+        weight: items.find((item) => {
+          const label = item.querySelector('.ant-form-item-label label, .ant-form-item-label');
+          return label && /^体重(?:\\s*(?:[（(]\\s*)?kg(?:\\s*[）)])?)?$/iu.test(norm(label.textContent));
+        })?.querySelector('input')?.value || null,
         saveDisabled: document.getElementById('save-btn')?.disabled === true,
         saveText: document.getElementById('save-btn')?.textContent || ''
       };
@@ -430,7 +441,7 @@ async function runSyntheticHeight() {
       return {
         height: heightItem?.querySelector('input')?.value ?? null,
         name: byText('姓名')?.querySelector('input')?.value ?? null,
-        weight: byText('体重')?.querySelector('input')?.value ?? null
+        weight: items.find((item) => /^体重(?:\\s*(?:[（(]\\s*)?kg(?:\\s*[）)])?)?$/iu.test(labelOf(item)))?.querySelector('input')?.value ?? null
       };
     })()`);
     const planReady = await evaluate(send, `ResumeCmbBasic.planFromProfile({
@@ -473,7 +484,7 @@ async function runSyntheticHeight() {
       return {
         workedChecked: checkedValues(byText('是否参加过正式工作')),
         genderChecked: checkedValues(byText('性别')),
-        weight: byText('体重')?.querySelector('input')?.value || null,
+        weight: items.find((item) => /^体重(?:\\s*(?:[（(]\\s*)?kg(?:\\s*[）)])?)?$/iu.test(labelOf(item)))?.querySelector('input')?.value || null,
         height: heightValue,
         heightHasUnit: /cm/iu.test(String(heightValue ?? '')),
         heightSuffix: heightItem?.querySelector('[data-unit]')?.textContent || '',
@@ -568,6 +579,195 @@ async function runSyntheticHeight() {
   }
 }
 
+async function runSyntheticWeight() {
+  const { server, port } = await startFixtureServer();
+  const cdpPort = await freePort();
+  let child;
+  try {
+    ({ child } = await launchChrome(cdpPort));
+    const url = `http://127.0.0.1:${port}/${fixtureName}`;
+    const { socket, send } = await attachPage(cdpPort, url);
+    await injectScript(send);
+    const refused = await evaluate(send, `ResumeCmbBasic.fillWeight('70')`);
+    const invalid = await evaluate(send, `ResumeCmbBasic.fillWeight('60kg', { synthetic: true })`);
+    const invalidUpper = await evaluate(send, `ResumeCmbBasic.fillWeight('60KG', { synthetic: true })`);
+    const explicitInvalid = await evaluate(send, `ResumeCmbBasic.fillBasic({
+      allowExplicitValues: true,
+      fullName: '测试甲',
+      mobile: '13800138000',
+      email: 'cmb.fixture@example.com',
+      weight: '60 KG'
+    }, { synthetic: true })`);
+    const afterReject = await evaluate(send, `(() => {
+      const norm = (value) => String(value ?? '').replace(/\\s+/g, ' ').trim();
+      const items = [...document.querySelectorAll('.ant-form-item')];
+      const labelOf = (item) => {
+        const label = item.querySelector('.ant-form-item-label label, .ant-form-item-label');
+        return norm(label?.textContent || '');
+      };
+      const byText = (want) => items.find((item) => labelOf(item) === want);
+      const heightItem = items.find((item) => /^身高(?:\\s*(?:[（(]\\s*)?cm(?:\\s*[）)])?)?$/iu.test(labelOf(item)));
+      const weightItem = items.find((item) => /^体重(?:\\s*(?:[（(]\\s*)?kg(?:\\s*[）)])?)?$/iu.test(labelOf(item)));
+      const checkedValues = (item) => [...(item?.querySelectorAll('input[type="radio"]') || [])]
+        .filter((node) => node.checked)
+        .map((node) => node.value);
+      return {
+        weight: weightItem?.querySelector('input')?.value ?? null,
+        height: heightItem?.querySelector('input')?.value ?? null,
+        name: byText('姓名')?.querySelector('input')?.value ?? null,
+        genderChecked: checkedValues(byText('性别')),
+        saveDisabled: document.getElementById('save-btn')?.disabled === true
+      };
+    })()`);
+    const planReady = await evaluate(send, `ResumeCmbBasic.planFromProfile({
+      fullName: '测试甲',
+      phone: '13800138000',
+      email: 'cmb.fixture@example.com',
+      weight: ' 65 ',
+      confirmedFields: ['fullName', 'phone', 'email', 'weight']
+    })`);
+    const planUnit = await evaluate(send, `ResumeCmbBasic.planFromProfile({
+      fullName: '测试甲',
+      phone: '13800138000',
+      email: 'cmb.fixture@example.com',
+      weight: '60KG',
+      confirmedFields: ['fullName', 'phone', 'email', 'weight']
+    })`);
+    const first = await evaluate(send, `ResumeCmbBasic.fillWeight('70', { synthetic: true })`);
+    const second = await evaluate(send, `ResumeCmbBasic.fillWeight('65', { synthetic: true })`);
+    const decimal = await evaluate(send, `ResumeCmbBasic.fillWeight('62.5', { synthetic: true })`);
+    const basic = await evaluate(send, `ResumeCmbBasic.fillBasic({
+      allowExplicitValues: true,
+      fullName: '测试甲',
+      mobile: '13800138000',
+      email: 'cmb.fixture@example.com',
+      weight: '58'
+    }, { synthetic: true })`);
+    const neighbor = await evaluate(send, `(() => {
+      const norm = (value) => String(value ?? '').replace(/\\s+/g, ' ').trim();
+      const items = [...document.querySelectorAll('.ant-form-item')];
+      const labelOf = (item) => {
+        const label = item.querySelector('.ant-form-item-label label, .ant-form-item-label');
+        return norm(label?.textContent || '');
+      };
+      const byText = (want) => items.find((item) => labelOf(item) === want);
+      const heightItem = items.find((item) => /^身高(?:\\s*(?:[（(]\\s*)?cm(?:\\s*[）)])?)?$/iu.test(labelOf(item)));
+      const weightItem = items.find((item) => /^体重(?:\\s*(?:[（(]\\s*)?kg(?:\\s*[）)])?)?$/iu.test(labelOf(item)));
+      const checkedValues = (item) => [...(item?.querySelectorAll('input[type="radio"]') || [])]
+        .filter((node) => node.checked)
+        .map((node) => node.value);
+      const heightValue = heightItem?.querySelector('input')?.value ?? null;
+      const weightValue = weightItem?.querySelector('input')?.value ?? null;
+      return {
+        workedChecked: checkedValues(byText('是否参加过正式工作')),
+        genderChecked: checkedValues(byText('性别')),
+        height: heightValue,
+        heightHasUnit: /cm/iu.test(String(heightValue ?? '')),
+        heightSuffix: heightItem?.querySelector('[data-unit]')?.textContent || '',
+        weight: weightValue,
+        weightHasUnit: /kg/iu.test(String(weightValue ?? '')),
+        weightSuffix: weightItem?.querySelector('[data-unit]')?.textContent || '',
+        saveDisabled: document.getElementById('save-btn')?.disabled === true,
+        saveText: document.getElementById('save-btn')?.textContent || ''
+      };
+    })()`);
+
+    const weightResult = basic?.results?.find((row) => row.label === '体重');
+    const ok = refused?.reason === 'wrong_page'
+      && refused?.ok === false
+      && invalid?.reason === 'invalid_profile_value'
+      && invalid?.ok === false
+      && invalidUpper?.reason === 'invalid_profile_value'
+      && invalidUpper?.ok === false
+      && explicitInvalid?.reason === 'invalid_weight'
+      && explicitInvalid?.ok === false
+      && explicitInvalid?.writeAttempted === false
+      && afterReject?.weight === '60'
+      && afterReject?.height === ''
+      && afterReject?.name === ''
+      && Array.isArray(afterReject?.genderChecked)
+      && afterReject.genderChecked.length === 0
+      && afterReject?.saveDisabled === true
+      && planReady?.ok === true
+      && planReady?.values?.weight === '65'
+      && planReady?.values?.height === ''
+      && planUnit?.ok === true
+      && planUnit?.values?.weight === ''
+      && planUnit?.blockers?.some((row) => row.label === '体重' && row.reason === 'invalid_profile_value')
+      && first?.ok === true
+      && first?.before === '60'
+      && first?.after === '70'
+      && second?.ok === true
+      && second?.before === '70'
+      && second?.after === '65'
+      && decimal?.ok === true
+      && decimal?.before === '65'
+      && decimal?.after === '62.5'
+      && !/kg/iu.test(decimal?.after || '')
+      && basic?.ok === true
+      && basic?.saved === false
+      && basic?.skippedSave === true
+      && basic?.results?.length === 4
+      && weightResult?.ok === true
+      && weightResult?.after === '58'
+      && !/kg/iu.test(weightResult?.after || '')
+      && basic?.results?.some((row) => row.label === '性别') === false
+      && basic?.results?.some((row) => row.label === '身高') === false
+      && neighbor?.workedChecked?.length === 1
+      && neighbor.workedChecked[0] === '否'
+      && Array.isArray(neighbor?.genderChecked)
+      && neighbor.genderChecked.length === 0
+      && neighbor?.height === ''
+      && neighbor?.heightHasUnit === false
+      && neighbor?.heightSuffix === 'CM'
+      && neighbor?.weight === '58'
+      && neighbor?.weightHasUnit === false
+      && neighbor?.weightSuffix === 'KG'
+      && neighbor?.saveDisabled === true
+      && normSave(neighbor?.saveText) === '保存'
+      && first?.saved === false
+      && first?.skippedSave === true;
+
+    const payload = basePayload({
+      ok,
+      reason: ok ? 'synthetic_weight_text_pass' : 'synthetic_weight_text_fail',
+      surface: 'synthetic-fixture',
+      liveEdge: false,
+      formFillClaimed: false,
+      liveWeightDomHarvested: false,
+      fixture: 'synthetic-public-css-candidates',
+      label: '体重',
+      assumptions: [
+        'label-scoped .ant-form-item whose label is 体重 with an optional KG suffix',
+        'control is one input.ant-input (same public CSS candidate as 姓名/手机号/邮箱/身高)',
+        'written value is numeric kilograms only; KG stays on the label and is not written',
+        'live label string and whether the live value contains a unit are unharvested'
+      ],
+      refused,
+      invalid,
+      invalidUpper,
+      explicitInvalid,
+      afterReject,
+      planReady,
+      planUnit,
+      first,
+      second,
+      decimal,
+      fillBasic: basic,
+      neighbor
+    });
+    const { file, latest } = weightEvidencePaths();
+    const json = JSON.stringify(payload, null, 2);
+    fs.writeFileSync(file, json, 'utf8');
+    fs.copyFileSync(file, latest);
+    socket.close();
+    return { payload, written: { file, latest } };
+  } finally {
+    try { child?.kill(); } catch {}
+    try { server.close(); } catch {}
+  }
+}
+
 function normSave(value) {
   return String(value ?? '').replace(/\s+/g, ' ').trim();
 }
@@ -619,9 +819,12 @@ function printHelp() {
     MODE=readiness node scripts/auto-cmb-basic.mjs --synthetic
     node scripts/auto-cmb-basic.mjs --only 性别
     node scripts/auto-cmb-basic.mjs --only 身高
+    node scripts/auto-cmb-basic.mjs --only 体重
   Gender is offline synthetic only. Live radio DOM is not harvested.
   Height is offline synthetic text only. The value is numeric; CM is not written.
   Live height DOM is not harvested. --only 身高 --live refuses.
+  Weight is offline synthetic text only. The value is numeric kilograms; KG is not written.
+  Live weight DOM is not harvested. --only 体重 --live refuses.
   Live portal fingerprint only (no fill claim):
     MODE=readiness node scripts/auto-cmb-basic.mjs --live
     Extension path (Edge + SW message CMB_BASIC_AUTO):
@@ -652,7 +855,7 @@ async function main() {
   }
   const kind = args.only == null ? '' : onlyKind(args.only);
   if (args.only != null && !kind) {
-    console.error('Only 性别 and 身高 are in this knife. Other second-slice labels are not implemented.');
+    console.error('Only 性别, 身高, and 体重 are in this knife. Other second-slice labels are not implemented.');
     process.exit(2);
   }
   if (kind === 'height' && args.live && !args.synthetic) {
@@ -694,6 +897,51 @@ async function main() {
         error: String(error?.stack || error).slice(0, 800)
       });
       const { file, latest } = heightEvidencePaths();
+      fs.writeFileSync(file, JSON.stringify(payload, null, 2), 'utf8');
+      fs.copyFileSync(file, latest);
+      console.error(JSON.stringify({ event: 'error', file, latest, ...payload }, null, 2));
+      process.exit(1);
+    }
+  }
+  if (kind === 'weight' && args.live && !args.synthetic) {
+    const payload = basePayload({
+      ok: false,
+      reason: 'live_weight_text_unharvested',
+      surface: 'cdp',
+      liveEdge: false,
+      formFillClaimed: false,
+      liveWeightDomHarvested: false,
+      label: '体重',
+      hint: 'Weight text DOM was not harvested. Use --only 体重 without --live.'
+    });
+    const { file, latest } = weightEvidencePaths();
+    fs.writeFileSync(file, JSON.stringify(payload, null, 2), 'utf8');
+    fs.copyFileSync(file, latest);
+    console.log(JSON.stringify({ event: 'refused', file, latest, ...payload }, null, 2));
+    process.exit(3);
+  }
+  if (kind === 'weight') {
+    try {
+      const { payload, written } = await runSyntheticWeight();
+      console.log(JSON.stringify({
+        event: 'saved',
+        ...written,
+        ok: payload.ok,
+        reason: payload.reason,
+        label: '体重'
+      }, null, 2));
+      process.exit(payload.ok ? 0 : 2);
+    } catch (error) {
+      const payload = basePayload({
+        ok: false,
+        reason: String(error?.message || error).slice(0, 300),
+        surface: 'synthetic-fixture',
+        liveEdge: false,
+        formFillClaimed: false,
+        liveWeightDomHarvested: false,
+        error: String(error?.stack || error).slice(0, 800)
+      });
+      const { file, latest } = weightEvidencePaths();
       fs.writeFileSync(file, JSON.stringify(payload, null, 2), 'utf8');
       fs.copyFileSync(file, latest);
       console.error(JSON.stringify({ event: 'error', file, latest, ...payload }, null, 2));

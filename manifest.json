@@ -17,7 +17,8 @@
     "https://*.jobs.f.mioffice.cn/*",
     "https://jobs.f.mioffice.cn/*",
     "https://*.zhiye.com/*",
-    "https://*.mokahr.com/*"
+    "https://*.mokahr.com/*",
+    "https://career.cmbchina.com/*"
   ],
   "background": {
     "service_worker": "src/background/worker.mjs",

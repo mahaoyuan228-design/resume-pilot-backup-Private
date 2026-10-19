@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <title>招商银行招聘 · CMB fixture (offline · CSS-confirmed ant classes)</title>
+  <meta name="description" content="招商银行，欢迎您" />
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 0; color: #1f2329; }
+    .nav { display: flex; gap: 1rem; padding: 0.75rem 1.25rem; border-bottom: 1px solid #e5e6eb; background: #fff; }
+    .nav span { color: #646a73; }
+    .portal { max-width: 720px; margin: 0 auto; padding: 1.5rem 1.25rem 3rem; }
+    .ant-form-item { margin: 1rem 0; }
+    .ant-form-item-label { display: block; font-weight: 600; margin-bottom: 0.25rem; }
+    .ant-form-item-control { line-height: 32px; }
+    .ant-input { width: 100%; padding: 0.4rem 0.5rem; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; }
+    .footer { border-top: 1px solid #e5e6eb; padding: 1rem 1.25rem; color: #8f959e; font-size: 0.85rem; }
+    .note { color: #666; font-size: 0.85rem; }
+    .warn { color: #a61d24; font-size: 0.85rem; }
+    .ant-btn { padding: 0.35rem 0.9rem; }
+    .ant-btn-primary { background: #1677ff; color: #fff; border: 0; }
+  </style>
+</head>
+<body>
+  <!-- Public SPA shell: #root + /static/js/main.d37c8446.js (same hash as CDP 2026-10-18). -->
+  <div id="root">
+    <header class="nav">
+      <span>首页</span>
+      <span>校园招聘</span>
+      <span>社会招聘</span>
+      <span>数字金融训练营</span>
+      <span>应聘记录</span>
+      <span>个人简历</span>
+    </header>
+
+    <div class="portal">
+      <div id="fp-hint" hidden
+        data-stack="react createRoot ant-design career.cmbchina.com"
+        data-js-chunks="main.d37c8446.js main.02cda64a.css"
+        data-source="https://career.cmbchina.com/center/resume"
+        data-note="CSS-confirmed ant-form-item / ant-input in public CSS; NOT Vue"></div>
+
+      <h1>个人信息（fixture）</h1>
+      <p class="note">Offline stand-in for siteId <code>cmb</code>. Form class names
+        (<code>.ant-form-item</code> / <code>.ant-form-item-label</code> / <code>.ant-form-item-control</code> /
+        <code>input.ant-input</code>) are <strong>CSS-confirmed</strong> in public
+        <code>main.02cda64a.css</code> (bundle also ships <code>main.d37c8446.js</code> React+antd),
+        not invented from thin air. Live resume-edit DOM was CDP-body fingerprinted 2026-10-18
+        (labels present) but structure still needs login harvest to refine. Do not claim live support.</p>
+      <p class="warn">页上提示：姓名 / 证件类型 / 证件号在简历<strong>保存后无法再次修改</strong> — 本脚手架永不点保存。</p>
+
+      <form class="ant-form" action="#" onsubmit="return false;">
+        <div class="ant-form-item" data-field="姓名">
+          <div class="ant-form-item-label"><label>姓名</label></div>
+          <div class="ant-form-item-control">
+            <input class="ant-input" type="text" name="fullName" value="" />
+          </div>
+        </div>
+
+        <div class="ant-form-item" data-field="手机号">
+          <div class="ant-form-item-label"><label>手机号</label></div>
+          <div class="ant-form-item-control">
+            <input class="ant-input" type="tel" name="mobile" value="" />
+          </div>
+        </div>
+
+        <div class="ant-form-item" data-field="邮箱">
+          <div class="ant-form-item-label"><label>邮箱</label></div>
+          <div class="ant-form-item-control">
+            <input class="ant-input" type="email" name="email" value="" />
+          </div>
+        </div>
+
+        <!-- Neighbor control: must stay untouched by fill -->
+        <div class="ant-form-item" data-field="体重">
+          <div class="ant-form-item-label"><label>体重</label></div>
+          <div class="ant-form-item-control">
+            <input class="ant-input" type="text" name="weight" value="60" />
+          </div>
+        </div>
+
+        <button type="button" id="save-btn" class="ant-btn ant-btn-primary" disabled>保存</button>
+      </form>
+    </div>
+
+    <footer class="footer">Copyright © 2023 招商银行 版权所有 · CSS-confirmed fixture · never Save</footer>
+  </div>
+</body>
+</html>

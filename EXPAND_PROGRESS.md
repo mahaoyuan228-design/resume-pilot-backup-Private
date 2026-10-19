@@ -28,7 +28,7 @@
 - [x] 中信 dry-fill **7/7 PASS**（TEST placeholders；证据 `dist/auto-runs/citics-basic-latest.json`）
 - [~] 中信已接线真实 profile 字段（姓/名←fullName、证件←identityNumber、手机←phone、邮箱←email、性别←gender）；缺证/未确认 **fail-closed**；**await extension reload** 后方可实页再测
 - [x] 中信 auto harness：`scripts/auto-citics-basic.mjs`（默认 MODE=fill）+ `src/auto/citics-basic-auto.*` + `CITICS_BASIC_AUTO`
-- [ ] 招行适配器开发
+- [~] 招行适配器开发（2026-10-19：设计+offline scaffold；未 live；未宣称可填）
 - [ ] 任一新站「可填」客户文档收录
 
 ## E2 明细
@@ -64,7 +64,7 @@
 | hotjob/wecruit（招商 CMS） | [x] + 11 候选租户（路径复用 yes） | [~] 待登录后试填 | [x] **仅**招商证券 CMS |
 | 国泰自建 GTH | [x] | - | [x] 国泰海通 |
 | 中信自建 | [x] 指纹+字段图+设计+第一切片+dry-fill PASS | [~] profile 接线已写；**await reload** 再实测 | [ ] **对外仍不可写** |
-| 招行自建 | [x] 2026-10-18 | [ ] | [ ] |
+| 招行自建 | [x] 2026-10-18；刷新 2026-10-19（React+antd） | [~] offline scaffold | [ ] |
 | 腾讯自建 | [x] 门户（E2+E4 刷新） | [ ] | [ ] |
 | 阿里 CPO 自建 | [x] 门户（E2+E4 刷新） | [ ] | [ ] |
 | 飞书招聘 ATSX（字节校招壳） | [x] 公开门户 2026-10-18 晚 | [~] 第一切片 offline scaffold | [ ] |
@@ -211,3 +211,12 @@
 - [x] 试用 Edge CDP 9237，`SU670a291d6202cc7666c744bc` `/pb/resumeOperation.html`。Readiness PASS。MODE=fill Never Save。~09:00 Asia/Shanghai：`personalVerified=8` `failed=0`（DOM 姓名、移动电话已读回）。证据文件名 `hotjob-tenant-670a29-cms-basic-20261019-090052.json`（在试用机，未随本提交入库）。
 - 代码：`TENANT_SIGNATURE`、`cmsSection` tenantMin、`cmsDecision` 姓名/电话/专业消歧。见 `dist/site-probes/HOTJOB_NANYUE_CMS_BASIC_LIVE_20261019.md` 与 `HOTJOB_NANYUE_REMAINING_SKIPS_20261019.md`。
 - **不是**全站支持。Celebright/国盛及其它壳猜仍未 live。**Acceptance 仍 85%**。可卖仍只招商 CMS + 国泰 GTH。
+
+## 2026-10-19 晨 · 招行 CMB offline scaffold（Asia/Shanghai）
+
+- [x] 公开指纹刷新：`career.cmbchina.com` SPA shell 同 `main.d37c8446.js`；**更正** CDP `vue:true` → **React+antd**；证据 `dist/site-probes/CMB_FINGERPRINT_REFRESH_20261019.md` + `_cmb-js-class-hints-20261019.txt`。`_raw-cmb-20261019/` 未随本切片入库。
+- [x] 字段图：`dist/site-probes/cmb-field-map-20261019.md`（+`.json`）；第一切片 **姓名/手机号/邮箱**；强调保存后姓名/证件锁死 → **Never Save**。
+- [x] 设计：`EXPAND_CMB_ADAPTER_DESIGN.md`；说明 `dist/site-probes/CMB_NEXT.md`。
+- [x] Offline scaffold：`siteId=cmb` · `src/content/cmb-basic.js` + `cmb-profile-map.mjs` · fixture · `scripts/auto-cmb-basic.mjs` · `tests/cmb-basic.test.mjs`；manifest host `https://career.cmbchina.com/*`。**SW/popup 未接线**。
+- [ ] Live：Jeremy 登录 `/center/resume` → DOM harvest → fill-wo-save。
+- **Acceptance 仍 85%**。勿对外写已支持招行。与南粤 live / Celebright 登录队列并行、不插队打断 Jeremy。

@@ -15,6 +15,7 @@
 | `signed-entitlement.mjs` | Ed25519 verify of signed entitlement envelopes (fail-closed without publicKeyPem) |
 | `guard-worker.mjs` | Paid SW: `RESUME_PAID_VERIFY` + the same runners as `worker.mjs`, including `*_AUTO`, each with `verifyBeforeFill` |
 | `activate.html` / `.css` / `.js` | Paid-only Chinese activate panel (paste token locally) |
+| `paid-config.mjs` | Source placeholder, not flavor `paid`. `build-paid.ps1` writes the real file into the paid package. Static import (Edge 155 rejects top-level `await import()`). |
 | `paid-config.example.mjs` | Example only — never commit live secrets |
 
 No payment provider credentials. No claim of a live license server in this tree.

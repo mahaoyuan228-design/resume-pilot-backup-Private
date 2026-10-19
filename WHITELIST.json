@@ -87,6 +87,7 @@
     "src/profile/cms-education-site-facts-ui.mjs",
     "src/profile/cms-education-site-facts.mjs",
     "src/profile/cms-internship-plan.mjs",
+    "src/profile/cms-basic-seed-from-education.mjs",
     "src/profile/options.html",
     "src/profile/options.js",
     "src/profile/profile-lifecycle.js",
@@ -226,6 +227,7 @@
     "src/profile/cms-education-site-facts-ui.mjs",
     "src/profile/cms-education-site-facts.mjs",
     "src/profile/cms-internship-plan.mjs",
+    "src/profile/cms-basic-seed-from-education.mjs",
     "src/profile/options.html",
     "src/profile/options.js",
     "src/profile/profile-lifecycle.js",
@@ -270,6 +272,6 @@
     "No real browser drivers, customer profile or backup data, private snapshots, screenshots or logs.",
     "No .git/.codex/.agents/.env/keys/server storage/payment credentials.",
     "No installer, ready package, paid build, test receipts or source archive nested in source.",
-    "No src/license paid scaffolding or scripts/build-paid.ps1 in the internal 118-file product package (paid flavor is a separate dist path)."
+    "No src/license paid scaffolding or scripts/build-paid.ps1 in the internal 119-file product package (paid flavor is a separate dist path)."
   ]
 }

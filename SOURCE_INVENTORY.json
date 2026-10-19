@@ -1,6 +1,6 @@
 {
   "version": "0.1.4.9",
-  "sumsSha256": "2673a07089059af40c595c2fe649766fb154ae8af97759941153373ac6c31e3e",
+  "sumsSha256": "13b6aafb426420ca62c1d87d5544e077c37a49785a22c5424d2ee0f7a245f412",
   "inventory": [
     {
       "path": "manifest.json",
@@ -468,6 +468,12 @@
       "path": "src/profile/cms-internship-plan.mjs",
       "sha256": "f71c9100b50e440e7c2a99291dec12c64641ec8f47445228df450fd066424180",
       "sourceSha256": "f71c9100b50e440e7c2a99291dec12c64641ec8f47445228df450fd066424180",
+      "kind": "frozen-product"
+    },
+    {
+      "path": "src/profile/cms-basic-seed-from-education.mjs",
+      "sha256": "352dddec31e9b0b277c24a81e48bd29a11508dfc87950f410b8b6aa73e98da13",
+      "sourceSha256": "352dddec31e9b0b277c24a81e48bd29a11508dfc87950f410b8b6aa73e98da13",
       "kind": "frozen-product"
     },
     {

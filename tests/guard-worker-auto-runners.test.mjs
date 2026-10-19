@@ -29,11 +29,9 @@ test('guard-worker source wires every auto runner with verifyBeforeFill', async 
   assert.match(imports[0], /['"]\.\.\/background\/bg-ping\.mjs['"]/);
   for (const name of [
     'installGthEducationAutoRunner',
-    'installGthBasicAutoRunner',
     'installGthSimpleAutoRunner',
     'installGthOtherAutoRunner',
     'installGthIntentAutoRunner',
-    'installCmsBasicAutoRunner',
     'installFeishuAtsxBasicAutoRunner',
     'installBeisen2022BasicAutoRunner',
     'installMokaBasicAutoRunner',
@@ -41,14 +39,31 @@ test('guard-worker source wires every auto runner with verifyBeforeFill', async 
   ]) {
     assert.match(source, new RegExp(`${name}\\(\\{ verifyBeforeFill \\}\\)`));
   }
+  assert.match(source, /import\s+\{\s*paidConfig\s+as\s+paidConfigImported\s*\}\s+from\s+['"]\.\/paid-config\.mjs['"]/);
+  assert.doesNotMatch(source, /await\s+import\s*\(\s*['"]\.\/paid-config\.mjs['"]\s*\)/);
+  assert.match(source, /Edge 155 MV3 SW fails to register when paid-config is loaded via top-level await import/);
+  assert.match(source, /function bootPaidAuto\(name, fn\)/);
+  assert.match(source, /fn\(\{\s*verifyBeforeFill\s*\}\)/);
+  assert.match(source, /bootPaidAuto\('gth-basic-auto',\s*installGthBasicAutoRunner\)/);
+  assert.match(source, /bootPaidAuto\('cms-basic-auto',\s*installCmsBasicAutoRunner\)/);
+  assert.match(source, /import\s+\{\s*installGthBasicAutoRunner\s*\}\s+from\s+['"]\.\.\/background\/gth-basic-auto\.mjs['"]/);
+  assert.match(source, /import\s+\{\s*installCmsBasicAutoRunner\s*\}\s+from\s+['"]\.\.\/background\/cms-basic-auto\.mjs['"]/);
+  assert.doesNotMatch(source, /boot\('gth-basic-auto'/);
+  assert.doesNotMatch(source, /boot\('cms-basic-auto'/);
   assert.match(source, /RESUME_PAID_VERIFY/);
   assert.doesNotMatch(source, /softwareClickedSave\s*=\s*true/);
+
+  const paidConfig = await readFile(resolve(root, 'src/license/paid-config.mjs'), 'utf8');
+  assert.doesNotMatch(paidConfig, /buildFlavor:\s*['"]paid['"]/);
+  const seed = await readFile(resolve(root, 'src/profile/cms-basic-seed-from-education.mjs'), 'utf8');
+  assert.match(seed, /export function seedCmsBasicFromEducation/);
 
   const paidBuild = await readFile(resolve(root, 'scripts/build-paid.ps1'), 'utf8');
   assert.match(paidBuild, /'src\/background\/bg-ping\.mjs'/);
   assert.match(paidBuild, /'src\/auto\/bg-request\.mjs'/);
   assert.match(paidBuild, /'src\/background\/cms-basic-auto\.mjs'/);
   assert.match(paidBuild, /'src\/background\/gth-basic-auto\.mjs'/);
+  assert.match(paidBuild, /'src\/profile\/cms-basic-seed-from-education\.mjs'/);
   assert.match(paidBuild, /service_worker = 'src\/license\/guard-worker\.mjs'/);
 });
 

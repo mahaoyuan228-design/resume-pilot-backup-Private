@@ -155,6 +155,7 @@ $productFiles = @(
   'src/profile/cms-education-site-facts-ui.mjs',
   'src/profile/cms-education-site-facts.mjs',
   'src/profile/cms-internship-plan.mjs',
+  'src/profile/cms-basic-seed-from-education.mjs',
   'src/profile/options.html',
   'src/profile/options.js',
   'src/profile/profile-lifecycle.js',

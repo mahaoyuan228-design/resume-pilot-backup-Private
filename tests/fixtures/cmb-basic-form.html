@@ -290,18 +290,20 @@
         </div>
 
         <!--
-          SYNTHETIC provisional select. Option text and codes are IdCardType from
-          cmb-dictmap-full-20261019.json (15 rows; no 请选择). The id is NOT a
-          harvested resume_basicInfo_* id. show-search was not observed, so this
-          stand-in is non-search. --live refuses live_id_card_type_dom_unharvested.
+          Option text and codes are IdCardType from cmb-dictmap-full-20261019.json
+          (15 rows; no 请选择). Ids are harvested: #resume_basicInfo_idCardType and
+          resume_basicInfo_idCardType_list. Live selectClass has no show-search
+          (single, allow-clear, show-arrow). Option-row markup is still a synthetic
+          stand-in. --live refuses live_id_card_type_select_fill_unclaimed.
+          证件号 #resume_basicInfo_idCard is a text neighbor and is not filled.
           Never Save. 招行 is not supported.
         -->
-        <div class="ant-form-item" data-field="证件类型" data-dom="synthetic-provisional-id">
-          <div class="ant-form-item-label"><label>证件类型</label></div>
+        <div class="ant-form-item" data-field="证件类型" data-dom="synthetic-harvested-options">
+          <div class="ant-form-item-label"><label class="ant-form-item-required" for="resume_basicInfo_idCardType">证件类型</label></div>
           <div class="ant-form-item-control">
-            <div class="ant-select" id="cmb-synthetic-idCardType" data-select-id-status="provisional">
+            <div class="ant-select ant-select-single ant-select-allow-clear ant-select-show-arrow" id="resume_basicInfo_idCardType">
               <div class="ant-select-selector"><span class="ant-select-selection-item" data-code=""></span></div>
-              <div class="ant-select-dropdown" id="cmb-synthetic-idCardType_list" role="listbox">
+              <div class="ant-select-dropdown" id="resume_basicInfo_idCardType_list" role="listbox">
           <div class="ant-select-item-option" role="option" data-code="ID001" aria-selected="false">身份证</div>
           <div class="ant-select-item-option" role="option" data-code="ID0010" aria-selected="false">非公务赴台证</div>
           <div class="ant-select-item-option" role="option" data-code="ID0011" aria-selected="false">台胞证</div>
@@ -319,6 +321,13 @@
           <div class="ant-select-item-option" role="option" data-code="ID009" aria-selected="false">公务赴台证</div>
               </div>
             </div>
+          </div>
+        </div>
+
+        <div class="ant-form-item" data-field="证件号" data-dom="harvested-text-not-filled">
+          <div class="ant-form-item-label"><label for="resume_basicInfo_idCard">证件号</label></div>
+          <div class="ant-form-item-control">
+            <input id="resume_basicInfo_idCard" class="ant-input" placeholder="请输入" value="" />
           </div>
         </div>
 

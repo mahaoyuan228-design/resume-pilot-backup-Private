@@ -117,13 +117,9 @@ export const CMB_ID_CARD_TYPE_OPTIONS = Object.freeze([
   Object.freeze({"text":"公务赴台证","code":"ID009"})
 ]);
 
-/**
- * Provisional synthetic ids. The live 证件类型 select id was not harvested.
- * These are not a resume_basicInfo_* contract.
- */
-export const CMB_ID_CARD_TYPE_SELECT_ID = 'cmb-synthetic-idCardType';
-export const CMB_ID_CARD_TYPE_LIST_ID = 'cmb-synthetic-idCardType_list';
-export const CMB_ID_CARD_TYPE_SELECT_ID_STATUS = 'provisional';
+/** Harvested 2026-10-19. Select class has no show-search. Live click is not claimed. */
+export const CMB_ID_CARD_TYPE_SELECT_ID = 'resume_basicInfo_idCardType';
+export const CMB_ID_CARD_TYPE_LIST_ID = 'resume_basicInfo_idCardType_list';
 
 /** Kind + fill hint only. No synthetic DatePicker DOM. */
 export const CMB_BIRTHDATE_HINT = Object.freeze({

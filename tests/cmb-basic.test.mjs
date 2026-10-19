@@ -22,7 +22,6 @@ import {
   CMB_ID_CARD_TYPE_LIST_ID,
   CMB_ID_CARD_TYPE_OPTIONS,
   CMB_ID_CARD_TYPE_SELECT_ID,
-  CMB_ID_CARD_TYPE_SELECT_ID_STATUS,
   CMB_MARITAL_OPTIONS,
   CMB_POLITICS_OPTIONS,
   isCmbHeightLabel,
@@ -758,20 +757,24 @@ test('gated select plan maps harvested text or code and does not fill birth date
   assert.equal(idInvalid.blockers.find((row) => row.path === 'idCardType')?.reason, 'invalid_profile_value');
 });
 
-test('IdCardType options match the full dictmap and the select id stays provisional', () => {
+test('IdCardType options match the dictmap and the select uses the harvested DOM id', () => {
   const full = JSON.parse(readFileSync(resolve(root, 'dist/site-probes/cmb-dictmap-full-20261019.json'), 'utf8'));
+  const dom = JSON.parse(readFileSync(resolve(root, 'dist/site-probes/cmb-harvest-idCardType-dom-20261019.json'), 'utf8'));
   assert.equal(full.neverSave, true);
-  assert.equal(full.url, 'https://career.cmbchina.com/center/resume');
+  assert.equal(dom.neverSave, true);
+  assert.equal(dom.field.scoped.inputId, 'resume_basicInfo_idCardType');
+  assert.equal(dom.field.scoped.listId, 'resume_basicInfo_idCardType_list');
+  assert.equal(dom.field.scoped.label, '证件类型');
+  assert.equal(dom.field.scoped.selectClass.includes('ant-select-show-search'), false);
+  assert.equal(dom.field.allLabels.find((row) => row.text === '证件号')?.forId, 'resume_basicInfo_idCard');
   const rows = full.dicts.IdCardType.filter((row) => row.name !== '请选择');
   assert.equal(rows.length, 15);
   assert.deepEqual(
     [...CMB_ID_CARD_TYPE_OPTIONS],
     rows.map((row) => ({ text: row.name, code: row.code }))
   );
-  assert.equal(CMB_ID_CARD_TYPE_SELECT_ID, 'cmb-synthetic-idCardType');
-  assert.equal(CMB_ID_CARD_TYPE_LIST_ID, 'cmb-synthetic-idCardType_list');
-  assert.equal(CMB_ID_CARD_TYPE_SELECT_ID_STATUS, 'provisional');
-  assert.equal(CMB_ID_CARD_TYPE_SELECT_ID.startsWith('resume_basicInfo_'), false);
+  assert.equal(CMB_ID_CARD_TYPE_SELECT_ID, 'resume_basicInfo_idCardType');
+  assert.equal(CMB_ID_CARD_TYPE_LIST_ID, 'resume_basicInfo_idCardType_list');
   assert.equal(resolveCmbCodedOption(CMB_ID_CARD_TYPE_OPTIONS, 'ID001')?.text, '身份证');
   assert.equal(resolveCmbCodedOption(CMB_ID_CARD_TYPE_OPTIONS, '台胞证')?.code, 'ID0011');
   assert.equal(resolveCmbCodedOption(CMB_ID_CARD_TYPE_OPTIONS, '非公务赴台证')?.code, 'ID0010');
@@ -779,17 +782,26 @@ test('IdCardType options match the full dictmap and the select id stays provisio
   assert.equal(resolveCmbCodedOption(CMB_ID_CARD_TYPE_OPTIONS, '护照'), null);
   assert.equal(resolveCmbCodedOption(CMB_ID_CARD_TYPE_OPTIONS, '签证'), null);
   assert.equal(resolveCmbCodedOption(CMB_ID_CARD_TYPE_OPTIONS, '因私护照')?.code, 'ID005');
-  assert.match(fixture, /id="cmb-synthetic-idCardType"/);
-  assert.match(fixture, /data-dom="synthetic-provisional-id"/);
-  assert.match(fixture, /data-select-id-status="provisional"/);
+  assert.match(fixture, /id="resume_basicInfo_idCardType"/);
+  assert.match(fixture, /id="resume_basicInfo_idCardType_list"/);
+  const idCardOpen = fixture.match(/<div class="([^"]*)" id="resume_basicInfo_idCardType">/);
+  assert.ok(idCardOpen);
+  assert.equal(idCardOpen[1].includes('ant-select-show-search'), false);
+  assert.equal(idCardOpen[1].includes('ant-select-show-arrow'), true);
+  assert.equal(idCardOpen[1].includes('ant-select-allow-clear'), true);
+  assert.match(fixture, /id="resume_basicInfo_idCard"/);
+  assert.doesNotMatch(fixture, /cmb-synthetic-idCardType/);
+  assert.doesNotMatch(fixture, /id="resume_basicInfo_idCardType"[^>]*show-search/);
   assert.equal((fixture.match(/data-code="ID/g) || []).length, 15);
-  assert.doesNotMatch(fixture, /resume_basicInfo_idCard/);
   assert.match(source, /fillIdCardType/);
+  assert.match(source, /resume_basicInfo_idCardType/);
   assert.match(source, /invalid_id_card_type/);
-  assert.match(source, /selectIdStatus: 'provisional'/);
-  assert.match(harness, /live_id_card_type_dom_unharvested/);
+  assert.doesNotMatch(source, /selectIdStatus: 'provisional'/);
+  assert.doesNotMatch(source, /cmb-synthetic-idCardType/);
+  assert.match(harness, /live_id_card_type_select_fill_unclaimed/);
+  assert.doesNotMatch(harness, /live_id_card_type_dom_unharvested/);
   assert.equal(isCmbIdCardTypeLabel('证件类型'), true);
-  assert.equal(isCmbIdCardTypeLabel('证件号码'), false);
+  assert.equal(isCmbIdCardTypeLabel('证件号'), false);
   const store = readFileSync(resolve(root, 'src/profile/store.js'), 'utf8');
   assert.doesNotMatch(store, /idCardType/);
   for (const key of ['EnglishLevel', 'Education', 'RelationshipType', 'InterviewCity', 'AwardsLevel', 'RankingMajor', 'ChannelType']) {
@@ -874,21 +886,21 @@ test('synthetic harness ethnicity select maps text and code and --live refuses',
   );
 });
 
-test('synthetic harness id card type select maps text and code and --live refuses unharvested DOM', { timeout: 120000 }, () => {
+test('synthetic harness id card type select maps text and code and --live still refuses the click', { timeout: 120000 }, () => {
   assertGatedSelectKnife(
     '证件类型',
-    'live_id_card_type_dom_unharvested',
+    'live_id_card_type_select_fill_unclaimed',
     'synthetic_idCard_select_pass',
     'cmb-idCard-select-latest.json',
     '台胞证',
     'ID0011'
   );
   const payload = JSON.parse(readFileSync(resolve(root, 'dist/auto-runs/cmb-idCard-select-latest.json'), 'utf8'));
-  assert.equal(payload.selectIdStatus, 'provisional');
-  assert.equal(payload.selectId, 'cmb-synthetic-idCardType');
-  assert.equal(payload.domHarvested, false);
   assert.equal(payload.optionListHarvested, true);
-  assert.equal(payload.fixture, 'synthetic-provisional-id');
+  assert.equal(payload.liveSelectFillClaimed, false);
+  assert.equal(payload.formFillClaimed, false);
+  assert.equal(payload.fixture, 'synthetic-harvested-options');
+  assert.equal(payload.neighbor?.idNumber, '');
   assert.equal(payload.byText?.after, '身份证');
   assert.equal(payload.byText?.afterCode, 'ID001');
   const live = spawnSync(process.execPath, ['scripts/auto-cmb-basic.mjs', '--only', '证件类型', '--live'], {
@@ -898,11 +910,11 @@ test('synthetic harness id card type select maps text and code and --live refuse
   });
   assert.equal(live.status, 3, live.stderr || live.stdout);
   const refused = JSON.parse(live.stdout);
-  assert.equal(refused.selectIdStatus, 'provisional');
-  assert.equal(refused.selectId, 'cmb-synthetic-idCardType');
-  assert.equal(refused.domHarvested, false);
+  assert.equal(refused.reason, 'live_id_card_type_select_fill_unclaimed');
   assert.equal(refused.optionListHarvested, true);
   assert.equal(refused.liveSelectFillClaimed, false);
+  assert.equal(refused.formFillClaimed, false);
+  assert.equal(refused.selectIdStatus, undefined);
 });
 
 test('birth date knife records the DatePicker hint and does not write', () => {

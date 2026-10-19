@@ -373,9 +373,10 @@
   const POLITICS_LABEL = '政治面貌';
   const ETHNICITY_LABEL = '民族';
   const ID_CARD_TYPE_LABEL = '证件类型';
-  // Provisional. Live 证件类型 id was not harvested. Not a resume_basicInfo_* contract.
-  const ID_CARD_TYPE_SELECT_ID = 'cmb-synthetic-idCardType';
-  const ID_CARD_TYPE_LIST_ID = 'cmb-synthetic-idCardType_list';
+  // Harvested ids. selectClass has no show-search. Live click is not claimed.
+  // 证件号 resume_basicInfo_idCard is a text field and is not filled here.
+  const ID_CARD_TYPE_SELECT_ID = 'resume_basicInfo_idCardType';
+  const ID_CARD_TYPE_LIST_ID = 'resume_basicInfo_idCardType_list';
   const BIRTHDATE_HINT = Object.freeze({
     key: 'birthDate',
     label: '出生日期',
@@ -417,7 +418,6 @@
       labelTest: (text) => text === ID_CARD_TYPE_LABEL,
       selectId: ID_CARD_TYPE_SELECT_ID,
       listId: ID_CARD_TYPE_LIST_ID,
-      selectIdStatus: 'provisional',
       options: GATED_DICTS.idCardType,
       showSearch: false
     }

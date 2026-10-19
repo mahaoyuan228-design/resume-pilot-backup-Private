@@ -146,14 +146,10 @@ const GATED_SPECS = {
     label: '证件类型',
     fn: 'fillIdCardType',
     path: 'idCardType',
-    selectId: 'cmb-synthetic-idCardType',
-    selectIdStatus: 'provisional',
-    domHarvested: false,
-    optionListHarvested: true,
+    selectId: 'resume_basicInfo_idCardType',
     invalid: '请选择',
     explicitReason: 'invalid_id_card_type',
-    liveReason: 'live_id_card_type_dom_unharvested',
-    liveHint: 'IdCardType text and codes were harvested. The select DOM id was not harvested; the fixture id is provisional. Live select click is not claimed.',
+    liveReason: 'live_id_card_type_select_fill_unclaimed',
     first: { text: '身份证', code: 'ID001' },
     second: { text: '台胞证', code: 'ID0011' }
   }
@@ -1134,7 +1130,8 @@ async function runSyntheticGated(kind) {
         marital: read('resume_basicInfo_maritalStatus'),
         politics: read('resume_basicInfo_politicalAffinity'),
         ethnicity: read('resume_basicInfo_nation'),
-        idCard: read('cmb-synthetic-idCardType'),
+        idCard: read('resume_basicInfo_idCardType'),
+        idNumber: document.getElementById('resume_basicInfo_idCard')?.value ?? null,
         genderChecked: checkedValues('性别'),
         workedChecked: checkedValues('是否参加过正式工作'),
         height: document.querySelector('[data-field="身高"] input')?.value ?? null,
@@ -1191,6 +1188,7 @@ async function runSyntheticGated(kind) {
       && neighbor?.saveDisabled === true
       && neighbor?.birthdayNode === false
       && neighbor?.ethnicity?.search === ''
+      && neighbor?.idNumber === ''
       && planReady?.ok === true
       && planReady?.values?.[spec.path] === spec.second.text
       && planReady?.blockers?.some((row) => row.path === 'birthDate' && row.reason === 'datepicker_hint_only')
@@ -1205,20 +1203,14 @@ async function runSyntheticGated(kind) {
       liveSelectFillClaimed: false,
       optionListHarvested: spec.optionListHarvested !== false,
       label: spec.label,
-      fixture: spec.selectIdStatus === 'provisional' ? 'synthetic-provisional-id' : 'synthetic-harvested-options',
-      ...(spec.selectIdStatus ? {
-        selectIdStatus: spec.selectIdStatus,
-        selectId: spec.selectId,
-        domHarvested: spec.domHarvested === true
-      } : {}),
+      fixture: 'synthetic-harvested-options',
       assumptions: [
         'option text and code come from the 2026-10-19 dict harvest',
         'option-row markup is a synthetic stand-in, not a live dropdown contract',
         'readback is the selection item text plus data-code',
         'show-search typing is not used; ethnicity search input stays empty',
-        ...(spec.selectIdStatus === 'provisional'
-          ? ['证件类型 select id is provisional; live DOM id was not harvested']
-          : [])
+        '证件类型 id and list id are harvested; live click is still unclaimed',
+        '证件号 resume_basicInfo_idCard is present and is not written'
       ],
       refused,
       invalid,
@@ -1266,8 +1258,9 @@ function printHelp() {
   Live weight DOM is not harvested. --only 体重 --live refuses.
   Marital / politics / ethnicity selects use harvested text+code on a synthetic option list.
   --live still refuses. Birth date records the DatePicker hint and does not write.
-  证件类型 uses IdCardType text+code. Its fixture id is provisional (DOM not harvested).
-  --only 证件类型 --live refuses live_id_card_type_dom_unharvested.
+  证件类型 uses harvested id resume_basicInfo_idCardType and IdCardType text+code.
+  The select has no show-search. 证件号 is not filled.
+  --only 证件类型 --live still refuses live_id_card_type_select_fill_unclaimed.
   Live portal fingerprint only (no fill claim):
     MODE=readiness node scripts/auto-cmb-basic.mjs --live
     Extension path (Edge + SW message CMB_BASIC_AUTO):
@@ -1425,11 +1418,6 @@ async function main() {
       liveSelectFillClaimed: false,
       optionListHarvested: spec.optionListHarvested !== false,
       label: spec.label,
-      ...(spec.selectIdStatus ? {
-        selectIdStatus: spec.selectIdStatus,
-        selectId: spec.selectId,
-        domHarvested: spec.domHarvested === true
-      } : {}),
       hint: spec.liveHint || 'Option text and codes were harvested. Live select click is not claimed. Use --only without --live.'
     });
     const { file, latest } = gatedEvidencePaths(kind);

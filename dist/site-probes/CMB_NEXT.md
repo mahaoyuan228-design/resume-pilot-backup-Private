@@ -78,4 +78,4 @@ Jeremy 登录招行招聘账号并停在 `/center/resume` 后，才能 harvest l
 
 2026-10-19 live gated 四字段已采齐（`CMB_LIVE_GATED_HARVEST_20261019.md`，Never Save）。婚姻状况 / 政治面貌 / 民族已按采到的中文名+code 做离线合成 Select；出生日期只记 DatePicker kind+填法提示，未硬编假 DOM，未 live 填。未宣称已支持招行。验收仍 **85%**。
 
-完整 getCommonDictMap 摘要见 `CMB_DICTMAP_FULL_20261019.md`（Never Save）。gated 四字段已完成。证件类型 IdCardType 已按 15 项中文名+code 做离线合成 Select；DOM id 未采到，fixture 用 provisional `cmb-synthetic-idCardType`，`--live` 拒 `live_id_card_type_dom_unharvested`。未接线键：EnglishLevel / Education / RelationshipType / InterviewCity / AwardsLevel / RankingMajor / ChannelType。未宣称已支持招行。验收仍 **85%**。
+完整 getCommonDictMap 摘要见 `CMB_DICTMAP_FULL_20261019.md`（Never Save）。gated 四字段已完成。证件类型 IdCardType 已按 15 项中文名+code 做离线合成 Select。DOM 已采到：`#resume_basicInfo_idCardType` / `resume_basicInfo_idCardType_list`，selectClass 无 show-search（见 `CMB_IDCARDTYPE_DOM_20261019.md`）。选项和 DOM 都已采到，但 live 点击尚未证明，所以 `--live` 仍拒 `live_id_card_type_select_fill_unclaimed`，与婚姻状况同一惯例。同页证件号 `#resume_basicInfo_idCard` 是文本，本刀不填。未接线键：EnglishLevel / Education / RelationshipType / InterviewCity / AwardsLevel / RankingMajor / ChannelType。未宣称已支持招行。验收仍 **85%**。

@@ -20,13 +20,13 @@ Birth date is not in this map. It stays the harvested DatePicker hint (`resume_b
 | InterviewCity | 44 | 0 | unwired |
 | AwardsLevel | 5 | 0 | unwired |
 | PoliticalAffinity | 13 | 0 | politics select (offline; harvested DOM id resume_basicInfo_politicalAffinity) |
-| IdCardType | 15 | 0 | this knife: offline select; DOM id provisional (`cmb-synthetic-idCardType`); --live refuses `live_id_card_type_dom_unharvested` |
+| IdCardType | 15 | 0 | offline select; harvested DOM id `resume_basicInfo_idCardType` (no show-search); `--live` still refuses `live_id_card_type_select_fill_unclaimed` |
 | RankingMajor | 3 | 0 | unwired |
 | ChannelType | 15 | 0 | unwired |
 
 ## IdCardType (15, no 请选择)
 
-Options used by the offline select. Match is exact Chinese name or exact code. Abbreviations such as 护照 or 签证 do not match. The fixture id is provisional and is not a harvested `resume_basicInfo_*` id. show-search was not observed; the synthetic control is a non-search stand-in.
+Options used by the offline select. Match is exact Chinese name or exact code. Abbreviations such as 护照 or 签证 do not match. The select id `resume_basicInfo_idCardType` and list id `resume_basicInfo_idCardType_list` were harvested on 2026-10-19. Live selectClass has no show-search. Option-row markup stays a synthetic stand-in, and `--live` still refuses `live_id_card_type_select_fill_unclaimed` until a live click is proven. 证件号 `#resume_basicInfo_idCard` was seen on the same page and is not filled. 招行 is not supported. Acceptance stays **85%**.
 
 - 身份证 (`ID001`)
 - 非公务赴台证 (`ID0010`)

@@ -12,8 +12,9 @@
 // Live radio DOM and the live height/weight label/value are not harvested.
 // Marital / politics / ethnicity use harvested Chinese text + code tables.
 // They are optional caller-supplied keys and are not added to emptyProfile.
-// Id card type uses the full-dictmap IdCardType text+code table. The select id
-// is provisional (DOM was not harvested) and is not added to emptyProfile.
+// Id card type uses the full-dictmap IdCardType text+code table and the harvested
+// select id resume_basicInfo_idCardType. Live click is not claimed. The key is
+// not added to emptyProfile. 证件号 is a separate text field and is not filled.
 // Birth date is hint-only: a present value is not filled.
 // Used by tests + harness. Content script mirrors the same rules.
 
@@ -23,7 +24,6 @@ import {
   CMB_ID_CARD_TYPE_OPTIONS,
   CMB_ID_CARD_TYPE_LIST_ID,
   CMB_ID_CARD_TYPE_SELECT_ID,
-  CMB_ID_CARD_TYPE_SELECT_ID_STATUS,
   CMB_MARITAL_OPTIONS,
   CMB_POLITICS_OPTIONS,
   resolveCmbCodedOption
@@ -35,7 +35,6 @@ export {
   CMB_ID_CARD_TYPE_OPTIONS,
   CMB_ID_CARD_TYPE_LIST_ID,
   CMB_ID_CARD_TYPE_SELECT_ID,
-  CMB_ID_CARD_TYPE_SELECT_ID_STATUS,
   CMB_MARITAL_OPTIONS,
   CMB_POLITICS_OPTIONS,
   resolveCmbCodedOption
@@ -113,7 +112,8 @@ function normMeasure(value) {
  * Marital status, politics, ethnicity, and id card type follow the same optional rule.
  * A value must be an exact harvested Chinese name or exact code.
  * Id card type is caller-supplied (`idCardType`). It is not an emptyProfile field.
- * Its fixture select id is provisional because the live DOM id was not harvested.
+ * The select id is the harvested resume_basicInfo_idCardType. Live click is not claimed.
+ * 证件号 (resume_basicInfo_idCard) is not planned or filled.
  * Birth date is never filled here. A present birthDate is a blocker with
  * reason datepicker_hint_only (confirmed) and is not written.
  */

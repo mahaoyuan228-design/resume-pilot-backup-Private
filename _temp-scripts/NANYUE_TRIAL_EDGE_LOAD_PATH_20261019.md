@@ -8,4 +8,6 @@ Trial Edge CDP **9237** currently loads the extension from:
 
 That path is **not** `ResumeQuickFill-Dev 003753`.
 
-Ops should sync the extension into the actual `--load-extension` directory before the next live run. Loading a different unpacked folder will not pick up the 南粤 signature patch.
+Ops should sync the extension into the actual `--load-extension` directory before the next live run. Loading a different unpacked folder will not pick up the 南粤 signature or name/phone patch.
+
+Later the same trial Edge (2026-10-19 ~09:00 Asia/Shanghai), still that load path: MODE=fill, Never Save, `personalVerified=8`, `failed=0`. Evidence file `hotjob-tenant-670a29-cms-basic-20261019-090052.json`. Acceptance stays **85%**.

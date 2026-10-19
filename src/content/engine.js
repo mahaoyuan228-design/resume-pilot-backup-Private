@@ -555,6 +555,17 @@
     if (question === "获得时间" || question === "成绩") {
       return { reason: "section_requires_mapping" };
     }
+    // 家庭关系必填 姓名 classifies as fullName and collided with 个人基本信息必填.
+    if (key === "fullName" && section.name !== "个人基本信息必填") {
+      return { reason: "section_requires_mapping" };
+    }
+    // 南粤 basic info shows both labels. Keep 移动电话; do not also bind 联系电话.
+    if (section.name === "个人基本信息必填" && key === "phone" && question === "联系电话") {
+      const mobile = [...section.element.querySelectorAll(".ant-form-item")].some((item) =>
+        visible(item) && item.closest(".form-cell") === section.element
+        && M.normalize(formItemQuestion(item)?.textContent) === "移动电话");
+      if (mobile) return { reason: "section_requires_mapping" };
+    }
     if (section.name === "自我评价必填" && question === "评价内容" && control instanceof HTMLTextAreaElement) {
       const peers = [...section.element.querySelectorAll("textarea")]
         .filter((item) => visible(item) && M.normalize(formItemQuestion(item.closest(".ant-form-item"))?.textContent) === "评价内容");
@@ -562,7 +573,7 @@
         ? { key: "selfEvaluation" } : { reason: "ambiguous_repeat_group" };
     }
     if (section.name === "个人基本信息必填"
-      && ((key === "major" && question === "专业名称")
+      && ((key === "major" && (question === "专业" || question === "专业名称"))
         || (key === "endDate" && question === "毕业时间"))) {
       return { reason: "section_requires_mapping" };
     }
@@ -586,7 +597,7 @@
         ? { context, reason: "search_required" } : { context };
     }
     if (section.name !== "教育经历必填" || !(control instanceof HTMLInputElement)) return {};
-    const isMajor = key === "major" && question === "专业名称"
+    const isMajor = key === "major" && (question === "专业" || question === "专业名称")
       && !control.closest(".ant-calendar-picker");
     const isCalendarDate = ((key === "startDate" && question === "开始时间")
       || (key === "endDate" && question === "结束时间"))

@@ -25,3 +25,5 @@
 - Live `/my/jl`: if careers lists full ~56 民族 or enables showSearch, existing guard returns `select_search_heavy` and skips — **do not force**. Live pending login.
 
 Shared helper (`selectControl` / `readSelect` / `fillSelect`) stays allowlist-only + cascader fail-closed + flat-select max-options/search-heavy skip (`select_search_heavy`). Never Save.
+
+下一刀裁剪见 [`CITICS_ANT_SELECT_NEXT_TRIM_20261019.md`](CITICS_ANT_SELECT_NEXT_TRIM_20261019.md)（Never Save，不宣称中信已支持）。

@@ -102,3 +102,5 @@ Login still required for resume-form DOM harvest. Docs-only; **no live claim**. 
 
 Host matcher now includes `jobs.f.mioffice.cn` / `*.jobs.f.mioffice.cn` (Xiaomi twin; same saas-career JS hashes as 广发). Still **login-gated** for resume-form DOM; **no live fill claim**; not customer-ready Xiaomi support.
 
+登录后采数裁剪见 [`FEISHU_ATSX_LOGIN_HARVEST_TRIM_20261019.md`](FEISHU_ATSX_LOGIN_HARVEST_TRIM_20261019.md)（Never Save，不宣称 ATSX/字节/mioffice 可填）。
+

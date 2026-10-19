@@ -1,79 +1,158 @@
 #!/usr/bin/env node
-// Offline paid-package smoke (no real payment). Mirrors build-paid.ps1 essentials.
+// Offline paid-package smoke (no real payment, no Edge, no site claim).
+// Mirrors build-paid.ps1, then imports the OUTPUT guard-worker and seed module.
+// Fails if the seed path is missing from the paid pack list, or if guard-worker
+// still top-level await-imports ./paid-config.mjs.
 import fs from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+import {
+  CMS_BASIC_SEED,
+  GUARD_WORKER,
+  PAID_CONFIG,
+  assertBuiltPaidExtension,
+  assertSeedOnPaidPackList,
+  assertSourcePaidConfigFailClosed,
+  assertStaticPaidConfigImport,
+  parsePsStringArray,
+} from './paid-pack-guards.mjs';
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const repoRoot = path.resolve(__dirname, '..');
-const url = process.argv[2] || 'https://127.0.0.1:8787';
-const pemPath = process.argv[3] || path.join(repoRoot, 'tests/fixtures/license/EXAMPLE_ed25519_public.pem');
-if (!/^https:\/\/\S+/.test(url)) throw new Error('need https:// LicenseServiceUrl');
+const scriptDir = path.dirname(fileURLToPath(import.meta.url));
+const defaultRepoRoot = path.resolve(scriptDir, '..');
 
-const productFiles = fs.readFileSync(path.join(repoRoot, 'scripts/build-paid.ps1'), 'utf8')
-  .match(/\$productFiles = @\(([\s\S]*?)\)\s*\n\s*\$licenseFiles/)[1]
-  .split('\n').map(l => l.trim().replace(/^'|',$/g,'').replace(/',$/,'').replace(/^'/,'').replace(/'$/,'')).filter(l => l && !l.startsWith('#'));
-const licenseFiles = [
-  'src/license/flavor.mjs','src/license/errors.mjs','src/license/binding.mjs','src/license/gate.mjs',
-  'src/license/client.mjs','src/license/entitlement.mjs','src/license/signed-entitlement.mjs',
-  'src/license/guard-worker.mjs','src/license/activate.html','src/license/activate.css','src/license/activate.js'
-];
-const manifest = JSON.parse(fs.readFileSync(path.join(repoRoot, 'manifest.json'), 'utf8'));
-const stamp = new Date().toISOString().replace(/[-:TZ.]/g,'').slice(0,15);
-const baseName = `edge-paid-v${manifest.version}-${stamp}`;
-const buildRoot = path.join(repoRoot, 'dist', baseName);
-const extensionRoot = path.join(buildRoot, 'extension');
-fs.mkdirSync(extensionRoot, { recursive: true });
+export async function runPaidSmoke({
+  repoRoot = defaultRepoRoot,
+  licenseServiceUrl = 'https://127.0.0.1:8787',
+  pemPath,
+  destRoot = path.join(repoRoot, 'dist'),
+} = {}) {
+  const url = licenseServiceUrl;
+  if (!/^https:\/\/\S+/.test(url)) throw new Error('need https:// LicenseServiceUrl');
+  const publicPem = readSmokePublicPem(repoRoot, pemPath);
 
-function copyRel(rel) {
-  const src = path.join(repoRoot, rel);
-  if (!fs.existsSync(src)) throw new Error('missing ' + rel);
-  const dest = path.join(extensionRoot, rel);
-  fs.mkdirSync(path.dirname(dest), { recursive: true });
-  fs.copyFileSync(src, dest);
-}
-for (const rel of [...productFiles, ...licenseFiles]) copyRel(rel);
+  const paidBuild = fs.readFileSync(path.join(repoRoot, 'scripts/build-paid.ps1'), 'utf8');
+  const productFiles = parsePsStringArray(paidBuild, 'productFiles');
+  const licenseFiles = parsePsStringArray(paidBuild, 'licenseFiles');
+  assertSeedOnPaidPackList(productFiles);
+  if (productFiles.includes(PAID_CONFIG) || licenseFiles.includes(PAID_CONFIG)) {
+    throw new Error('paid-config.mjs must be generated into the pack, not copied from the source placeholder');
+  }
 
-const pem = fs.readFileSync(pemPath, 'utf8');
-if (!pem.includes('BEGIN PUBLIC KEY') || pem.includes('BEGIN PRIVATE KEY')) throw new Error('bad public pem');
-const pemEscaped = pem.replace(/\r/g, '').replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\n/g, '\\n');
-const urlEscaped = url.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-fs.writeFileSync(path.join(extensionRoot, 'src/license/paid-config.mjs'),
+  const sourceGuard = fs.readFileSync(path.join(repoRoot, GUARD_WORKER), 'utf8');
+  assertStaticPaidConfigImport(sourceGuard);
+  const sourcePaidConfig = fs.readFileSync(path.join(repoRoot, PAID_CONFIG), 'utf8');
+  assertSourcePaidConfigFailClosed(sourcePaidConfig);
+
+  const manifest = JSON.parse(fs.readFileSync(path.join(repoRoot, 'manifest.json'), 'utf8'));
+  if (manifest.background?.service_worker !== 'src/background/worker.mjs') {
+    throw new Error('source manifest service worker must stay worker.mjs');
+  }
+  const stamp = new Date().toISOString().replace(/[-:TZ.]/g, '').slice(0, 15);
+  const baseName = `edge-paid-v${manifest.version}-${stamp}`;
+  const buildRoot = path.join(destRoot, baseName);
+  const extensionRoot = path.join(buildRoot, 'extension');
+  fs.mkdirSync(extensionRoot, { recursive: true });
+
+  function copyRel(rel) {
+    const src = path.join(repoRoot, rel);
+    if (!fs.existsSync(src)) throw new Error(`missing ${rel}`);
+    const dest = path.join(extensionRoot, rel);
+    fs.mkdirSync(path.dirname(dest), { recursive: true });
+    fs.copyFileSync(src, dest);
+  }
+  for (const rel of [...productFiles, ...licenseFiles]) copyRel(rel);
+
+  const urlEscaped = url.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+  const publicKeyLiteral = publicPem
+    ? `"${publicPem.replace(/\r/g, '').replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\n/g, '\\n')}"`
+    : 'null';
+  fs.writeFileSync(path.join(extensionRoot, PAID_CONFIG),
 `// Generated by scripts/build-paid-smoke.mjs — DEV offline only.
 export const paidConfig = {
   buildFlavor: 'paid',
   licenseServiceUrl: '${urlEscaped}',
-  publicKeyPem: "${pemEscaped}",
+  publicKeyPem: ${publicKeyLiteral},
   requireSignedEntitlement: false,
 };
 `);
 
-const paidManifest = JSON.parse(fs.readFileSync(path.join(extensionRoot, 'manifest.json'), 'utf8'));
-paidManifest.name = '简历快填 · 授权版';
-paidManifest.description = '授权核验通过后，在你打开的招聘页面中识别字段，使用已核对的本机资料填写并逐项读回。';
-paidManifest.background.service_worker = 'src/license/guard-worker.mjs';
-fs.writeFileSync(path.join(extensionRoot, 'manifest.json'), JSON.stringify(paidManifest, null, 2));
+  const paidManifest = JSON.parse(fs.readFileSync(path.join(extensionRoot, 'manifest.json'), 'utf8'));
+  paidManifest.name = '简历快填 · 授权版';
+  paidManifest.description = '授权核验通过后，在你打开的招聘页面中识别字段，使用已核对的本机资料填写并逐项读回。';
+  paidManifest.background.service_worker = GUARD_WORKER;
+  fs.writeFileSync(path.join(extensionRoot, 'manifest.json'), JSON.stringify(paidManifest, null, 2));
 
-let popup = fs.readFileSync(path.join(extensionRoot, 'src/popup/popup.html'), 'utf8');
-if (!popup.includes('license/activate.html')) {
-  const activateLink = '<a class="text-button" href="../license/activate.html" target="_blank" rel="noopener" style="margin-left:8px">授权激活</a>';
-  popup = popup.includes('open-profile')
-    ? popup.replace(/(id="open-profile"[^>]*>我的资料库 ↗<\/button>)/, '$1' + activateLink)
-    : popup.replace('</header>', activateLink + '</header>');
-  fs.writeFileSync(path.join(extensionRoot, 'src/popup/popup.html'), popup);
+  let popup = fs.readFileSync(path.join(extensionRoot, 'src/popup/popup.html'), 'utf8');
+  if (!popup.includes('license/activate.html')) {
+    const activateLink = '<a class="text-button" href="../license/activate.html" target="_blank" rel="noopener" style="margin-left:8px">授权激活</a>';
+    popup = popup.includes('open-profile')
+      ? popup.replace(/(id="open-profile"[^>]*>我的资料库 ↗<\/button>)/, '$1' + activateLink)
+      : popup.replace('</header>', activateLink + '</header>');
+    fs.writeFileSync(path.join(extensionRoot, 'src/popup/popup.html'), popup);
+  }
+
+  const builtGuard = fs.readFileSync(path.join(extensionRoot, GUARD_WORKER), 'utf8');
+  if (builtGuard !== sourceGuard) {
+    throw new Error('built guard-worker.mjs differs from source; rebuild copies source and does not hand-patch dist');
+  }
+  const builtSeed = fs.readFileSync(path.join(extensionRoot, CMS_BASIC_SEED));
+  const sourceSeed = fs.readFileSync(path.join(repoRoot, CMS_BASIC_SEED));
+  if (!builtSeed.equals(sourceSeed)) {
+    throw new Error(`built ${CMS_BASIC_SEED} differs from source`);
+  }
+  if (fs.readFileSync(path.join(repoRoot, PAID_CONFIG), 'utf8') !== sourcePaidConfig) {
+    throw new Error('smoke mutated the source paid-config placeholder');
+  }
+
+  const packedFiles = [...productFiles, ...licenseFiles, PAID_CONFIG];
+  const evaluated = await assertBuiltPaidExtension(extensionRoot, packedFiles);
+
+  const checks = {
+    buildRoot,
+    guardWorker: true,
+    activateHtml: fs.existsSync(path.join(extensionRoot, 'src/license/activate.html')),
+    paidConfig: true,
+    seedCopied: true,
+    seedOnPackList: true,
+    staticPaidConfigImport: true,
+    topLevelAwaitPaidConfig: false,
+    sourcePaidConfigFailClosed: true,
+    packImportsResolved: true,
+    serviceWorker: paidManifest.background.service_worker,
+    popupHasActivate: fs.readFileSync(path.join(extensionRoot, 'src/popup/popup.html'), 'utf8').includes('license/activate.html'),
+    licenseServiceUrl: url,
+    publicKeyEmbedded: publicPem != null,
+    productFileCount: productFiles.length,
+    licenseFileCount: licenseFiles.length,
+    ...evaluated,
+  };
+  fs.writeFileSync(path.join(buildRoot, 'PAID_SMOKE_RESULT.json'), JSON.stringify(checks, null, 2));
+  return checks;
 }
 
-const checks = {
-  buildRoot,
-  guardWorker: fs.existsSync(path.join(extensionRoot, 'src/license/guard-worker.mjs')),
-  activateHtml: fs.existsSync(path.join(extensionRoot, 'src/license/activate.html')),
-  paidConfig: fs.existsSync(path.join(extensionRoot, 'src/license/paid-config.mjs')),
-  serviceWorker: paidManifest.background.service_worker,
-  popupHasActivate: fs.readFileSync(path.join(extensionRoot, 'src/popup/popup.html'), 'utf8').includes('license/activate.html'),
-  licenseServiceUrl: url,
-  publicKeyEmbedded: pem.includes('BEGIN PUBLIC KEY'),
-  productFileCount: productFiles.length,
-  licenseFileCount: licenseFiles.length,
-};
-fs.writeFileSync(path.join(buildRoot, 'PAID_SMOKE_RESULT.json'), JSON.stringify(checks, null, 2));
-console.log(JSON.stringify({ ok: true, ...checks }, null, 2));
+function readSmokePublicPem(repoRoot, pemPath) {
+  const candidate = pemPath || path.join(repoRoot, 'tests/fixtures/license/EXAMPLE_ed25519_public.pem');
+  if (!fs.existsSync(candidate)) {
+    if (pemPath) throw new Error(`PublicKeyPemPath missing: ${pemPath}`);
+    // EXAMPLE_*.pem is gitignored. A null public key matches build-paid.ps1 without -PublicKeyPemPath.
+    return null;
+  }
+  const pem = fs.readFileSync(candidate, 'utf8');
+  if (!pem.includes('BEGIN PUBLIC KEY') || pem.includes('BEGIN PRIVATE KEY')) {
+    throw new Error('bad public pem');
+  }
+  return pem;
+}
+
+const entry = process.argv[1] ? pathToFileURL(process.argv[1]).href : '';
+if (entry === import.meta.url) {
+  runPaidSmoke({
+    licenseServiceUrl: process.argv[2],
+    pemPath: process.argv[3],
+  }).then((checks) => {
+    console.log(JSON.stringify({ ok: true, ...checks }, null, 2));
+  }).catch((error) => {
+    console.error(error);
+    process.exitCode = 1;
+  });
+}

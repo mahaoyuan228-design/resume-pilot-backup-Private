@@ -32,3 +32,5 @@
 12. **Celebright/国盛一键试填准备包（2026-10-19）**：登录后停简历编辑；按 `dist/site-probes/HOTJOB_CELEBRIGHT_TRIAL_PACK_20261019.md`；键名先核对；Never Save；南粤 PASS 不代替。
 
 13. **GTH/CMS 回归冒烟（离线清单已备·2026-10-19）**：有空时按 `dist/site-probes/GTH_REGRESSION_SMOKE_CHECKLIST_20261019.md` 分入口（9237/9239）并列复测 CMS+GTH；Never Save；不替代 `PAID_EDGE_9239_QA_CHECKLIST`；不宣称已支持。
+
+14. **GTH冒烟 vs 付费QA对照（2026-10-19）**：一次跑不漏时看 `dist/site-probes/GTH_VS_PAID_QA_CROSSWALK_20261019.md`；先共同约束→冒烟→完整 9239 QA；9237 不能抵 9239。

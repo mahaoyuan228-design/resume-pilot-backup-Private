@@ -142,7 +142,9 @@ test('harness defaults MODE readiness, CDP_PORT 9237, never Save', () => {
   assert.match(harness, /skippedSave:\s*true/);
   assert.match(harness, /live_fill_refused_login_wall/);
   assert.match(harness, /career\.cmbchina\.com/);
-  assert.match(harness, /extension_path_not_wired_yet/);
+  assert.match(harness, /cmb_extension_cli_offline/);
+  assert.match(harness, /CMB_BASIC_AUTO/);
+  assert.match(harness, /cmb-basic-auto\.html/);
 });
 
 test('gender plan is optional and allowlists 男/女 only', () => {

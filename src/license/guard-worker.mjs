@@ -22,6 +22,7 @@ import { installFeishuAtsxBasicAutoRunner } from '../background/feishu-atsx-basi
 import { installBeisen2022BasicAutoRunner } from '../background/beisen-2022-basic-auto.mjs';
 import { installMokaBasicAutoRunner } from '../background/moka-basic-auto.mjs';
 import { installHotjobMcBasicAutoRunner } from '../background/hotjob-mc-basic-auto.mjs';
+import { installCmbBasicAutoRunner } from '../background/cmb-basic-auto.mjs';
 // Edge 155 MV3 SW fails to register when paid-config is loaded via top-level await import; static import is required.
 import { paidConfig as paidConfigImported } from './paid-config.mjs';
 import { createLicenseClient } from './client.mjs';
@@ -123,6 +124,7 @@ boot('feishu-atsx-basic-auto', () => installFeishuAtsxBasicAutoRunner({ verifyBe
 boot('beisen-2022-basic-auto', () => installBeisen2022BasicAutoRunner({ verifyBeforeFill }));
 boot('moka-basic-auto', () => installMokaBasicAutoRunner({ verifyBeforeFill }));
 boot('hotjob-mc-basic-auto', () => installHotjobMcBasicAutoRunner({ verifyBeforeFill }));
+boot('cmb-basic-auto', () => installCmbBasicAutoRunner({ verifyBeforeFill }));
 
 function bootPaidAuto(name, fn) {
   try { fn({ verifyBeforeFill }); }

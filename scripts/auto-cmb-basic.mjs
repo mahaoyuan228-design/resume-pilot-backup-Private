@@ -1636,9 +1636,10 @@ function printHelp() {
   live_interview_city_select_fill_unclaimed
   Live portal fingerprint only (no fill claim):
     MODE=readiness node scripts/auto-cmb-basic.mjs --live
-    Extension path (Edge + SW message CMB_BASIC_AUTO):
+    Trial SW message CMB_BASIC_AUTO (src/auto/cmb-basic-auto.html).
+    This CLI --extension does not attach CDP:
     MODE=readiness node scripts/auto-cmb-basic.mjs --extension
-  (--synthetic remains default offline; --extension does not replace it)
+  (--synthetic remains default offline; --extension does not drive Edge)
   Never clicks 保存/提交. Sample portal: ${SAMPLE_PORTAL}`);
 }
 
@@ -1649,14 +1650,14 @@ async function main() {
     process.exit(0);
   }
   if (args.extension) {
-    // SW/popup wiring deferred — this knife is offline scaffold only.
+    // The trial service worker installs CMB_BASIC_AUTO. This CLI stays offline.
     const payload = basePayload({
       ok: false,
-      reason: 'extension_path_not_wired_yet',
+      reason: 'cmb_extension_cli_offline',
       surface: 'extension',
       liveEdge: false,
       formFillClaimed: false,
-      hint: 'Use --synthetic; CMB_BASIC_AUTO / auto HTML not shipped in this offline knife'
+      hint: 'Trial SW installs CMB_BASIC_AUTO via src/auto/cmb-basic-auto.html. This CLI does not attach CDP. Never Save. 招行 is not supported.'
     });
     const written = writeEvidence(modeFromEnv(), payload);
     console.log(JSON.stringify({ event: 'refused', ...written, ...payload }, null, 2));

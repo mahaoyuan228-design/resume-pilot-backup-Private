@@ -66,6 +66,8 @@ $productFiles = @(
   'src/background/gth-serial-runner.mjs',
   'src/background/gth-serial-step.mjs',
   'src/background/worker.mjs',
+  'src/background/bg-ping.mjs',
+  'src/auto/bg-request.mjs',
   'src/auto/cms-education-auto.html',
   'src/auto/cms-education-auto.js',
   'src/auto/gth-education-auto.html',

@@ -13,7 +13,7 @@
 | `client.mjs` | Local verify + optional HTTPS `/v1/verify` stub |
 | `entitlement.mjs` | `isFillAllowed` / `isFillAllowedAsync` + local token activate / status helpers |
 | `signed-entitlement.mjs` | Ed25519 verify of signed entitlement envelopes (fail-closed without publicKeyPem) |
-| `guard-worker.mjs` | Paid SW: `RESUME_PAID_VERIFY` + runners with `verifyBeforeFill` |
+| `guard-worker.mjs` | Paid SW: `RESUME_PAID_VERIFY` + the same runners as `worker.mjs`, including `*_AUTO`, each with `verifyBeforeFill` |
 | `activate.html` / `.css` / `.js` | Paid-only Chinese activate panel (paste token locally) |
 | `paid-config.example.mjs` | Example only — never commit live secrets |
 

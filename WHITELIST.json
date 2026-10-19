@@ -22,6 +22,8 @@
     "src/background/gth-serial-runner.mjs",
     "src/background/gth-serial-step.mjs",
     "src/background/worker.mjs",
+    "src/background/bg-ping.mjs",
+    "src/auto/bg-request.mjs",
     "src/auto/cms-education-auto.html",
     "src/auto/cms-education-auto.js",
     "src/auto/cms-internship-auto.js",
@@ -159,6 +161,8 @@
     "src/background/gth-serial-runner.mjs",
     "src/background/gth-serial-step.mjs",
     "src/background/worker.mjs",
+    "src/background/bg-ping.mjs",
+    "src/auto/bg-request.mjs",
     "src/auto/cms-education-auto.html",
     "src/auto/cms-education-auto.js",
     "src/auto/cms-internship-auto.js",
@@ -266,6 +270,6 @@
     "No real browser drivers, customer profile or backup data, private snapshots, screenshots or logs.",
     "No .git/.codex/.agents/.env/keys/server storage/payment credentials.",
     "No installer, ready package, paid build, test receipts or source archive nested in source.",
-    "No src/license paid scaffolding or scripts/build-paid.ps1 in the internal 116-file product package (paid flavor is a separate dist path)."
+    "No src/license paid scaffolding or scripts/build-paid.ps1 in the internal 118-file product package (paid flavor is a separate dist path)."
   ]
 }

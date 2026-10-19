@@ -20,3 +20,5 @@
 5. **付费 Edge 9239 预客户 QA（Codex F 裁剪·2026-10-19）**：授权有效 + CDP=9239；CMS+GTH Never Save 试填读回；与试填 9237 结果隔离；失败记环境契约；不碰私钥。详 `dist/site-probes/CODEX_TRIM_PAID_EDGE_QA_F_20261019.md`。
 6. **招行 live Select（2026-10-19 已做）**：试填 9237 上 10 字段点击证据已齐；仍 **未宣称招行已支持**。详见 `CMB_LIVE_SELECT_CLICK_EVIDENCE_20261019.md`。
 7. **中信 `/my/jl` 学历采选项（离线包已备·2026-10-19）**：登录 careers.citics.com → 打开 `/my/jl`；按 `dist/site-probes/CITICS_EDUCATION_HARVEST_PACK_20261019.md` 仅展开学历 Ant Select、滚虚拟列表、dump text+value；学位另轮；Never Save；不宣称支持。当前 `live_education_options_unharvested`。
+
+8. **飞书/小米 ATSX 登录后 DOM（离线包已备·2026-10-19）**：登录后停简历编辑页；按 `dist/site-probes/FEISHU_ATSX_LIVE_DOM_HARVEST_PACK_20261019.md` 一次一变量采姓名→手机→邮箱；Never Save；不宣称支持。

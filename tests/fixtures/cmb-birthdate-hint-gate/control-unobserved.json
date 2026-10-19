@@ -1,0 +1,26 @@
+{
+  "schema": "cmb-birthdate-harvest/1",
+  "synthetic": true,
+  "autoSaveExcluded": true,
+  "labelLocated": true,
+  "labelText": "出生日期",
+  "controlObserved": false,
+  "control": null,
+  "hint": null,
+  "interaction": { "openedManually": false, "autoClicked": false, "daySelected": false },
+  "format": { "described": false, "verified": false },
+  "actions": { "fieldChanged": false, "saveAttempted": false, "submitAttempted": false },
+  "files": {
+    "context": true,
+    "locator": true,
+    "controlImage": false,
+    "controlHtml": false,
+    "hints": false,
+    "interaction": false,
+    "popup": false,
+    "format": false,
+    "actions": false,
+    "verdict": false
+  },
+  "note": "Locator step found no associated control. Stop. Do not invent one."
+}

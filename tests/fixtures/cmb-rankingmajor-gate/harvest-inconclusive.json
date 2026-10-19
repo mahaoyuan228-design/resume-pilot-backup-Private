@@ -1,0 +1,21 @@
+{
+  "schema": "cmb-rankingmajor-harvest/1",
+  "synthetic": true,
+  "reachable": false,
+  "scopeReadable": false,
+  "labelLocated": false,
+  "labelText": "",
+  "candidateCount": null,
+  "association": "unobserved",
+  "snapshots": { "first": false, "second": false, "agree": false },
+  "control": null,
+  "files": {
+    "context": false,
+    "dom01": false,
+    "dom02": false,
+    "fieldImage": false,
+    "verdict": false
+  },
+  "interactionEvidence": false,
+  "note": "Page not ready. Unreadable scope is inconclusive, not DOM_CONTROL_MISSING."
+}

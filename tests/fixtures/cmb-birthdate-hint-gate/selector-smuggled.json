@@ -1,0 +1,36 @@
+{
+  "schema": "cmb-birthdate-harvest/1",
+  "synthetic": true,
+  "autoSaveExcluded": true,
+  "labelLocated": true,
+  "labelText": "出生日期",
+  "controlObserved": true,
+  "selector": "#resume_basicInfo_birthday",
+  "query": "input[type=date]",
+  "control": {
+    "observedId": "fixtureDobNode",
+    "inputType": "text",
+    "role": null,
+    "readOnly": true,
+    "disabled": false,
+    "placeholder": "请选择日期",
+    "calendarEntryObserved": false
+  },
+  "hint": { "placeholder": "请选择日期", "formatNote": "", "pattern": "", "conflicting": false },
+  "interaction": { "openedManually": false, "autoClicked": false, "daySelected": false },
+  "format": { "described": true, "verified": true },
+  "actions": { "fieldChanged": false, "saveAttempted": false, "submitAttempted": false },
+  "files": {
+    "context": true,
+    "locator": true,
+    "controlImage": true,
+    "controlHtml": true,
+    "hints": true,
+    "interaction": true,
+    "popup": true,
+    "format": true,
+    "actions": true,
+    "verdict": true
+  },
+  "note": "Smuggled selector and query are rejected and must not be returned."
+}

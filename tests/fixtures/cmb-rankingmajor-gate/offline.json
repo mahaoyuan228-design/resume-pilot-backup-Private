@@ -1,0 +1,23 @@
+{
+  "field": "RankingMajor",
+  "schema": "cmb-rankingmajor-gate/1",
+  "harvestLanded": false,
+  "verdict": "DOM_CONTROL_MISSING",
+  "gate": "offline_recorded",
+  "reason": "DOM_CONTROL_MISSING",
+  "supported": false,
+  "liveFillClaimed": false,
+  "fillAllowed": false,
+  "wireAllowed": false,
+  "saveAllowed": false,
+  "saveRefused": true,
+  "saved": false,
+  "skippedSave": true,
+  "writeAttempted": false,
+  "selector": null,
+  "query": null,
+  "dictProvesControl": false,
+  "interactionEvidence": false,
+  "observedFacts": null,
+  "note": "Recorded offline gate. No live harvest has landed. Not a selector and not support."
+}

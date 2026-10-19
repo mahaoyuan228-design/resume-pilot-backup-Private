@@ -185,6 +185,7 @@ function normMeasure(value) {
  * Live click evidence is on file. RankingMajor is not planned here.
  * Birth date is never filled here. A present birthDate is a blocker with
  * reason datepicker_hint_only (confirmed) and is not written.
+ * The hint-only path cannot Save.
  */
 export function planCmbBasicFromProfile(profile) {
   if (!profile || typeof profile !== 'object' || Array.isArray(profile)) {
@@ -329,7 +330,10 @@ export function planCmbBasicFromProfile(profile) {
       ready: false,
       reason: confirmed.has('birthDate') ? 'datepicker_hint_only' : 'profile_fact_unconfirmed',
       kind: CMB_BIRTHDATE_HINT.kind,
-      fillHint: CMB_BIRTHDATE_HINT.fillHint
+      fillHint: CMB_BIRTHDATE_HINT.fillHint,
+      saveAllowed: false,
+      saved: false,
+      skippedSave: true
     });
   }
 

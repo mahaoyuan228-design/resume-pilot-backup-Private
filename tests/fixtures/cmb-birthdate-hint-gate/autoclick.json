@@ -1,0 +1,34 @@
+{
+  "schema": "cmb-birthdate-harvest/1",
+  "synthetic": true,
+  "autoSaveExcluded": true,
+  "labelLocated": true,
+  "labelText": "出生日期",
+  "controlObserved": true,
+  "control": {
+    "observedId": "fixtureDobNode",
+    "inputType": "text",
+    "role": null,
+    "readOnly": true,
+    "disabled": false,
+    "placeholder": "请选择日期",
+    "calendarEntryObserved": true
+  },
+  "hint": { "placeholder": "请选择日期", "formatNote": "", "pattern": "", "conflicting": false },
+  "interaction": { "openedManually": false, "autoClicked": true, "daySelected": true },
+  "format": { "described": true, "verified": true },
+  "actions": { "fieldChanged": false, "saveAttempted": false, "submitAttempted": false },
+  "files": {
+    "context": true,
+    "locator": true,
+    "controlImage": true,
+    "controlHtml": true,
+    "hints": true,
+    "interaction": true,
+    "popup": true,
+    "format": true,
+    "actions": true,
+    "verdict": true
+  },
+  "note": "Automatic calendar click and day selection are forbidden. The packet stays hint-only."
+}

@@ -18,6 +18,28 @@
 14. **2026-10-19 招行英语等级**：只接 `#resume_skill_0_englishLevel`。10 项 EL001–EL010，`其他` 保留。不换算托福/四级/分数。`--live` 拒 `live_english_level_select_fill_unclaimed`。Never Save。未宣称已支持招行。ChannelType / InterviewCity 可延后。
 15. **2026-10-19 招行招聘信息来源**：只接 `#resume_basicInfo_channelType`。15 项原名原 code，不做模糊归并。`其他` 保留。`--live` 拒 `live_channel_type_select_fill_unclaimed`。Never Save。未宣称已支持招行。下一刀 InterviewCity。
 16. **2026-10-19 招行面试期望城市**：只接 `#resume_basicInfo_expectedInterviewCity`。44 个完整城市名，首项北京市、末项重庆市。简称不匹配。`--live` 拒 `live_interview_city_select_fill_unclaimed`。Never Save。未宣称已支持招行。RankingMajor 仍是 `DOM_CONTROL_MISSING`。
+17. **2026-10-19 招行 live 点击最小矩阵**（只文档）：全文 `dist/site-probes/CMB_LIVE_CLICK_MATRIX_20261019.md`。Never Save。一次一字段。试填 Edge CDP 9237。停在 `/center/resume`。未宣称已支持招行。整体进度口径由主脑报。
+
+## 1b. 招行 live 点击验收最小矩阵（2026-10-19）
+
+Never Save。一次一字段。试填 Edge CDP **9237**。停在 `https://career.cmbchina.com/center/resume`。未宣称招行已支持。整体进度口径由主脑报。本节不写验收百分比。`--only <页面标签> --live` 仍在点击前退出 3。本表不解除拒绝。
+
+| 顺序 | 字段 | 页面标签 | 当前 `--live` refuse |
+| --- | --- | --- | --- |
+| 1 | 婚姻 | 婚姻状况 | `live_marital_select_fill_unclaimed` |
+| 2 | 政治 | 政治面貌 | `live_politics_select_fill_unclaimed` |
+| 3 | 民族 | 民族 | `live_ethnicity_select_fill_unclaimed` |
+| 4 | 证件 | 证件类型 | `live_id_card_type_select_fill_unclaimed` |
+| 5 | 学历 | 学历 | `live_education_level_select_fill_unclaimed` |
+| 6 | 关系 | 关系类型 | `live_relationship_select_fill_unclaimed` |
+| 7 | 获奖 | 获奖级别 | `live_award_level_select_fill_unclaimed` |
+| 8 | 英语 | 最高英语水平 | `live_english_level_select_fill_unclaimed` |
+| 9 | 渠道 | 招聘信息来源 | `live_channel_type_select_fill_unclaimed` |
+| 10 | 面试城市 | 面试期望城市 | `live_interview_city_select_fill_unclaimed` |
+
+RankingMajor：`DOM_CONTROL_MISSING`。不做，不猜 selector。关系两行分开读回，不互写。不填证件号、学校名称、家庭姓名和电话、奖项名称、获奖时间、英语分数。不点保存。
+
+需要 Jeremy 时：登录保持。允许助手在试填 Edge（CDP 9237）做 fill-wo-save 点击读回（不点保存）。页面停在 `/center/resume`。一次一字段。
 
 ## 2. 仍需 Jeremy 有空时（TODO，均可选）
 
@@ -25,3 +47,4 @@
 2. **可选 ATS DOM**：广发飞书 / **小米 ATSX** `https://xiaomi.jobs.f.mioffice.cn/newretailing/?spread=M1SXHJC`（登录后停在简历编辑页即可；host 已接线；Never Save） / 君乐宝北森 / TI(Moka) → 采真实 DOM 后再 fill-wo-save；同族备选：中科创达飞书 / 乐牛·正泰 Moka / 现代牧业·北芯北森。
 3. **可选中信 live**：`careers.citics.com/my/jl` 上户口类型 + 证件类型 + 民族（synthetic 已绿；民族若全量/可搜则 skip）。
 4. **可选**：付费 Edge **9239**；Codex Cloud 环境发布。
+5. **招行 live 点击**（见上文 §1b 与 `dist/site-probes/CMB_LIVE_CLICK_MATRIX_20261019.md`）：登录保持，停在 `/center/resume`。允许助手在试填 Edge CDP 9237 做 fill-wo-save 点击读回（不点保存）。一次一字段。RankingMajor 不做（`DOM_CONTROL_MISSING`）。未宣称已支持招行。

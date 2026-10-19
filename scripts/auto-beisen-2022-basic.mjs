@@ -34,13 +34,16 @@ function pause(ms) {
 }
 
 function parseArgs(argv) {
-  const args = { synthetic: false, live: false, help: false, extension: false };
+  const args = { synthetic: false, live: false, help: false, extension: false, caseName: 'ready' };
   for (let index = 0; index < argv.length; index += 1) {
     const token = argv[index];
     if (token === '--synthetic') args.synthetic = true;
     else if (token === '--live') args.live = true;
     else if (token === '--extension') args.extension = true;
-    else if (token === '--help' || token === '-h') args.help = true;
+    else if (token === '--case') {
+      args.caseName = argv[index + 1] || 'ready';
+      index += 1;
+    } else if (token === '--help' || token === '-h') args.help = true;
   }
   return args;
 }
@@ -211,13 +214,44 @@ function basePayload(partial) {
   };
 }
 
-async function runSynthetic(mode) {
+const NEVER_SAVE_HOOK = `(() => {
+  if (window.__beisenNeverSave) return window.__beisenNeverSave.clicks;
+  const bag = { clicks: 0, labels: [] };
+  window.__beisenNeverSave = bag;
+  const re = /保存|提交|投递/;
+  const textOf = (el) => String((el && (el.innerText || el.textContent || el.value)) || '').replace(/\\s+/g, '');
+  const note = (el) => {
+    const text = textOf(el);
+    if (!re.test(text)) return;
+    bag.clicks += 1;
+    bag.labels.push(text.slice(0, 32));
+  };
+  document.addEventListener('click', (event) => {
+    const el = event.target && event.target.closest && event.target.closest('button, a, input, [role="button"]');
+    if (el) note(el);
+  }, true);
+  document.addEventListener('submit', () => {
+    bag.clicks += 1;
+    bag.labels.push('submit');
+  }, true);
+  const orig = HTMLElement.prototype.click;
+  HTMLElement.prototype.click = function () {
+    note(this);
+    return orig.apply(this, arguments);
+  };
+  return bag.clicks;
+})()`;
+
+async function runSynthetic(mode, caseName = 'ready') {
+  const pageFixture = caseName === 'ambiguous'
+    ? 'beisen-2022-basic-ambiguous.html'
+    : fixtureName;
   const { server, port } = await startFixtureServer();
   const cdpPort = await freePort();
   let child;
   try {
     ({ child } = await launchChrome(cdpPort));
-    const url = `http://127.0.0.1:${port}/${fixtureName}`;
+    const url = `http://127.0.0.1:${port}/${pageFixture}`;
     const { socket, send } = await attachPage(cdpPort, url);
     await injectScript(send);
     const probe = await evaluate(send, `ResumeBeisen2022Basic.probeLabels({ synthetic: true })`);
@@ -234,12 +268,59 @@ async function runSynthetic(mode) {
       return { payload, written };
     }
 
+    await evaluate(send, NEVER_SAVE_HOOK);
     const fill = await evaluate(send, `ResumeBeisen2022Basic.fillBasic({
       allowExplicitValues: true,
       fullName: '测试甲',
       mobile: '13800138000',
       email: 'beisen.fixture@example.com'
     }, { synthetic: true })`);
+    const neverSave = await evaluate(send, `window.__beisenNeverSave || { clicks: -1, labels: [] }`);
+
+    if (caseName === 'ambiguous') {
+      const audit = await evaluate(send, `(() => {
+        const rows = [...document.querySelectorAll('.bs-form-item')].map((node) => {
+          const label = node.querySelector('.bs-form-item-label, label');
+          const inputs = [...node.querySelectorAll('input')].map((el) => el.value);
+          return { label: (label && label.textContent || '').trim(), inputs };
+        });
+        return { rows };
+      })()`);
+      const byLabel = (label) => (audit?.rows || []).filter((row) => row.label === label);
+      const names = byLabel('姓名');
+      const phones = byLabel('手机号码');
+      const reasons = Object.fromEntries((fill?.results || []).map((row) => [row.label, row.reason]));
+      const unchanged = names.length === 2
+        && names[0]?.inputs?.[0] === 'KEEP-A'
+        && names[1]?.inputs?.[0] === 'KEEP-B'
+        && phones.length === 1
+        && phones[0]?.inputs?.[0] === 'KEEP-PHONE'
+        && byLabel('邮箱').length === 0;
+      const ok = fill?.ok === false
+        && fill?.reason === 'form_not_ready'
+        && fill?.writeAttempted === false
+        && fill?.saved === false
+        && fill?.skippedSave === true
+        && reasons['姓名'] === 'field_ambiguous'
+        && reasons['邮箱'] === 'item_not_found'
+        && reasons['手机号码'] === 'skipped_form_not_ready'
+        && neverSave?.clicks === 0
+        && unchanged;
+      const payload = basePayload({
+        ok,
+        reason: ok ? 'ambiguous_fail_closed' : (fill?.reason || 'ambiguous_fail_closed_mismatch'),
+        surface: 'synthetic-ambiguous-fixture',
+        liveEdge: false,
+        formFillClaimed: false,
+        fill,
+        neverSave,
+        audit,
+        unchanged
+      });
+      const written = writeEvidence('ambiguous', payload);
+      socket.close();
+      return { payload, written };
+    }
 
     const neighbor = await evaluate(send, `(() => {
       const item = [...document.querySelectorAll('.bs-form-item')].find((node) => {
@@ -259,7 +340,8 @@ async function runSynthetic(mode) {
       && fill?.saved === false
       && fill?.skippedSave === true
       && neighbor?.value === '0'
-      && saveClicks?.saveDisabled === true;
+      && saveClicks?.saveDisabled === true
+      && neverSave?.clicks === 0;
 
     const payload = basePayload({
       ok,
@@ -269,7 +351,8 @@ async function runSynthetic(mode) {
       probe,
       fill,
       neighbor,
-      saveGuard: saveClicks
+      saveGuard: saveClicks,
+      neverSave
     });
     const written = writeEvidence('fill', payload);
     socket.close();
@@ -325,6 +408,7 @@ function printHelp() {
   Prefer offline:
     MODE=fill node scripts/auto-beisen-2022-basic.mjs --synthetic
     MODE=readiness node scripts/auto-beisen-2022-basic.mjs --synthetic
+    MODE=fill node scripts/auto-beisen-2022-basic.mjs --synthetic --case ambiguous
   Live portal fingerprint only (no fill claim):
     MODE=readiness node scripts/auto-beisen-2022-basic.mjs --live
     Extension path (Edge + SW message BEISEN_2022_BASIC_AUTO):
@@ -378,7 +462,7 @@ async function main() {
       process.exit(payload.ok ? 0 : 2);
     }
 
-    const { payload, written } = await runSynthetic(mode);
+    const { payload, written } = await runSynthetic(mode, args.caseName || 'ready');
     console.log(JSON.stringify({ event: 'saved', ...written, ok: payload.ok, reason: payload.reason, mode }, null, 2));
     process.exit(payload.ok ? 0 : 2);
   } catch (error) {

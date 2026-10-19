@@ -1,3 +1,5 @@
+import { requestBackground } from './bg-request.mjs';
+
 // Internal one-shot helper: no toolbar popup. Readiness or fill-without-save.
 const params = new URLSearchParams(location.search);
 const mode = params.get('mode') || 'readiness';
@@ -51,7 +53,7 @@ if (mode === 'reload') {
   show(`正在请求后台 GTH_INTENT_AUTO（mode=${autoMode}）…`, { openIfMissing, reportPort });
   await postEvent('auto_begin', { autoMode, openIfMissing });
   try {
-    const result = await chrome.runtime.sendMessage({
+    const result = await requestBackground({
       type: 'GTH_INTENT_AUTO',
       mode: autoMode,
       openIfMissing,

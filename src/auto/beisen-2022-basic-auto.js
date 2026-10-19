@@ -1,3 +1,5 @@
+import { requestBackground } from './bg-request.mjs';
+
 // Internal one-shot helper: no toolbar popup. Default fill; readiness optional.
 const params = new URLSearchParams(location.search);
 const mode = params.get('mode') || 'fill';
@@ -61,7 +63,7 @@ if (mode === 'reload') {
       originConfirmed: true
     };
     if (targetPage) message.targetPage = targetPage;
-    const result = await chrome.runtime.sendMessage(message);
+    const result = await requestBackground(message);
     if (result == null) {
       const payload = {
         ok: false,

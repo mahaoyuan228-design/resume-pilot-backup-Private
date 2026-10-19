@@ -1,3 +1,5 @@
+import { requestBackground } from './bg-request.mjs';
+
 // Internal one-shot helper: no toolbar popup. Readiness or fill-without-save.
 const params = new URLSearchParams(location.search);
 const mode = params.get('mode') || 'readiness';
@@ -62,7 +64,7 @@ if (mode === 'reload') {
       originConfirmed: true
     };
     if (cmsPage) message.cmsPage = cmsPage;
-    const result = await chrome.runtime.sendMessage(message);
+    const result = await requestBackground(message);
     if (result == null) {
       const payload = {
         ok: false,

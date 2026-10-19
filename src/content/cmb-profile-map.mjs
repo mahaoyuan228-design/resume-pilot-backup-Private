@@ -20,6 +20,9 @@
 
 import {
   CMB_BIRTHDATE_HINT,
+  CMB_EDUCATION_LEVEL_OPTIONS,
+  CMB_EDUCATION_LEVEL_LIST_ID,
+  CMB_EDUCATION_LEVEL_SELECT_ID,
   CMB_ETHNICITY_OPTIONS,
   CMB_ID_CARD_TYPE_OPTIONS,
   CMB_ID_CARD_TYPE_LIST_ID,
@@ -31,6 +34,9 @@ import {
 
 export {
   CMB_BIRTHDATE_HINT,
+  CMB_EDUCATION_LEVEL_OPTIONS,
+  CMB_EDUCATION_LEVEL_LIST_ID,
+  CMB_EDUCATION_LEVEL_SELECT_ID,
   CMB_ETHNICITY_OPTIONS,
   CMB_ID_CARD_TYPE_OPTIONS,
   CMB_ID_CARD_TYPE_LIST_ID,
@@ -73,6 +79,7 @@ export const CMB_MARITAL_LABEL = '婚姻状况';
 export const CMB_POLITICS_LABEL = '政治面貌';
 export const CMB_ETHNICITY_LABEL = '民族';
 export const CMB_ID_CARD_TYPE_LABEL = '证件类型';
+export const CMB_EDUCATION_LEVEL_LABEL = '学历';
 
 /**
  * Optional radio. Canonical label is 是否参加过正式工作.
@@ -114,6 +121,9 @@ function normMeasure(value) {
  * Id card type is caller-supplied (`idCardType`). It is not an emptyProfile field.
  * The select id is the harvested resume_basicInfo_idCardType. Live click is not claimed.
  * 证件号 (resume_basicInfo_idCard) is not planned or filled.
+ * Education level is caller-supplied (`educationLevel`). It is not an emptyProfile field.
+ * The allowlist drops dict code ED000. The select id is the harvested row-0 id.
+ * School name and the other education-row controls are not planned or filled.
  * Birth date is never filled here. A present birthDate is a blocker with
  * reason datepicker_hint_only (confirmed) and is not written.
  */
@@ -149,6 +159,7 @@ export function planCmbBasicFromProfile(profile) {
   const politicsRaw = normMeasure(profile.politics || '');
   const ethnicityRaw = normMeasure(profile.ethnicity || '');
   const idCardTypeRaw = normMeasure(profile.idCardType || '');
+  const educationLevelRaw = normMeasure(profile.educationLevel || '');
   const birthRaw = normMeasure(profile.birthDate || '');
 
   const core = [
@@ -237,6 +248,7 @@ export function planCmbBasicFromProfile(profile) {
   const politicsFields = codedFields(politicsRaw, 'politics', CMB_POLITICS_LABEL, CMB_POLITICS_OPTIONS);
   const ethnicityFields = codedFields(ethnicityRaw, 'ethnicity', CMB_ETHNICITY_LABEL, CMB_ETHNICITY_OPTIONS);
   const idCardTypeFields = codedFields(idCardTypeRaw, 'idCardType', CMB_ID_CARD_TYPE_LABEL, CMB_ID_CARD_TYPE_OPTIONS);
+  const educationLevelFields = codedFields(educationLevelRaw, 'educationLevel', CMB_EDUCATION_LEVEL_LABEL, CMB_EDUCATION_LEVEL_OPTIONS);
   const birthFields = [];
   if (birthRaw) {
     birthFields.push({
@@ -260,6 +272,7 @@ export function planCmbBasicFromProfile(profile) {
     ...politicsFields,
     ...ethnicityFields,
     ...idCardTypeFields,
+    ...educationLevelFields,
     ...birthFields
   ];
   const coreBlockers = core.filter((row) => !row.ready);
@@ -271,6 +284,7 @@ export function planCmbBasicFromProfile(profile) {
   const politicsBlockers = politicsFields.filter((row) => !row.ready);
   const ethnicityBlockers = ethnicityFields.filter((row) => !row.ready);
   const idCardTypeBlockers = idCardTypeFields.filter((row) => !row.ready);
+  const educationLevelBlockers = educationLevelFields.filter((row) => !row.ready);
   const birthBlockers = birthFields.filter((row) => !row.ready);
   const optionalBlockers = [
     ...genderBlockers,
@@ -281,6 +295,7 @@ export function planCmbBasicFromProfile(profile) {
     ...politicsBlockers,
     ...ethnicityBlockers,
     ...idCardTypeBlockers,
+    ...educationLevelBlockers,
     ...birthBlockers
   ];
   if (coreBlockers.length) {
@@ -301,10 +316,11 @@ export function planCmbBasicFromProfile(profile) {
   const politics = politicsFields.find((row) => row.ready)?.value || '';
   const ethnicity = ethnicityFields.find((row) => row.ready)?.value || '';
   const idCardType = idCardTypeFields.find((row) => row.ready)?.value || '';
+  const educationLevel = educationLevelFields.find((row) => row.ready)?.value || '';
   return {
     ok: true,
     reason: 'profile_ready',
-    values: { fullName, mobile, email, gender, height, weight, formalWork, maritalStatus, politics, ethnicity, idCardType },
+    values: { fullName, mobile, email, gender, height, weight, formalWork, maritalStatus, politics, ethnicity, idCardType, educationLevel },
     fields,
     blockers: optionalBlockers,
     birthDateHint: CMB_BIRTHDATE_HINT
@@ -353,6 +369,10 @@ export function isCmbEthnicityLabel(raw) {
 
 export function isCmbIdCardTypeLabel(raw) {
   return normalizeCmbLabelText(normMeasure(raw)) === CMB_ID_CARD_TYPE_LABEL;
+}
+
+export function isCmbEducationLevelLabel(raw) {
+  return normalizeCmbLabelText(normMeasure(raw)) === CMB_EDUCATION_LEVEL_LABEL;
 }
 
 export function isCmbBirthDateLabel(raw) {

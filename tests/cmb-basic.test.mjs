@@ -18,6 +18,9 @@ import {
   CMB_FORMAL_WORK_LABEL,
   CMB_FORMAL_WORK_VALUES,
   CMB_BIRTHDATE_HINT,
+  CMB_EDUCATION_LEVEL_LIST_ID,
+  CMB_EDUCATION_LEVEL_OPTIONS,
+  CMB_EDUCATION_LEVEL_SELECT_ID,
   CMB_ETHNICITY_OPTIONS,
   CMB_ID_CARD_TYPE_LIST_ID,
   CMB_ID_CARD_TYPE_OPTIONS,
@@ -25,6 +28,7 @@ import {
   CMB_MARITAL_OPTIONS,
   CMB_POLITICS_OPTIONS,
   isCmbHeightLabel,
+  isCmbEducationLevelLabel,
   isCmbIdCardTypeLabel,
   isCmbWeightLabel,
   isCmbMaritalLabel,
@@ -666,6 +670,7 @@ test('harvested gated dicts match the live evidence and are not invented', () =>
   assert.deepEqual(parsed.politics, [...CMB_POLITICS_OPTIONS]);
   assert.deepEqual(parsed.ethnicity, [...CMB_ETHNICITY_OPTIONS]);
   assert.deepEqual(parsed.idCardType, [...CMB_ID_CARD_TYPE_OPTIONS]);
+  assert.deepEqual(parsed.educationLevel, [...CMB_EDUCATION_LEVEL_OPTIONS]);
 
   assert.match(fixture, /id="resume_basicInfo_maritalStatus"/);
   assert.match(fixture, /id="resume_basicInfo_politicalAffinity"/);
@@ -702,6 +707,7 @@ test('gated select plan maps harvested text or code and does not fill birth date
   assert.equal(absent.values.politics, '');
   assert.equal(absent.values.ethnicity, '');
   assert.equal(absent.values.idCardType, '');
+  assert.equal(absent.values.educationLevel, '');
   assert.equal(absent.fields.some((row) => row.path === 'birthDate'), false);
 
   const ready = planCmbBasicFromProfile({
@@ -915,6 +921,77 @@ test('synthetic harness id card type select maps text and code and --live still 
   assert.equal(refused.liveSelectFillClaimed, false);
   assert.equal(refused.formFillClaimed, false);
   assert.equal(refused.selectIdStatus, undefined);
+});
+
+test('Education options drop ED000 and use the harvested row-0 select id', () => {
+  const full = JSON.parse(readFileSync(resolve(root, 'dist/site-probes/cmb-dictmap-full-20261019.json'), 'utf8'));
+  const dom = JSON.parse(readFileSync(resolve(root, 'dist/site-probes/cmb-remaining-dom-ids-20261019.json'), 'utf8'));
+  assert.equal(dom.neverSave, true);
+  assert.equal(dom.resumeIdCount, 67);
+  assert.equal(dom.resumeIds.includes('resume_educationHistoryList_0_educationLevelCode'), true);
+  assert.equal(dom.resumeIds.some((id) => /ranking|RankingMajor/i.test(id)), false);
+  const hint = dom.labelHints.find((row) => row.label === '学历');
+  assert.equal(hint.inputId, CMB_EDUCATION_LEVEL_SELECT_ID);
+  assert.equal(hint.ariaControls, CMB_EDUCATION_LEVEL_LIST_ID);
+  const kept = full.dicts.Education.filter((row) => row.code !== 'ED000' && row.name !== '请选择');
+  assert.equal(kept.length, 7);
+  assert.deepEqual(
+    [...CMB_EDUCATION_LEVEL_OPTIONS],
+    kept.map((row) => ({ text: row.name, code: row.code }))
+  );
+  assert.equal(CMB_EDUCATION_LEVEL_OPTIONS.some((row) => row.code === 'ED000' || row.text === '博士后'), false);
+  assert.equal(resolveCmbCodedOption(CMB_EDUCATION_LEVEL_OPTIONS, 'ED000'), null);
+  assert.equal(resolveCmbCodedOption(CMB_EDUCATION_LEVEL_OPTIONS, '博士后'), null);
+  assert.equal(resolveCmbCodedOption(CMB_EDUCATION_LEVEL_OPTIONS, '请选择'), null);
+  assert.equal(resolveCmbCodedOption(CMB_EDUCATION_LEVEL_OPTIONS, '研究生'), null);
+  assert.equal(resolveCmbCodedOption(CMB_EDUCATION_LEVEL_OPTIONS, 'ED004')?.text, '本科');
+  assert.equal(resolveCmbCodedOption(CMB_EDUCATION_LEVEL_OPTIONS, '中技(中专/技校/职高)')?.code, 'ED006');
+  assert.equal(resolveCmbCodedOption(CMB_EDUCATION_LEVEL_OPTIONS, '硕士研究生')?.code, 'ED003');
+  assert.match(fixture, /id="resume_educationHistoryList_0_educationLevelCode"/);
+  assert.match(fixture, /id="resume_educationHistoryList_0_educationLevelCode_list"/);
+  assert.doesNotMatch(fixture, /data-code="ED000"/);
+  assert.doesNotMatch(fixture, /博士后/);
+  assert.equal((fixture.match(/data-code="ED/g) || []).length, 7);
+  assert.doesNotMatch(fixture, /id="resume_educationHistoryList_0_educationLevelCode"[^>]*show-search/);
+  assert.match(source, /fillEducationLevel/);
+  assert.match(source, /invalid_education_level/);
+  assert.match(harness, /live_education_level_select_fill_unclaimed/);
+  assert.equal(isCmbEducationLevelLabel('学历'), true);
+  assert.equal(isCmbEducationLevelLabel('学校名称'), false);
+  const store = readFileSync(resolve(root, 'src/profile/store.js'), 'utf8');
+  assert.doesNotMatch(store, /educationLevel/);
+  const base = {
+    fullName: '测试甲',
+    phone: '13800138000',
+    email: 'cmb.user@example.com',
+    confirmedFields: ['fullName', 'phone', 'email', 'educationLevel']
+  };
+  const ready = planCmbBasicFromProfile({ ...base, educationLevel: ' ED004 ' });
+  assert.equal(ready.values.educationLevel, '本科');
+  assert.equal(ready.fields.find((row) => row.path === 'educationLevel')?.code, 'ED004');
+  const dropped = planCmbBasicFromProfile({ ...base, educationLevel: '博士后' });
+  assert.equal(dropped.values.educationLevel, '');
+  assert.equal(dropped.blockers.find((row) => row.path === 'educationLevel')?.reason, 'invalid_profile_value');
+});
+
+test('synthetic harness education select maps text and code and --live refuses the click', { timeout: 120000 }, () => {
+  assertGatedSelectKnife(
+    '学历',
+    'live_education_level_select_fill_unclaimed',
+    'synthetic_education_select_pass',
+    'cmb-education-select-latest.json',
+    '硕士研究生',
+    'ED003'
+  );
+  const payload = JSON.parse(readFileSync(resolve(root, 'dist/auto-runs/cmb-education-select-latest.json'), 'utf8'));
+  assert.equal(payload.optionListHarvested, true);
+  assert.equal(payload.liveSelectFillClaimed, false);
+  assert.equal(payload.formFillClaimed, false);
+  assert.equal(payload.neighbor?.idNumber, '');
+  assert.equal(payload.neighbor?.idCard?.text, '');
+  assert.equal(payload.byText?.after, '本科');
+  assert.equal(payload.byText?.afterCode, 'ED004');
+  assert.equal(payload.explicitInvalid?.reason, 'invalid_education_level');
 });
 
 test('birth date knife records the DatePicker hint and does not write', () => {

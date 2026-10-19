@@ -324,6 +324,32 @@
           </div>
         </div>
 
+        <!--
+          Education row 0 only. Options are Education minus placeholder ED000.
+          Ids harvested 2026-10-19. Select root class was not captured, so this
+          stand-in is non-search, same shape as 婚姻状况. Option rows are synthetic.
+          --live refuses live_education_level_select_fill_unclaimed.
+          School name and the other education controls are not in this fixture.
+          Never Save. 招行 is not supported.
+        -->
+        <div class="ant-form-item" data-field="学历" data-dom="synthetic-harvested-options">
+          <div class="ant-form-item-label"><label for="resume_educationHistoryList_0_educationLevelCode">学历</label></div>
+          <div class="ant-form-item-control">
+            <div class="ant-select" id="resume_educationHistoryList_0_educationLevelCode">
+              <div class="ant-select-selector"><span class="ant-select-selection-item" data-code=""></span></div>
+              <div class="ant-select-dropdown" id="resume_educationHistoryList_0_educationLevelCode_list" role="listbox">
+          <div class="ant-select-item-option" role="option" data-code="ED001" aria-selected="false">博士研究生</div>
+          <div class="ant-select-item-option" role="option" data-code="ED002" aria-selected="false">MBA</div>
+          <div class="ant-select-item-option" role="option" data-code="ED003" aria-selected="false">硕士研究生</div>
+          <div class="ant-select-item-option" role="option" data-code="ED004" aria-selected="false">本科</div>
+          <div class="ant-select-item-option" role="option" data-code="ED005" aria-selected="false">大专</div>
+          <div class="ant-select-item-option" role="option" data-code="ED006" aria-selected="false">中技（中专/技校/职高）</div>
+          <div class="ant-select-item-option" role="option" data-code="ED007" aria-selected="false">高中</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
         <div class="ant-form-item" data-field="证件号" data-dom="harvested-text-not-filled">
           <div class="ant-form-item-label"><label for="resume_basicInfo_idCard">证件号</label></div>
           <div class="ant-form-item-control">

@@ -121,6 +121,25 @@ export const CMB_ID_CARD_TYPE_OPTIONS = Object.freeze([
 export const CMB_ID_CARD_TYPE_SELECT_ID = 'resume_basicInfo_idCardType';
 export const CMB_ID_CARD_TYPE_LIST_ID = 'resume_basicInfo_idCardType_list';
 
+/**
+ * Education from cmb-dictmap-full-20261019.json.
+ * ED000（博士后）is dropped as a placeholder. Text+code only.
+ * Only education history row 0 was harvested.
+ */
+export const CMB_EDUCATION_LEVEL_OPTIONS = Object.freeze([
+  Object.freeze({"text":"博士研究生","code":"ED001"}),
+  Object.freeze({"text":"MBA","code":"ED002"}),
+  Object.freeze({"text":"硕士研究生","code":"ED003"}),
+  Object.freeze({"text":"本科","code":"ED004"}),
+  Object.freeze({"text":"大专","code":"ED005"}),
+  Object.freeze({"text":"中技（中专/技校/职高）","code":"ED006"}),
+  Object.freeze({"text":"高中","code":"ED007"})
+]);
+
+/** Harvested 2026-10-19. List id comes from aria-controls. Live click is not claimed. */
+export const CMB_EDUCATION_LEVEL_SELECT_ID = 'resume_educationHistoryList_0_educationLevelCode';
+export const CMB_EDUCATION_LEVEL_LIST_ID = 'resume_educationHistoryList_0_educationLevelCode_list';
+
 /** Kind + fill hint only. No synthetic DatePicker DOM. */
 export const CMB_BIRTHDATE_HINT = Object.freeze({
   key: 'birthDate',
@@ -138,6 +157,6 @@ export const CMB_BIRTHDATE_HINT = Object.freeze({
 export function resolveCmbCodedOption(options, raw) {
   const text = norm(raw);
   if (!text || text === '请选择') return null;
-  const hit = options.find((row) => row.text === text || row.code === text);
+  const hit = options.find((row) => norm(row.text) === text || row.code === text);
   return hit ? { text: hit.text, code: hit.code } : null;
 }

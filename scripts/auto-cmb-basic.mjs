@@ -10,6 +10,7 @@ import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import {
   isCmbBirthDateLabel,
+  isCmbEducationLevelLabel,
   isCmbEthnicityLabel,
   isCmbIdCardTypeLabel,
   isCmbHeightLabel,
@@ -152,6 +153,17 @@ const GATED_SPECS = {
     liveReason: 'live_id_card_type_select_fill_unclaimed',
     first: { text: '身份证', code: 'ID001' },
     second: { text: '台胞证', code: 'ID0011' }
+  },
+  education: {
+    label: '学历',
+    fn: 'fillEducationLevel',
+    path: 'educationLevel',
+    selectId: 'resume_educationHistoryList_0_educationLevelCode',
+    invalid: '研究生',
+    explicitReason: 'invalid_education_level',
+    liveReason: 'live_education_level_select_fill_unclaimed',
+    first: { text: '本科', code: 'ED004' },
+    second: { text: '硕士研究生', code: 'ED003' }
   }
 };
 
@@ -165,6 +177,7 @@ function onlyKind(value) {
   if (isCmbPoliticsLabel(text)) return 'politics';
   if (isCmbEthnicityLabel(text)) return 'ethnicity';
   if (isCmbIdCardTypeLabel(text)) return 'idCard';
+  if (isCmbEducationLevelLabel(text)) return 'education';
   if (isCmbBirthDateLabel(text)) return 'birthDate';
   return '';
 }
@@ -1131,6 +1144,7 @@ async function runSyntheticGated(kind) {
         politics: read('resume_basicInfo_politicalAffinity'),
         ethnicity: read('resume_basicInfo_nation'),
         idCard: read('resume_basicInfo_idCardType'),
+        education: read('resume_educationHistoryList_0_educationLevelCode'),
         idNumber: document.getElementById('resume_basicInfo_idCard')?.value ?? null,
         genderChecked: checkedValues('性别'),
         workedChecked: checkedValues('是否参加过正式工作'),
@@ -1149,7 +1163,7 @@ async function runSyntheticGated(kind) {
       confirmedFields: ['fullName', 'phone', 'email', ${JSON.stringify(spec.path)}, 'birthDate']
     })`);
     const fieldResult = basic?.results?.find((row) => row.label === spec.label);
-    const othersEmpty = ['marital', 'politics', 'ethnicity', 'idCard'].every((name) => {
+    const othersEmpty = ['marital', 'politics', 'ethnicity', 'idCard', 'education'].every((name) => {
       const row = neighbor?.[name];
       if (name === kind) return row?.text === spec.second.text && row?.code === spec.second.code;
       return row?.text === '' && row?.code === '';
@@ -1248,6 +1262,7 @@ function printHelp() {
     node scripts/auto-cmb-basic.mjs --only 政治面貌
     node scripts/auto-cmb-basic.mjs --only 民族
     node scripts/auto-cmb-basic.mjs --only 证件类型
+    node scripts/auto-cmb-basic.mjs --only 学历
     node scripts/auto-cmb-basic.mjs --only 出生日期
   Gender is offline synthetic only. Live radio DOM is not harvested.
   Formal work (是否参加过正式工作) is offline synthetic radio only. Options are field-map 是/否.
@@ -1261,6 +1276,8 @@ function printHelp() {
   证件类型 uses harvested id resume_basicInfo_idCardType and IdCardType text+code.
   The select has no show-search. 证件号 is not filled.
   --only 证件类型 --live still refuses live_id_card_type_select_fill_unclaimed.
+  学历 uses harvested row-0 id resume_educationHistoryList_0_educationLevelCode.
+  ED000 is excluded. --only 学历 --live refuses live_education_level_select_fill_unclaimed.
   Live portal fingerprint only (no fill claim):
     MODE=readiness node scripts/auto-cmb-basic.mjs --live
     Extension path (Edge + SW message CMB_BASIC_AUTO):
@@ -1291,7 +1308,7 @@ async function main() {
   }
   const kind = args.only == null ? '' : onlyKind(args.only);
   if (args.only != null && !kind) {
-    console.error('Only 性别, 是否参加过正式工作, 身高, 体重, 婚姻状况, 政治面貌, 民族, 证件类型, and 出生日期 are in this knife.');
+    console.error('Only 性别, 是否参加过正式工作, 身高, 体重, 婚姻状况, 政治面貌, 民族, 证件类型, 学历, and 出生日期 are in this knife.');
     process.exit(2);
   }
   if (kind === 'height' && args.live && !args.synthetic) {

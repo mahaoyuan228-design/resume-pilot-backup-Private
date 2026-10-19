@@ -15,7 +15,7 @@ Birth date is not in this map. It stays the harvested DatePicker hint (`resume_b
 | Nation | 57 | 0 | ethnicity select (offline; harvested DOM id resume_basicInfo_nation) |
 | MaritalStatus | 5 | 1 | marital select (offline; 请选择 dropped; harvested DOM id resume_basicInfo_maritalStatus) |
 | EnglishLevel | 10 | 0 | unwired |
-| Education | 8 | 0 | unwired |
+| Education | 8 | 0 | offline select on row 0; ED000 dropped; `--live` refuses `live_education_level_select_fill_unclaimed` |
 | RelationshipType | 8 | 0 | unwired |
 | InterviewCity | 44 | 0 | unwired |
 | AwardsLevel | 5 | 0 | unwired |

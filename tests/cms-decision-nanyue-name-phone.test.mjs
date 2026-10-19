@@ -1,5 +1,5 @@
 /**
- * cmsDecision name/phone/major gates proven on 南粤 (2026-10-19).
+ * CMS name/phone/major gates and offline education 学历 identity regressions.
  * No live DOM. Never Save. Acceptance stays 85%.
  */
 import test from 'node:test';
@@ -49,6 +49,10 @@ class InputEl extends El {
 }
 
 function matches(node, selector) {
+  if (selector.includes(' ')) {
+    const parts = selector.split(/\s+/u);
+    return matches(node, parts.pop()) && !!node.parent?.closest(parts.join(' '));
+  }
   if (selector === 'input') return node.tagName === 'INPUT';
   if (selector === 'label') return node.tagName === 'LABEL';
   if (selector === 'textarea') return node.tagName === 'TEXTAREA';
@@ -68,6 +72,11 @@ function queryAll(root, selector) {
   const sel = selector.trim();
   if (sel.startsWith(':scope > ')) {
     const rest = sel.slice(':scope > '.length);
+    if (rest.includes(' > ')) {
+      const [childSel, ...remaining] = rest.split(' > ');
+      return root.children.filter((child) => matches(child, childSel))
+        .flatMap((child) => queryAll(child, ':scope > ' + remaining.join(' > ')));
+    }
     if (!rest.includes(' ')) return root.children.filter((child) => matches(child, rest));
     const [childSel, descSel] = rest.split(/\s+/u);
     return root.children.filter((child) => matches(child, childSel))
@@ -118,7 +127,7 @@ function extractFunction(src, name) {
     if (src[i] === '{') depth += 1;
     else if (src[i] === '}') {
       depth -= 1;
-      if (depth === 0) return src.slice(start, i + 1);
+      if (depth === 0) return src.slice(src.slice(start - 6, start) === 'async ' ? start - 6 : start, i + 1);
     }
   }
   throw new Error(`unclosed ${name}`);
@@ -153,6 +162,142 @@ function loadCmsFns() {
 }
 
 const { cmsDecision, markDuplicateTargets } = loadCmsFns();
+
+// Abstract unit doubles reuse the existing Ant v3/row shape above. They are
+// not a captured employer DOM; unrelated adapters are disabled. Exercise the
+// production collect -> fill loop so an unbound field can still fail by ID.
+function selectPage({ rows = 1, dedicated = false, duplicateId = '' } = {}) {
+  const makeSelect = () => el('div', {
+    className: 'ant-select-selection ant-select-selection--single',
+    children: [el('span', { className: 'ant-select-selection-selected-value', text: '本科' })]
+  });
+  const makeRow = () => {
+    const control = makeSelect();
+    control.id = duplicateId;
+    const item = field('学历*').item;
+    item.children[1] = control;
+    control.parent = item;
+    return { control, row: el('div', { className: 'form-cell-inner', children: [item] }) };
+  };
+  const basicRow = makeRow();
+  const educationRows = Array.from({ length: rows }, makeRow);
+  const makeSection = (name, items) => {
+    const element = el('section', { className: 'form-cell', children: [
+      el('div', { className: 'form-cell-right', children: items.map(item => item.row) })
+    ] });
+    element.section = { name, element };
+    return element;
+  };
+  const basic = makeSection('个人基本信息必填', [basicRow]);
+  const education = makeSection('教育经历必填', educationRows);
+  education.dedicated = dedicated;
+  const form = el('form', { children: [basic, education] });
+  form.isConnected = true;
+  const controls = [basicRow.control, ...educationRows.map(item => item.control)];
+  controls.forEach(control => { control.isConnected = true; });
+  const doc = {
+    body: form, title: 'offline unit double',
+    querySelectorAll: selector => selector === 'input,select,textarea' ? []
+      : selector === '.ant-form-item .ant-select-selection--single' ? controls : []
+  };
+  const sectionOf = control => control.closest('.form-cell')?.section;
+  const specOf = control => sectionOf(control)?.name === '个人基本信息必填'
+    ? { alias: '__cms_basic_education_level', sectionName: '个人基本信息必填', rowContext: 'single' } : null;
+  const disabled = () => false;
+  const src = fs.readFileSync(path.join(root, 'src/content/engine.js'), 'utf8');
+  const names = ['collect', 'formItemQuestion', 'labelTexts', 'fieldId', 'profileValue', 'cmsAntV3Answer', 'logicalEntryKey',
+    'entrySignature', 'entryScope', 'publicEntry', 'meaningfulCurrent', 'exactOptionText', 'fillOwnedContent'];
+  const deps = {
+    M, cmsDecision, markDuplicateTargets,
+    visible: () => true, cmsAntV3InnerSearch: disabled, cmsRegionControl: disabled,
+    cmsCheckboxControl: disabled, namedSection: () => null, cmsSection: sectionOf,
+    cmsDedicatedRecordKind: control => control.closest('.form-cell')?.dedicated ? 'education' : null,
+    sectionDecision: () => ({}), repeatContext: () => null, antDegreeControl: disabled,
+    cmbAntV4Control: disabled, cmsAntV3Control: control => controls.includes(control),
+    cmsSchoolSearchControl: disabled, cmsBirthDateControl: disabled, cmsEducationDateControl: disabled,
+    cmsScopedAcademicSelectSpec: specOf, cmsScopedSimpleInputSpec: () => null,
+    cmsAssignmentRadioControl: disabled, cmsCustomSingleSelect: disabled,
+    cmsScopedAcademicAnswer: profile => ({ path: 'customAnswers.__cms_basic_education_level',
+      value: profile.customAnswers.__cms_basic_education_level }),
+    cmsMappedOptionAnswer: (_profile, fact) => fact,
+    customQuestionScope: control => ({ sectionName: sectionOf(control).name,
+      rowContext: sectionOf(control).name === '个人基本信息必填' || rows === 1 ? 'single' : 'multiple' }),
+    controlConstraint: () => null, antSelectControl: disabled,
+    CMS_DEDICATED_RECORD_QUESTIONS: { education: new Set(['学历']) },
+    REPEAT_KEYS: { education: { collection: 'education', degree: 'degree' } },
+    CMS_PHOTO_PAGE: 'https://wecruit.hotjob.cn/SU629dbc0c0dcad452299bc0f7/pb/resumeOperation.html',
+    location: { href: 'https://offline.invalid/', origin: 'https://offline.invalid', pathname: '/' },
+    document: doc, requireVisibleFillPage() {}, ensureRepeatRows: async () => [],
+    fillCmsPhotos: async () => [], currentValidationGaps: () => null, cmsUncollectedQuestions: () => [],
+    // Any attempt to fill a widget, save, submit, or otherwise write is an error.
+    setBoundNativeValue: async () => { throw Error('unexpected_write'); }
+  };
+  const api = new Function(...Object.keys(deps), names.map(name => extractFunction(src, name)).join('\n')
+    + '\nreturn { collect, fillOwnedContent };')(...Object.values(deps));
+  const profile = { customAnswers: { __cms_basic_education_level: '硕士研究生' },
+    education: [{ degree: '硕士研究生' }], confirmedFields: ['education.0.degree'] };
+  return { ...api, profile, controls };
+}
+
+async function fillOffline(page) {
+  globalThis.HTMLSelectElement = class HTMLSelectElement extends El {};
+  globalThis.ResumeProfileWriteContext = { async check(write = true) {
+    assert.equal(write, false, 'Never Save / no field writes in these readback cases');
+  } };
+  try { return await page.fillOwnedContent(page.profile); }
+  finally { delete globalThis.ResumeProfileWriteContext; }
+}
+
+test('basic 学历 already bound: one education 学历 keeps education.0.degree', async () => {
+  const page = selectPage();
+  globalThis.HTMLSelectElement = class HTMLSelectElement extends El {};
+  const entries = page.collect(page.profile);
+  assert.equal(entries[0].path, 'customAnswers.__cms_basic_education_level');
+  assert.equal(entries[1].path, 'education.0.degree');
+  const result = await fillOffline(page);
+  assert.deepEqual(result.fields.map(field => [field.path, field.status, field.reason]), [
+    ['customAnswers.__cms_basic_education_level', 'skipped', 'existing_value'],
+    ['education.0.degree', 'skipped', 'existing_value']
+  ]);
+});
+
+for (const dedicated of [false, true]) {
+  test(`repeated unnamed education 学历 yields without duplicate_target (dedicated=${dedicated})`, async () => {
+    const page = selectPage({ rows: 2, dedicated });
+    const result = await fillOffline(page);
+    for (const field of result.fields.slice(1)) {
+      assert.equal(field.path, undefined);
+      assert.equal(field.reason, dedicated ? 'cms_record_requires_explicit_binding' : 'ambiguous_repeat_group');
+      assert.equal(field.status, 'skipped');
+    }
+    assert.equal(result.fields.length, 3);
+  });
+}
+
+test('explicit duplicate DOM IDs and confirmed paths still fail closed', async () => {
+  const page = selectPage({ rows: 2, duplicateId: 'real-duplicate' });
+  const result = await fillOffline(page);
+  assert.equal(result.fields[1].id, 'real-duplicate');
+  assert.equal(result.fields[1].status, 'failed');
+  assert.equal(result.fields[1].reason, 'duplicate_target');
+  const entries = markDuplicateTargets([
+    { path: 'education.0.degree', reason: 'ready' },
+    { path: 'education.0.degree', reason: 'ready' }
+  ]);
+  assert.equal(entries.every(entry => entry.reason === 'duplicate_target'), true);
+});
+
+for (const reason of ['missing_profile_value', 'unconfirmed_profile_value']) {
+  test(`education 学历 never borrows the basic alias when ${reason}`, async () => {
+    const page = selectPage();
+    if (reason === 'missing_profile_value') page.profile.education = [];
+    else page.profile.confirmedFields = [];
+    const result = await fillOffline(page);
+    assert.equal(result.fields[1].path, 'education.0.degree');
+    assert.equal(result.fields[1].reason, reason);
+    assert.equal(result.fields[1].status, 'skipped');
+  });
+}
 
 function educationMajorEntry(control, section) {
   const decision = cmsDecision(control, 'major', section);

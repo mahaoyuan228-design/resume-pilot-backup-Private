@@ -829,7 +829,9 @@
       const cmsAcademic = cmsScopedAcademicSelectSpec(control);
       const cmsSimple = cmsScopedSimpleInputSpec(control);
       const cmsAssignment = cmsAssignmentRadioControl(control);
-      const result = { id: cmsSimple ? `cms-scoped-input-${cmsSimple.alias}` : cmsCheckbox ? 'cms-checkbox-research-scoped' : cmsAcademic ? `cms-academic-${cmsAcademic.alias}` : cmsSelect ? (control.id || `cms-ant-v3-${M.normalize(labels[0])}`) : fieldId(control, position), labels, kind: cmsCheckbox?'cms_checkbox_group':cmsRegion?'cms_region':radio ? "radio" : degreeSelect ? "ant_degree_select" : cmbSelect ? "cmb_ant_v4_select" : cmsSchool ? "cms_school_search" : cmsSelect ? "cms_ant_v3_select" : cmsBirthDate ? "cms_birth_date" : cmsEducationDate ? "cms_education_date" : antSelectControl(control) ? "ant_select" : control.tagName.toLowerCase(), key, context, scope: customQuestionScope(control), control, radioOptions, antUnnamedRadio: !!group?.antUnnamed };
+      // Repeated unbound selects (e.g. education 学历 behind a row gate) must
+      // not share a label-only ID. Confirmed paths still drive collision checks.
+      const result = { id: cmsSimple ? `cms-scoped-input-${cmsSimple.alias}` : cmsCheckbox ? 'cms-checkbox-research-scoped' : cmsAcademic ? `cms-academic-${cmsAcademic.alias}` : cmsSelect ? (control.id || `cms-ant-v3-${M.normalize(labels[0])}-${position}`) : fieldId(control, position), labels, kind: cmsCheckbox?'cms_checkbox_group':cmsRegion?'cms_region':radio ? "radio" : degreeSelect ? "ant_degree_select" : cmbSelect ? "cmb_ant_v4_select" : cmsSchool ? "cms_school_search" : cmsSelect ? "cms_ant_v3_select" : cmsBirthDate ? "cms_birth_date" : cmsEducationDate ? "cms_education_date" : antSelectControl(control) ? "ant_select" : control.tagName.toLowerCase(), key, context, scope: customQuestionScope(control), control, radioOptions, antUnnamedRadio: !!group?.antUnnamed };
       if (dedicatedRecordKind) {
         result.dedicatedRecordKind = dedicatedRecordKind;
         const question = M.normalize(formItemQuestion(control.closest(".ant-form-item"))?.textContent);

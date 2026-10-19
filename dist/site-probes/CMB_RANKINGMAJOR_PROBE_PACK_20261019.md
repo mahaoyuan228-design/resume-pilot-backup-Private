@@ -19,3 +19,6 @@
 | `PROBE_INCONCLUSIVE` | 加载未完/范围不可读/证据不足 |
 
 隐藏/禁用 ≠ 缺失。存在性通过 ≠ 已支持；接线须另开刀+独立交互证据。
+
+## Codex U 对照（2026-10-19）
+草稿步骤与上表一致方向。判定码仍用本包四码；Codex `CONTROL_FOUND`→`DOM_CONTROL_PRESENT`，`LABEL_ONLY`/`AMBIGUOUS`→`DOM_CONTROL_AMBIGUOUS` 或证据不足→`PROBE_INCONCLUSIVE`。见 `CODEX_TRIM_RANKINGMAJOR_PROBE_U_20261019.md`。

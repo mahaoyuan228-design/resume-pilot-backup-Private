@@ -34,3 +34,5 @@
 13. **GTH/CMS 回归冒烟（离线清单已备·2026-10-19）**：有空时按 `dist/site-probes/GTH_REGRESSION_SMOKE_CHECKLIST_20261019.md` 分入口（9237/9239）并列复测 CMS+GTH；Never Save；不替代 `PAID_EDGE_9239_QA_CHECKLIST`；不宣称已支持。
 
 14. **GTH冒烟 vs 付费QA对照（2026-10-19）**：一次跑不漏时看 `dist/site-probes/GTH_VS_PAID_QA_CROSSWALK_20261019.md`；先共同约束→冒烟→完整 9239 QA；9237 不能抵 9239。
+
+15. **招行出生日期 hint 采包（2026-10-19）**：有空时按 `dist/site-probes/CMB_BIRTHDATE_HINT_NEXT_20261019.md` 只采形态/格式，禁止自动点日历乱填；Never Save；不宣称已支持。

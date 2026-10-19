@@ -30,3 +30,5 @@
 11. **中信下一 live（户口/证件/民族·2026-10-19）**：学历仍阻塞；优先按 `CITICS_NEXT_LIVE_PRIORITY_20261019.md` 采三项证据；Never Save。
 
 12. **Celebright/国盛一键试填准备包（2026-10-19）**：登录后停简历编辑；按 `dist/site-probes/HOTJOB_CELEBRIGHT_TRIAL_PACK_20261019.md`；键名先核对；Never Save；南粤 PASS 不代替。
+
+13. **GTH/CMS 回归冒烟（离线清单已备·2026-10-19）**：有空时按 `dist/site-probes/GTH_REGRESSION_SMOKE_CHECKLIST_20261019.md` 分入口（9237/9239）并列复测 CMS+GTH；Never Save；不替代 `PAID_EDGE_9239_QA_CHECKLIST`；不宣称已支持。

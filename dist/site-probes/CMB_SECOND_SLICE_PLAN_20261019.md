@@ -72,7 +72,7 @@
 2. **文件与全局名隔离**：新增逻辑仅落 `cmb-*`（如 `cmb-basic.js`、`ResumeCmbBasic`）；`tests/cmb-basic.test.mjs` 已断言源码不含 `cms-|gth-|ResumeCitics|atsx-form` 等串 — 第二拍扩字段时此断言须继续 PASS。
 3. **授权闸门不变**：招行动作不得削弱现网 fail-closed；未授权不得自动填 CMS/GTH；勿为招行临时打开 `<all_urls>`。
 4. **Manifest / 注入面**：`host_permissions` 仅追加 `https://career.cmbchina.com/*`（若尚未加）；不得改 CMS/GTH content_scripts matches；SW 接线 `CMB_*` 时不得复用/改写 `CMS_BASIC_AUTO` / `GTH_*` 消息名语义。
-5. **测试门禁**：改招行前/后跑 `node --test tests/cmb-basic.test.mjs`（性别 synthetic 为 11；身高 synthetic 在此之上加 focused tests，全绿）以及现有 CMS/GTH 相关测试（至少 `cms-basic-auto.test.mjs`、`gth-basic-auto.test.mjs` 不因招行改动变红）；**不要**为凑绿改测试断言。
+5. **测试门禁**：改招行前/后跑 `node --test tests/cmb-basic.test.mjs`（身高 synthetic 之后期望 14/14：原先 8 + 性别 3 + 身高 3）以及现有 CMS/GTH 相关测试（至少 `cms-basic-auto.test.mjs`、`gth-basic-auto.test.mjs` 不因招行改动变红）；**不要**为凑绿改测试断言。
 
 ---
 

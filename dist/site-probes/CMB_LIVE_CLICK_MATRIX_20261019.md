@@ -4,7 +4,7 @@ Never Save。一次一字段。试填 Edge CDP **9237**。停在 `https://career
 
 未宣称招行已支持。整体进度口径由主脑报。本文不写验收百分比。
 
-离线 Select 除 RankingMajor 外已齐。选项和 DOM id 已采。live 点击尚未证明。`node scripts/auto-cmb-basic.mjs --only <页面标签> --live` 仍在打开点击之前退出 3，原因是下表的 refuse 码。本文件不解除该拒绝，也不把离线合成当成 live 填表。
+离线 Select 除 RankingMajor 外已齐。选项和 DOM id 已采。2026-10-19 试填 Edge 点击证据 10/10 已入库（`CMB_LIVE_SELECT_CLICK_EVIDENCE_20261019.md`）。证据文件在时，`--only <页面标签> --live` 不再因下表 refuse 码退出 3；它在已打开的 `/center/resume` 上做 fill-wo-save，不点保存。证据文件缺失时，下表仍是 fallback。离线合成不是 live 全集。未宣称招行已支持。
 
 ## 规则
 

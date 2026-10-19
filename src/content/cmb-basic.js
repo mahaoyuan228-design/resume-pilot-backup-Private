@@ -55,7 +55,7 @@
   const FORMAL_WORK_LABEL = '是否参加过正式工作';
   const FORMAL_WORK_VALUES = ['是', '否'];
   /** Harvested text+code tables. Same data as cmb-gated-dicts.mjs. Not a live click contract. */
-  const GATED_DICTS = JSON.parse('{"maritalStatus":[{"text":"未婚","code":"MS001"},{"text":"已婚","code":"MS002"},{"text":"离异","code":"MS004"},{"text":"已育","code":"MS007"}],"politics":[{"text":"中国共产党党员","code":"PA001"},{"text":"九三学社社员","code":"PA0010"},{"text":"台湾民主自治同盟盟员","code":"PA0011"},{"text":"无党派民主人士","code":"PA0012"},{"text":"群众","code":"PA0013"},{"text":"中国共产党预备党员","code":"PA002"},{"text":"中国共产主义青年团团员","code":"PA003"},{"text":"成员/中国国民党革命委员会","code":"PA004"},{"text":"中国民主同盟盟员","code":"PA005"},{"text":"成员/中国民主建国会","code":"PA006"},{"text":"成员/中国民主促进会","code":"PA007"},{"text":"党员/中国农工民主党","code":"PA008"},{"text":"中国致公党党员","code":"PA009"}],"ethnicity":[{"text":"汉族","code":"NA0017"},{"text":"阿昌族","code":"NA001"},{"text":"独龙族","code":"NA0010"},{"text":"达翰尔族","code":"NA0011"},{"text":"东乡族","code":"NA0012"},{"text":"鄂温克族","code":"NA0013"},{"text":"京族","code":"NA0014"},{"text":"仡佬族","code":"NA0015"},{"text":"高山族","code":"NA0016"},{"text":"回族","code":"NA0018"},{"text":"赫哲族","code":"NA0019"},{"text":"白族","code":"NA002"},{"text":"基诺族","code":"NA0020"},{"text":"景颇族","code":"NA0021"},{"text":"柯尔克孜族","code":"NA0022"},{"text":"哈萨克族","code":"NA0023"},{"text":"珞巴族","code":"NA0024"},{"text":"拉祜族","code":"NA0025"},{"text":"黎族","code":"NA0026"},{"text":"傈僳族","code":"NA0027"},{"text":"满族","code":"NA0028"},{"text":"门巴族","code":"NA0029"},{"text":"布朗族","code":"NA003"},{"text":"蒙古族","code":"NA0030"},{"text":"苗族","code":"NA0031"},{"text":"仫佬族","code":"NA0032"},{"text":"毛南族","code":"NA0033"},{"text":"怒族","code":"NA0034"},{"text":"纳西族","code":"NA0035"},{"text":"鄂伦春族","code":"NA0036"},{"text":"普米族","code":"NA0037"},{"text":"羌族","code":"NA0038"},{"text":"俄罗斯族","code":"NA0039"},{"text":"保安族","code":"NA004"},{"text":"畲族","code":"NA0040"},{"text":"萨拉族","code":"NA0041"},{"text":"水族","code":"NA0042"},{"text":"塔吉克族","code":"NA0043"},{"text":"土家族","code":"NA0044"},{"text":"塔塔尔族","code":"NA0045"},{"text":"土族","code":"NA0046"},{"text":"维吾尔族","code":"NA0047"},{"text":"乌孜别克族","code":"NA0048"},{"text":"佤族","code":"NA0049"},{"text":"布依族","code":"NA005"},{"text":"锡伯族","code":"NA0050"},{"text":"瑶族","code":"NA0051"},{"text":"裕固族","code":"NA0052"},{"text":"彝族","code":"NA0053"},{"text":"藏族","code":"NA0054"},{"text":"壮族","code":"NA0055"},{"text":"其他","code":"NA0056"},{"text":"哈尼族","code":"NA0057"},{"text":"朝鲜族","code":"NA006"},{"text":"傣族","code":"NA007"},{"text":"德昂族","code":"NA008"},{"text":"侗族","code":"NA009"}],"idCardType":[{"text":"身份证","code":"ID001"},{"text":"非公务赴台证","code":"ID0010"},{"text":"台胞证","code":"ID0011"},{"text":"签证 1","code":"ID0012"},{"text":"签证 2","code":"ID0013"},{"text":"签证 3","code":"ID0014"},{"text":"其他证件","code":"ID0015"},{"text":"暂住证","code":"ID002"},{"text":"人才居住证","code":"ID003"},{"text":"因公护照","code":"ID004"},{"text":"因私护照","code":"ID005"},{"text":"公务赴港澳长证(多次)","code":"ID006"},{"text":"非公务赴港澳长证","code":"ID007"},{"text":"临时赴港澳证","code":"ID008"},{"text":"公务赴台证","code":"ID009"}],"educationLevel":[{"text":"博士研究生","code":"ED001"},{"text":"MBA","code":"ED002"},{"text":"硕士研究生","code":"ED003"},{"text":"本科","code":"ED004"},{"text":"大专","code":"ED005"},{"text":"中技（中专/技校/职高）","code":"ED006"},{"text":"高中","code":"ED007"}],"relationshipType":[{"text":"配偶","code":"RT0001"},{"text":"父亲","code":"RT0002"},{"text":"母亲","code":"RT0003"},{"text":"子女","code":"RT0004"},{"text":"紧急联络人","code":"RT0005"},{"text":"兄弟","code":"RT0006"},{"text":"姐妹","code":"RT0007"},{"text":"其他相关人员","code":"RT0008"}],"awardLevel":[{"text":"院校级","code":"AL002"},{"text":"县市级","code":"AL003"},{"text":"省区级","code":"AL004"},{"text":"国家级","code":"AL005"},{"text":"国际级","code":"AL006"}],"englishLevel":[{"text":"TOEFL","code":"EL001"},{"text":"GRE","code":"EL002"},{"text":"GMAT","code":"EL003"},{"text":"IELTS","code":"EL004"},{"text":"CET-4","code":"EL005"},{"text":"CET-6","code":"EL006"},{"text":"TEM-4","code":"EL007"},{"text":"TEM-8","code":"EL008"},{"text":"海外高中成绩","code":"EL009"},{"text":"其他","code":"EL010"}],"channelType":[{"text":"招商银行官网","code":"CT0014"},{"text":"\\"招商银行招聘\\"微信公众号","code":"CT002"},{"text":"招商银行员工推荐","code":"CT0015"},{"text":"院校老师推荐","code":"CT007"},{"text":"校园宣讲会","code":"CT0012"},{"text":"学校就业网站","code":"CT0010"},{"text":"校友/朋友推荐","code":"CT008"},{"text":"智联招聘","code":"CT0017"},{"text":"牛客网","code":"CT0011"},{"text":"刺猬实习","code":"CT0019"},{"text":"51job/应届生网","code":"CT005"},{"text":"qq群/微信群消息","code":"CT009"},{"text":"猎头","code":"CT0013"},{"text":"一网通","code":"CT001"},{"text":"其他","code":"CT0016"}],"interviewCity":[{"text":"北京市","code":"P00271"},{"text":"长春市","code":"C0035"},{"text":"长沙市","code":"C00164"},{"text":"成都市","code":"C00216"},{"text":"大连市","code":"C10002"},{"text":"东莞市","code":"C00194"},{"text":"佛山市","code":"C00182"},{"text":"福州市","code":"C0097"},{"text":"广州市","code":"C00178"},{"text":"贵阳市","code":"C00237"},{"text":"哈尔滨市","code":"C0044"},{"text":"海口市","code":"C00213"},{"text":"杭州市","code":"C0070"},{"text":"合肥市","code":"C0081"},{"text":"呼和浩特市","code":"C0023"},{"text":"济南市","code":"C00117"},{"text":"昆明市","code":"C00246"},{"text":"兰州市","code":"C00279"},{"text":"南昌市","code":"C00106"},{"text":"南京市","code":"C0057"},{"text":"南宁市","code":"C00199"},{"text":"南通市","code":"C0062"},{"text":"宁波市","code":"C0071"},{"text":"青岛市","code":"C00118"},{"text":"泉州市","code":"C0099"},{"text":"上海市","code":"P00281"},{"text":"深圳市","code":"C00179"},{"text":"沈阳市","code":"C10001"},{"text":"石家庄市","code":"C001"},{"text":"苏州市","code":"C0061"},{"text":"太原市","code":"C0012"},{"text":"唐山市","code":"C002"},{"text":"天津市","code":"P00301"},{"text":"温州市","code":"C0072"},{"text":"乌鲁木齐市","code":"C00306"},{"text":"无锡市","code":"C0058"},{"text":"武汉市","code":"C00151"},{"text":"西安市","code":"C00269"},{"text":"西宁市","code":"C00293"},{"text":"厦门市","code":"C00100"},{"text":"烟台市","code":"C00122"},{"text":"银川市","code":"C00301"},{"text":"郑州市","code":"C00134"},{"text":"重庆市","code":"P00291"}]}');
+  const GATED_DICTS = JSON.parse('{"maritalStatus":[{"text":"未婚","code":"MS001"},{"text":"已婚","code":"MS002"},{"text":"离异","code":"MS004"},{"text":"已育","code":"MS007"}],"politics":[{"text":"中国共产党党员","code":"PA001"},{"text":"九三学社社员","code":"PA0010"},{"text":"台湾民主自治同盟盟员","code":"PA0011"},{"text":"无党派民主人士","code":"PA0012"},{"text":"群众","code":"PA0013"},{"text":"中国共产党预备党员","code":"PA002"},{"text":"中国共产主义青年团团员","code":"PA003"},{"text":"成员/中国国民党革命委员会","code":"PA004"},{"text":"中国民主同盟盟员","code":"PA005"},{"text":"成员/中国民主建国会","code":"PA006"},{"text":"成员/中国民主促进会","code":"PA007"},{"text":"党员/中国农工民主党","code":"PA008"},{"text":"中国致公党党员","code":"PA009"}],"ethnicity":[{"text":"汉族","code":"NA0017"},{"text":"阿昌族","code":"NA001"},{"text":"独龙族","code":"NA0010"},{"text":"达翰尔族","code":"NA0011"},{"text":"东乡族","code":"NA0012"},{"text":"鄂温克族","code":"NA0013"},{"text":"京族","code":"NA0014"},{"text":"仡佬族","code":"NA0015"},{"text":"高山族","code":"NA0016"},{"text":"回族","code":"NA0018"},{"text":"赫哲族","code":"NA0019"},{"text":"白族","code":"NA002"},{"text":"基诺族","code":"NA0020"},{"text":"景颇族","code":"NA0021"},{"text":"柯尔克孜族","code":"NA0022"},{"text":"哈萨克族","code":"NA0023"},{"text":"珞巴族","code":"NA0024"},{"text":"拉祜族","code":"NA0025"},{"text":"黎族","code":"NA0026"},{"text":"傈僳族","code":"NA0027"},{"text":"满族","code":"NA0028"},{"text":"门巴族","code":"NA0029"},{"text":"布朗族","code":"NA003"},{"text":"蒙古族","code":"NA0030"},{"text":"苗族","code":"NA0031"},{"text":"仫佬族","code":"NA0032"},{"text":"毛南族","code":"NA0033"},{"text":"怒族","code":"NA0034"},{"text":"纳西族","code":"NA0035"},{"text":"鄂伦春族","code":"NA0036"},{"text":"普米族","code":"NA0037"},{"text":"羌族","code":"NA0038"},{"text":"俄罗斯族","code":"NA0039"},{"text":"保安族","code":"NA004"},{"text":"畲族","code":"NA0040"},{"text":"萨拉族","code":"NA0041"},{"text":"水族","code":"NA0042"},{"text":"塔吉克族","code":"NA0043"},{"text":"土家族","code":"NA0044"},{"text":"塔塔尔族","code":"NA0045"},{"text":"土族","code":"NA0046"},{"text":"维吾尔族","code":"NA0047"},{"text":"乌孜别克族","code":"NA0048"},{"text":"佤族","code":"NA0049"},{"text":"布依族","code":"NA005"},{"text":"锡伯族","code":"NA0050"},{"text":"瑶族","code":"NA0051"},{"text":"裕固族","code":"NA0052"},{"text":"彝族","code":"NA0053"},{"text":"藏族","code":"NA0054"},{"text":"壮族","code":"NA0055"},{"text":"其他","code":"NA0056"},{"text":"哈尼族","code":"NA0057"},{"text":"朝鲜族","code":"NA006"},{"text":"傣族","code":"NA007"},{"text":"德昂族","code":"NA008"},{"text":"侗族","code":"NA009"}],"idCardType":[{"text":"身份证","code":"ID001"},{"text":"非公务赴台证","code":"ID0010"},{"text":"台胞证","code":"ID0011"},{"text":"签证 1","code":"ID0012"},{"text":"签证 2","code":"ID0013"},{"text":"签证 3","code":"ID0014"},{"text":"其他证件","code":"ID0015"},{"text":"暂住证","code":"ID002"},{"text":"人才居住证","code":"ID003"},{"text":"因公护照","code":"ID004"},{"text":"因私护照","code":"ID005"},{"text":"公务赴港澳长证(多次)","code":"ID006"},{"text":"非公务赴港澳长证","code":"ID007"},{"text":"临时赴港澳证","code":"ID008"},{"text":"公务赴台证","code":"ID009"}],"educationLevel":[{"text":"博士后","code":"ED000"},{"text":"博士研究生","code":"ED001"},{"text":"MBA","code":"ED002"},{"text":"硕士研究生","code":"ED003"},{"text":"本科","code":"ED004"},{"text":"大专","code":"ED005"},{"text":"中技（中专/技校/职高）","code":"ED006"},{"text":"高中","code":"ED007"}],"relationshipType":[{"text":"配偶","code":"RT0001"},{"text":"父亲","code":"RT0002"},{"text":"母亲","code":"RT0003"},{"text":"子女","code":"RT0004"},{"text":"紧急联络人","code":"RT0005"},{"text":"兄弟","code":"RT0006"},{"text":"姐妹","code":"RT0007"},{"text":"其他相关人员","code":"RT0008"}],"awardLevel":[{"text":"院校级","code":"AL002"},{"text":"县市级","code":"AL003"},{"text":"省区级","code":"AL004"},{"text":"国家级","code":"AL005"},{"text":"国际级","code":"AL006"}],"englishLevel":[{"text":"TOEFL","code":"EL001"},{"text":"GRE","code":"EL002"},{"text":"GMAT","code":"EL003"},{"text":"IELTS","code":"EL004"},{"text":"CET-4","code":"EL005"},{"text":"CET-6","code":"EL006"},{"text":"TEM-4","code":"EL007"},{"text":"TEM-8","code":"EL008"},{"text":"海外高中成绩","code":"EL009"},{"text":"其他","code":"EL010"}],"channelType":[{"text":"招商银行官网","code":"CT0014"},{"text":"\\"招商银行招聘\\"微信公众号","code":"CT002"},{"text":"招商银行员工推荐","code":"CT0015"},{"text":"院校老师推荐","code":"CT007"},{"text":"校园宣讲会","code":"CT0012"},{"text":"学校就业网站","code":"CT0010"},{"text":"校友/朋友推荐","code":"CT008"},{"text":"智联招聘","code":"CT0017"},{"text":"牛客网","code":"CT0011"},{"text":"刺猬实习","code":"CT0019"},{"text":"51job/应届生网","code":"CT005"},{"text":"qq群/微信群消息","code":"CT009"},{"text":"猎头","code":"CT0013"},{"text":"一网通","code":"CT001"},{"text":"其他","code":"CT0016"}],"interviewCity":[{"text":"北京市","code":"P00271"},{"text":"长春市","code":"C0035"},{"text":"长沙市","code":"C00164"},{"text":"成都市","code":"C00216"},{"text":"大连市","code":"C10002"},{"text":"东莞市","code":"C00194"},{"text":"佛山市","code":"C00182"},{"text":"福州市","code":"C0097"},{"text":"广州市","code":"C00178"},{"text":"贵阳市","code":"C00237"},{"text":"哈尔滨市","code":"C0044"},{"text":"海口市","code":"C00213"},{"text":"杭州市","code":"C0070"},{"text":"合肥市","code":"C0081"},{"text":"呼和浩特市","code":"C0023"},{"text":"济南市","code":"C00117"},{"text":"昆明市","code":"C00246"},{"text":"兰州市","code":"C00279"},{"text":"南昌市","code":"C00106"},{"text":"南京市","code":"C0057"},{"text":"南宁市","code":"C00199"},{"text":"南通市","code":"C0062"},{"text":"宁波市","code":"C0071"},{"text":"青岛市","code":"C00118"},{"text":"泉州市","code":"C0099"},{"text":"上海市","code":"P00281"},{"text":"深圳市","code":"C00179"},{"text":"沈阳市","code":"C10001"},{"text":"石家庄市","code":"C001"},{"text":"苏州市","code":"C0061"},{"text":"太原市","code":"C0012"},{"text":"唐山市","code":"C002"},{"text":"天津市","code":"P00301"},{"text":"温州市","code":"C0072"},{"text":"乌鲁木齐市","code":"C00306"},{"text":"无锡市","code":"C0058"},{"text":"武汉市","code":"C00151"},{"text":"西安市","code":"C00269"},{"text":"西宁市","code":"C00293"},{"text":"厦门市","code":"C00100"},{"text":"烟台市","code":"C00122"},{"text":"银川市","code":"C00301"},{"text":"郑州市","code":"C00134"},{"text":"重庆市","code":"P00291"}]}');
   /** CSS-confirmed ant-design classes in public main.02cda64a.css — live resume DOM may still differ. */
   const ITEM_SEL = '.ant-form-item';
   const LABEL_SEL = '.ant-form-item-label, label';
@@ -373,41 +373,44 @@
   const POLITICS_LABEL = '政治面貌';
   const ETHNICITY_LABEL = '民族';
   const ID_CARD_TYPE_LABEL = '证件类型';
-  // Harvested ids. selectClass has no show-search. Live click is not claimed.
+  // Harvested ids. selectClass has no show-search. Live click evidence is on file.
   // 证件号 resume_basicInfo_idCard is a text field and is not filled here.
   const ID_CARD_TYPE_SELECT_ID = 'resume_basicInfo_idCardType';
   const ID_CARD_TYPE_LIST_ID = 'resume_basicInfo_idCardType_list';
   const EDUCATION_LEVEL_LABEL = '学历';
-  // Harvested row 0 only. List id is the aria-controls value. Live click is not claimed.
-  // ED000 is excluded. School name and the other education controls are not filled.
+  // Harvested row 0 only. List id is the aria-controls value. Live click evidence is on file.
+  // Live options keep 博士后 ED000. The synthetic fixture may omit it and is not the live full set.
+  // School name and the other education controls are not filled.
   const EDUCATION_LEVEL_SELECT_ID = 'resume_educationHistoryList_0_educationLevelCode';
   const EDUCATION_LEVEL_LIST_ID = 'resume_educationHistoryList_0_educationLevelCode_list';
   const RELATIONSHIP_TYPE_LABEL = '关系类型';
   // Harvested family rows 0 and 1. Each select id is filled only by its own key.
   // Eight RelationshipType rows. No placeholder. Name and phone are not filled.
-  // Live click is not claimed.
+  // Live click confirms resume_familyList_0_relationship and resume_familyList_1_relationship.
   const RELATIONSHIP_TYPE_SELECT_ID = 'resume_familyList_0_relationship';
   const RELATIONSHIP_TYPE_LIST_ID = 'resume_familyList_0_relationship_list';
   const RELATIONSHIP_TYPE_ROW1_SELECT_ID = 'resume_familyList_1_relationship';
   const RELATIONSHIP_TYPE_ROW1_LIST_ID = 'resume_familyList_1_relationship_list';
   const AWARD_LEVEL_LABEL = '获奖级别';
   // Harvested award row 0 only. Level is exact text or code, never an award name.
-  // Award name, honor type, and award date are not filled. Live click is not claimed.
+  // Award name, honor type, and award date are not filled.
+  // Live click confirms resume_awardList_0_awardLevel.
   const AWARD_LEVEL_SELECT_ID = 'resume_awardList_0_awardLevel';
   const AWARD_LEVEL_LIST_ID = 'resume_awardList_0_awardLevel_list';
   const ENGLISH_LEVEL_LABEL = '最高英语水平';
   // Harvested skill row 0 only. Exact exam name or code. No score conversion.
-  // EL010（其他）is kept. The score control is not filled. Live click is not claimed.
+  // EL010（其他）is kept. The score control is not filled.
+  // Live click confirms resume_skill_0_englishLevel.
   const ENGLISH_LEVEL_SELECT_ID = 'resume_skill_0_englishLevel';
   const ENGLISH_LEVEL_LIST_ID = 'resume_skill_0_englishLevel_list';
   const CHANNEL_TYPE_LABEL = '招聘信息来源';
   // Harvested basicInfo select. Exact name or code. No abbreviation merge.
-  // CT0016（其他）is kept. The quoted WeChat name stays exact. Live click is not claimed.
+  // CT0016（其他）is kept. The quoted WeChat name stays exact. Live click evidence is on file.
   const CHANNEL_TYPE_SELECT_ID = 'resume_basicInfo_channelType';
   const CHANNEL_TYPE_LIST_ID = 'resume_basicInfo_channelType_list';
   const INTERVIEW_CITY_LABEL = '面试期望城市';
   // Harvested basicInfo select. Exact full city name or code. 北京 does not match 北京市.
-  // Forty-four InterviewCity rows. No placeholder. Live click is not claimed.
+  // Forty-four InterviewCity rows. No placeholder. Live click evidence is on file.
   const INTERVIEW_CITY_SELECT_ID = 'resume_basicInfo_expectedInterviewCity';
   const INTERVIEW_CITY_LIST_ID = 'resume_basicInfo_expectedInterviewCity_list';
   const BIRTHDATE_HINT = Object.freeze({
@@ -444,6 +447,7 @@
       selectId: 'resume_basicInfo_nation',
       listId: 'resume_basicInfo_nation_list',
       options: GATED_DICTS.ethnicity,
+      // Live click 2026-10-19: the control has ant-select-show-search.
       showSearch: true
     },
     idCardType: {
@@ -460,7 +464,8 @@
       selectId: EDUCATION_LEVEL_SELECT_ID,
       listId: EDUCATION_LEVEL_LIST_ID,
       options: GATED_DICTS.educationLevel,
-      showSearch: false
+      showSearch: false,
+      allowOptionSubset: true
     },
     relationshipType: {
       label: RELATIONSHIP_TYPE_LABEL,
@@ -531,13 +536,19 @@
     return hits.length === 1 ? hits[0] : null;
   }
 
+  function selectIdMatches(item, selectId) {
+    const root = item.querySelector('.ant-select');
+    if (!root) return false;
+    if (root.id === selectId) return true;
+    return [...root.querySelectorAll('[id]')].some((node) => node.id === selectId);
+  }
+
   function findCodedItem(spec) {
     const hits = formItems().filter((item) => {
       const label = item.querySelector(LABEL_SEL);
       if (!label || !spec.labelTest(labelText(label))) return false;
       if (!spec.rowScoped) return true;
-      const root = item.querySelector('.ant-select');
-      return !!root && root.id === spec.selectId;
+      return selectIdMatches(item, spec.selectId);
     });
     return hits.length === 1 ? hits[0] : null;
   }
@@ -550,16 +561,22 @@
     }));
   }
 
-  function optionSetMatches(found, expected) {
-    if (found.length !== expected.length) return false;
+  function optionSetMatches(found, expected, allowSubset) {
+    if (found.length === 0) return false;
     const keys = new Set(found.map((row) => `${row.text}\t${row.code}`));
     if (keys.size !== found.length) return false;
-    return expected.every((row) => keys.has(`${norm(row.text)}\t${row.code}`));
+    if (!allowSubset) {
+      if (found.length !== expected.length) return false;
+      return expected.every((row) => keys.has(`${norm(row.text)}\t${row.code}`));
+    }
+    if (found.length > expected.length) return false;
+    const expectedKeys = new Set(expected.map((row) => `${norm(row.text)}\t${row.code}`));
+    return [...keys].every((key) => expectedKeys.has(key));
   }
 
   function selectStructureOk(item, spec) {
     const root = item.querySelector('.ant-select');
-    if (!root || root.id !== spec.selectId) return false;
+    if (!root || !selectIdMatches(item, spec.selectId)) return false;
     const showSearch = root.classList.contains('ant-select-show-search') || root.dataset.showSearch === 'true';
     if (showSearch !== spec.showSearch) return false;
     const list = item.querySelector('[role="listbox"]');
@@ -569,7 +586,7 @@
     if (spec.showSearch) {
       if (search.length !== 1 || search[0].type !== 'search') return false;
     } else if (search.length !== 0) return false;
-    return optionSetMatches(selectRows(item), spec.options);
+    return optionSetMatches(selectRows(item), spec.options, spec.allowOptionSubset === true);
   }
 
   function readCodedSelect(item, spec) {

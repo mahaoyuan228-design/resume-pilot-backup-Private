@@ -19,10 +19,11 @@
 15. **2026-10-19 招行招聘信息来源**：只接 `#resume_basicInfo_channelType`。15 项原名原 code，不做模糊归并。`其他` 保留。`--live` 拒 `live_channel_type_select_fill_unclaimed`。Never Save。未宣称已支持招行。下一刀 InterviewCity。
 16. **2026-10-19 招行面试期望城市**：只接 `#resume_basicInfo_expectedInterviewCity`。44 个完整城市名，首项北京市、末项重庆市。简称不匹配。`--live` 拒 `live_interview_city_select_fill_unclaimed`。Never Save。未宣称已支持招行。RankingMajor 仍是 `DOM_CONTROL_MISSING`。
 17. **2026-10-19 招行 live 点击最小矩阵**（只文档）：全文 `dist/site-probes/CMB_LIVE_CLICK_MATRIX_20261019.md`。Never Save。一次一字段。试填 Edge CDP 9237。停在 `/center/resume`。未宣称已支持招行。整体进度口径由主脑报。
+18. **2026-10-19 招行 live Select 点击 10/10**：`dist/site-probes/CMB_LIVE_SELECT_CLICK_EVIDENCE_20261019.md`。Cloud 未见原始 JSON，入库的是 `source=trial-edge-9237-20261019` stub。`--live` 不再因 unclaimed 硬拒。Never Save。未宣称已支持招行。
 
 ## 1b. 招行 live 点击验收最小矩阵（2026-10-19）
 
-Never Save。一次一字段。试填 Edge CDP **9237**。停在 `https://career.cmbchina.com/center/resume`。未宣称招行已支持。整体进度口径由主脑报。本节不写验收百分比。`--only <页面标签> --live` 仍在点击前退出 3。本表不解除拒绝。
+Never Save。一次一字段。试填 Edge CDP **9237**。停在 `https://career.cmbchina.com/center/resume`。未宣称招行已支持。整体进度口径由主脑报。本节不写验收百分比。点击证据 10/10 入库后，证据文件在时 `--live` 不再因下表退出 3。证据缺失时下表仍是 fallback。
 
 | 顺序 | 字段 | 页面标签 | 当前 `--live` refuse |
 | --- | --- | --- | --- |

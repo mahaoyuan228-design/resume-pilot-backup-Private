@@ -861,16 +861,18 @@ function assertGatedSelectKnife(label, liveReason, passReason, latestName, text,
     encoding: 'utf8',
     timeout: 20000
   });
-  assert.equal(live.status, 3, live.stderr || live.stdout);
+  assert.notEqual(live.status, 3, live.stderr || live.stdout);
   const refused = JSON.parse(live.stdout);
-  assert.equal(refused.ok, false);
-  assert.equal(refused.reason, liveReason);
+  assert.notEqual(refused.reason, liveReason);
   assert.equal(refused.saved, false);
   assert.equal(refused.skippedSave, true);
   assert.equal(refused.formFillClaimed, false);
-  assert.equal(refused.liveSelectFillClaimed, false);
-  assert.equal(refused.optionListHarvested, true);
-  assert.equal(refused.liveEdge, false);
+  assert.equal(refused.clickEvidenceClaimed, true);
+  if (refused.reason === 'live_cdp_unavailable' || refused.reason === 'live_resume_page_missing') {
+    assert.equal(live.status, 2);
+    assert.equal(refused.liveSelectFillClaimed, false);
+    assert.equal(refused.liveEdge, false);
+  }
 
   const run = spawnSync(process.execPath, ['scripts/auto-cmb-basic.mjs', '--only', label], {
     cwd: root,
@@ -954,16 +956,16 @@ test('synthetic harness id card type select maps text and code and --live still 
     encoding: 'utf8',
     timeout: 20000
   });
-  assert.equal(live.status, 3, live.stderr || live.stdout);
+  assert.notEqual(live.status, 3, live.stderr || live.stdout);
   const refused = JSON.parse(live.stdout);
-  assert.equal(refused.reason, 'live_id_card_type_select_fill_unclaimed');
-  assert.equal(refused.optionListHarvested, true);
-  assert.equal(refused.liveSelectFillClaimed, false);
+  assert.notEqual(refused.reason, 'live_id_card_type_select_fill_unclaimed');
+  assert.equal(refused.saved, false);
   assert.equal(refused.formFillClaimed, false);
-  assert.equal(refused.selectIdStatus, undefined);
+  assert.equal(refused.clickEvidenceClaimed, true);
+  assert.equal(refused.selectId, 'resume_basicInfo_idCardType');
 });
 
-test('Education options drop ED000 and use the harvested row-0 select id', () => {
+test('Education options keep live 博士后 and the fixture stays a narrow subset', () => {
   const full = JSON.parse(readFileSync(resolve(root, 'dist/site-probes/cmb-dictmap-full-20261019.json'), 'utf8'));
   const dom = JSON.parse(readFileSync(resolve(root, 'dist/site-probes/cmb-remaining-dom-ids-20261019.json'), 'utf8'));
   assert.equal(dom.neverSave, true);
@@ -973,15 +975,16 @@ test('Education options drop ED000 and use the harvested row-0 select id', () =>
   const hint = dom.labelHints.find((row) => row.label === '学历');
   assert.equal(hint.inputId, CMB_EDUCATION_LEVEL_SELECT_ID);
   assert.equal(hint.ariaControls, CMB_EDUCATION_LEVEL_LIST_ID);
-  const kept = full.dicts.Education.filter((row) => row.code !== 'ED000' && row.name !== '请选择');
-  assert.equal(kept.length, 7);
+  const kept = full.dicts.Education.filter((row) => row.name !== '请选择');
+  assert.equal(kept.length, 8);
   assert.deepEqual(
     [...CMB_EDUCATION_LEVEL_OPTIONS],
     kept.map((row) => ({ text: row.name, code: row.code }))
   );
-  assert.equal(CMB_EDUCATION_LEVEL_OPTIONS.some((row) => row.code === 'ED000' || row.text === '博士后'), false);
-  assert.equal(resolveCmbCodedOption(CMB_EDUCATION_LEVEL_OPTIONS, 'ED000'), null);
-  assert.equal(resolveCmbCodedOption(CMB_EDUCATION_LEVEL_OPTIONS, '博士后'), null);
+  assert.equal(CMB_EDUCATION_LEVEL_OPTIONS[0].text, '博士后');
+  assert.equal(CMB_EDUCATION_LEVEL_OPTIONS[0].code, 'ED000');
+  assert.equal(resolveCmbCodedOption(CMB_EDUCATION_LEVEL_OPTIONS, 'ED000')?.text, '博士后');
+  assert.equal(resolveCmbCodedOption(CMB_EDUCATION_LEVEL_OPTIONS, '博士后')?.code, 'ED000');
   assert.equal(resolveCmbCodedOption(CMB_EDUCATION_LEVEL_OPTIONS, '请选择'), null);
   assert.equal(resolveCmbCodedOption(CMB_EDUCATION_LEVEL_OPTIONS, '研究生'), null);
   assert.equal(resolveCmbCodedOption(CMB_EDUCATION_LEVEL_OPTIONS, 'ED004')?.text, '本科');
@@ -991,6 +994,8 @@ test('Education options drop ED000 and use the harvested row-0 select id', () =>
   assert.match(fixture, /id="resume_educationHistoryList_0_educationLevelCode_list"/);
   assert.doesNotMatch(fixture, /data-code="ED000"/);
   assert.doesNotMatch(fixture, /博士后/);
+  assert.match(source, /allowOptionSubset: true/);
+  assert.match(source, /showSearch: true/);
   assert.equal((fixture.match(/data-code="ED/g) || []).length, 7);
   assert.doesNotMatch(fixture, /id="resume_educationHistoryList_0_educationLevelCode"[^>]*show-search/);
   assert.match(source, /fillEducationLevel/);
@@ -1009,9 +1014,49 @@ test('Education options drop ED000 and use the harvested row-0 select id', () =>
   const ready = planCmbBasicFromProfile({ ...base, educationLevel: ' ED004 ' });
   assert.equal(ready.values.educationLevel, '本科');
   assert.equal(ready.fields.find((row) => row.path === 'educationLevel')?.code, 'ED004');
-  const dropped = planCmbBasicFromProfile({ ...base, educationLevel: '博士后' });
-  assert.equal(dropped.values.educationLevel, '');
-  assert.equal(dropped.blockers.find((row) => row.path === 'educationLevel')?.reason, 'invalid_profile_value');
+  const postdoc = planCmbBasicFromProfile({ ...base, educationLevel: '博士后' });
+  assert.equal(postdoc.values.educationLevel, '博士后');
+  assert.equal(postdoc.fields.find((row) => row.path === 'educationLevel')?.code, 'ED000');
+  assert.equal(postdoc.blockers.some((row) => row.path === 'educationLevel'), false);
+});
+
+test('live select click stubs lock the ten claimed select ids', () => {
+  const rows = [
+    ['cmb-live-select-marital-latest.json', 'resume_basicInfo_maritalStatus', ''],
+    ['cmb-live-select-politics-latest.json', 'resume_basicInfo_politicalAffinity', ''],
+    ['cmb-live-select-ethnicity-latest.json', 'resume_basicInfo_nation', ''],
+    ['cmb-live-select-idCardType-latest.json', 'resume_basicInfo_idCardType', ''],
+    ['cmb-live-select-educationLevel-latest.json', 'resume_educationHistoryList_0_educationLevelCode', ''],
+    ['cmb-live-select-channelType-latest.json', 'resume_basicInfo_channelType', ''],
+    ['cmb-live-select-interviewCity-latest.json', 'resume_basicInfo_expectedInterviewCity', ''],
+    ['cmb-live-select-awardLevel-latest.json', CMB_AWARD_LEVEL_SELECT_ID, ''],
+    ['cmb-live-select-relationship-latest.json', CMB_RELATIONSHIP_TYPE_SELECT_ID, CMB_RELATIONSHIP_TYPE_ROW1_SELECT_ID],
+    ['cmb-live-select-englishLevel-latest.json', CMB_ENGLISH_LEVEL_SELECT_ID, '']
+  ];
+  assert.equal(CMB_RELATIONSHIP_TYPE_SELECT_ID, 'resume_familyList_0_relationship');
+  assert.equal(CMB_RELATIONSHIP_TYPE_ROW1_SELECT_ID, 'resume_familyList_1_relationship');
+  assert.equal(CMB_AWARD_LEVEL_SELECT_ID, 'resume_awardList_0_awardLevel');
+  assert.equal(CMB_ENGLISH_LEVEL_SELECT_ID, 'resume_skill_0_englishLevel');
+  for (const [name, selectId, row1] of rows) {
+    const data = JSON.parse(readFileSync(resolve(root, 'dist/auto-runs', name), 'utf8'));
+    assert.equal(data.source, 'trial-edge-9237-20261019');
+    assert.equal(data.clickClaimed, true);
+    assert.equal(data.neverSave, true);
+    assert.equal(data.saved, false);
+    assert.equal(data.formFillClaimed, false);
+    assert.equal(data.selectId, selectId);
+    if (row1) assert.equal(data.row1SelectId, row1);
+  }
+  const ethnicity = JSON.parse(readFileSync(resolve(root, 'dist/auto-runs/cmb-live-select-ethnicity-latest.json'), 'utf8'));
+  assert.equal(ethnicity.showSearch, true);
+  const education = JSON.parse(readFileSync(resolve(root, 'dist/auto-runs/cmb-live-select-educationLevel-latest.json'), 'utf8'));
+  assert.match(education.note, /博士后/);
+  const check = spawnSync(process.execPath, ['_temp-scripts/live-cmb-select-click.mjs', '--check'], {
+    cwd: root,
+    encoding: 'utf8',
+    timeout: 10000
+  });
+  assert.equal(check.status, 0, check.stderr || check.stdout);
 });
 
 test('synthetic harness education select maps text and code and --live refuses the click', { timeout: 120000 }, () => {

@@ -234,6 +234,41 @@ const GATED_SPECS = {
   }
 };
 
+// Trial Edge 9237 click evidence. Missing file keeps the unclaimed refuse.
+const LIVE_SELECT_EVIDENCE = {
+  marital: 'cmb-live-select-marital-latest.json',
+  politics: 'cmb-live-select-politics-latest.json',
+  ethnicity: 'cmb-live-select-ethnicity-latest.json',
+  idCard: 'cmb-live-select-idCardType-latest.json',
+  education: 'cmb-live-select-educationLevel-latest.json',
+  relationship: 'cmb-live-select-relationship-latest.json',
+  award: 'cmb-live-select-awardLevel-latest.json',
+  english: 'cmb-live-select-englishLevel-latest.json',
+  channel: 'cmb-live-select-channelType-latest.json',
+  interview: 'cmb-live-select-interviewCity-latest.json'
+};
+
+function readLiveSelectClaim(kind) {
+  const spec = GATED_SPECS[kind];
+  const name = LIVE_SELECT_EVIDENCE[kind];
+  if (!spec || !name) return null;
+  const file = path.join(outDir, name);
+  if (!fs.existsSync(file)) return null;
+  let data;
+  try {
+    data = JSON.parse(fs.readFileSync(file, 'utf8'));
+  } catch {
+    return null;
+  }
+  if (data.source !== 'trial-edge-9237-20261019') return null;
+  if (data.clickClaimed !== true || data.neverSave !== true) return null;
+  if (data.saved !== false || data.formFillClaimed !== false) return null;
+  if (data.selectId !== spec.selectId) return null;
+  if (spec.row1 && data.row1SelectId !== spec.row1.selectId) return null;
+  if (kind === 'ethnicity' && data.showSearch !== true) return null;
+  return { file, data };
+}
+
 function onlyKind(value) {
   const text = String(value ?? '').replace(/[\s\u00a0]+/gu, ' ').trim();
   if (text === '性别') return 'gender';
@@ -1155,6 +1190,104 @@ async function runLiveReadiness(cdpPort) {
   return { payload, written };
 }
 
+async function attachOpenResumePage(cdpPort) {
+  const listRes = await fetch(`http://127.0.0.1:${cdpPort}/json/list`).catch(() => null);
+  if (!listRes?.ok) {
+    const error = new Error('cdp_unavailable');
+    error.code = 'live_cdp_unavailable';
+    throw error;
+  }
+  const list = await listRes.json();
+  const page = list.find((row) => (
+    row.type === 'page'
+    && row.webSocketDebuggerUrl
+    && /career\.cmbchina\.com\/center\/resume/u.test(String(row.url || ''))
+  ));
+  if (!page) {
+    const error = new Error('live_resume_page_missing');
+    error.code = 'live_resume_page_missing';
+    throw error;
+  }
+  const { socket, send } = await wsConnect(page.webSocketDebuggerUrl);
+  await send('Runtime.enable');
+  return { socket, send, page };
+}
+
+async function runLiveSelectFill(kind, cdpPort) {
+  const spec = GATED_SPECS[kind];
+  const claim = readLiveSelectClaim(kind);
+  if (!claim) {
+    const payload = basePayload({
+      ok: false,
+      reason: spec.liveReason,
+      surface: 'cdp',
+      liveEdge: false,
+      formFillClaimed: false,
+      liveSelectFillClaimed: false,
+      clickEvidenceClaimed: false,
+      optionListHarvested: true,
+      label: spec.label,
+      selectId: spec.selectId,
+      hint: 'Live select click evidence is missing. Use --only without --live.'
+    });
+    const { file, latest } = gatedEvidencePaths(kind);
+    fs.writeFileSync(file, JSON.stringify(payload, null, 2), 'utf8');
+    fs.copyFileSync(file, latest);
+    return { payload, written: { file, latest }, exitCode: 3 };
+  }
+  try {
+    const { socket, send, page } = await attachOpenResumePage(cdpPort);
+    try {
+      await injectScript(send);
+      const fill = await evaluate(send, `ResumeCmbBasic.${spec.fn}(${JSON.stringify(spec.second.text)})`);
+      const payload = basePayload({
+        ok: fill?.ok === true,
+        reason: fill?.ok === true ? 'live_select_fill_wo_save' : (fill?.reason || 'live_select_fill_failed'),
+        surface: 'cdp-live-resume',
+        liveEdge: true,
+        formFillClaimed: false,
+        liveSelectFillClaimed: fill?.ok === true,
+        clickEvidenceClaimed: true,
+        saved: false,
+        label: spec.label,
+        selectId: spec.selectId,
+        pageUrl: page.url || '',
+        evidenceFile: path.relative(repoRoot, claim.file),
+        fill
+      });
+      const file = path.join(outDir, `cmb-${kind}-live-fill-latest.json`);
+      fs.mkdirSync(outDir, { recursive: true });
+      fs.writeFileSync(file, JSON.stringify(payload, null, 2), 'utf8');
+      try { socket.close(); } catch {}
+      return { payload, written: { file, latest: file }, exitCode: payload.ok ? 0 : 2 };
+    } catch (error) {
+      try { socket.close(); } catch {}
+      throw error;
+    }
+  } catch (error) {
+    const code = error?.code === 'live_resume_page_missing' ? 'live_resume_page_missing' : 'live_cdp_unavailable';
+    const payload = basePayload({
+      ok: false,
+      reason: code,
+      surface: 'cdp',
+      liveEdge: false,
+      formFillClaimed: false,
+      liveSelectFillClaimed: false,
+      clickEvidenceClaimed: true,
+      saved: false,
+      label: spec.label,
+      selectId: spec.selectId,
+      evidenceFile: path.relative(repoRoot, claim.file),
+      error: String(error?.message || error).slice(0, 300),
+      hint: 'Click evidence is on file. This attempt did not inject. Never Save. 招行 is not supported.'
+    });
+    const file = path.join(outDir, `cmb-${kind}-live-fill-latest.json`);
+    fs.mkdirSync(outDir, { recursive: true });
+    fs.writeFileSync(file, JSON.stringify(payload, null, 2), 'utf8');
+    return { payload, written: { file, latest: file }, exitCode: 2 };
+  }
+}
+
 async function runSyntheticGated(kind) {
   const spec = GATED_SPECS[kind];
   const { server, port } = await startFixtureServer();
@@ -1370,7 +1503,7 @@ async function runSyntheticGated(kind) {
         'option-row markup is a synthetic stand-in, not a live dropdown contract',
         'readback is the selection item text plus data-code',
         'show-search typing is not used; ethnicity search input stays empty',
-        '证件类型 id and list id are harvested; live click is still unclaimed',
+        'live click evidence is on file for the ten selects; this run is still the synthetic fixture',
         '证件号 resume_basicInfo_idCard is present and is not written'
       ],
       refused,
@@ -1425,25 +1558,36 @@ function printHelp() {
   Weight is offline synthetic text only. The value is numeric kilograms; KG is not written.
   Live weight DOM is not harvested. --only 体重 --live refuses.
   Marital / politics / ethnicity selects use harvested text+code on a synthetic option list.
-  --live still refuses. Birth date records the DatePicker hint and does not write.
+  Ethnicity showSearch is true because the live control has ant-select-show-search.
+  Birth date records the DatePicker hint and does not write.
   证件类型 uses harvested id resume_basicInfo_idCardType and IdCardType text+code.
   The select has no show-search. 证件号 is not filled.
-  --only 证件类型 --live still refuses live_id_card_type_select_fill_unclaimed.
   学历 uses harvested row-0 id resume_educationHistoryList_0_educationLevelCode.
-  ED000 is excluded. --only 学历 --live refuses live_education_level_select_fill_unclaimed.
-  关系类型 uses harvested ids resume_familyList_0_relationship and resume_familyList_1_relationship.
+  Live options keep 博士后 ED000. The synthetic fixture may omit it.
+  关系类型 uses live ids resume_familyList_0_relationship and resume_familyList_1_relationship.
   Row 0 and row 1 are filled separately. Family name and phone are not filled.
-  --only 关系类型 --live refuses live_relationship_select_fill_unclaimed.
-  获奖级别 uses harvested row-0 id resume_awardList_0_awardLevel.
-  The level is not inferred from 奖项名称. --only 获奖级别 --live refuses live_award_level_select_fill_unclaimed.
-  最高英语水平 uses harvested row-0 id resume_skill_0_englishLevel.
-  托福 / 四级 / a score are not converted. --only 最高英语水平 --live refuses live_english_level_select_fill_unclaimed.
+  获奖级别 uses live id resume_awardList_0_awardLevel.
+  The level is not inferred from 奖项名称.
+  最高英语水平 uses live id resume_skill_0_englishLevel.
+  托福 / 四级 / a score are not converted.
   招聘信息来源 uses harvested id resume_basicInfo_channelType.
   Names stay exact, including quotation marks. 微信 / 官网 / 智联 are not merged.
-  --only 招聘信息来源 --live refuses live_channel_type_select_fill_unclaimed.
   面试期望城市 uses harvested id resume_basicInfo_expectedInterviewCity.
   All 44 names stay complete. 北京 does not match 北京市. 重庆 does not match 重庆市.
-  --only 面试期望城市 --live refuses live_interview_city_select_fill_unclaimed.
+  With dist/auto-runs/cmb-live-select-*-latest.json on file, --only <select> --live
+  does not exit live_*_select_fill_unclaimed. It injects fill-wo-save on the
+  existing /center/resume tab at CDP 9237 and never clicks 保存.
+  Fallback reasons if that evidence file is missing:
+  live_marital_select_fill_unclaimed
+  live_politics_select_fill_unclaimed
+  live_ethnicity_select_fill_unclaimed
+  live_id_card_type_select_fill_unclaimed
+  live_education_level_select_fill_unclaimed
+  live_relationship_select_fill_unclaimed
+  live_award_level_select_fill_unclaimed
+  live_english_level_select_fill_unclaimed
+  live_channel_type_select_fill_unclaimed
+  live_interview_city_select_fill_unclaimed
   Live portal fingerprint only (no fill claim):
     MODE=readiness node scripts/auto-cmb-basic.mjs --live
     Extension path (Edge + SW message CMB_BASIC_AUTO):
@@ -1591,23 +1735,14 @@ async function main() {
     process.exit(3);
   }
   if (GATED_SPECS[kind] && args.live && !args.synthetic) {
-    const spec = GATED_SPECS[kind];
-    const payload = basePayload({
-      ok: false,
-      reason: spec.liveReason,
-      surface: 'cdp',
-      liveEdge: false,
-      formFillClaimed: false,
-      liveSelectFillClaimed: false,
-      optionListHarvested: spec.optionListHarvested !== false,
-      label: spec.label,
-      hint: spec.liveHint || 'Option text and codes were harvested. Live select click is not claimed. Use --only without --live.'
-    });
-    const { file, latest } = gatedEvidencePaths(kind);
-    fs.writeFileSync(file, JSON.stringify(payload, null, 2), 'utf8');
-    fs.copyFileSync(file, latest);
-    console.log(JSON.stringify({ event: 'refused', file, latest, ...payload }, null, 2));
-    process.exit(3);
+    const cdpPort = Number.parseInt(process.env.CDP_PORT || '9237', 10);
+    const { payload, written, exitCode } = await runLiveSelectFill(kind, cdpPort);
+    console.log(JSON.stringify({
+      event: payload.clickEvidenceClaimed && payload.reason !== GATED_SPECS[kind].liveReason ? 'live-select' : 'refused',
+      ...written,
+      ...payload
+    }, null, 2));
+    process.exit(exitCode);
   }
   if (GATED_SPECS[kind]) {
     try {

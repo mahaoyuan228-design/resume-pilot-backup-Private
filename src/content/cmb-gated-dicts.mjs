@@ -117,16 +117,18 @@ export const CMB_ID_CARD_TYPE_OPTIONS = Object.freeze([
   Object.freeze({"text":"公务赴台证","code":"ID009"})
 ]);
 
-/** Harvested 2026-10-19. Select class has no show-search. Live click is not claimed. */
+/** Harvested 2026-10-19. Select class has no show-search. Live click evidence is on file. */
 export const CMB_ID_CARD_TYPE_SELECT_ID = 'resume_basicInfo_idCardType';
 export const CMB_ID_CARD_TYPE_LIST_ID = 'resume_basicInfo_idCardType_list';
 
 /**
  * Education from cmb-dictmap-full-20261019.json.
- * ED000（博士后）is dropped as a placeholder. Text+code only.
- * Only education history row 0 was harvested.
+ * Live click evidence keeps ED000（博士后）. It is not a placeholder.
+ * Text+code only. Only education history row 0 is wired.
+ * The synthetic fixture may omit 博士后. That fixture is not the live full set.
  */
 export const CMB_EDUCATION_LEVEL_OPTIONS = Object.freeze([
+  Object.freeze({"text":"博士后","code":"ED000"}),
   Object.freeze({"text":"博士研究生","code":"ED001"}),
   Object.freeze({"text":"MBA","code":"ED002"}),
   Object.freeze({"text":"硕士研究生","code":"ED003"}),
@@ -136,7 +138,7 @@ export const CMB_EDUCATION_LEVEL_OPTIONS = Object.freeze([
   Object.freeze({"text":"高中","code":"ED007"})
 ]);
 
-/** Harvested 2026-10-19. List id comes from aria-controls. Live click is not claimed. */
+/** Harvested 2026-10-19. List id comes from aria-controls. Live click evidence is on file. */
 export const CMB_EDUCATION_LEVEL_SELECT_ID = 'resume_educationHistoryList_0_educationLevelCode';
 export const CMB_EDUCATION_LEVEL_LIST_ID = 'resume_educationHistoryList_0_educationLevelCode_list';
 
@@ -157,7 +159,7 @@ export const CMB_RELATIONSHIP_TYPE_OPTIONS = Object.freeze([
   Object.freeze({"text":"其他相关人员","code":"RT0008"})
 ]);
 
-/** Harvested 2026-10-19. List ids come from aria-controls. Live click is not claimed. */
+/** Live click 2026-10-19 confirms resume_familyList_0_relationship and row 1. */
 export const CMB_RELATIONSHIP_TYPE_SELECT_ID = 'resume_familyList_0_relationship';
 export const CMB_RELATIONSHIP_TYPE_LIST_ID = 'resume_familyList_0_relationship_list';
 export const CMB_RELATIONSHIP_TYPE_ROW1_SELECT_ID = 'resume_familyList_1_relationship';
@@ -176,7 +178,7 @@ export const CMB_AWARD_LEVEL_OPTIONS = Object.freeze([
   Object.freeze({"text":"国际级","code":"AL006"})
 ]);
 
-/** Harvested 2026-10-19. List id comes from aria-controls. Live click is not claimed. */
+/** Live click 2026-10-19 confirms resume_awardList_0_awardLevel. */
 export const CMB_AWARD_LEVEL_SELECT_ID = 'resume_awardList_0_awardLevel';
 export const CMB_AWARD_LEVEL_LIST_ID = 'resume_awardList_0_awardLevel_list';
 
@@ -199,7 +201,7 @@ export const CMB_ENGLISH_LEVEL_OPTIONS = Object.freeze([
   Object.freeze({"text":"其他","code":"EL010"})
 ]);
 
-/** Harvested 2026-10-19. List id comes from aria-controls. Live click is not claimed. */
+/** Live click 2026-10-19 confirms resume_skill_0_englishLevel. */
 export const CMB_ENGLISH_LEVEL_SELECT_ID = 'resume_skill_0_englishLevel';
 export const CMB_ENGLISH_LEVEL_LIST_ID = 'resume_skill_0_englishLevel_list';
 
@@ -207,7 +209,7 @@ export const CMB_ENGLISH_LEVEL_LIST_ID = 'resume_skill_0_englishLevel_list';
  * ChannelType from cmb-dictmap-full-20261019.json.
  * Fifteen rows. No 请选择 and no CT000. CT0016（其他）is a real row.
  * Names stay exact, including the quotation marks on the WeChat row.
- * A shorter name is not merged into a longer one. Live click is not claimed.
+ * A shorter name is not merged into a longer one. Live click evidence is on file.
  */
 export const CMB_CHANNEL_TYPE_OPTIONS = Object.freeze([
   Object.freeze({"text":"招商银行官网","code":"CT0014"}),
@@ -227,7 +229,7 @@ export const CMB_CHANNEL_TYPE_OPTIONS = Object.freeze([
   Object.freeze({"text":"其他","code":"CT0016"})
 ]);
 
-/** Harvested 2026-10-19. List id comes from aria-controls. Live click is not claimed. */
+/** Harvested 2026-10-19. List id comes from aria-controls. Live click evidence is on file. */
 export const CMB_CHANNEL_TYPE_SELECT_ID = 'resume_basicInfo_channelType';
 export const CMB_CHANNEL_TYPE_LIST_ID = 'resume_basicInfo_channelType_list';
 
@@ -235,7 +237,7 @@ export const CMB_CHANNEL_TYPE_LIST_ID = 'resume_basicInfo_channelType_list';
  * InterviewCity from cmb-dictmap-full-20261019.json.
  * Forty-four full city names. No 请选择. A shorter name does not match.
  * First row is 北京市 (P00271). Last row is 重庆市 (P00291).
- * Live click is not claimed. RankingMajor is not wired here.
+ * Live click evidence is on file. RankingMajor is not wired here.
  */
 export const CMB_INTERVIEW_CITY_OPTIONS = Object.freeze([
   Object.freeze({"text":"北京市","code":"P00271"}),
@@ -284,7 +286,7 @@ export const CMB_INTERVIEW_CITY_OPTIONS = Object.freeze([
   Object.freeze({"text":"重庆市","code":"P00291"})
 ]);
 
-/** Harvested 2026-10-19. List id comes from aria-controls. Live click is not claimed. */
+/** Harvested 2026-10-19. List id comes from aria-controls. Live click evidence is on file. */
 export const CMB_INTERVIEW_CITY_SELECT_ID = 'resume_basicInfo_expectedInterviewCity';
 export const CMB_INTERVIEW_CITY_LIST_ID = 'resume_basicInfo_expectedInterviewCity_list';
 

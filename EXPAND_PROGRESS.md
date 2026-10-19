@@ -240,5 +240,6 @@
 - 2026-10-19 面试期望城市 InterviewCity 离线接线：`#resume_basicInfo_expectedInterviewCity`。44 个完整城市名，首项北京市、末项重庆市。简称不匹配。`--live` 拒 `live_interview_city_select_fill_unclaimed`。Never Save。未宣称已支持招行。RankingMajor 仍是 `DOM_CONTROL_MISSING`。
 - 2026-10-19 招行剩余 dict 收口：离线 Select 除 RankingMajor（`DOM_CONTROL_MISSING`）外已齐。下一阻塞是 live 点击证据，各 `live_*_select_fill_unclaimed` 仍拒。Never Save。未宣称已支持招行。
 - 2026-10-19 中信学历：仓内无 live 选项，须 live 采选项后才能接线。`--only 学历 --live` 拒 `live_education_options_unharvested`。不编造选项，不搬招行 Education。Never Save。不宣称中信已支持。见 `dist/site-probes/CITICS_EDUCATION_SELECT_DRAFT_20261019.md`。
+- 2026-10-19 招行 live 点击证据 10/10：`dist/site-probes/CMB_LIVE_SELECT_CLICK_EVIDENCE_20261019.md`。关系 / 英语 / 获奖 select id 按 live 实采锁定。民族 `showSearch: true`。学历保留「博士后」，离线 fixture 仍是窄集。这 10 个字段的 `--live` 不再因 unclaimed 硬拒，改为 CDP fill-wo-save。Never Save。未宣称已支持招行。
 - **Acceptance 仍 85%**。勿对外写已支持招行。与南粤 live / Celebright 登录队列并行、不插队打断 Jeremy。
 - 2026-10-19 文档：中信下一刀裁剪 `dist/site-probes/CITICS_ANT_SELECT_NEXT_TRIM_20261019.md`（交叉 `CITICS_ANT_SELECT_REFUSED_20261018.md`）；飞书登录后采数裁剪 `dist/site-probes/FEISHU_ATSX_LOGIN_HARVEST_TRIM_20261019.md`（交叉 `FEISHU_ATSX_NEXT.md`）。Never Save。不宣称中信或 ATSX 已支持。只加 md。

@@ -8,7 +8,7 @@ id 清单与教育经历邻居不在这里重复。见 [`CMB_REMAINING_DOM_20261
 
 | Dict | DOM | 状态 |
 |---|---|---|
-| Education | `#resume_educationHistoryList_0_educationLevelCode` | 已离线接线。剔除占位 `ED000`（博士后）。`--live` 拒 `live_education_level_select_fill_unclaimed`。学校名称等同行控件不填。 |
+| Education | `#resume_educationHistoryList_0_educationLevelCode` | 已离线接线。live 点击后保留 `ED000`（博士后）。离线 fixture 仍可窄于 live 全集。学校名称等同行控件不填。 |
 | EnglishLevel | `#resume_skill_0_englishLevel` | 已离线接线。只接技能第 0 行。不自行换算等级。`--live` 拒 `live_english_level_select_fill_unclaimed`。 |
 | RelationshipType | `#resume_familyList_0_relationship`（另有 `_1_`） | 已离线接线。两行索引隔离。`--live` 拒 `live_relationship_select_fill_unclaimed`。姓名和电话不填。 |
 | AwardsLevel | `#resume_awardList_0_awardLevel` | 已离线接线。只接第 0 行。不按奖项名推断级别。`--live` 拒 `live_award_level_select_fill_unclaimed`。 |

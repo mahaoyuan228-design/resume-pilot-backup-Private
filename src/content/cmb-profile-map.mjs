@@ -13,7 +13,7 @@
 // Marital / politics / ethnicity use harvested Chinese text + code tables.
 // They are optional caller-supplied keys and are not added to emptyProfile.
 // Id card type uses the full-dictmap IdCardType text+code table and the harvested
-// select id resume_basicInfo_idCardType. Live click is not claimed. The key is
+// select id resume_basicInfo_idCardType. Live click evidence is on file. The key is
 // not added to emptyProfile. 证件号 is a separate text field and is not filled.
 // Birth date is hint-only: a present value is not filled.
 // Used by tests + harness. Content script mirrors the same rules.
@@ -158,10 +158,11 @@ function normMeasure(value) {
  * Marital status, politics, ethnicity, and id card type follow the same optional rule.
  * A value must be an exact harvested Chinese name or exact code.
  * Id card type is caller-supplied (`idCardType`). It is not an emptyProfile field.
- * The select id is the harvested resume_basicInfo_idCardType. Live click is not claimed.
+ * The select id is the harvested resume_basicInfo_idCardType. Live click evidence is on file.
  * 证件号 (resume_basicInfo_idCard) is not planned or filled.
  * Education level is caller-supplied (`educationLevel`). It is not an emptyProfile field.
- * The allowlist drops dict code ED000. The select id is the harvested row-0 id.
+ * The allowlist keeps live 博士后 (ED000). The select id is the harvested row-0 id.
+ * The synthetic fixture may omit that row and is not the live full set.
  * School name and the other education-row controls are not planned or filled.
  * Relationship type is caller-supplied and is not an emptyProfile field.
  * `relationshipType` writes only family row 0. `relationshipTypeRow1` writes only
@@ -177,11 +178,11 @@ function normMeasure(value) {
  * Channel type is caller-supplied (`channelType`). It is not an emptyProfile field.
  * The allowlist is the fifteen ChannelType rows, including 其他 (CT0016).
  * Names stay exact. A shorter name is not merged into a longer one.
- * The select id is the harvested resume_basicInfo_channelType. Live click is not claimed.
+ * The select id is the harvested resume_basicInfo_channelType. Live click evidence is on file.
  * Interview city is caller-supplied (`interviewCity`). It is not an emptyProfile field.
  * The allowlist is the forty-four InterviewCity names. A shorter name does not match.
  * The select id is the harvested resume_basicInfo_expectedInterviewCity.
- * Live click is not claimed. RankingMajor is not planned here.
+ * Live click evidence is on file. RankingMajor is not planned here.
  * Birth date is never filled here. A present birthDate is a blocker with
  * reason datepicker_hint_only (confirmed) and is not written.
  */

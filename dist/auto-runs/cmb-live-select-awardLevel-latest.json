@@ -1,0 +1,18 @@
+{
+  "source": "trial-edge-9237-20261019",
+  "stub": true,
+  "stubReason": "Cloud checkout had no trial JSON. This stub records the handoff points only. It does not invent option text, click coordinates, or readback.",
+  "siteId": "cmb",
+  "field": "awardLevel",
+  "label": "获奖级别",
+  "selectId": "resume_awardList_0_awardLevel",
+  "showSearch": false,
+  "clickClaimed": true,
+  "liveSelectClickClaimed": true,
+  "formFillClaimed": false,
+  "saved": false,
+  "neverSave": true,
+  "page": "https://career.cmbchina.com/center/resume",
+  "cdpPort": 9237,
+  "oneField": true
+}

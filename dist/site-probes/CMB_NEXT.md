@@ -67,6 +67,6 @@ Jeremy 登录招行招聘账号并停在 `/center/resume` 后，才能 harvest l
 
 其中 **性别**、**身高**、**体重** 与 **是否参加过正式工作** 已有 offline synthetic。出生日期 / 政治面貌 / 民族 / 婚姻状况 **未**做。Live radio DOM，以及身高、体重标签精确串，仍要登录后 harvest。这些合成 **不是** live 支持。
 
-体重 offline 已落地（同身高：`.ant-form-item` + `input.ant-input`；只写数字公斤；拒 `60kg`/`60KG`；`--live` 拒 `live_weight_text_unharvested`；套件 34/34；Never Save）。是否参加过正式工作 offline radio 已落地（对齐性别：标签作用域 `.ant-form-item`；字段图 是/否；`--live` 拒 `live_formal_work_radio_unharvested`；未改 emptyProfile；Never Save）。婚姻、政治面貌、民族、出生日期仍缺 live 选项，本刀不碰。未宣称已支持招行。验收仍 **85%**。
+体重 offline 已落地（同身高：`.ant-form-item` + `input.ant-input`；只写数字公斤；拒 `60kg`/`60KG`；`--live` 拒 `live_weight_text_unharvested`；套件 34/34；Never Save）。是否参加过正式工作 offline radio 已落地（对齐性别：标签作用域 `.ant-form-item`；字段图 是/否；`--live` 拒 `live_formal_work_radio_unharvested`；未改 emptyProfile；Never Save；套件 37/37）。婚姻、政治面貌、民族、出生日期仍缺 live 选项，本刀不碰。未宣称已支持招行。验收仍 **85%**。
 
 下一刀 live 采数顺序见 `CMB_LIVE_GATED_FIELDS_DRAFT_20261019.md`：婚姻状况 → 政治面貌 → 民族 → 出生日期。这四字段的真实选项不能离线合成。未宣称已支持招行。验收仍 **85%**。

@@ -22,3 +22,7 @@
 7. **中信 `/my/jl` 学历采选项（离线包已备·2026-10-19）**：登录 careers.citics.com → 打开 `/my/jl`；按 `dist/site-probes/CITICS_EDUCATION_HARVEST_PACK_20261019.md` 仅展开学历 Ant Select、滚虚拟列表、dump text+value；学位另轮；Never Save；不宣称支持。当前 `live_education_options_unharvested`。
 
 8. **飞书/小米 ATSX 登录后 DOM（离线包已备·2026-10-19）**：登录后停简历编辑页；按 `dist/site-probes/FEISHU_ATSX_LIVE_DOM_HARVEST_PACK_20261019.md` 一次一变量采姓名→手机→邮箱；Never Save；不宣称支持。
+
+9. **北森 Beisen-2022 登录后 DOM（离线包已备·2026-10-19）**：登录后停简历编辑；按 `BEISEN_2022_LIVE_DOM_HARVEST_PACK_20261019.md` 采姓名→手机→邮箱；Never Save；排除 legacy CmsPortal。
+
+10. **Moka/TI 登录后 DOM（离线包已备·2026-10-19）**：登录后停简历编辑；按 `MOKA_LIVE_DOM_HARVEST_PACK_20261019.md` 采姓名→手机→邮箱；Never Save；不升格 hashed sd-*。

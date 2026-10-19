@@ -11,6 +11,10 @@ import {
   CMB_TEXT_LABELS,
   CMB_GENDER_LABEL,
   CMB_GENDER_VALUES,
+  CMB_HEIGHT_LABEL,
+  CMB_HEIGHT_VALUE_RE,
+  isCmbHeightLabel,
+  numericCmbHeight,
   planCmbBasicFromProfile,
   normalizeCmbLabelText,
   isCmbHost,
@@ -206,4 +210,133 @@ test('synthetic harness fill-without-save readback for 3 basic fields', { timeou
   assert.equal(payload.fill?.results?.length, 3);
   assert.ok(payload.fill.results.every((row) => row.ok));
   assert.equal(payload.neighbor?.value, '60');
+});
+
+test('height plan is optional numeric centimeters and rejects a CM suffix', () => {
+  assert.equal(CMB_HEIGHT_LABEL, '身高');
+  assert.equal(CMB_HEIGHT_VALUE_RE.test('175'), true);
+  assert.equal(CMB_HEIGHT_VALUE_RE.test('175CM'), false);
+  assert.equal(isCmbHeightLabel('身高'), true);
+  assert.equal(isCmbHeightLabel('身高 CM'), true);
+  assert.equal(isCmbHeightLabel('身高CM'), true);
+  assert.equal(isCmbHeightLabel('身高（CM）'), true);
+  assert.equal(isCmbHeightLabel('*身高 CM：'), true);
+  assert.equal(isCmbHeightLabel('体重'), false);
+  assert.equal(isCmbHeightLabel('体重 KG'), false);
+  assert.equal(isCmbHeightLabel('身高体重'), false);
+  assert.equal(numericCmbHeight(' 182 '), '182');
+  assert.equal(numericCmbHeight('180.5'), '180.5');
+  assert.equal(numericCmbHeight('175CM'), '');
+  assert.equal(numericCmbHeight('175 CM'), '');
+  assert.equal(numericCmbHeight(''), '');
+
+  const base = {
+    fullName: '测试甲',
+    phone: '13800138000',
+    email: 'cmb.user@example.com',
+    confirmedFields: ['fullName', 'phone', 'email']
+  };
+  const absent = planCmbBasicFromProfile(base);
+  assert.equal(absent.ok, true);
+  assert.equal(absent.values.height, '');
+  assert.equal(absent.fields.some((row) => row.label === '身高'), false);
+
+  const ready = planCmbBasicFromProfile({
+    ...base,
+    height: ' 175 ',
+    confirmedFields: [...base.confirmedFields, 'height']
+  });
+  assert.equal(ready.ok, true);
+  assert.equal(ready.values.height, '175');
+  assert.equal(ready.values.gender, '');
+  assert.equal(ready.fields.find((row) => row.label === '身高')?.ready, true);
+
+  const unconfirmed = planCmbBasicFromProfile({ ...base, height: '175' });
+  assert.equal(unconfirmed.ok, true);
+  assert.equal(unconfirmed.values.height, '');
+  assert.equal(unconfirmed.blockers.find((row) => row.label === '身高')?.reason, 'profile_fact_unconfirmed');
+
+  const invalid = planCmbBasicFromProfile({
+    ...base,
+    height: '175CM',
+    confirmedFields: [...base.confirmedFields, 'height']
+  });
+  assert.equal(invalid.ok, true);
+  assert.equal(invalid.values.height, '');
+  assert.equal(invalid.blockers.find((row) => row.label === '身高')?.reason, 'invalid_profile_value');
+});
+
+test('height fixture is synthetic text and does not ship other second-slice fields', () => {
+  assert.match(fixture, /SYNTHETIC height text/);
+  assert.match(fixture, /data-field="身高"/);
+  assert.match(fixture, />身高 CM</);
+  assert.match(fixture, /name="height"/);
+  assert.match(fixture, /data-unit="CM"/);
+  assert.match(fixture, /Live height DOM was not harvested/);
+  assert.match(fixture, /value="60"/);
+  assert.match(source, /HEIGHT_LABEL = '身高'/);
+  assert.match(source, /HEIGHT_VALUE_RE/);
+  assert.match(source, /fillHeight/);
+  assert.match(source, /Never write a CM suffix into the value/);
+  assert.match(source, /input\.ant-input/);
+  assert.doesNotMatch(source, /出生日期|政治面貌|婚姻状况|民族/);
+  assert.doesNotMatch(source, /birthDate|political|ethnicity|marital/);
+  assert.match(harness, /--only 身高/);
+  assert.match(harness, /live_height_text_unharvested/);
+  assert.match(harness, /formFillClaimed: false/);
+  assert.doesNotMatch(source, /click\(.*保存|保存.*\.click/);
+});
+
+test('synthetic harness height readback is numeric and --live refuses', { timeout: 120000 }, () => {
+  const live = spawnSync(process.execPath, ['scripts/auto-cmb-basic.mjs', '--only', '身高', '--live'], {
+    cwd: root,
+    encoding: 'utf8',
+    timeout: 20000
+  });
+  assert.equal(live.status, 3, live.stderr || live.stdout);
+  const refused = JSON.parse(live.stdout);
+  assert.equal(refused.ok, false);
+  assert.equal(refused.reason, 'live_height_text_unharvested');
+  assert.equal(refused.saved, false);
+  assert.equal(refused.skippedSave, true);
+  assert.equal(refused.formFillClaimed, false);
+  assert.equal(refused.liveHeightDomHarvested, false);
+  assert.equal(refused.liveEdge, false);
+
+  const run = spawnSync(process.execPath, ['scripts/auto-cmb-basic.mjs', '--only', '身高'], {
+    cwd: root,
+    encoding: 'utf8',
+    timeout: 110000
+  });
+  assert.equal(run.status, 0, run.stderr || run.stdout);
+  const payload = JSON.parse(readFileSync(resolve(root, 'dist/auto-runs/cmb-height-text-latest.json'), 'utf8'));
+  assert.equal(payload.ok, true);
+  assert.equal(payload.saved, false);
+  assert.equal(payload.skippedSave, true);
+  assert.equal(payload.liveEdge, false);
+  assert.equal(payload.formFillClaimed, false);
+  assert.equal(payload.liveHeightDomHarvested, false);
+  assert.equal(payload.reason, 'synthetic_height_text_pass');
+  assert.equal(payload.label, '身高');
+  assert.equal(payload.invalid?.reason, 'invalid_profile_value');
+  assert.equal(payload.explicitInvalid?.reason, 'invalid_height');
+  assert.equal(payload.explicitInvalid?.writeAttempted, false);
+  assert.equal(payload.afterReject?.height, '');
+  assert.equal(payload.afterReject?.weight, '60');
+  assert.equal(payload.first?.after, '175');
+  assert.equal(payload.second?.before, '175');
+  assert.equal(payload.second?.after, '182');
+  assert.equal(payload.decimal?.after, '180.5');
+  assert.equal(payload.fillBasic?.results?.length, 4);
+  assert.equal(payload.fillBasic.results.find((row) => row.label === '身高')?.after, '175');
+  assert.equal(/cm/iu.test(payload.fillBasic.results.find((row) => row.label === '身高')?.after || ''), false);
+  assert.equal(payload.fillBasic.results.some((row) => row.label === '性别'), false);
+  assert.ok(payload.fillBasic.results.every((row) => row.ok));
+  assert.deepEqual(payload.neighbor?.genderChecked, []);
+  assert.deepEqual(payload.neighbor?.workedChecked, ['否']);
+  assert.equal(payload.neighbor?.weight, '60');
+  assert.equal(payload.neighbor?.height, '175');
+  assert.equal(payload.neighbor?.heightHasUnit, false);
+  assert.equal(payload.neighbor?.heightSuffix, 'CM');
+  assert.equal(payload.neighbor?.saveDisabled, true);
 });

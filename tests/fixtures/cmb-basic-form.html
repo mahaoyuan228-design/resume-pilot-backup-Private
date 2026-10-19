@@ -49,7 +49,10 @@
         not invented from thin air. The 性别 block below is <strong>synthetic</strong>:
         only the public CSS candidate names <code>.ant-form-item</code> /
         <code>.ant-radio-wrapper</code> / <code>.ant-radio</code> are used.
-        Live radio DOM was not harvested. Do not claim live support.</p>
+        Live radio DOM was not harvested. The 身高 block is also <strong>synthetic</strong>:
+        the same <code>.ant-form-item</code> / <code>input.ant-input</code> candidates as 姓名.
+        The label may include a CM suffix. The input value is numeric only.
+        Live height DOM was not harvested. Do not claim live support.</p>
       <p class="warn">页上提示：姓名 / 证件类型 / 证件号在简历<strong>保存后无法再次修改</strong> — 本脚手架永不点保存。</p>
 
       <form class="ant-form" action="#" onsubmit="return false;">
@@ -96,6 +99,23 @@
               <span class="ant-radio"><input type="radio" name="cmb-synthetic-gender" value="女" /></span>
               <span>女</span>
             </label>
+          </div>
+        </div>
+
+        <!--
+          SYNTHETIC height text. Not live CMB DOM.
+          Assumptions (public CSS candidates only; live label string unharvested):
+          1. 身高 is its own .ant-form-item, separate from 体重 and 性别.
+          2. Label text is 身高, optionally followed by a CM unit (field map writes 身高 CM).
+          3. The control is one input.ant-input, the same public CSS candidate as 姓名 / 手机号 / 邮箱.
+          4. The value is numeric centimeters. CM stays on the label and is never written into the value.
+          5. The sibling unit span is synthetic chrome. Fill must not copy it into the input.
+        -->
+        <div class="ant-form-item" data-field="身高" data-dom="synthetic-public-css-candidate">
+          <div class="ant-form-item-label"><label>身高 CM</label></div>
+          <div class="ant-form-item-control">
+            <input class="ant-input" type="text" name="height" value="" />
+            <span data-unit="CM">CM</span>
           </div>
         </div>
 

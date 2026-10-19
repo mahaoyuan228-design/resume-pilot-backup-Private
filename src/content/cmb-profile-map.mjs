@@ -1,7 +1,10 @@
 // Pure CMB (招商银行 career.cmbchina.com) basic field planning.
 // First slice: 姓名 / 手机号 / 邮箱 (labels from CDP bodyText 2026-10-18 resume page).
 // Gender (性别) is optional and offline-synthetic only: values 男 / 女.
-// Live radio DOM is not harvested. Used by tests + harness. Content script mirrors the same rules.
+// Height (身高) is optional and offline-synthetic text only: numeric centimeters.
+// The page label may include a CM suffix. That unit is never part of the value.
+// Live radio DOM and the live height label/value are not harvested.
+// Used by tests + harness. Content script mirrors the same rules.
 
 export const CMB_SITE_ID = 'cmb';
 
@@ -12,13 +15,33 @@ export const CMB_TEXT_LABELS = Object.freeze(['姓名', '手机号', '邮箱']);
 export const CMB_GENDER_LABEL = '性别';
 export const CMB_GENDER_VALUES = Object.freeze(['男', '女']);
 
+/**
+ * Optional text. Canonical profile label is 身高.
+ * Live label may be 身高 or 身高 plus a CM suffix (field map writes 身高 CM). Not a live DOM contract.
+ */
+export const CMB_HEIGHT_LABEL = '身高';
+/** Digits only. A CM suffix is invalid — the unit stays on the label. */
+export const CMB_HEIGHT_VALUE_RE = /^\d+(?:\.\d+)?$/u;
+const CMB_HEIGHT_LABEL_RE = /^身高(?:\s*(?:[（(]\s*)?cm(?:\s*[）)])?)?$/iu;
+
 const norm = (value) => String(value ?? '').replace(/[\s\u00a0]+/gu, ' ').trim();
+
+function normHeight(value) {
+  return String(value ?? '')
+    .normalize('NFKC')
+    .replace(/[\u200b-\u200d\ufeff]/gu, '')
+    .replace(/[\s\u00a0]+/gu, ' ')
+    .trim();
+}
 
 /**
  * Build fill plan from profile. Fail-closed: no invented TEST placeholders.
  * Core three text fields require confirmed fullName / phone / email.
  * Gender is optional: absent stays out of the plan; confirmed 男/女 is included;
  * unconfirmed or any other value is a blocker and is not filled.
+ * Height is optional text: absent stays out of the plan; a confirmed numeric
+ * centimeter value is included. Unconfirmed, or any value that is not digits
+ * (including a CM suffix), is a blocker and is not filled.
  */
 export function planCmbBasicFromProfile(profile) {
   if (!profile || typeof profile !== 'object' || Array.isArray(profile)) {
@@ -45,6 +68,7 @@ export function planCmbBasicFromProfile(profile) {
   const mobile = norm(profile.phone || '');
   const email = norm(profile.email || '');
   const genderRaw = norm(profile.gender || '');
+  const heightRaw = normHeight(profile.height || '');
 
   const core = [
     { label: '姓名', path: 'fullName', value: fullName },
@@ -71,32 +95,62 @@ export function planCmbBasicFromProfile(profile) {
     });
   }
 
-  const fields = [...core, ...genderFields];
+  const heightFields = [];
+  if (heightRaw) {
+    let reason = null;
+    if (!confirmed.has('height')) reason = 'profile_fact_unconfirmed';
+    else if (!CMB_HEIGHT_VALUE_RE.test(heightRaw)) reason = 'invalid_profile_value';
+    heightFields.push({
+      label: CMB_HEIGHT_LABEL,
+      path: 'height',
+      value: heightRaw,
+      ready: reason === null,
+      reason
+    });
+  }
+
+  const fields = [...core, ...genderFields, ...heightFields];
   const coreBlockers = core.filter((row) => !row.ready);
   const genderBlockers = genderFields.filter((row) => !row.ready);
+  const heightBlockers = heightFields.filter((row) => !row.ready);
   if (coreBlockers.length) {
     return {
       ok: false,
       reason: 'profile_fields_unavailable',
       values: null,
       fields,
-      blockers: [...coreBlockers, ...genderBlockers]
+      blockers: [...coreBlockers, ...genderBlockers, ...heightBlockers]
     };
   }
 
   const gender = genderFields.find((row) => row.ready)?.value || '';
+  const height = heightFields.find((row) => row.ready)?.value || '';
   return {
     ok: true,
     reason: 'profile_ready',
-    values: { fullName, mobile, email, gender },
+    values: { fullName, mobile, email, gender, height },
     fields,
-    blockers: genderBlockers
+    blockers: [...genderBlockers, ...heightBlockers]
   };
 }
 
 /** Normalize form-item label text (mirrors content script). */
 export function normalizeCmbLabelText(raw) {
   return norm(raw).replace(/^\*\s*/u, '').replace(/\s*\*$/u, '').replace(/[：:]\s*$/u, '').trim();
+}
+
+/**
+ * True when the label is 身高, optionally with a CM unit suffix.
+ * 体重 and other items do not match. Not proof of the live label string.
+ */
+export function isCmbHeightLabel(raw) {
+  return CMB_HEIGHT_LABEL_RE.test(normalizeCmbLabelText(normHeight(raw)));
+}
+
+/** Numeric centimeter string, or '' when empty or when a unit/other text is present. */
+export function numericCmbHeight(raw) {
+  const text = normHeight(raw);
+  return CMB_HEIGHT_VALUE_RE.test(text) ? text : '';
 }
 
 /** Host match for 招商银行自建招聘 SPA (not 招商证券 hotjob CMS). */

@@ -3,6 +3,7 @@ secrets/
 **/*.pem
 **/resume-paid-ed25519/
 _temp-scripts/
+live-harvest-out/
 dist/auto-runs/
 dist/edge-paid-*/
 dist/edge-internal-*/

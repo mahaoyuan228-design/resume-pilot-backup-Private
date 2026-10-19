@@ -44,4 +44,4 @@ const mutations=[
 ];
 const rejected=[];for(const [name,mutate]of mutations){const other=structuredClone(original);mutate(other);const result=run(reader,[original,other]);assert.deepEqual(result,{ok:false,reason:'education_public_props_not_unique'},name);rejected.push(name);}
 const result={status:'PASS',sourceSHA256:sourceSHA,evidence:'offline synthetic DOM and React props; no real user data',groups:[{name:'distinct_references_all_seven_inputs_equivalent_key_order_ignored',passed:true,oldSingleReferenceFields:9,oldMultiReferenceRejected:true,newOutputEqualsOldSingleReference:true},{name:'any_projection_conflict_remains_not_unique',passed:true,rejected,arrayOrderPreserved:true,scalarTypesPreserved:true}],browserConnections:0,networkRequests:0,productChanges:0};
-await writeFile(join(home,'review-tests-result.json'),JSON.stringify(result,null,2)+'\n',{flag:'wx'});console.log(JSON.stringify(result));
+await writeFile(join(home,'review-tests-result.json'),JSON.stringify(result,null,2)+'\n');console.log(JSON.stringify(result));

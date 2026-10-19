@@ -21,6 +21,7 @@ const AUTO_TYPES = [
   'BEISEN_2022_BASIC_AUTO',
   'MOKA_BASIC_AUTO',
   'HOTJOB_MC_BASIC_AUTO',
+  'CMB_BASIC_AUTO',
 ];
 
 test('guard-worker source wires every auto runner with verifyBeforeFill', async () => {
@@ -36,6 +37,7 @@ test('guard-worker source wires every auto runner with verifyBeforeFill', async 
     'installBeisen2022BasicAutoRunner',
     'installMokaBasicAutoRunner',
     'installHotjobMcBasicAutoRunner',
+    'installCmbBasicAutoRunner',
   ]) {
     assert.match(source, new RegExp(`${name}\\(\\{ verifyBeforeFill \\}\\)`));
   }
@@ -63,6 +65,8 @@ test('guard-worker source wires every auto runner with verifyBeforeFill', async 
   assert.match(paidBuild, /'src\/auto\/bg-request\.mjs'/);
   assert.match(paidBuild, /'src\/background\/cms-basic-auto\.mjs'/);
   assert.match(paidBuild, /'src\/background\/gth-basic-auto\.mjs'/);
+  assert.match(paidBuild, /'src\/background\/cmb-basic-auto\.mjs'/);
+  assert.match(paidBuild, /'src\/content\/cmb-basic\.js'/);
   assert.match(paidBuild, /'src\/profile\/cms-basic-seed-from-education\.mjs'/);
   assert.match(paidBuild, /service_worker = 'src\/license\/guard-worker\.mjs'/);
 });

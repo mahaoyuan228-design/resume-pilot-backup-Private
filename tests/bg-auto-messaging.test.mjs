@@ -352,7 +352,8 @@ test('auto pages use the timeout helper and the note stays short', async () => {
     'beisen-2022-basic-auto.js',
     'feishu-atsx-basic-auto.js',
     'hotjob-mc-basic-auto.js',
-    'moka-basic-auto.js'
+    'moka-basic-auto.js',
+    'cmb-basic-auto.js'
   ];
   for (const name of pages) {
     const source = await readFile(resolve(root, 'src/auto', name), 'utf8');

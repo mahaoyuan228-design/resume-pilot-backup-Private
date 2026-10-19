@@ -20,6 +20,7 @@ import {installFeishuAtsxBasicAutoRunner} from './feishu-atsx-basic-auto.mjs';
 import {installBeisen2022BasicAutoRunner} from './beisen-2022-basic-auto.mjs';
 import {installMokaBasicAutoRunner} from './moka-basic-auto.mjs';
 import {installHotjobMcBasicAutoRunner} from './hotjob-mc-basic-auto.mjs';
+import {installCmbBasicAutoRunner} from './cmb-basic-auto.mjs';
 
 function boot(name, install) {
   try {
@@ -48,3 +49,4 @@ boot('feishu-atsx-basic-auto', installFeishuAtsxBasicAutoRunner);
 boot('beisen-2022-basic-auto', installBeisen2022BasicAutoRunner);
 boot('moka-basic-auto', installMokaBasicAutoRunner);
 boot('hotjob-mc-basic-auto', installHotjobMcBasicAutoRunner);
+boot('cmb-basic-auto', installCmbBasicAutoRunner);

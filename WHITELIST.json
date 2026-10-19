@@ -265,13 +265,19 @@
     "src/content/moka-basic.js",
     "src/content/moka-profile-map.mjs",
     "src/content/hotjob-mc-basic.js",
-    "src/content/hotjob-mc-profile-map.mjs"
+    "src/content/hotjob-mc-profile-map.mjs",
+    "src/background/cmb-basic-auto.mjs",
+    "src/auto/cmb-basic-auto.html",
+    "src/auto/cmb-basic-auto.js",
+    "src/content/cmb-basic.js",
+    "src/content/cmb-profile-map.mjs",
+    "src/content/cmb-gated-dicts.mjs"
   ],
   "excluded": [
     "No directory-wide copy of repository/tests/exports/dist.",
     "No real browser drivers, customer profile or backup data, private snapshots, screenshots or logs.",
     "No .git/.codex/.agents/.env/keys/server storage/payment credentials.",
     "No installer, ready package, paid build, test receipts or source archive nested in source.",
-    "No src/license paid scaffolding or scripts/build-paid.ps1 in the internal 119-file product package (paid flavor is a separate dist path)."
+    "No src/license paid scaffolding or scripts/build-paid.ps1 in the internal 125-file product package (paid flavor is a separate dist path)."
   ]
 }

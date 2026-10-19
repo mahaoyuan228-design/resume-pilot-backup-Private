@@ -1,6 +1,6 @@
 # Background timeout for paid auto pages
 
-`CMS_BASIC_AUTO`, `GTH_BASIC_AUTO`, and sibling auto pages used to `await chrome.runtime.sendMessage` with no deadline. A pending promise leaves the page on 「正在请求后台 …」, `reportPort` gets no `/result`, and the runner hits `timeout_180000`.
+`CMS_BASIC_AUTO`, `GTH_BASIC_AUTO`, `CMB_BASIC_AUTO`, and sibling auto pages used to `await chrome.runtime.sendMessage` with no deadline. A pending promise leaves the page on 「正在请求后台 …」, `reportPort` gets no `/result`, and the runner hits `timeout_180000`.
 
 The paid Edge hang is not the internal `src/background/worker.mjs` path. Paid packs set the service worker to `src/license/guard-worker.mjs`, which installed education/basic/draft runners but not the `*_AUTO` runners, so those messages had no listener. The paid worker now installs the same runners with `verifyBeforeFill`. `build-paid` also copies `bg-ping.mjs` and `bg-request.mjs`.
 

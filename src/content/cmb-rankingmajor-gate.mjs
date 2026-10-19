@@ -2,7 +2,8 @@
  * Offline RankingMajor evidence gate.
  * Classifies a future harvest packet into the four recorded verdict codes.
  * Does not read the DOM, invent a selector, fill, or save.
- * No harvest landed: the recorded verdict stays DOM_CONTROL_MISSING.
+ * Null stays the recorded DOM_CONTROL_MISSING gate.
+ * A live snap packet is classified from its recorded counts only.
  * Dictionary rows are contrast only and do not prove a control.
  * A present control is still not support and is not a fill.
  * Never Save. 招行 is not supported.
@@ -259,13 +260,104 @@ function classify(harvest) {
   });
 }
 
+function isLiveRankingSnap(harvest) {
+  if (!isPlainObject(harvest)) return false;
+  if (harvest.schema === CMB_RANKINGMAJOR_HARVEST_SCHEMA) return false;
+  if (harvest.site !== 'CMB') return false;
+  if (!isPlainObject(harvest.pageContext)) return false;
+  if (!isPlainObject(harvest.snap1) || !isPlainObject(harvest.snap2)) return false;
+  if (!Array.isArray(harvest.snap1.labelHits) || !Array.isArray(harvest.snap2.labelHits)) return false;
+  return true;
+}
+
+function liveLabelCount(snap) {
+  return Array.isArray(snap?.labelHits) ? snap.labelHits.length : 0;
+}
+
+function liveControlCount(snap) {
+  if (!Array.isArray(snap?.labelHits)) return 0;
+  return snap.labelHits.filter((row) => isPlainObject(row) && row.hasInput === true).length;
+}
+
+/**
+ * Overnight live snaps are not the harvest schema.
+ * Counts already on the packet decide the verdict. Ids are not turned into selectors.
+ */
+function classifyLiveSnap(harvest) {
+  if (hasSmuggledSelector(harvest)) {
+    return closed({
+      harvestLanded: true,
+      verdict: PROBE_INCONCLUSIVE,
+      gate: 'live_snap',
+      reason: 'selector_rejected'
+    });
+  }
+  const hasForm = harvest.pageContext.hasForm === true;
+  const hitCount1 = liveLabelCount(harvest.snap1);
+  const hitCount2 = liveLabelCount(harvest.snap2);
+  const idHits = Array.isArray(harvest.snap1.idHits) ? harvest.snap1.idHits.length : 0;
+  const controls = liveControlCount(harvest.snap1);
+  const rankingish = Array.isArray(harvest.snap1.rankingishLabels) ? harvest.snap1.rankingishLabels.length : 0;
+  if (!hasForm) {
+    return closed({
+      harvestLanded: true,
+      verdict: PROBE_INCONCLUSIVE,
+      gate: 'live_snap',
+      reason: 'form_not_visible'
+    });
+  }
+  if (hitCount1 === 0 && hitCount2 === 0 && idHits === 0) {
+    return closed({
+      harvestLanded: true,
+      verdict: DOM_CONTROL_MISSING,
+      gate: 'live_snap',
+      reason: DOM_CONTROL_MISSING
+    });
+  }
+  if (controls === 1 && hitCount1 === hitCount2) {
+    return closed({
+      harvestLanded: true,
+      verdict: DOM_CONTROL_PRESENT,
+      gate: 'live_snap',
+      reason: 'presence_is_not_support'
+    });
+  }
+  if (hitCount1 > 0 || rankingish > 0) {
+    return closed({
+      harvestLanded: true,
+      verdict: DOM_CONTROL_AMBIGUOUS,
+      gate: 'live_snap',
+      reason: DOM_CONTROL_AMBIGUOUS
+    });
+  }
+  return closed({
+    harvestLanded: true,
+    verdict: DOM_CONTROL_MISSING,
+    gate: 'live_snap',
+    reason: DOM_CONTROL_MISSING
+  });
+}
+
 /**
  * Classify harvest evidence. `null` is the offline recorded gate.
  * Observed facts are copied only for a unique control. No selector is built.
+ * Live overnight snaps use the same four verdict codes and still refuse Save.
  */
 export function assessCmbRankingMajor(harvest = null) {
   if (harvest == null) {
     return { ...CMB_RANKINGMAJOR_OFFLINE_GATE, observedFacts: null };
+  }
+  if (isLiveRankingSnap(harvest)) {
+    const decision = classifyLiveSnap(harvest);
+    if (!isCmbRankingMajorVerdictCode(decision.verdict)) {
+      return closed({
+        harvestLanded: true,
+        verdict: PROBE_INCONCLUSIVE,
+        gate: 'live_snap',
+        reason: PROBE_INCONCLUSIVE
+      });
+    }
+    return decision;
   }
   if (!isPlainObject(harvest) || harvest.schema !== CMB_RANKINGMAJOR_HARVEST_SCHEMA) {
     return closed({

@@ -27,3 +27,5 @@
 Shared helper (`selectControl` / `readSelect` / `fillSelect`) stays allowlist-only + cascader fail-closed + flat-select max-options/search-heavy skip (`select_search_heavy`). Never Save.
 
 下一刀裁剪见 [`CITICS_ANT_SELECT_NEXT_TRIM_20261019.md`](CITICS_ANT_SELECT_NEXT_TRIM_20261019.md)（Never Save，不宣称中信已支持）。
+
+学历须 live 采选项后才能接线，见 [`CITICS_EDUCATION_SELECT_DRAFT_20261019.md`](CITICS_EDUCATION_SELECT_DRAFT_20261019.md)。`--only 学历 --live` 拒 `live_education_options_unharvested`。不编造选项。

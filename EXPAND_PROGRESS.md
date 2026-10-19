@@ -238,5 +238,7 @@
 - 2026-10-19 最高英语水平 EnglishLevel 离线接线：只接技能第 0 行。10 项 EL001–EL010，`其他` 保留。不把托福、四级或分数换算成考试名。`--live` 拒 `live_english_level_select_fill_unclaimed`。分数不填。Never Save。未宣称已支持招行。ChannelType / InterviewCity 可延后。
 - 2026-10-19 招聘信息来源 ChannelType 离线接线：`#resume_basicInfo_channelType`。15 项原名原 code，不做模糊归并。`其他` 保留。`--live` 拒 `live_channel_type_select_fill_unclaimed`。Never Save。未宣称已支持招行。下一刀 InterviewCity。
 - 2026-10-19 面试期望城市 InterviewCity 离线接线：`#resume_basicInfo_expectedInterviewCity`。44 个完整城市名，首项北京市、末项重庆市。简称不匹配。`--live` 拒 `live_interview_city_select_fill_unclaimed`。Never Save。未宣称已支持招行。RankingMajor 仍是 `DOM_CONTROL_MISSING`。
+- 2026-10-19 招行剩余 dict 收口：离线 Select 除 RankingMajor（`DOM_CONTROL_MISSING`）外已齐。下一阻塞是 live 点击证据，各 `live_*_select_fill_unclaimed` 仍拒。Never Save。未宣称已支持招行。
+- 2026-10-19 中信学历：仓内无 live 选项，须 live 采选项后才能接线。`--only 学历 --live` 拒 `live_education_options_unharvested`。不编造选项，不搬招行 Education。Never Save。不宣称中信已支持。见 `dist/site-probes/CITICS_EDUCATION_SELECT_DRAFT_20261019.md`。
 - **Acceptance 仍 85%**。勿对外写已支持招行。与南粤 live / Celebright 登录队列并行、不插队打断 Jeremy。
 - 2026-10-19 文档：中信下一刀裁剪 `dist/site-probes/CITICS_ANT_SELECT_NEXT_TRIM_20261019.md`（交叉 `CITICS_ANT_SELECT_REFUSED_20261018.md`）；飞书登录后采数裁剪 `dist/site-probes/FEISHU_ATSX_LOGIN_HARVEST_TRIM_20261019.md`（交叉 `FEISHU_ATSX_NEXT.md`）。Never Save。不宣称中信或 ATSX 已支持。只加 md。

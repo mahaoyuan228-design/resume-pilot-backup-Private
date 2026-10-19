@@ -464,8 +464,28 @@ async function runLive(port, label, expected) {
 }
 
 async function runSelectKnife(args) {
+  if (args.only === '学历' || args.only === '学历/学位') {
+    const payload = {
+      ok: false,
+      siteId: 'citics',
+      label: args.only,
+      reason: 'live_education_options_unharvested',
+      saved: false,
+      skippedSave: true,
+      writeAttempted: false,
+      formFillClaimed: false,
+      liveEdge: false,
+      optionsHarvested: false,
+      optionCount: 0,
+      syntheticDom: false,
+      hint: '须 live 采选项后才能接线。仓内没有中信学历选项全文，不编造 DOM。'
+    };
+    console.log(JSON.stringify(payload, null, 2));
+    process.exit(3);
+  }
   if (args.help || !ALLOWED_ONLY.includes(args.only)) {
     console.error('Usage: node scripts/auto-citics-basic.mjs --only 婚姻状况|政治面貌|户口类型|证件类型|民族 [--synthetic | --live]');
+    console.error('学历 / 学历/学位 refuses live_education_options_unharvested before CDP. No invented options.');
     console.error('Legacy extension harness: node scripts/auto-citics-basic.mjs --extension   (or omit --only)');
     process.exit(args.help ? 0 : 2);
   }
@@ -653,6 +673,7 @@ async function main() {
   if (args.help && !wantsSelect && !args.extension) {
     console.error('Usage:');
     console.error('  node scripts/auto-citics-basic.mjs --only 婚姻状况|政治面貌|户口类型|证件类型|民族 [--synthetic | --live]');
+    console.error('  学历 / 学历/学位 refuses live_education_options_unharvested before CDP. No invented options.');
     console.error('  node scripts/auto-citics-basic.mjs --extension   # legacy extension auto HTML');
     console.error('  (no --only) also runs legacy extension harness');
     process.exit(0);

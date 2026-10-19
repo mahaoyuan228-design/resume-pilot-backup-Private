@@ -24,8 +24,10 @@ id 清单与教育经历邻居不在这里重复。见 [`CMB_REMAINING_DOM_20261
 - 不按奖项名推断 AwardsLevel；不把虚拟列表可见项数当字典总数。
 - RankingMajor：只保留字典夹具，不猜 selector。状态码 `DOM_CONTROL_MISSING`。
 
-## 下一刀顺序
+## 收口
 
-这条裁剪顺序里的 Select 已离线落地。RankingMajor 停在 `DOM_CONTROL_MISSING`，不猜 selector。
+剩余 dict 离线 Select 除 RankingMajor（`DOM_CONTROL_MISSING`）外已齐。不猜 RankingMajor 的 selector。
 
-Education、RelationshipType、AwardsLevel、EnglishLevel、ChannelType、InterviewCity 已离线落地，不重做。Never Save。未宣称已支持招行。
+下一阻塞是 live 点击证据。已接线的 Select 各自仍拒 `live_marital_select_fill_unclaimed`、`live_politics_select_fill_unclaimed`、`live_ethnicity_select_fill_unclaimed`、`live_id_card_type_select_fill_unclaimed`、`live_education_level_select_fill_unclaimed`、`live_relationship_select_fill_unclaimed`、`live_award_level_select_fill_unclaimed`、`live_english_level_select_fill_unclaimed`、`live_channel_type_select_fill_unclaimed`、`live_interview_city_select_fill_unclaimed`。
+
+Education、RelationshipType、AwardsLevel、EnglishLevel、ChannelType、InterviewCity 不重做。Never Save。未宣称已支持招行。

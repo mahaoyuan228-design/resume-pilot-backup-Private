@@ -499,7 +499,10 @@ function raceMonthItem() {
 }
 
 function wireRaceMonth(document, options = {}) {
-  const stats = { open: 0, earlyClicks: 0, drift: 0, commits: 0, dualClicks: 0, escapes: 0 };
+  const stats = {
+    open: 0, earlyClicks: 0, drift: 0, commits: 0, dualClicks: 0, escapes: 0, huskBlocks: 0,
+    huskRemainedAfterStart: false, panels: {},
+  };
   const editors = Object.fromEntries(['start-date', 'end-date'].map((id) => {
     const panel = document.getElementById(`${id}-panel`);
     document.body.appendChild(panel);
@@ -509,8 +512,21 @@ function wireRaceMonth(document, options = {}) {
       year: panel.querySelector('.el-date-picker__header-label'),
       closed: true,
       ready: false,
+      committed: false,
     }];
   }));
+  stats.panels = { start: editors['start-date'].panel, end: editors['end-date'].panel };
+  if (options.stickyHusk) {
+    const start = editors['start-date'];
+    const observer = new document.defaultView.MutationObserver(() => {
+      if (!start.committed || start.panel.isConnected) return;
+      document.body.appendChild(start.panel);
+      start.panel.style.display = 'none';
+      start.panel.style.visibility = 'hidden';
+      for (const name of RACE_ANIM) start.panel.classList.remove(name);
+    });
+    observer.observe(document.body, { childList: true });
+  }
   const hide = (editor) => {
     editor.ready = false;
     editor.panel.style.display = 'none';
@@ -529,9 +545,11 @@ function wireRaceMonth(document, options = {}) {
   const show = (id) => {
     const own = editors[id];
     const other = editors[id === 'start-date' ? 'end-date' : 'start-date'];
+    if (!own.panel.isConnected) document.body.appendChild(own.panel);
     const resurrect = (id === 'end-date' && options.forceDualOnEnd)
-      || (!other.closed && other.panel.style.display === 'none');
+      || (!other.closed && other.panel.style.display === 'none' && other.panel.isConnected);
     if (resurrect) {
+      if (!other.panel.isConnected) document.body.appendChild(other.panel);
       other.panel.style.display = 'block';
       other.panel.style.visibility = 'visible';
       for (const name of RACE_ANIM) other.panel.classList.remove(name);
@@ -587,6 +605,13 @@ function wireRaceMonth(document, options = {}) {
           return;
         }
         if (cell.classList.contains('disabled')) return;
+        // Live work add form: after start commit the panel stays on body, not pending.
+        // A later a.cell click does not commit while that husk is still connected.
+        const others = [...document.querySelectorAll('.el-picker-panel')].filter((panel) => panel !== editor.panel && panel.isConnected);
+        if (others.length) {
+          stats.huskBlocks += 1;
+          return;
+        }
         const open = [...document.querySelectorAll('.el-picker-panel')].filter((panel) => panel.style.display !== 'none');
         if (open.length > 1) {
           stats.dualClicks += 1;
@@ -596,6 +621,7 @@ function wireRaceMonth(document, options = {}) {
         if (options.badCommit) {
           editor.input.value = '1946-06';
           hide(editor);
+          editor.committed = true;
           stats.commits += 1;
           return;
         }
@@ -604,6 +630,12 @@ function wireRaceMonth(document, options = {}) {
         editor.input.value = `${current}-${String(month).padStart(2, '0')}`;
         hide(editor);
         editor.closed = false;
+        editor.committed = true;
+        if (stats.commits === 0) {
+          stats.huskRemainedAfterStart = editor.panel.isConnected
+            && editor.panel.parentElement === document.body
+            && editor.panel.style.display === 'none';
+        }
         stats.commits += 1;
       });
     }
@@ -634,13 +666,15 @@ test('任职时间 waits out enter animation and reads back both months', async 
     assert.equal(months.earlyClicks, 0);
     assert.equal(months.drift, 0);
     assert.equal(months.dualClicks, 0);
+    assert.equal(months.huskBlocks, 0);
+    assert.equal(months.huskRemainedAfterStart, true);
     assert.equal(months.commits, 2);
     assert.ok(months.escapes >= 2);
-    assert.equal(doc.getElementById('start-date-panel').parentElement, doc.body);
+    assert.equal(doc.getElementById('start-date-panel'), null);
+    assert.equal(months.panels.start.isConnected, false);
     assert.equal(doc.getElementById('end-date-panel').parentElement, doc.body);
-    assert.equal(doc.getElementById('start-date-panel').closest('.el-date-editor'), null);
+    assert.equal(months.panels.start.closest('.el-date-editor'), null);
     assert.equal(doc.getElementById('end-date-panel').closest('.el-date-editor'), null);
-    assert.equal(doc.getElementById('start-date-panel').style.display, 'none');
     assert.equal(doc.getElementById('end-date-panel').style.display, 'none');
     assert.equal(doc.getElementById('salary').value, '');
     flags(result);
@@ -683,6 +717,19 @@ test('a leftover start panel or a decade year step fails closed without an empty
   assert.notEqual(lied.doc.getElementById('start-date').value, '2023-01');
   assert.equal(liedResult.fields.find((field) => field.question === '公司名称').reason, 'not_run');
   assert.equal(forbidden(lied.clicks).length, 0);
+
+  const sticky = bootRace({ stickyHusk: true });
+  const stickyResult = await sticky.context.ResumeGthWorkOpen.trial(request(workProfile({ ...ROW, startDate: '2023-01', endDate: '2024-06' })));
+  assert.equal(stickyResult.ok, false);
+  assert.equal(stickyResult.reason, 'control_not_supported');
+  assert.equal(stickyResult.selectorStep, 'month_panel_structure_unknown');
+  assert.equal(sticky.doc.getElementById('start-date').value, '2023-01');
+  assert.equal(sticky.doc.getElementById('end-date').value, '');
+  assert.notEqual(`${sticky.doc.getElementById('start-date').value} | ${sticky.doc.getElementById('end-date').value}`, '2023-01 | 2024-06');
+  assert.equal(sticky.months.commits, 1);
+  assert.equal(sticky.months.huskRemainedAfterStart, true);
+  assert.equal(sticky.doc.getElementById('salary').value, '');
+  assert.equal(forbidden(sticky.clicks).length, 0);
 });
 
 test('empty work extras do not change an internship source hash', async () => {

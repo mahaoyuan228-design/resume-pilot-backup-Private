@@ -327,8 +327,8 @@ function onlyKind(value) {
   return '';
 }
 
-function writeEvidence(kind, payload) {
-  const { file, latest } = evidencePaths(kind);
+function writeEvidence(kind, payload, now = stampIso()) {
+  const { file, latest } = evidencePaths(kind, now);
   const json = JSON.stringify(payload, null, 2);
   fs.writeFileSync(file, json, 'utf8');
   fs.copyFileSync(file, latest);
@@ -1571,7 +1571,7 @@ async function runSyntheticGated(kind) {
 function printHelp() {
   console.log(`CMB basic harness (siteId=${SITE_ID})
   MODE=readiness|fill (default readiness)
-  CDP_PORT=9237 (live readiness only)
+  CDP_PORT=9237 (trial CDP; --extension readiness or Never-Save fill)
   Prefer offline:
     MODE=fill node scripts/auto-cmb-basic.mjs --synthetic
     MODE=readiness node scripts/auto-cmb-basic.mjs --synthetic
@@ -1637,9 +1637,20 @@ function printHelp() {
   Live portal fingerprint only (no fill claim):
     MODE=readiness node scripts/auto-cmb-basic.mjs --live
     Trial SW message CMB_BASIC_AUTO (src/auto/cmb-basic-auto.html).
-    This CLI --extension does not attach CDP:
+    Attach an already running trial browser (no Edge launch):
     MODE=readiness node scripts/auto-cmb-basic.mjs --extension
-  (--synthetic remains default offline; --extension does not drive Edge)
+    MODE=fill node scripts/auto-cmb-basic.mjs --extension --port 9237
+    --extension-id <id> / RESUME_EXT_ID selects an extension when discovery is ambiguous.
+    --mode readiness|fill overrides MODE. Other modes are refused.
+    --timeout-ms / AUTO_TIMEOUT_MS: whole run (default 180000).
+    --step-timeout-ms / CDP_STEP_TIMEOUT_MS: each CDP call (default 5000).
+    --open-if-missing / OPEN_IF_MISSING=1 optionally opens the CMB resume page.
+    Default OPEN_IF_MISSING=0 reports cmb_basic_tab_missing; no page is opened.
+    Evidence: cmb-basic-extension-<mode>-latest.json plus a unique runId file.
+    Exit 0: runner ok; 1: CDP/timeout/BG_NO_RESPONSE; 2: negative result;
+    3: invalid arguments, missing host permission, or extension selection refusal.
+    Results come from auto-page #out; no chrome.storage polling. 招行 is not supported.
+  (--synthetic remains default offline; --extension is opt-in CDP)
   Never clicks 保存/提交. Sample portal: ${SAMPLE_PORTAL}`);
 }
 
@@ -1650,18 +1661,11 @@ async function main() {
     process.exit(0);
   }
   if (args.extension) {
-    // The trial service worker installs CMB_BASIC_AUTO. This CLI stays offline.
-    const payload = basePayload({
-      ok: false,
-      reason: 'cmb_extension_cli_offline',
-      surface: 'extension',
-      liveEdge: false,
-      formFillClaimed: false,
-      hint: 'Trial SW installs CMB_BASIC_AUTO via src/auto/cmb-basic-auto.html. This CLI does not attach CDP. Never Save. 招行 is not supported.'
-    });
-    const written = writeEvidence(modeFromEnv(), payload);
-    console.log(JSON.stringify({ event: 'refused', ...written, ...payload }, null, 2));
-    process.exit(3);
+    const { runCmbExtensionCdp } = await import('./lib/cmb-extension-cdp.mjs');
+    const payload = await runCmbExtensionCdp({ argv: process.argv.slice(2) });
+    const written = writeEvidence(`extension-${payload.mode}`, payload, `${stampIso()}-${payload.runId}`);
+    console.log(JSON.stringify({ event: 'recorded', ...written, ...payload }, null, 2));
+    process.exit(payload.exitCode);
   }
   if (args.live && !args.synthetic && args.onlyCount > 1) {
     const payload = basePayload({

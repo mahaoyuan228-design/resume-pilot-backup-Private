@@ -1404,6 +1404,7 @@ const gthIntentErrors = {
   picker_selection_limit: "该选择已达数量上限，未改选，没有保存。",
   picker_existing_selection_conflict: "该题已有其他选项，未取消原选项，没有保存。",
   picker_readback_mismatch: "选择后读回不一致，已关闭选择框，没有保存。",
+  picker_replace_unverified: "重填后读回与目标不一致，已保留网站上的显示，没有保存。",
   select_option_missing: "到岗日期没有对应选项，没有保存。",
   select_option_ambiguous: "到岗日期有多个相同选项，未猜选，没有保存。",
   select_structure_changed: "到岗日期的下拉结构已变化，未填写，没有保存。",

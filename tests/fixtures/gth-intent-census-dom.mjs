@@ -65,6 +65,13 @@ function l2Item(row) {
   return `<li class="${esc(row.c)}"><label><input type="checkbox">${esc(row.x)}</label></li>`;
 }
 
+function chipItem(text, index, markup) {
+  const uid = 1313 + index;
+  if (markup === 'no-remove') return `<li uid="${uid}"><p>${esc(text)}</p></li>`;
+  if (markup === 'two-icons') return `<li uid="${uid}"><p>${esc(text)}</p><i></i><i></i></li>`;
+  return `<li uid="${uid}"><p>${esc(text)}</p><i></i></li>`;
+}
+
 function pickerHtml(label, override = {}) {
   const model = pickerModel(label);
   const chips = override.chips ?? (model.trigger ? [model.trigger] : []);
@@ -73,7 +80,7 @@ function pickerHtml(label, override = {}) {
   const counter = override.counter ?? (single ? `（${chips.length}/1）` : `(${chips.length}/5)`);
   const l2Rows = override.emptyL2 ? '' : model.l2.map(l2Item).join('');
   const triggerClass = label === '期望工作地区' ? 'input-l pointer local---222' : 'input-l pointer';
-  const chipHtml = chips.map((text) => `<li><p>${esc(text)}</p><i></i></li>`).join('');
+  const chipHtml = chips.map((text, index) => chipItem(text, index, override.chipMarkup)).join('');
   const l2Menu = override.l1Only === true
     ? ''
     : `<div class="eo-cascader-menu simple-tree-outer"><ul class="simple-tree-wrapper">${l2Rows}</ul></div>`;
@@ -184,9 +191,28 @@ function checkedText(box) {
   return norm(box.closest('label')?.textContent);
 }
 
-export function wireIntentForm(form, { pickers = {}, arrivalWrites = true } = {}) {
+export function moveArrivalDropdownToBody(form) {
+  const menu = itemByLabel(form, '到岗日期')?.querySelector('.el-select-dropdown.el-popper');
+  if (!menu) throw new Error('arrival menu missing');
+  form.ownerDocument.body.appendChild(menu);
+  menu.style.minWidth = '384px';
+  menu.style.transformOrigin = 'center top';
+  menu.style.zIndex = '2010';
+  menu.style.display = 'none';
+  return menu;
+}
+
+export function cloneArrivalDropdownOnBody(form) {
+  const menu = moveArrivalDropdownToBody(form);
+  const copy = menu.cloneNode(true);
+  copy.style.display = 'none';
+  form.ownerDocument.body.appendChild(copy);
+  return { menu, copy };
+}
+
+export function wireIntentForm(form, { pickers = {}, arrivalWrites = true, arrivalAppendToBody = false } = {}) {
   const stats = {
-    save: 0, formCancel: 0, confirm: 0, panelCancel: 0, checkbox: 0, level1: 0, level2: 0, option: 0
+    save: 0, formCancel: 0, confirm: 0, panelCancel: 0, checkbox: 0, level1: 0, level2: 0, option: 0, remove: 0
   };
   form.querySelector('#intent-save')?.addEventListener('click', () => { stats.save += 1; });
   form.querySelector('#intent-cancel')?.addEventListener('click', () => { stats.formCancel += 1; });
@@ -254,7 +280,11 @@ export function wireIntentForm(form, { pickers = {}, arrivalWrites = true } = {}
         if (!text) return;
         stats.level2 += 1;
         const chips = panel.querySelector('.selected-view-data');
-        chips.innerHTML = `<li><p>${esc(text)}</p><i></i></li>`;
+        if (typeof hook.onSingle === 'function') {
+          hook.onSingle({ input, panel, text, chips, stats });
+          return;
+        }
+        chips.innerHTML = `<li uid="1313"><p>${esc(text)}</p><i></i></li>`;
         input.value = text;
         panel.style.display = 'none';
         return;
@@ -267,6 +297,7 @@ export function wireIntentForm(form, { pickers = {}, arrivalWrites = true } = {}
       if (box.checked) {
         if (![...chips.querySelectorAll(':scope > li p')].some((node) => norm(node.textContent) === text)) {
           const li = form.ownerDocument.createElement('li');
+          li.setAttribute('uid', '1313');
           li.innerHTML = `<p>${esc(text)}</p><i></i>`;
           chips.appendChild(li);
         }
@@ -291,11 +322,39 @@ export function wireIntentForm(form, { pickers = {}, arrivalWrites = true } = {}
       menuNodes()[1]?.remove();
       panel.style.display = 'none';
     });
+    const chipList = panel.querySelector('.selected-view-data');
+    chipList.addEventListener('click', (event) => {
+      const icon = event.target.closest('i');
+      if (!icon || !chipList.contains(icon)) return;
+      const li = icon.closest('li');
+      if (!li || li.parentElement !== chipList) return;
+      const icons = [...li.children].filter((node) => node.tagName === 'I');
+      if (icons.length !== 1 || icons[0] !== icon) return;
+      stats.remove += 1;
+      const text = norm(li.querySelector(':scope > p')?.textContent);
+      if (typeof hook.onRemove === 'function') {
+        hook.onRemove({ li, icon, panel, input, text });
+        return;
+      }
+      li.remove();
+      const counterNode = panel.querySelector('.selected-counter > p');
+      const raw = norm(counterNode?.textContent);
+      const match = raw.match(/^([（(])(\d+)\/(\d+)([）)])$/u);
+      if (match && counterNode) counterNode.textContent = `${match[1]}${Math.max(0, Number(match[2]) - 1)}/${match[3]}${match[4]}`;
+      const box = [...panel.querySelectorAll('input[type="checkbox"]')].find((node) => norm(node.closest('label')?.textContent) === text);
+      if (box) box.checked = false;
+    });
   }
   const arrival = itemByLabel(form, '到岗日期');
   const arrivalInput = arrival.querySelector('input.el-input__inner');
   const menu = arrival.querySelector('.el-select-dropdown.el-popper');
   arrivalInput.addEventListener('click', () => {
+    if (arrivalAppendToBody && menu.parentElement !== form.ownerDocument.body) {
+      form.ownerDocument.body.appendChild(menu);
+      menu.style.minWidth = '384px';
+      menu.style.transformOrigin = 'center top';
+      menu.style.zIndex = '2010';
+    }
     menu.style.display = menu.style.display === 'none' ? 'block' : 'none';
   });
   if (arrivalWrites) {

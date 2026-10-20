@@ -1,6 +1,7 @@
 // Six understood GTH basic facts, with explicit coverage for all nine questions.
 // Account-owned phone/email are read-only; never follow their account links.
-// City, photo and first-work date are unsupported. Never save or submit.
+// City, photo and first-work date are unsupported. A requested fill records
+// them as failed, not as a skipped success. Never save or submit.
 // Highest qualification uses an explicitly selected education.N.degree fact;
 // the profile has no top-level highest-qualification field to infer from.
 (() => {
@@ -208,7 +209,7 @@
     const result={fields:[],coverage:COVERAGE.map(field=>({key:field.key,question:field.question,
       path:field.key==='degree'?(Number.isInteger(request?.educationIndex)?`education.${request.educationIndex}.degree`:null)
         :['photo','workStart'].includes(field.key)?null:field.key,
-      supported:field.kind!=='unsupported',status:'skipped',reason:field.kind==='unsupported'?'control_not_supported':'not_run'})),
+      supported:field.kind!=='unsupported',status:field.kind==='unsupported'?'failed':'skipped',reason:field.kind==='unsupported'?'control_not_supported':'not_run'})),
       complete:false,supportedComplete:false,operableComplete:false,writeStarted:false,editorLeftOpen:false,savedOnSite:null,submitted:null,
       softwareClickedSave:false,softwareClickedSubmit:false,softwareClickedDelete:false,scope:'gth_basic_six'};
     if(state.busy)return {ok:false,reason:'fill_in_progress',...result};

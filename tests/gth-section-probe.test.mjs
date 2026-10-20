@@ -108,7 +108,20 @@ function editLink({ hidden = false, removed = false } = {}) {
   return `<a class="h-e-btn" href="javascript:;"${style}>编辑</a>`;
 }
 
-function harness(html, { insertOn, postUrl, postMethod = 'POST' } = {}) {
+function clickedDeleteLink(node) {
+  const control = node?.closest?.('a, button') || node;
+  if (!control?.classList) return false;
+  if (control.classList.contains('el-icon-delete') || control.classList.contains('eduexp-opt-icon')) return true;
+  if (control.querySelector?.('.el-icon-delete, .eduexp-opt-icon')) return true;
+  const url = `${control.getAttribute?.('url') || ''} ${control.getAttribute?.('href') || ''}`;
+  return /delete\.json/i.test(url);
+}
+
+function openedSecForm() {
+  return `<form id="plain-new" class="el-form"><div class="el-form-item"><label class="el-form-item__label">普通</label><input value="x"></div><button type="button">取消</button></form><form id="editor-form" class="el-form sec-form" action="/api/resume/resumeeditinfo.json?customId=9"><div class="el-form-item"><label class="el-form-item__label">技能</label><div class="el-form-item__content"><input class="el-input__inner" value="英语"></div></div><button type="button" id="editor-cancel">取消</button><button type="button" id="editor-save">保存</button><button type="button" id="editor-delete">删除</button></form>`;
+}
+
+function harness(html, { insertOn, postUrl, postMethod = 'POST', openedForm = '', stripTriggers = false } = {}) {
   const dom = new JSDOM(`<!DOCTYPE html><body>${html}<div id="late-menu" class="el-select-dropdown" style="display:none"><div class="el-select-dropdown__item">稍后</div></div></body>`, {
     url: PAGE,
     pretendToBeVisual: true
@@ -118,12 +131,13 @@ function harness(html, { insertOn, postUrl, postMethod = 'POST' } = {}) {
   window.Element.prototype.getClientRects = () => [{ width: 8, height: 8, top: 0, left: 0, bottom: 8, right: 8 }];
   window.fetch = async () => ({ ok: true });
   const clicks = {
-    edit: 0, add: 0, cancel: 0, save: 0, submit: 0, deliver: 0, delete: 0,
+    edit: 0, add: 0, cancel: 0, save: 0, submit: 0, deliver: 0, delete: 0, deleteLink: 0,
     basicCancel: 0, trigger: 0, branch: 0, option: 0, confirm: 0, panelCancel: 0,
     escape: 0, byEntry: [], bare: 0, bare2: 0
   };
   document.addEventListener('click', (event) => {
     const node = event.target;
+    if (clickedDeleteLink(node)) clicks.deleteLink += 1;
     if (node.id === 'bare-trigger') {
       clicks.bare += 1;
       document.getElementById('late-menu').style.display = 'block';
@@ -158,7 +172,15 @@ function harness(html, { insertOn, postUrl, postMethod = 'POST' } = {}) {
     }
     const opened = name === '编辑' || iconEdit || name === '添加' || name === '新增';
     if (opened && insertOn && !document.getElementById('editor-form')) {
-      document.getElementById(insertOn).insertAdjacentHTML('beforeend', editorForm({ rich: true }));
+      const host = document.getElementById(insertOn);
+      if (stripTriggers && host) {
+        host.querySelectorAll('a, button').forEach((control) => {
+          const controlName = norm(control.textContent);
+          const iconOnlyEdit = [...control.querySelectorAll('i')].some((icon) => icon.classList.contains('el-icon-edit-outline') || [...icon.classList].includes('el-icon-edit'));
+          if (controlName === '编辑' || controlName === '添加' || controlName === '新增' || iconOnlyEdit) control.remove();
+        });
+      }
+      host.insertAdjacentHTML('beforeend', openedForm || editorForm({ rich: true }));
     }
     if (opened && postUrl) window.fetch(postUrl, { method: postMethod });
   });
@@ -180,6 +202,7 @@ function untouched(clicks, extra = {}) {
   assert.equal(clicks.submit, 0);
   assert.equal(clicks.deliver, 0);
   assert.equal(clicks.delete, 0);
+  assert.equal(clicks.deleteLink, 0);
   assert.equal(clicks.basicCancel, 0);
   assert.equal(clicks.panelCancel, 0);
   assert.equal(clicks.branch, 0);
@@ -597,4 +620,184 @@ test('CDP wakes the tab before the census and a save POST fails without its quer
   assert.equal(JSON.stringify(file).includes('token'), false);
   assert.equal(JSON.stringify(file).includes('webSocketDebuggerUrl'), false);
   assert.equal(file.neverSave, true);
+});
+
+function deleteAnchor() {
+  return '<a url="/api/resume/delete.json?id=1&amp;token=secret" class="eduexp-opt-icon"><i class="el-icon-delete"></i></a>';
+}
+
+function titleEditLink() {
+  return '<a click="switchFormSecMode" class="h-e-btn el-link el-link--primary is-underline" href="javascript:;"><i class="el-icon-edit-outline"></i><span class="el-link--inner">编辑</span></a>';
+}
+
+function singleEntryCard(title, { titleEdits = 1, entryEdit = false } = {}) {
+  const edits = Array.from({ length: titleEdits }, () => titleEditLink()).join('');
+  const entryEditHtml = entryEdit ? '<a href="javascript:;" data-where="entry"><i class="el-icon-edit-outline"></i></a>' : '';
+  return `<section class="r-section" id="target"><div class="title_"><span class="r-title">${title}</span>${edits}</div><div class="sec-context"><div class="sec-detail" data-entry="0">${entryEditHtml}${deleteAnchor()}<span>已有内容</span></div></div></section>`;
+}
+
+test('a single entry with no edit control uses the unique title-bar 编辑 and ignores delete links', async () => {
+  for (const section of ['职业技能与特长', '其他信息', '求职意向']) {
+    const { document, clicks } = harness(`${basicSection()}${singleEntryCard(section)}`, {
+      insertOn: 'target',
+      stripTriggers: true,
+      openedForm: openedSecForm()
+    });
+    const result = await probeSectionEditor(document, { section, editorWaitMs: 1000 });
+    assert.equal(result.ok, true, section);
+    assert.equal(result.reason, null, section);
+    assert.equal(result.detail.titleEditFallback, true, section);
+    assert.equal(result.detail.editCount, 1, section);
+    assert.equal(result.fields.some((field) => field.label === '技能'), true, section);
+    assert.equal(result.fields.some((field) => field.label === '普通'), false, section);
+    assert.equal(result.fields.some((field) => field.label === '姓名'), false, section);
+    assert.deepEqual(result.staticInlineForms, [{ section: '基本信息', labels: ['姓名', '手机号码'] }], section);
+    assert.deepEqual(result.clickedLabels, ['编辑', '取消'], section);
+    assert.equal(JSON.stringify(result).includes('token'), false, section);
+    assert.equal(JSON.stringify(result).includes('delete.json'), false, section);
+    assert.equal(document.getElementById('plain-new').style.display, '', section);
+    assert.equal(document.getElementById('editor-form').style.display, 'none', section);
+    untouched(clicks, { edit: 1, add: 0, cancel: 1 });
+    const report = buildReport(result, {
+      probedAt: '2026-10-20T10:26:00.000Z',
+      port: 9239,
+      urlMatch: 'hr.gtht.com/resume/edit',
+      section,
+      entry: 0,
+      add: false,
+      openOptions: false,
+      tabAction: 'none',
+      cdpPosts: [],
+      cdpNetwork: false
+    });
+    assert.equal(report.detail.titleEditFallback, true, section);
+    assert.equal(report.supported, false, section);
+  }
+});
+
+test('title-bar 编辑 is fail-closed unless it is the one edit, and an entry edit wins', async () => {
+  const two = harness(singleEntryCard('职业技能与特长', { titleEdits: 2 }));
+  const ambiguous = await probeSectionEditor(two.document, { section: '职业技能与特长', editorWaitMs: 800 });
+  assert.equal(ambiguous.ok, false);
+  assert.equal(ambiguous.reason, 'edit_not_unique');
+  assert.equal(ambiguous.detail.titleEditFallback, true);
+  assert.deepEqual(ambiguous.clickedLabels, []);
+  untouched(two.clicks, { edit: 0, cancel: 0 });
+
+  const none = harness(singleEntryCard('其他信息', { titleEdits: 0 }));
+  const missing = await probeSectionEditor(none.document, { section: '其他信息', editorWaitMs: 800 });
+  assert.equal(missing.ok, false);
+  assert.equal(missing.reason, 'edit_not_found');
+  assert.equal(missing.detail.titleEditFallback, true);
+  assert.deepEqual(missing.clickedLabels, []);
+  untouched(none.clicks, { edit: 0, cancel: 0 });
+
+  const own = harness(singleEntryCard('求职意向', { entryEdit: true }), { insertOn: 'target' });
+  const entry = await probeSectionEditor(own.document, { section: '求职意向', editorWaitMs: 1000 });
+  assert.equal(entry.ok, true);
+  assert.equal(entry.detail.titleEditFallback, false);
+  assert.deepEqual(entry.clickedLabels, ['编辑', '取消']);
+  assert.deepEqual(own.clicks.byEntry, ['0']);
+  untouched(own.clicks, { edit: 1, cancel: 1 });
+
+  const rows = [0, 1].map((index) => `<div class="sec-detail" data-entry="${index}">${deleteAnchor()}<span>行</span></div>`).join('');
+  const multi = harness(`<section class="r-section" id="target"><div class="title_">教育经历${titleEditLink()}</div><div class="sec-context">${rows}</div></section>`);
+  const blocked = await probeSectionEditor(multi.document, { section: '教育经历', editorWaitMs: 800 });
+  assert.equal(blocked.ok, false);
+  assert.equal(blocked.reason, 'edit_not_found');
+  assert.equal(blocked.detail.titleEditFallback, false);
+  assert.deepEqual(blocked.clickedLabels, []);
+  untouched(multi.clicks, { edit: 0, cancel: 0 });
+});
+
+test('a new sec-form stays the opened editor after GTH removes 编辑 and 添加', async () => {
+  const entries = `<div class="sec-detail" data-entry="0"><a href="javascript:;"><i class="el-icon-edit-outline"></i></a>${deleteAnchor()}</div>`;
+  const html = `${basicSection()}<section class="r-section" id="target"><div class="title_">工作经验<a class="h-e-btn" href="javascript:;">添加</a></div><div class="sec-context">${entries}</div></section>`;
+  const { document, clicks } = harness(html, { insertOn: 'target', stripTriggers: true, openedForm: openedSecForm() });
+  const result = await probeSectionEditor(document, { section: '工作经验', add: true, editorWaitMs: 1000 });
+  assert.equal(result.ok, true);
+  assert.equal(result.reason, null);
+  assert.equal(result.add, true);
+  assert.equal(result.fields.some((field) => field.label === '技能'), true);
+  assert.equal(result.fields.some((field) => field.label === '普通'), false);
+  assert.equal(result.fields.some((field) => field.label === '姓名'), false);
+  assert.deepEqual(result.staticInlineForms, [{ section: '基本信息', labels: ['姓名', '手机号码'] }]);
+  assert.deepEqual(result.clickedLabels, ['添加', '取消']);
+  assert.deepEqual(clicks.byEntry, []);
+  assert.equal(document.querySelector('.eduexp-opt-icon')?.isConnected, true);
+  assert.equal(document.getElementById('plain-new').style.display, '');
+  assert.equal(document.getElementById('editor-form').style.display, 'none');
+  assert.equal(JSON.stringify(result).includes('token'), false);
+  assert.equal(JSON.stringify(result).includes('delete.json'), false);
+  untouched(clicks, { add: 1, edit: 0, cancel: 1 });
+});
+
+test('readonly input-l.pointer pickers are picker_trigger and close with panel 取消', async () => {
+  const html = `<section class="r-section" id="target"><div class="title_">教育经历<a class="h-e-btn" href="javascript:;" style="display:none">编辑</a></div>
+    <form id="editor-form" class="el-form sec-form">
+      <div class="el-form-item" id="disc-item"><label class="el-form-item__label">学科门类</label><div class="el-form-item__content"><div class="input-l pointer" id="disc-trigger"><input class="el-input__inner" readonly value=""></div></div></div>
+      <div class="el-form-item" id="major-item"><label class="el-form-item__label">专业类别</label><div class="el-form-item__content"><input id="major-trigger" class="input-l pointer" readonly value="经济学"><div class="dialog-wrap plugin-dialog-wrap" id="major-panel" style="display:none"><div class="eo-cascader-panel"><div class="eo-cascader-menu simple-tree-outer"><ul class="simple-tree-wrapper"><li class="branch has-child"><span>经济学</span></li><li class="branch"><span>法学</span></li></ul></div></div><a class="cancel pop-btn">取消</a><a class="confirm pop-btn">确定</a></div></div></div>
+      <div class="el-form-item" id="note-free"><label class="el-form-item__label">备注</label><div class="el-form-item__content"><input class="input-l pointer" value="可写"></div></div>
+      <button type="button" id="editor-cancel">取消</button><button type="button" id="editor-save">保存</button><button type="button" id="editor-delete">删除</button>
+    </form></section>`;
+  const { document, clicks } = harness(html);
+  let discClicks = 0;
+  let majorClicks = 0;
+  document.addEventListener('click', (event) => {
+    if (event.target.closest?.('#major-trigger')) majorClicks += 1;
+    if (event.target.closest?.('#disc-cancel')) document.getElementById('disc-panel').style.display = 'none';
+    const trigger = event.target.closest?.('#disc-trigger');
+    if (!trigger || event.target.closest?.('.plugin-dialog-wrap')) return;
+    discClicks += 1;
+    const content = document.querySelector('#disc-item .el-form-item__content');
+    if (content.querySelector('.plugin-dialog-wrap')) return;
+    content.insertAdjacentHTML('beforeend', '<div class="dialog-wrap plugin-dialog-wrap" id="disc-panel"><div class="eo-cascader-panel"><div class="eo-cascader-menu simple-tree-outer"><ul class="simple-tree-wrapper"><li class="branch has-child"><span>理学</span></li><li class="branch has-child"><span>工学</span></li></ul></div></div><a class="cancel pop-btn" id="disc-cancel">取消</a><a class="confirm pop-btn" id="disc-confirm">确定</a></div>');
+  });
+  const result = await probeSectionEditor(document, { section: '教育经历', openOptions: true, editorWaitMs: 1000 });
+  assert.equal(result.ok, true);
+  assert.equal(result.editorAlreadyOpen, true);
+  const disc = result.fields.find((field) => field.label === '学科门类');
+  const major = result.fields.find((field) => field.label === '专业类别');
+  const note = result.fields.find((field) => field.label === '备注');
+  assert.equal(disc.controlKind, 'picker_trigger');
+  assert.equal(disc.readOnly, true);
+  assert.equal(disc.dropdownTrigger, 'div.input-l.pointer');
+  assert.equal(major.controlKind, 'picker_trigger');
+  assert.equal(major.readOnly, true);
+  assert.equal(major.value, '经济学');
+  assert.equal(major.dropdownTrigger, 'input.input-l.pointer');
+  assert.equal(note.controlKind, 'el-input');
+  assert.equal(note.readOnly, false);
+  assert.equal(note.value, '可写');
+  const discRead = result.optionReads.find((row) => row.label === '学科门类');
+  const majorRead = result.optionReads.find((row) => row.label === '专业类别');
+  assert.equal(discRead.renderedInPlace, false);
+  assert.equal(discRead.openedSelect, true);
+  assert.equal(discRead.optionsClicked, false);
+  assert.equal(discRead.escapePressed, false);
+  assert.deepEqual(discRead.options.map((option) => option.text), ['理学', '工学']);
+  assert.equal(majorRead.renderedInPlace, true);
+  assert.equal(majorRead.openedSelect, false);
+  assert.equal(majorRead.optionsClicked, false);
+  assert.deepEqual(majorRead.options.map((option) => option.text), ['经济学', '法学']);
+  assert.equal(result.optionReads.some((row) => row.label === '备注'), false);
+  assert.equal(discClicks, 1);
+  assert.equal(majorClicks, 0);
+  assert.equal(clicks.panelCancel, 1);
+  assert.equal(clicks.branch, 0);
+  assert.equal(clicks.confirm, 0);
+  assert.equal(clicks.option, 0);
+  assert.equal(clicks.escape, 0);
+  assert.equal(result.actions.some((action) => action.label === 'picker-trigger' && action.tag === 'DIV'), true);
+  assert.equal(result.actions.some((action) => action.label === 'panel-cancel' && action.name === '取消'), true);
+  assert.equal(result.clickedLabels.includes('确定'), false);
+  assert.equal(result.clickedLabels.includes('删除'), false);
+  assert.equal(result.clickedLabels.includes('保存'), false);
+  assert.equal(clicks.save, 0);
+  assert.equal(clicks.submit, 0);
+  assert.equal(clicks.deliver, 0);
+  assert.equal(clicks.delete, 0);
+  assert.equal(clicks.deleteLink, 0);
+  assert.equal(clicks.edit, 0);
+  assert.equal(clicks.cancel, 1);
 });

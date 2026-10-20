@@ -14,11 +14,19 @@
  *   基本信息 has no 编辑 link; that always-on form is static and does not block.
  *   Any other opened editor blocks the probe before a click.
  *   The only clicks are the unique 编辑 (or, with --add, the unique 添加/新增)
- *   and that editor's 取消. Multi-entry sections open one entry: --entry <index>,
- *   default the first. --open-options reads hidden lists already in the DOM
+ *   and that editor's 取消. One .sec-detail with no edit control uses the
+ *   card's unique title-bar 编辑 and fails closed when that link is missing
+ *   or not unique. Multi-entry sections open one entry: --entry <index>,
+ *   default the first. Delete links (.el-icon-delete, .eduexp-opt-icon,
+ *   url delete.json) are never click targets.
+ *   Static inline forms are classified only from the pre-click snapshot.
+ *   After the click, a new visible form.sec-form in the target card is the
+ *   opened editor even though GTH removes the title 编辑/添加.
+ *   --open-options reads hidden lists already in the DOM
  *   (el-select-dropdown and eo-cascader-panel li.branch levels) and does not
- *   click options. The only extra gesture is opening and Esc-closing one select
- *   whose list is not already rendered.
+ *   click options. Extra gestures: Esc-close one select whose list is not
+ *   already rendered, and open a readonly input.input-l.pointer or
+ *   div.input-l.pointer (picker_trigger) then close it with the panel 取消.
  *   Any POST/PUT/PATCH/DELETE is a failure, except a POST to a known dictionary
  *   endpoint such as getsalaryunit.json. Lookup GETs are not writes.
  * This script stays out of extension packs.
@@ -71,7 +79,7 @@ Options:
   --url-match <text>      Substring that selects the resume tab. Default ${DEFAULT_URL_MATCH}
   --entry <index>         Multi-entry 编辑 to open. Default 0 (the first)
   --add                   Click the unique 添加/新增 trigger instead of 编辑
-  --open-options          Read hidden option lists already in the DOM. At most one select is opened, then Escape
+  --open-options          Read hidden option lists already in the DOM. At most one select is opened, then Escape. A readonly input-l.pointer picker is opened and closed with its panel 取消
   --step-timeout-ms <n>   Timeout for each CDP call. Default 25000
   --help                  Show this help
 `;
@@ -215,6 +223,7 @@ export async function probeSectionEditor(doc, options = {}) {
   let editor = null;
   let openedByUs = false;
   let selectOpened = false;
+  let pickerFailed = false;
   const sectionName = typeof options.section === 'string' ? options.section : '';
   const addMode = options.add === true;
   const entryIndex = Number.isInteger(options.entry) ? options.entry : 0;
@@ -280,8 +289,16 @@ export async function probeSectionEditor(doc, options = {}) {
     return ['保存', '提交', '投递', '删除', '确定'].some((word) => String(name || '').includes(word));
   }
 
+  function isDeleteAffordance(node) {
+    if (!node || node.nodeType !== 1) return false;
+    if (node.classList.contains('el-icon-delete') || node.classList.contains('eduexp-opt-icon')) return true;
+    if (typeof node.querySelector === 'function' && node.querySelector('.el-icon-delete, .eduexp-opt-icon')) return true;
+    const url = `${node.getAttribute('url') || ''} ${node.getAttribute('href') || ''}`;
+    return /delete\.json/i.test(url);
+  }
+
   function isSafeClickable(node) {
-    if (!node || forbiddenName(accessibleName(node))) return false;
+    if (!node || isDeleteAffordance(node) || forbiddenName(accessibleName(node))) return false;
     const tag = node.tagName;
     if (tag === 'BUTTON') {
       if ((node.getAttribute('type') || '').toLowerCase() !== 'button') return false;
@@ -301,7 +318,7 @@ export async function probeSectionEditor(doc, options = {}) {
 
   function performClick(node, label) {
     const name = accessibleName(node);
-    if (forbiddenName(name) || forbiddenName(label)) {
+    if (isDeleteAffordance(node) || forbiddenName(name) || forbiddenName(label)) {
       const error = new Error('refusing_forbidden_click');
       error.reason = 'refusing_forbidden_click';
       throw error;
@@ -321,12 +338,21 @@ export async function probeSectionEditor(doc, options = {}) {
 
   function clickTrigger(node) {
     const widget = node?.closest?.('.el-select, .el-cascader, .cascader-wrap');
-    if (!widget || node.closest('button, a')) {
+    if (!widget || node.closest('button, a') || isDeleteAffordance(node)) {
       const error = new Error('refusing_forbidden_click');
       error.reason = 'refusing_forbidden_click';
       throw error;
     }
     performClick(node, 'dropdown-trigger');
+  }
+
+  function clickPickerTrigger(node) {
+    if (!isReadonlyPickerTrigger(node) || node.closest('button, a') || isDeleteAffordance(node)) {
+      const error = new Error('refusing_forbidden_click');
+      error.reason = 'refusing_forbidden_click';
+      throw error;
+    }
+    performClick(node, 'picker-trigger');
   }
 
   function classTokens(nodes) {
@@ -357,13 +383,13 @@ export async function probeSectionEditor(doc, options = {}) {
   }
 
   function isEditAffordance(node) {
-    if (!node || inPicker(node)) return false;
+    if (!node || inPicker(node) || isDeleteAffordance(node)) return false;
     if (accessibleName(node) === '编辑') return true;
     return !!node.querySelector?.('.el-icon-edit-outline, .el-icon-edit');
   }
 
   function isAddAffordance(node) {
-    if (!node || inPicker(node)) return false;
+    if (!node || inPicker(node) || isDeleteAffordance(node)) return false;
     const name = accessibleName(node);
     return name === '添加' || name === '新增';
   }
@@ -385,6 +411,8 @@ export async function probeSectionEditor(doc, options = {}) {
     return !!(node && typeof node.closest === 'function' && node.closest('.el-dialog, .el-drawer, [role="dialog"]'));
   }
 
+  // Pre-click snapshot only. Opening an editor removes the title 编辑/添加,
+  // so a form inserted by that click must not be classified with this.
   function isStaticInlineForm(node) {
     if (!node || node.tagName !== 'FORM' || isToggledEditorShell(node)) return false;
     const section = node.closest('.r-section');
@@ -416,11 +444,14 @@ export async function probeSectionEditor(doc, options = {}) {
   function splitEditors(nodes) {
     const opened = [];
     const staticInlineForms = [];
+    const staticNodes = [];
     for (const node of nodes) {
-      if (isStaticInlineForm(node)) staticInlineForms.push(staticInlineFormRecord(node));
-      else opened.push(node);
+      if (isStaticInlineForm(node)) {
+        staticNodes.push(node);
+        staticInlineForms.push(staticInlineFormRecord(node));
+      } else opened.push(node);
     }
-    return { opened, staticInlineForms };
+    return { opened, staticInlineForms, staticNodes };
   }
 
   function preferEditor(nodes) {
@@ -433,6 +464,17 @@ export async function probeSectionEditor(doc, options = {}) {
   function entryNodes(section) {
     return [...section.querySelectorAll('.sec-context > .sec-detail')]
       .filter((node) => node.closest('.r-section') === section);
+  }
+
+  function titleBarEditNodes(section) {
+    const titles = [...section.querySelectorAll('.title_')].filter((node) => node.closest('.r-section') === section);
+    const edits = [];
+    for (const title of titles) {
+      for (const node of controlsIn(title, section, isEditAffordance)) {
+        if (!edits.includes(node)) edits.push(node);
+      }
+    }
+    return edits;
   }
 
   function hiddenEntryIndexes(entries, section) {
@@ -458,8 +500,33 @@ export async function probeSectionEditor(doc, options = {}) {
     return cur === root ? parts.join(' > ') : null;
   }
 
+  function isReadonlyPickerTrigger(node) {
+    if (!node?.classList?.contains('input-l') || !node.classList.contains('pointer')) return false;
+    if (inPicker(node) || node.closest('.cascader-wrap, .el-select, .el-cascader, .el-date-editor, .el-upload')) return false;
+    if (node.tagName === 'INPUT') return !!(node.readOnly || node.hasAttribute('readonly'));
+    if (node.tagName !== 'DIV') return false;
+    const inputs = [...node.querySelectorAll('input')].filter((input) => !inPicker(input));
+    const typed = inputs.filter((input) => !['hidden', 'radio', 'checkbox', 'file', 'password', 'button', 'submit'].includes((input.getAttribute('type') || '').toLowerCase()));
+    return typed.length > 0 && typed.every((input) => input.readOnly || input.hasAttribute('readonly'));
+  }
+
+  function pickerTriggerCandidates(item) {
+    const candidates = own(item, 'input.input-l.pointer, div.input-l.pointer').filter((node) => isReadonlyPickerTrigger(node));
+    return candidates.filter((node) => !candidates.some((other) => other !== node && other.contains(node)));
+  }
+
   function triggerSelector(item, trigger) {
     if (!trigger) return null;
+    if (trigger.classList?.contains('input-l') && trigger.classList.contains('pointer') && (trigger.tagName === 'INPUT' || trigger.tagName === 'DIV')) {
+      const hint = `${trigger.tagName.toLowerCase()}.input-l.pointer`;
+      let found = [];
+      try {
+        found = [...item.querySelectorAll(hint)].filter((node) => node.closest('.el-form-item') === item);
+      } catch {
+        found = [];
+      }
+      if (found.length === 1 && found[0] === trigger) return hint;
+    }
     const widget = trigger.closest('.el-cascader, .cascader-wrap, .el-select');
     const hints = [];
     if (widget) {
@@ -485,12 +552,14 @@ export async function probeSectionEditor(doc, options = {}) {
     const selects = own(item, '.el-select');
     const dates = own(item, '.el-date-editor');
     const textareas = own(item, 'textarea');
+    const pickers = pickerTriggerCandidates(item);
     const present = [
       upload.length ? ['upload', upload] : null,
       cascader.length ? ['cascader-wrap', cascader] : null,
       selects.length ? ['el-select', selects] : null,
       dates.length ? ['el-date-editor', dates] : null,
-      textareas.length ? ['textarea', textareas] : null
+      textareas.length ? ['textarea', textareas] : null,
+      pickers.length ? ['picker_trigger', pickers] : null
     ].filter(Boolean);
     if (present.length > 1) return { controlKind: 'custom', widget: present[0][1][0], note: 'widget_not_unique' };
     if (present.length === 1) {
@@ -564,9 +633,11 @@ export async function probeSectionEditor(doc, options = {}) {
     const widgetRoot = kind.controlKind === 'el-select'
       ? own(item, '.el-select')[0]
       : kind.controlKind === 'cascader-wrap' ? own(item, '.cascader-wrap')[0] : null;
-    const trigger = widgetRoot
-      ? ([...widgetRoot.querySelectorAll('input.el-input__inner, .el-input__inner')].find((node) => !inPicker(node) && node.closest('.el-form-item') === item) || null)
-      : null;
+    const trigger = kind.controlKind === 'picker_trigger'
+      ? kind.widget
+      : widgetRoot
+        ? ([...widgetRoot.querySelectorAll('input.el-input__inner, .el-input__inner')].find((node) => !inPicker(node) && node.closest('.el-form-item') === item) || null)
+        : null;
     const widget = kind.widget;
     const readOnly = !!(input && (input.readOnly || input.hasAttribute('readonly')));
     const disabled = !!(input && input.disabled) || item.classList.contains('is-disabled') || !!(widget && widget.classList.contains('is-disabled'));
@@ -624,6 +695,38 @@ export async function probeSectionEditor(doc, options = {}) {
     actions.push({ type: 'keydown', key: 'Escape', label: 'Escape', name: '' });
   }
 
+  function visiblePickerCancels(item) {
+    return [...item.querySelectorAll('a, button, [role="button"]')].filter((node) => {
+      if (node.closest('.el-form-item') !== item || !visible(node)) return false;
+      if (accessibleName(node) !== '取消') return false;
+      if (!node.closest('.plugin-dialog-wrap, .eo-cascader-panel, .popover')) return false;
+      return isSafeClickable(node) && !wouldNavigate(node);
+    });
+  }
+
+  async function readOpenedPicker(item, trigger, base) {
+    if (pickerFailed) return { ...base, reason: 'picker_open_skipped' };
+    if (!trigger || !trigger.isConnected) return { ...base, reason: 'trigger_not_found' };
+    if (!isReadonlyPickerTrigger(trigger) || trigger.closest('button, a') || isDeleteAffordance(trigger) || forbiddenName(accessibleName(trigger))) {
+      return { ...base, reason: 'trigger_not_safe' };
+    }
+    clickPickerTrigger(trigger);
+    base.openedSelect = true;
+    await waitFor(() => (readGthOptionLists(item).options.length || visiblePickerCancels(item).length ? true : null), 800);
+    const opened = readGthOptionLists(item);
+    base.options = opened.options.slice(0, 200);
+    base.levels = opened.levels;
+    const cancels = visiblePickerCancels(item);
+    if (cancels.length !== 1) {
+      pickerFailed = true;
+      base.reason = cancels.length ? 'panel_cancel_not_unique' : 'panel_cancel_not_found';
+      return base;
+    }
+    clickNode(cancels[0], 'panel-cancel');
+    if (!base.options.length) base.reason = 'options_not_rendered';
+    return base;
+  }
+
   async function readFieldOptions(item, field, trigger) {
     const base = {
       label: field.label,
@@ -643,6 +746,7 @@ export async function probeSectionEditor(doc, options = {}) {
       base.renderedInPlace = true;
       return base;
     }
+    if (field.controlKind === 'picker_trigger') return readOpenedPicker(item, trigger, base);
     if (field.controlKind !== 'el-select') return { ...base, reason: 'options_not_rendered' };
     if (selectOpened) return { ...base, reason: 'select_open_skipped' };
     if (!trigger || !trigger.isConnected) return { ...base, reason: 'trigger_not_found' };
@@ -791,7 +895,8 @@ export async function probeSectionEditor(doc, options = {}) {
       entry: addMode ? null : entryIndex,
       editCount: null,
       addCount: null,
-      editorCount: outside.length + inside.length
+      editorCount: outside.length + inside.length,
+      titleEditFallback: false
     };
     if (outside.length) {
       result.reason = 'other_editor_open';
@@ -844,7 +949,12 @@ export async function probeSectionEditor(doc, options = {}) {
         result.detail.entryCount = entries.length;
         return result;
       }
-      const edits = controlsIn(entries[entryIndex], card, isEditAffordance).filter(visible);
+      const entryEdits = controlsIn(entries[entryIndex], card, isEditAffordance);
+      let edits = entryEdits.filter(visible);
+      if (!entryEdits.length && entries.length === 1) {
+        edits = titleBarEditNodes(card).filter(visible);
+        result.detail.titleEditFallback = true;
+      }
       result.detail.editCount = edits.length;
       if (edits.length !== 1) {
         result.reason = edits.length ? 'edit_not_unique' : 'edit_not_found';
@@ -873,11 +983,15 @@ export async function probeSectionEditor(doc, options = {}) {
     }
     if (!editor) {
       const editorWaitMs = Number.isFinite(options.editorWaitMs) ? options.editorWaitMs : 4000;
+      const staticSnapshot = split.staticNodes;
       const appeared = await waitFor(() => {
-        const now = editorNodes().filter((node) => !before.includes(node) && !isStaticInlineForm(node));
-        if (!now.length) return null;
-        const insideNow = now.filter((node) => card.contains(node));
-        const chosen = preferEditor(insideNow.length ? insideNow : now);
+        const fresh = editorNodes().filter((node) => !before.includes(node) && !staticSnapshot.includes(node));
+        const openedSec = fresh.filter((node) => card.contains(node) && node.tagName === 'FORM' && node.classList.contains('sec-form') && visible(node));
+        const insideNow = fresh.filter((node) => card.contains(node));
+        const pool = openedSec.length ? openedSec : insideNow;
+        const candidates = pool.length ? pool : fresh;
+        if (!candidates.length) return null;
+        const chosen = preferEditor(candidates);
         if (!chosen.ok) return { ambiguous: true, count: chosen.count };
         return { editor: chosen.editor };
       }, editorWaitMs);
@@ -906,7 +1020,7 @@ export async function probeSectionEditor(doc, options = {}) {
       result.optionsOpened = true;
       result.optionReads = [];
       for (const row of rows) {
-        if (row.field.controlKind !== 'el-select' && row.field.controlKind !== 'cascader-wrap') continue;
+        if (!['el-select', 'cascader-wrap', 'picker_trigger'].includes(row.field.controlKind)) continue;
         if (result.optionReads.length >= 12) break;
         result.optionReads.push(await readFieldOptions(row.item, row.field, row.trigger));
       }
@@ -1128,7 +1242,8 @@ export function buildReport(page, meta) {
       addCount: integerOrNull(detail.addCount),
       editorCount: integerOrNull(detail.editorCount),
       entryCount: integerOrNull(detail.entryCount),
-      entry: integerOrNull(detail.entry)
+      entry: integerOrNull(detail.entry),
+      titleEditFallback: detail.titleEditFallback === true
     } : null,
     staticInlineForms: publicStaticInlineForms(page?.staticInlineForms),
     fields: Array.isArray(page?.fields) ? page.fields.map(plainField) : [],

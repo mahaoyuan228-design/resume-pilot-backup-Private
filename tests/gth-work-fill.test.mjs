@@ -167,7 +167,12 @@ function wireMonthRange(document) {
   const year = document.getElementById('month-year');
   let active = null;
   const stats = { open: 0, cells: 0 };
-  const show = (id) => { active = document.getElementById(id); panel.style.display = 'block'; stats.open += 1; };
+  const show = (id) => {
+    active = document.getElementById(id);
+    if (!panel.isConnected) document.body.appendChild(panel);
+    panel.style.display = 'block';
+    stats.open += 1;
+  };
   document.getElementById('start-date-icon').addEventListener('click', () => show('start-date'));
   document.getElementById('end-date-icon').addEventListener('click', () => show('end-date'));
   const shift = (delta) => { year.textContent = `${Number(year.textContent.match(/\d{4}/u)[0]) + delta} 年`; };
@@ -501,7 +506,8 @@ function raceMonthItem() {
 function wireRaceMonth(document, options = {}) {
   const stats = {
     open: 0, earlyClicks: 0, drift: 0, commits: 0, dualClicks: 0, escapes: 0, huskBlocks: 0,
-    huskRemainedAfterStart: false, quietAtEndClick: null, endCellClicks: 0, opensBesideHusk: 0, panels: {},
+    huskRemainedAfterStart: false, quietAtEndClick: null, quietAtEndOpen: [], endOpenClicks: 0,
+    endCellClicks: 0, opensBesideHusk: 0, panels: {},
   };
   const editors = Object.fromEntries(['start-date', 'end-date'].map((id) => {
     const panel = document.getElementById(`${id}-panel`);
@@ -578,8 +584,17 @@ function wireRaceMonth(document, options = {}) {
       own.ready = true;
     }, 280);
   };
+  const quietHuskCount = () => [...document.querySelectorAll('.el-picker-panel')].filter((node) => {
+    if (!node.isConnected) return false;
+    if (RACE_ANIM.some((name) => node.classList.contains(name))) return false;
+    return node.style.display === 'none' || node.style.visibility === 'hidden' || node.hasAttribute('hidden');
+  }).length;
   document.getElementById('start-date-icon').addEventListener('click', () => show('start-date'));
-  document.getElementById('end-date-icon').addEventListener('click', () => show('end-date'));
+  document.getElementById('end-date-icon').addEventListener('click', () => {
+    stats.endOpenClicks += 1;
+    stats.quietAtEndOpen.push(quietHuskCount());
+    show('end-date');
+  });
   document.addEventListener('keydown', (event) => {
     if (event.key !== 'Escape') return;
     stats.escapes += 1;
@@ -666,7 +681,7 @@ function bootRace(options = {}) {
   return { ...booted, doc, months: wireRaceMonth(doc, options) };
 }
 
-test('任职时间 waits out enter animation and commits the end month with zero quiet husks', async () => {
+test('任职时间 detaches the quiet start husk before the end open and then commits', async () => {
   for (const [startDate, endDate] of [['2023-01', '2024-06'], ['2022-03', '2023-12']]) {
     const { doc, clicks, context, months } = bootRace();
     const result = await context.ResumeGthWorkOpen.trial(request(workProfile({ ...ROW, startDate, endDate })));
@@ -680,8 +695,10 @@ test('任职时间 waits out enter animation and commits the end month with zero
     assert.equal(months.dualClicks, 0);
     assert.equal(months.huskBlocks, 0);
     assert.equal(months.huskRemainedAfterStart, true);
+    assert.equal(months.endOpenClicks, 1);
+    assert.deepEqual(months.quietAtEndOpen, [0]);
     assert.equal(months.endCellClicks, 1);
-    assert.equal(months.opensBesideHusk, 1);
+    assert.equal(months.opensBesideHusk, 0);
     assert.equal(months.quietAtEndClick, 0);
     assert.equal(months.commits, 2);
     assert.ok(months.escapes >= 2);

@@ -414,6 +414,7 @@ function wireMonthRange(document) {
   const stats = { open: 0, cells: 0, years: 0 };
   const show = (id) => {
     active = document.getElementById(id);
+    if (!panel.isConnected) document.body.appendChild(panel);
     panel.style.display = 'block';
     stats.open += 1;
   };

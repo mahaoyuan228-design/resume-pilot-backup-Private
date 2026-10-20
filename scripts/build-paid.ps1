@@ -140,6 +140,7 @@ $productFiles = @(
   'src/content/gth-basic.js',
   'src/content/gth-draft-save.js',
   'src/content/gth-education.js',
+  'src/content/gth-intent.js',
   'src/content/gth-other-section.js',
   'src/content/gth-section-discovery.js',
   'src/content/gth-simple-section.js',
@@ -472,14 +473,19 @@ $gthTipFiles = @(
   'src/content/gth-basic.js',
   'src/background/basic-task-runner.mjs',
   'src/background/gth-basic-auto.mjs',
-  'src/popup/gth-basic-actions.js'
+  'src/popup/gth-basic-actions.js',
+  'src/content/gth-intent.js',
+  'src/background/gth-intent-auto.mjs',
+  'src/popup/popup.js'
 )
 $gthRunnerFiles = @(
   'src/background/gth-basic-auto.mjs',
-  'src/background/basic-task-runner.mjs'
+  'src/background/basic-task-runner.mjs',
+  'src/background/gth-intent-auto.mjs'
 )
 $gthRequiredInject = @(
-  'src/content/gth-basic.js'
+  'src/content/gth-basic.js',
+  'src/content/gth-intent.js'
 )
 foreach ($relative in $gthTipFiles) {
   $source = Join-Path $repoRoot ($relative -replace '/', '\')
@@ -512,6 +518,15 @@ Require-PackedNeedle 'src/background/gth-basic-auto.mjs' 'Unsupported or unsettl
 Require-PackedNeedle 'src/background/gth-basic-auto.mjs' "'src/content/gth-basic.js'" 'GTH'
 Require-PackedNeedle 'src/popup/gth-basic-actions.js' 'GTH_COVERAGE_FAIL_CLOSED_REASONS' 'GTH'
 Require-PackedNeedle 'src/popup/gth-basic-actions.js' '现居住地、照片或参加工作时间未能填写（控件尚未支持，或地区资料未定）。本次不记为完成，未保存、未提交。' 'GTH'
+Require-PackedNeedle 'src/content/gth-intent.js' "message?.type !== 'GTH_INTENT_FILL'" 'GTH'
+Require-PackedNeedle 'src/content/gth-intent.js' "kind:'unsupported'" 'GTH'
+Require-PackedNeedle 'src/content/gth-intent.js' "'control_not_supported'" 'GTH'
+Require-PackedNeedle 'src/content/gth-intent.js' 'function overwriteProgressOk' 'GTH'
+Require-PackedNeedle 'src/background/gth-intent-auto.mjs' "'src/content/gth-intent.js'" 'GTH'
+Require-PackedNeedle 'src/background/gth-intent-auto.mjs' 'export function assessGthIntentFill' 'GTH'
+Require-PackedNeedle 'src/background/gth-intent-auto.mjs' 'Unsupported or unsettled intent fields fail closed and are not a completed fill.' 'GTH'
+Require-PackedNeedle 'src/popup/popup.js' 'GTH_INTENT_FILL' 'GTH'
+Require-PackedNeedle 'src/popup/popup.js' '"src/content/gth-intent.js"' 'GTH'
 $seenGthInject = New-Object 'System.Collections.Generic.HashSet[string]'
 foreach ($relative in $gthRunnerFiles) {
   $runnerPath = Join-Path $extensionRoot ($relative -replace '/', '\')

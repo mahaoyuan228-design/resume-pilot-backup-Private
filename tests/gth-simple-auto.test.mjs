@@ -54,14 +54,26 @@ async function harness({ fillResponse } = {}) {
     });
   const defaultFill = fillResponse || {
     ok: true,
-    sectionName: SECTION,
-    editorLeftOpen: true,
+    complete: false,
+    scope: 'gth_skills_one',
+    section: SECTION,
+    supportedComplete: true,
+    operableComplete: true,
     writeStarted: false,
+    editorLeftOpen: true,
     savedOnSite: null,
     submitted: null,
     softwareClickedSave: false,
     softwareClickedSubmit: false,
-    fields: [{ question: SECTION, status: 'verified', reason: 'preexisting_same_value' }],
+    softwareClickedDelete: false,
+    liveSupportClaimed: false,
+    fields: [{
+      question: SECTION,
+      path: `customAnswers.${SECTION}`,
+      labels: [SECTION],
+      status: 'verified',
+      reason: 'preexisting_same_value',
+    }],
   };
   const api = {
     storage: { local: storage },
@@ -81,7 +93,14 @@ async function harness({ fillResponse } = {}) {
         return [{ id: tabId, url: PAGE, active: true, lastAccessed: Date.now() }];
       },
       update: async () => ({ id: tabId, url: PAGE, windowId: 1 }),
-      sendMessage: async () => { throw Error('unexpected_sendMessage'); },
+      sendMessage: async (_tabId, message) => {
+        if (message?.type === 'GTH_SKILLS_FILL') {
+          stats.fill += 1;
+          stats.files = ['src/content/gth-open-fill.js', 'src/content/gth-skills.js'];
+          return defaultFill;
+        }
+        throw Error('unexpected_sendMessage');
+      },
     },
     scripting: {
       executeScript: async (request) => {
@@ -288,14 +307,26 @@ test('GTH_SIMPLE_AUTO related GTH tab without edit → login helpNeeded', async 
 function simpleFill(extra = {}) {
   return {
     ok: true,
-    sectionName: SECTION,
-    editorLeftOpen: true,
+    complete: false,
+    scope: 'gth_skills_one',
+    section: SECTION,
+    supportedComplete: true,
+    operableComplete: true,
     writeStarted: false,
+    editorLeftOpen: true,
     savedOnSite: null,
     submitted: null,
     softwareClickedSave: false,
     softwareClickedSubmit: false,
-    fields: [{ question: SECTION, status: 'verified', reason: 'preexisting_same_value' }],
+    softwareClickedDelete: false,
+    liveSupportClaimed: false,
+    fields: [{
+      question: SECTION,
+      path: `customAnswers.${SECTION}`,
+      labels: [SECTION],
+      status: 'verified',
+      reason: 'preexisting_same_value',
+    }],
     ...extra,
   };
 }

@@ -68,6 +68,7 @@ $productFiles = @(
   'src/background/gth-simple-auto.mjs',
   'src/background/gth-other-auto.mjs',
   'src/background/gth-intent-auto.mjs',
+  'src/background/gth-open-fills.mjs',
   'src/background/gth-save-policy.mjs',
   'src/background/gth-draft-metadata.mjs',
   'src/background/gth-draft-task-runner.mjs',
@@ -141,6 +142,10 @@ $productFiles = @(
   'src/content/gth-draft-save.js',
   'src/content/gth-education.js',
   'src/content/gth-intent.js',
+  'src/content/gth-open-fill.js',
+  'src/content/gth-skills.js',
+  'src/content/gth-other.js',
+  'src/content/gth-education-fill.js',
   'src/content/gth-other-section.js',
   'src/content/gth-section-discovery.js',
   'src/content/gth-simple-section.js',
@@ -476,16 +481,26 @@ $gthTipFiles = @(
   'src/popup/gth-basic-actions.js',
   'src/content/gth-intent.js',
   'src/background/gth-intent-auto.mjs',
+  'src/content/gth-open-fill.js',
+  'src/content/gth-skills.js',
+  'src/content/gth-other.js',
+  'src/content/gth-education-fill.js',
+  'src/background/gth-open-fills.mjs',
   'src/popup/popup.js'
 )
 $gthRunnerFiles = @(
   'src/background/gth-basic-auto.mjs',
   'src/background/basic-task-runner.mjs',
-  'src/background/gth-intent-auto.mjs'
+  'src/background/gth-intent-auto.mjs',
+  'src/background/gth-open-fills.mjs'
 )
 $gthRequiredInject = @(
   'src/content/gth-basic.js',
-  'src/content/gth-intent.js'
+  'src/content/gth-intent.js',
+  'src/content/gth-open-fill.js',
+  'src/content/gth-skills.js',
+  'src/content/gth-other.js',
+  'src/content/gth-education-fill.js'
 )
 foreach ($relative in $gthTipFiles) {
   $source = Join-Path $repoRoot ($relative -replace '/', '\')
@@ -527,6 +542,30 @@ Require-PackedNeedle 'src/background/gth-intent-auto.mjs' 'export function asses
 Require-PackedNeedle 'src/background/gth-intent-auto.mjs' 'Unsupported or unsettled intent fields fail closed and are not a completed fill.' 'GTH'
 Require-PackedNeedle 'src/popup/popup.js' 'GTH_INTENT_FILL' 'GTH'
 Require-PackedNeedle 'src/popup/popup.js' '"src/content/gth-intent.js"' 'GTH'
+Require-PackedNeedle 'src/content/gth-open-fill.js' "'control_not_supported'" 'GTH'
+Require-PackedNeedle 'src/content/gth-open-fill.js' "'value_too_long'" 'GTH'
+Require-PackedNeedle 'src/content/gth-open-fill.js' 'liveSupportClaimed' 'GTH'
+Require-PackedNeedle 'src/content/gth-open-fill.js' 'function overwriteProgressOk' 'GTH'
+Require-PackedNeedle 'src/content/gth-open-fill.js' 'forbidden_click' 'GTH'
+Require-PackedNeedle 'src/content/gth-open-fill.js' 'editor_not_unique' 'GTH'
+Require-PackedNeedle 'src/content/gth-skills.js' "messageType: 'GTH_SKILLS_FILL'" 'GTH'
+Require-PackedNeedle 'src/content/gth-other.js' "messageType: 'GTH_OTHER_FILL'" 'GTH'
+Require-PackedNeedle 'src/content/gth-education-fill.js' "messageType: 'GTH_EDUCATION_FILL'" 'GTH'
+Require-PackedNeedle 'src/background/gth-open-fills.mjs' "'src/content/gth-open-fill.js'" 'GTH'
+Require-PackedNeedle 'src/background/gth-open-fills.mjs' "'src/content/gth-skills.js'" 'GTH'
+Require-PackedNeedle 'src/background/gth-open-fills.mjs' "'src/content/gth-other.js'" 'GTH'
+Require-PackedNeedle 'src/background/gth-open-fills.mjs' "'src/content/gth-education-fill.js'" 'GTH'
+Require-PackedNeedle 'src/background/gth-open-fills.mjs' 'export function assessGthSkillsFill' 'GTH'
+Require-PackedNeedle 'src/background/gth-open-fills.mjs' 'export function assessGthOtherFill' 'GTH'
+Require-PackedNeedle 'src/background/gth-open-fills.mjs' 'export function assessGthEducationOpenFill' 'GTH'
+Require-PackedNeedle 'src/background/gth-open-fills.mjs' 'Unsupported controls fail closed and are not a completed fill.' 'GTH'
+Require-PackedNeedle 'src/popup/popup.js' 'GTH_SKILLS_FILL' 'GTH'
+Require-PackedNeedle 'src/popup/popup.js' 'GTH_OTHER_FILL' 'GTH'
+Require-PackedNeedle 'src/popup/popup.js' 'GTH_EDUCATION_FILL' 'GTH'
+Require-PackedNeedle 'src/popup/popup.js' '"src/content/gth-open-fill.js"' 'GTH'
+Require-PackedNeedle 'src/popup/popup.js' '"src/content/gth-skills.js"' 'GTH'
+Require-PackedNeedle 'src/popup/popup.js' '"src/content/gth-other.js"' 'GTH'
+Require-PackedNeedle 'src/popup/popup.js' '"src/content/gth-education-fill.js"' 'GTH'
 $seenGthInject = New-Object 'System.Collections.Generic.HashSet[string]'
 foreach ($relative in $gthRunnerFiles) {
   $runnerPath = Join-Path $extensionRoot ($relative -replace '/', '\')

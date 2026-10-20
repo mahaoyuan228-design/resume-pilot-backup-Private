@@ -3,6 +3,7 @@ import {captureProfileBinding,assertProfileBinding,withProfileBinding,dispatchBo
 import {isCmb,cmbBasicInjectFiles} from "../content/cmb-profile-map.mjs";
 import {cmbPopupOutcome} from "../background/cmb-basic-auto.mjs";
 import {assessGthIntentFill, GTH_INTENT_FILL_TYPE, intentFillPayload, intentValueShape} from "../background/gth-intent-auto.mjs";
+import {assessGthSkillsFill, assessGthOtherFill, assessGthEducationOpenFill} from "../background/gth-open-fills.mjs";
 import { clearAttachment, loadAttachment, saveAttachment, MAX_ATTACHMENT_BYTES } from "../import/attachment-store.js";
 import { MAX_CUSTOM_FACTS, collectScopedQuestionDrafts, loadProfile, normalizeQuestionKey, saveProfile, questionIdentity, normalizeScopedQuestion } from "../profile/store.js";
 import { beginRecentRequest, loadRecentResult, recentResultText, saveRecentResult } from "./recent-result.js";
@@ -37,6 +38,7 @@ const elements = {
   gthEducationTarget: document.getElementById("gth-education-target"),
   gthEducationTargetButton: document.getElementById("gth-education-target-button"),
   gthEducationNewButton: document.getElementById("gth-education-new-button"),
+  gthEducationOpenButton: document.getElementById("gth-education-open-button"),
   gthDraftInspect: document.getElementById("gth-education-draft-inspect"),
   gthDraftSave: document.getElementById("gth-education-draft-save"),
   gthDraftResume: document.getElementById("gth-education-draft-resume"),
@@ -286,6 +288,8 @@ function setBusy(value) {
   elements.gthEducationNewButton.disabled = value || fillOutcomeUncertain || !gthEducationEligible
     || selectedGthEducationProfileIndex() === null || !gthEducationTargets?.ok || gthEducationTargets.editorOpen
     || gthEducationTargets.count >= 30;
+  elements.gthEducationOpenButton.disabled = value || fillOutcomeUncertain || !gthEducationEligible
+    || selectedGthEducationProfileIndex() === null || gthEducationTargets?.editorOpen !== true;
   const draftSource = gthDraftActions.source;
   const sourceVerified = draftSource?.state === "completed" && draftSource.outcome === "verified";
   elements.gthDraftInspect.disabled = value || fillOutcomeUncertain || !sourceVerified
@@ -337,7 +341,7 @@ const GTH_INTENT_SECTION = "求职意向";
 const GTH_INTENT_QUESTIONS = ["期望从事职位类别", "期望薪资", "现从事行业", "现从事职位类别", "现薪资"];
 const GTH_SIMPLE_SECTION = "职业技能与特长";
 const GTH_OTHER_SECTION = "其他信息";
-const GTH_OTHER_QUESTIONS = ["描述", "标题"];
+const GTH_OTHER_QUESTIONS = ["标题", "描述"];
 function confirmedGthSalary(profile) {
   const question = "期望薪资";
   const answer = String(profile.customAnswers?.[question] ?? "").trim();
@@ -552,7 +556,7 @@ function confirmedGthSimple(profile) {
   const answer = profile.customAnswers?.[question];
   const facts = (profile.customFacts || []).filter((item) =>
     normalizeQuestionKey(item?.question) === normalizeQuestionKey(question));
-  return typeof answer === "string" && !!answer.trim() && answer.length <= 2000
+  return typeof answer === "string" && !!answer.trim() && answer.length <= 4000
     && facts.length === 1 && facts[0].answer === answer
     && facts[0].sitePageUrl === GTH_RESUME_PAGE
     && facts[0].sectionName === GTH_SIMPLE_SECTION && facts[0].rowContext === "none"
@@ -564,7 +568,7 @@ function confirmedGthOther(profile) {
     const answer = profile.customAnswers?.[question];
     const facts = (profile.customFacts || []).filter((item) =>
       normalizeQuestionKey(item?.question) === normalizeQuestionKey(question));
-    return typeof answer === "string" && !!answer.trim() && answer.length <= 2000
+    return typeof answer === "string" && !!answer.trim() && answer.length <= 4000
       && facts.length === 1 && facts[0].answer === answer
       && facts[0].sitePageUrl === GTH_RESUME_PAGE
       && facts[0].sectionName === GTH_OTHER_SECTION && facts[0].rowContext === "none"
@@ -1850,7 +1854,7 @@ async function performGthSimpleTrial() {
       await withProfileBinding(chrome.storage.local,profileBinding,()=>chrome.storage.local.set({ resumeTrustedOrigins: [...trusted, origin].slice(-100) }));
     }
     await ownedGthResult(profileBinding,boundedChromeCall(() => dispatchBoundSource(chrome.storage.local,profileBinding,()=>chrome.scripting.executeScript({
-      target: { tabId: tab.id }, files: ["src/content/gth-simple-section.js"]
+      target: { tabId: tab.id }, files: ["src/content/gth-open-fill.js", "src/content/gth-skills.js"]
     })), SCRIPT_TIMEOUT_MS, "script"));
     const activeAgain = await chrome.tabs.query({ active: true, currentWindow: true });
     if (activeAgain.length !== 1 || activeAgain[0].id !== tab.id || activeAgain[0].url !== tab.url)
@@ -1867,36 +1871,22 @@ async function performGthSimpleTrial() {
     showRecentResult(null);
     fillOutcomeUncertain = true;
     setMessage("正在试填职业技能与特长，并核对网站原有内容…");
-    const replies = await ownedGthResult(profileBinding,boundedChromeCall(() => dispatchBoundSource(chrome.storage.local,profileBinding,()=>chrome.scripting.executeScript({
-      target: { tabId: tab.id },
-      func: async (payload) => typeof globalThis.ResumeGthSimpleSection?.fill === "function"
-        ? globalThis.ResumeGthSimpleSection.fill(payload)
-        : { ok: false, reason: "module_unavailable", writeStarted: false },
-      args: [{ profileBinding, sectionName: GTH_SIMPLE_SECTION, answers: { [GTH_SIMPLE_SECTION]: answer } }]
+    const result = await ownedGthResult(profileBinding,boundedChromeCall(() => dispatchBoundSource(chrome.storage.local,profileBinding,()=>chrome.tabs.sendMessage(tab.id, {
+      type: "GTH_SKILLS_FILL", requestId, profileBinding, replaceExisting: false, profile
     })), FILL_TIMEOUT_MS, "fill_response"));
-    const result = replies?.length === 1 ? replies[0]?.result : null;
+    const assessed = assessGthSkillsFill(result);
     if (!result || typeof result.writeStarted !== "boolean")
       throw new Error("网页未返回完整试填结果；本页已锁定，避免重复填写。");
-    if (!result.ok) {
+    if (!assessed.ok) {
       if (result.writeStarted === false) {
         await withProfileBinding(chrome.storage.local,profileBinding,()=>replacePendingReview(tab, requestId));
         fillOutcomeUncertain = !!(await pendingReviewFor(tab));
       }
-      throw new Error(gthSimpleErrors[result.reason]
+      throw new Error(gthSimpleErrors[assessed.reason]
         || "试填结果待核对；本页已锁定，暂不要重复操作。");
     }
     const field = result.fields?.[0];
-    const valid = result.sectionName === GTH_SIMPLE_SECTION && result.editorLeftOpen === true
-      && result.fields?.length === 1 && field?.question === GTH_SIMPLE_SECTION
-      && result.savedOnSite === null && result.submitted === null
-      && result.softwareClickedSave === false && result.softwareClickedSubmit === false
-      && ((result.writeStarted === true && field.status === "verified"
-        && field.reason === "readback_matched")
-        || (result.writeStarted === false && field.status === "verified"
-          && field.reason === "preexisting_same_value")
-        || (result.writeStarted === false && field.status === "skipped"
-          && field.reason === "existing_value"));
-    if (!valid) throw new Error("试填回包不完整；本页已锁定，避免重复填写。");
+    if (!field) throw new Error("试填回包不完整；本页已锁定，避免重复填写。");
     await withProfileBinding(chrome.storage.local,profileBinding,()=>replacePendingReview(tab, requestId));
     fillOutcomeUncertain = !!(await pendingReviewFor(tab));
     const data = { profileBinding, url: tab.url, title: tab.title || "国泰海通简历",
@@ -1967,7 +1957,7 @@ async function performGthOtherTrial() {
       await withProfileBinding(chrome.storage.local,profileBinding,()=>chrome.storage.local.set({ resumeTrustedOrigins: [...trusted, origin].slice(-100) }));
     }
     await ownedGthResult(profileBinding,boundedChromeCall(() => dispatchBoundSource(chrome.storage.local,profileBinding,()=>chrome.scripting.executeScript({
-      target: { tabId: tab.id }, files: ["src/content/gth-other-section.js"]
+      target: { tabId: tab.id }, files: ["src/content/gth-open-fill.js", "src/content/gth-other.js"]
     })), SCRIPT_TIMEOUT_MS, "script"));
     const activeAgain = await chrome.tabs.query({ active: true, currentWindow: true });
     if (activeAgain.length !== 1 || activeAgain[0].id !== tab.id || activeAgain[0].url !== tab.url)
@@ -1985,35 +1975,22 @@ async function performGthOtherTrial() {
     showRecentResult(null);
     fillOutcomeUncertain = true;
     setMessage("正在试填其他信息两项，并核对网站原有内容…");
-    const replies = await ownedGthResult(profileBinding,boundedChromeCall(() => dispatchBoundSource(chrome.storage.local,profileBinding,()=>chrome.scripting.executeScript({
-      target: { tabId: tab.id },
-      func: async (payload) => typeof globalThis.ResumeGthOtherSection?.fill === "function"
-        ? globalThis.ResumeGthOtherSection.fill(payload)
-        : { ok: false, reason: "module_unavailable", writeStarted: false },
-      args: [{ profileBinding, sectionName: GTH_OTHER_SECTION, answers }]
+    const result = await ownedGthResult(profileBinding,boundedChromeCall(() => dispatchBoundSource(chrome.storage.local,profileBinding,()=>chrome.tabs.sendMessage(tab.id, {
+      type: "GTH_OTHER_FILL", requestId, profileBinding, replaceExisting: false, profile
     })), FILL_TIMEOUT_MS, "fill_response"));
-    const result = replies?.length === 1 ? replies[0]?.result : null;
+    const assessed = assessGthOtherFill(result);
     if (!result || typeof result.writeStarted !== "boolean")
       throw new Error("网页未返回完整试填结果；本页已锁定，避免重复填写。");
-    if (!result.ok) {
+    if (!assessed.ok) {
       if (result.writeStarted === false) {
         await withProfileBinding(chrome.storage.local,profileBinding,()=>replacePendingReview(tab, requestId));
         fillOutcomeUncertain = !!(await pendingReviewFor(tab));
       }
-      throw new Error(gthOtherErrors[result.reason]
+      throw new Error(gthOtherErrors[assessed.reason]
         || "试填结果待核对；本页已锁定，暂不要重复操作。");
     }
     const fields = result.fields;
-    const valid = result.sectionName === GTH_OTHER_SECTION && result.editorLeftOpen === true
-      && Array.isArray(fields) && fields.length === 2
-      && GTH_OTHER_QUESTIONS.every((question, index) => fields[index]?.question === question)
-      && result.savedOnSite === false && result.submitted === false
-      && result.softwareClickedSave === false && result.softwareClickedSubmit === false
-      && (result.writeStarted === true
-        ? fields.every((field) => field.status === "verified" && field.reason === "readback_matched")
-        : fields.every((field) => field.status === "verified" && field.reason === "preexisting_same_value"
-          || field.status === "skipped" && field.reason === "existing_value"));
-    if (!valid) throw new Error("试填回包不完整；本页已锁定，避免重复填写。");
+    if (!Array.isArray(fields) || fields.length !== 2) throw new Error("试填回包不完整；本页已锁定，避免重复填写。");
     await withProfileBinding(chrome.storage.local,profileBinding,()=>replacePendingReview(tab, requestId));
     fillOutcomeUncertain = !!(await pendingReviewFor(tab));
     const data = { profileBinding, url: tab.url, title: tab.title || "国泰海通简历",
@@ -2029,6 +2006,70 @@ async function performGthOtherTrial() {
   } catch (error) {
     if(error?.message==="profile_binding_unavailable")error.message="暂时无法核对当前资料，已停止后续填写；已发出的操作请核对网站当前内容。";else if(/^profile_/u.test(error?.message||""))error.message="客户资料已变化，已停止后续填写；已发出的操作请核对网站当前内容。";
     setMessage(error?.message || "其他信息试填未完成，本页可能仍待核对。", true);
+  } finally {
+    setBusy(false);
+  }
+}
+
+async function performGthEducationOpenFill() {
+  if (busy) return;
+  setBusy(true);
+  let tab = null;
+  let requestId = null;
+  try {
+    const profileBinding = await captureProfileBinding(chrome.storage.local);
+    const active = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (active.length !== 1) throw new Error("当前 Edge 窗口的活动页面不唯一，已停止。");
+    tab = await getTab();
+    if (tab.url !== GTH_RESUME_PAGE || active[0].id !== tab.id || active[0].url !== tab.url)
+      throw new Error("请进入国泰海通准确的简历编辑页，未试填。");
+    if (fillOutcomeUncertain || await pendingReviewFor(tab))
+      throw new Error("本页已有结果待核对的填写请求；教育填写保持锁定。");
+    const profile = await loadProfile();
+    const profileIndex = selectedGthEducationProfileIndex();
+    if (!Number.isInteger(profileIndex)) throw new Error("请先选择要使用的资料库教育记录，未试填。");
+    const origin = authorizationScope(tab.url);
+    const { resumeTrustedOrigins } = await chrome.storage.local.get("resumeTrustedOrigins");
+    const trusted = Array.isArray(resumeTrustedOrigins) ? resumeTrustedOrigins : [];
+    if (!trusted.includes(origin)) {
+      if (!window.confirm(`即将把已核对的教育资料填入当前已打开的教育编辑器（${origin}）。不打开编辑器，不点击保存、提交、投递或删除。`))
+        throw new Error("已取消本次试填。");
+      await withProfileBinding(chrome.storage.local, profileBinding, () => chrome.storage.local.set({ resumeTrustedOrigins: [...trusted, origin].slice(-100) }));
+    }
+    await ownedGthResult(profileBinding, boundedChromeCall(() => dispatchBoundSource(chrome.storage.local, profileBinding, () => chrome.scripting.executeScript({
+      target: { tabId: tab.id }, files: ["src/content/gth-open-fill.js", "src/content/gth-education-fill.js"]
+    })), SCRIPT_TIMEOUT_MS, "script"));
+    const activeAgain = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (activeAgain.length !== 1 || activeAgain[0].id !== tab.id || activeAgain[0].url !== tab.url)
+      throw new Error("招聘网页已切换，本次没有发送试填指令。");
+    if (selectedGthEducationProfileIndex() !== profileIndex) throw new Error("选用的教育记录已变化，未发送试填指令。");
+    if (await pendingReviewFor(tab)) throw new Error("本页已有待核对请求，本次没有重复试填。");
+    requestId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    await withProfileBinding(chrome.storage.local, profileBinding, () => beginRecentRequest(tab, requestId));
+    await withProfileBinding(chrome.storage.local, profileBinding, () => chrome.storage.local.set({ [pendingFillReviewKey(tab.id)]: {
+      tabId: tab.id, origin, at: Date.now(), requestId, profileBinding, kind: "gth_education_open_fill"
+    } }));
+    const replaceExisting = elements.gthEducationReplace.checked === true;
+    const result = await ownedGthResult(profileBinding, boundedChromeCall(() => dispatchBoundSource(chrome.storage.local, profileBinding, () => chrome.tabs.sendMessage(tab.id, {
+      type: "GTH_EDUCATION_FILL", requestId, profileBinding, profile, profileIndex, replaceExisting
+    })), FILL_TIMEOUT_MS, "fill_response"));
+    const assessed = assessGthEducationOpenFill(result);
+    if (!assessed.ok) {
+      if (result?.writeStarted === false) {
+        await withProfileBinding(chrome.storage.local, profileBinding, () => replacePendingReview(tab, requestId));
+        fillOutcomeUncertain = !!(await pendingReviewFor(tab));
+      }
+      throw new Error("已打开的教育编辑器没有形成完整读回；在校时间和专业类别仍不能填写。未保存、未提交、未删除。");
+    }
+    await withProfileBinding(chrome.storage.local, profileBinding, () => replacePendingReview(tab, requestId));
+    fillOutcomeUncertain = !!(await pendingReviewFor(tab));
+    setMessage(result.writeStarted
+      ? "已打开的教育编辑器已逐项读回。在校时间和专业类别未填写。软件没有点击保存、提交、投递或删除。"
+      : "已打开的教育编辑器与资料一致，软件没有改写。在校时间和专业类别未填写。没有保存或投递。");
+  } catch (error) {
+    if (error?.message === "profile_binding_unavailable") error.message = "暂时无法核对当前资料，已停止后续填写；已发出的操作请核对网站当前内容。";
+    else if (/^profile_/u.test(error?.message || "")) error.message = "客户资料已变化，已停止后续填写；已发出的操作请核对网站当前内容。";
+    setMessage(error?.message || "教育编辑器填写未完成，本页可能仍待核对。", true);
   } finally {
     setBusy(false);
   }
@@ -2057,6 +2098,7 @@ elements.gthEducationTargetButton.addEventListener("click", () => {
   if (rowIndex !== null) startGthEducationFullJob(rowIndex);
 });
 elements.gthEducationNewButton.addEventListener("click", () => startGthEducationFullJob("new"));
+elements.gthEducationOpenButton.addEventListener("click", performGthEducationOpenFill);
 elements.gthDraftInspect.addEventListener("click", () => performGthDraftAction("inspect"));
 elements.gthDraftSave.addEventListener("click", () => performGthDraftAction("save"));
 elements.gthDraftResume.addEventListener("click", () => performGthDraftAction("resume_refresh"));

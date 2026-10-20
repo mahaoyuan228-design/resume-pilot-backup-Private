@@ -5,11 +5,13 @@
 import {captureProfileBinding,assertProfileBinding,canonicalProfileHash,
   dispatchBoundSource,withProfileBinding} from '../profile/profile-lifecycle.js';
 import {evaluateGthSavePolicy,assertAutoNeverAttemptedSave,gthAutoSiteClaims,gthAutoSiteClaimed} from './gth-save-policy.mjs';
+import {assessGthSkillsFill,shippedGthSkillsFill} from './gth-open-fills.mjs';
 
 const PAGE='https://hr.gtht.com/resume/edit/',ORIGIN='https://hr.gtht.com';
 const SECTION='职业技能与特长';
 const TITLES=['基本信息','教育经历','求职意向','工作经验','职业技能与特长','附件简历','其他信息'];
 const fail=reason=>{throw Error(reason);};
+const newRequestId=()=>`${Date.now()}-${Math.random().toString(36).slice(2,10)}`;
 const safe=error=>{const value=typeof error==='string'?error:(error?.message||'');return typeof value==='string'&&/^[a-z0-9_]{2,100}$/u.test(value)?value:'gth_simple_auto_failed';};
 const sleep=ms=>new Promise(done=>setTimeout(done,ms));
 
@@ -155,38 +157,25 @@ export function createGthSimpleAutoRunner({api=globalThis.chrome,verifyBeforeFil
     if(await canonicalProfileHash(raw,lifecycleOptions.cryptoImpl)!==binding.profileHash)fail('profile_binding_changed');
     const source=skillsSource(raw);
     if(!source.ready)fail(source.hasAnswer?(source.confirmed?'skills_not_ready':'profile_fact_unconfirmed'):'missing_profile_value');
-    const answer=raw.customAnswers[SECTION];
     const trusted=await get('resumeTrustedOrigins');
     if(!Array.isArray(trusted)||!trusted.includes(ORIGIN)){
       if(message.originConfirmed!==true)fail('simple_job_origin_unconfirmed');
       await withProfileBinding(api.storage.local,binding,()=>api.storage.local.set({resumeTrustedOrigins:[...(Array.isArray(trusted)?trusted:[]),ORIGIN].slice(-100)}),lifecycleOptions);
     }
-    await bounded(()=>dispatchBoundSource(api.storage.local,binding,()=>api.scripting.executeScript({target:{tabId:tab.id},files:['src/content/gth-simple-section.js']}),lifecycleOptions),15000);
-    const rows=await bounded(()=>dispatchBoundSource(api.storage.local,binding,()=>api.scripting.executeScript({
-      target:{tabId:tab.id},world:'ISOLATED',
-      func:async(payload)=>typeof globalThis.ResumeGthSimpleSection?.fill==='function'
-        ?globalThis.ResumeGthSimpleSection.fill(payload)
-        :{ok:false,reason:'simple_fill_missing'},
-      args:[{profileBinding:binding,sectionName:SECTION,answers:{[SECTION]:answer}}]
+    const response=await bounded(()=>dispatchBoundSource(api.storage.local,binding,()=>shippedGthSkillsFill({
+      api,tab,requestId:newRequestId(),binding,profile:raw,replaceExisting:false
     }),lifecycleOptions));
     await assertProfileBinding(api.storage.local,binding,lifecycleOptions);
-    const response=rows?.length===1&&rows[0].frameId===0?rows[0].result:null;
     if(!response||typeof response!=='object')fail('gth_simple_fill_no_response');
-    const field=Array.isArray(response.fields)&&response.fields.length===1?response.fields[0]:null;
     const claims=gthAutoSiteClaims(response);
     const claimed=gthAutoSiteClaimed(claims);
-    const ok=!claimed&&response.ok===true&&response.sectionName===SECTION&&response.editorLeftOpen===true
-      &&response.softwareClickedSave===false&&response.softwareClickedSubmit===false&&response.softwareClickedDelete!==true
-      &&response.savedOnSite!==true&&response.submitted!==true
-      &&field&&field.question===SECTION
-      &&(field.status==='verified'&&['preexisting_same_value','readback_matched'].includes(field.reason)
-        ||field.status==='skipped'&&field.reason==='existing_value');
+    const assessed=assessGthSkillsFill(response);
+    const ok=!claimed&&assessed.ok===true;
+    const field=Array.isArray(response.fields)&&response.fields.length===1?response.fields[0]:null;
     const job={
       state:ok?'completed':'unknown',
-      reason:claimed?'gth_simple_save_policy_violated':(ok?null:safe(response.reason||'gth_simple_fill_invalid')),
-      outcome:ok?(field.reason==='readback_matched'?'verified'
-        :field.reason==='preexisting_same_value'?'verified_preexisting'
-        :field.reason==='existing_value'?'skipped_existing':'unknown'):'unknown',
+      reason:claimed?'gth_simple_save_policy_violated':(ok?null:safe(assessed.reason||response.reason||'gth_simple_fill_invalid')),
+      outcome:ok?assessed.outcome:'unknown',
       section:SECTION,
       fields:response.fields||[],
       writeStarted:response.writeStarted===true,

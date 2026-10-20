@@ -7,6 +7,7 @@ import {captureProfileBinding,assertProfileBinding,canonicalProfileHash,commitBo
 import {EDUCATION_PAGE,EDUCATION_FIELDS,educationCandidate,educationJobKey} from './education-task-runner.mjs';
 import {draftJobKey} from './gth-draft-task-runner.mjs';
 import {evaluateGthSavePolicy,gthSaveDryRunStatus,assertAutoNeverAttemptedSave,gthAutoSiteClaims,gthAutoSiteClaimed} from './gth-save-policy.mjs';
+import {assessGthEducationOpenFill,shippedGthEducationOpenFill} from './gth-open-fills.mjs';
 
 const PAGE=EDUCATION_PAGE,ORIGIN='https://hr.gtht.com';
 const TITLES=['基本信息','教育经历','求职意向','工作经验','职业技能与特长','附件简历','其他信息'];
@@ -14,6 +15,7 @@ const pendingKey=tabId=>`resumePendingFillReview:${tabId}`;
 const fail=reason=>{throw Error(reason);};
 const safe=error=>{const value=typeof error==='string'?error:(error?.message||'');return typeof value==='string'&&/^[a-z0-9_]{2,100}$/u.test(value)?value:'gth_education_auto_failed';};
 const sleep=ms=>new Promise(done=>setTimeout(done,ms));
+const newRequestId=()=>`${Date.now()}-${Math.random().toString(36).slice(2,10)}`;
 const stable=value=>JSON.stringify(value,(_key,item)=>item&&typeof item==='object'&&!Array.isArray(item)
   ?Object.fromEntries(Object.keys(item).sort().map(key=>[key,item[key]])):item);
 
@@ -210,6 +212,42 @@ export function createGthEducationAutoRunner({api=globalThis.chrome,verifyBefore
       });
   }
 
+  async function runOpenFill(tab,message,readiness){
+    await license();
+    const binding=readiness.profileBinding||await captureProfileBinding(api.storage.local,lifecycleOptions);
+    await assertProfileBinding(api.storage.local,binding,lifecycleOptions);
+    const raw=await get('resumeProfile');
+    if(await canonicalProfileHash(raw,lifecycleOptions.cryptoImpl)!==binding.profileHash)fail('profile_binding_changed');
+    const profileIndex=message.profileIndex;
+    if(!Number.isInteger(profileIndex)||profileIndex<0||profileIndex>29)fail('education_profile_index_invalid');
+    const trusted=await get('resumeTrustedOrigins');
+    if(!Array.isArray(trusted)||!trusted.includes(ORIGIN)){
+      if(message.originConfirmed!==true)fail('education_job_origin_unconfirmed');
+      await withProfileBinding(api.storage.local,binding,()=>api.storage.local.set({resumeTrustedOrigins:[...(Array.isArray(trusted)?trusted:[]),ORIGIN].slice(-100)}),lifecycleOptions);
+    }
+    const response=await bounded(()=>dispatchBoundSource(api.storage.local,binding,()=>shippedGthEducationOpenFill({
+      api,tab,requestId:newRequestId(),binding,profile:raw,profileIndex,replaceExisting:message.replaceExisting===true
+    }),lifecycleOptions));
+    await assertProfileBinding(api.storage.local,binding,lifecycleOptions);
+    if(!response||typeof response!=='object')fail('gth_education_open_fill_no_response');
+    const claims=gthAutoSiteClaims(response);
+    const claimed=gthAutoSiteClaimed(claims);
+    const assessed=assessGthEducationOpenFill(response);
+    const ok=!claimed&&assessed.ok===true;
+    const job={
+      state:ok?'completed':'unknown',
+      reason:claimed?'gth_education_open_save_policy_violated':(ok?null:safe(assessed.reason||response.reason||'gth_education_open_fill_invalid')),
+      outcome:ok?assessed.outcome:'unknown',
+      section:'教育经历',
+      profileIndex,
+      fields:response.fields||[],
+      writeStarted:response.writeStarted===true,
+      editorLeftOpen:response.editorLeftOpen===true,
+      ...claims
+    };
+    return {job,responseSummary:{ok,writeStarted:job.writeStarted,reason:job.reason,...claims},outcome:job.outcome};
+  }
+
   async function runFill(tab,message,readiness){
     await license();
     const profileIndex=Number.isInteger(message.profileIndex)?message.profileIndex:5;
@@ -324,7 +362,7 @@ export function createGthEducationAutoRunner({api=globalThis.chrome,verifyBefore
   }
 
   async function auto(message,sender=null){
-    const mode=['readiness','fill','inspect'].includes(message.mode)?message.mode:'readiness';
+    const mode=['readiness','fill','inspect','open_fill'].includes(message.mode)?message.mode:'readiness';
     const openIfMissing=message.openIfMissing!==false;
     const report={version:1,kind:'gth_education_auto',mode,at:Date.now(),profileIndex:message.profileIndex??5,
       replaceExisting:message.replaceExisting!==false,steps:[],helpNeeded:false,saveAttempted:false};
@@ -372,6 +410,26 @@ export function createGthEducationAutoRunner({api=globalThis.chrome,verifyBefore
       report.draft=readiness.draftJob;
       report.saveAllowedByPolicy=evaluateGthSavePolicy({fromAutoPath:true}).saveAllowedByPolicy;
       assertAutoNeverAttemptedSave(report);
+      await api.storage.local.set({resumeGthEducationAutoRun:report});
+      return report;
+    }
+
+    if(mode==='open_fill'){
+      const filled=await runOpenFill(found.tab,message,readiness);
+      report.writeAttempted=filled.job?.writeStarted===true;
+      report.steps.push({openFill:filled.job?.state,outcome:filled.outcome});
+      report.job=filled.job;
+      report.fill=filled.responseSummary;
+      report.saveAllowedByPolicy=evaluateGthSavePolicy({fromAutoPath:true}).saveAllowedByPolicy;
+      const claims=gthAutoSiteClaims(filled.job);
+      Object.assign(report,claims);
+      const settled=filled.job?.state==='completed'&&filled.responseSummary?.ok===true&&!gthAutoSiteClaimed(claims);
+      report.ok=settled;
+      if(!report.ok)report.reason=filled.job?.reason||filled.responseSummary?.reason||'gth_education_open_fill_failed';
+      try{assertAutoNeverAttemptedSave(report);}catch(error){
+        report.ok=false;
+        report.reason=report.reason||safe(error);
+      }
       await api.storage.local.set({resumeGthEducationAutoRun:report});
       return report;
     }

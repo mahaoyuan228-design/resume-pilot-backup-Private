@@ -207,6 +207,11 @@ export const GTH_TIP_SOURCE_FILES = [
   'src/popup/gth-basic-actions.js',
   'src/content/gth-intent.js',
   'src/background/gth-intent-auto.mjs',
+  'src/content/gth-open-fill.js',
+  'src/content/gth-skills.js',
+  'src/content/gth-other.js',
+  'src/content/gth-education-fill.js',
+  'src/background/gth-open-fills.mjs',
   'src/popup/popup.js',
 ];
 
@@ -214,12 +219,17 @@ export const GTH_RUNNER_FILES = [
   'src/background/gth-basic-auto.mjs',
   'src/background/basic-task-runner.mjs',
   'src/background/gth-intent-auto.mjs',
+  'src/background/gth-open-fills.mjs',
 ];
 
 // executeScript path named as a string. Import walk does not see it.
 export const GTH_REQUIRED_INJECT = [
   'src/content/gth-basic.js',
   'src/content/gth-intent.js',
+  'src/content/gth-open-fill.js',
+  'src/content/gth-skills.js',
+  'src/content/gth-other.js',
+  'src/content/gth-education-fill.js',
 ];
 
 export const GTH_TIP_MARKERS = [
@@ -299,6 +309,60 @@ export const GTH_TIP_MARKERS = [
     needles: [
       'GTH_INTENT_FILL',
       '"src/content/gth-intent.js"',
+    ],
+  },
+  {
+    rel: 'src/content/gth-open-fill.js',
+    group: 'gth-open-section-fail-closed',
+    needles: [
+      "'control_not_supported'",
+      "'value_too_long'",
+      'liveSupportClaimed',
+      'function overwriteProgressOk',
+      'forbidden_click',
+      'editor_not_unique',
+    ],
+  },
+  {
+    rel: 'src/content/gth-skills.js',
+    group: 'gth-open-section-fail-closed',
+    needles: ["messageType: 'GTH_SKILLS_FILL'"],
+  },
+  {
+    rel: 'src/content/gth-other.js',
+    group: 'gth-open-section-fail-closed',
+    needles: ["messageType: 'GTH_OTHER_FILL'"],
+  },
+  {
+    rel: 'src/content/gth-education-fill.js',
+    group: 'gth-open-section-fail-closed',
+    needles: ["messageType: 'GTH_EDUCATION_FILL'"],
+  },
+  {
+    rel: 'src/background/gth-open-fills.mjs',
+    group: 'gth-open-section-fail-closed',
+    needles: [
+      "'src/content/gth-open-fill.js'",
+      "'src/content/gth-skills.js'",
+      "'src/content/gth-other.js'",
+      "'src/content/gth-education-fill.js'",
+      'export function assessGthSkillsFill',
+      'export function assessGthOtherFill',
+      'export function assessGthEducationOpenFill',
+      'Unsupported controls fail closed and are not a completed fill.',
+    ],
+  },
+  {
+    rel: 'src/popup/popup.js',
+    group: 'gth-open-section-fail-closed',
+    needles: [
+      'GTH_SKILLS_FILL',
+      'GTH_OTHER_FILL',
+      'GTH_EDUCATION_FILL',
+      '"src/content/gth-open-fill.js"',
+      '"src/content/gth-skills.js"',
+      '"src/content/gth-other.js"',
+      '"src/content/gth-education-fill.js"',
     ],
   },
 ];

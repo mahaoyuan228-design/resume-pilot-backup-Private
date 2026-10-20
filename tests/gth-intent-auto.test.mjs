@@ -311,3 +311,55 @@ test('GTH_INTENT_AUTO related GTH tab without edit → login helpNeeded', async 
   assert.equal(response.helpNeeded, true);
   assert.equal(response.saveAttempted, false);
 });
+
+function verifiedIntentData(extra = {}) {
+  return {
+    experimental: true,
+    editorLeftOpen: true,
+    savedOnSite: null,
+    submitted: null,
+    softwareClickedSave: false,
+    softwareClickedSubmit: false,
+    fields: QUESTIONS.map((question) => ({
+      id: `gth:求职意向:${question}`,
+      labels: [question],
+      status: 'verified',
+      reason: 'preexisting_same_value',
+    })),
+    ...extra,
+  };
+}
+
+test('GTH_INTENT_AUTO fill fails closed when the reply is unsettled', async () => {
+  const h = await harness({
+    fillResponse: { ok: true, data: { ...verifiedIntentData(), fields: [] } },
+  });
+  const response = await h.invoke({ type: 'GTH_INTENT_AUTO', mode: 'fill', originConfirmed: true });
+  assert.equal(response.ok, false);
+  assert.equal(response.reason, 'gth_intent_fill_invalid');
+  assert.equal(response.job?.state, 'unknown');
+  assert.equal(response.saveAttempted, false);
+  assert.equal(h.data.resumeGthIntentAutoRun?.ok, false);
+});
+
+test('GTH_INTENT_AUTO keeps a delete or save claim and does not report ok', async () => {
+  const deleted = await harness({
+    fillResponse: { ok: true, data: verifiedIntentData({ softwareClickedDelete: true }) },
+  });
+  const drop = await deleted.invoke({ type: 'GTH_INTENT_AUTO', mode: 'fill', originConfirmed: true });
+  assert.equal(drop.ok, false);
+  assert.equal(drop.reason, 'gth_intent_save_policy_violated');
+  assert.equal(drop.job?.softwareClickedDelete, true);
+  assert.equal(drop.softwareClickedDelete, true);
+  assert.equal(drop.saveAttempted, false);
+  const saved = await harness({
+    fillResponse: { ok: false, error: 'gth_intent_fill_failed', softwareClickedSave: true, writeStarted: true },
+  });
+  const click = await saved.invoke({ type: 'GTH_INTENT_AUTO', mode: 'fill', originConfirmed: true });
+  assert.equal(click.ok, false);
+  assert.equal(click.reason, 'gth_intent_save_policy_violated');
+  assert.equal(click.softwareClickedSave, true);
+  assert.equal(click.job?.softwareClickedSave, true);
+  assert.equal(click.saveAttempted, false);
+  assert.equal(saved.data.resumeGthIntentAutoRun?.softwareClickedSave, true);
+});

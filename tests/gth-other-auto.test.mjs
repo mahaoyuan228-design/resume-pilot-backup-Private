@@ -286,3 +286,41 @@ test('GTH_OTHER_AUTO related GTH tab without edit → login helpNeeded', async (
   assert.equal(response.helpNeeded, true);
   assert.equal(response.saveAttempted, false);
 });
+
+function otherFill(extra = {}) {
+  return {
+    ok: true,
+    sectionName: SECTION,
+    editorLeftOpen: true,
+    writeStarted: false,
+    savedOnSite: false,
+    submitted: false,
+    softwareClickedSave: false,
+    softwareClickedSubmit: false,
+    fields: QUESTIONS.map((question) => ({ question, status: 'verified', reason: 'preexisting_same_value' })),
+    ...extra,
+  };
+}
+
+test('GTH_OTHER_AUTO fill fails closed when fields are unsettled', async () => {
+  const h = await harness({ fillResponse: otherFill({ fields: [], reason: 'gth_other_fill_invalid' }) });
+  const response = await h.invoke({ type: 'GTH_OTHER_AUTO', mode: 'fill', originConfirmed: true });
+  assert.equal(response.ok, false);
+  assert.equal(response.reason, 'gth_other_fill_invalid');
+  assert.equal(response.job?.state, 'unknown');
+  assert.equal(response.saveAttempted, false);
+});
+
+test('GTH_OTHER_AUTO keeps savedOnSite and does not report ok', async () => {
+  const h = await harness({ fillResponse: otherFill({ savedOnSite: true, submitted: true }) });
+  const response = await h.invoke({ type: 'GTH_OTHER_AUTO', mode: 'fill', originConfirmed: true });
+  assert.equal(response.ok, false);
+  assert.equal(response.reason, 'gth_other_save_policy_violated');
+  assert.equal(response.job?.state, 'unknown');
+  assert.equal(response.savedOnSite, true);
+  assert.equal(response.submitted, true);
+  assert.equal(response.job?.savedOnSite, true);
+  assert.equal(response.saveAttempted, false);
+  assert.equal(h.data.resumeGthOtherAutoRun?.ok, false);
+  assert.equal(h.data.resumeGthOtherAutoRun?.savedOnSite, true);
+});

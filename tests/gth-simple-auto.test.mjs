@@ -284,3 +284,38 @@ test('GTH_SIMPLE_AUTO related GTH tab without edit → login helpNeeded', async 
   assert.equal(response.helpNeeded, true);
   assert.equal(response.saveAttempted, false);
 });
+
+function simpleFill(extra = {}) {
+  return {
+    ok: true,
+    sectionName: SECTION,
+    editorLeftOpen: true,
+    writeStarted: false,
+    savedOnSite: null,
+    submitted: null,
+    softwareClickedSave: false,
+    softwareClickedSubmit: false,
+    fields: [{ question: SECTION, status: 'verified', reason: 'preexisting_same_value' }],
+    ...extra,
+  };
+}
+
+test('GTH_SIMPLE_AUTO fill fails closed when the reply is unsettled', async () => {
+  const h = await harness({ fillResponse: simpleFill({ ok: false, reason: 'simple_readback_mismatch', fields: [] }) });
+  const response = await h.invoke({ type: 'GTH_SIMPLE_AUTO', mode: 'fill', originConfirmed: true });
+  assert.equal(response.ok, false);
+  assert.equal(response.reason, 'simple_readback_mismatch');
+  assert.equal(response.job?.state, 'unknown');
+  assert.equal(response.saveAttempted, false);
+});
+
+test('GTH_SIMPLE_AUTO keeps a submit claim and does not report ok', async () => {
+  const h = await harness({ fillResponse: simpleFill({ softwareClickedSubmit: true }) });
+  const response = await h.invoke({ type: 'GTH_SIMPLE_AUTO', mode: 'fill', originConfirmed: true });
+  assert.equal(response.ok, false);
+  assert.equal(response.reason, 'gth_simple_save_policy_violated');
+  assert.equal(response.softwareClickedSubmit, true);
+  assert.equal(response.job?.softwareClickedSubmit, true);
+  assert.equal(response.saveAttempted, false);
+  assert.equal(h.data.resumeGthSimpleAutoRun?.ok, false);
+});

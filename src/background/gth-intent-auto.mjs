@@ -1,8 +1,10 @@
 // GTH 求职意向 auto (mirror GTH_SIMPLE_AUTO). Default: readiness.
 // Fill-without-save uses product GTH_INTENT_TEST (engine.js). Never clicks Save/Cancel/submit.
+// Fill ok is true only after a settled verified readback. A Save/submit/delete
+// or savedOnSite/submitted claim is kept and fails closed.
 import {captureProfileBinding,assertProfileBinding,canonicalProfileHash,
   dispatchBoundSource,withProfileBinding} from '../profile/profile-lifecycle.js';
-import {evaluateGthSavePolicy,assertAutoNeverAttemptedSave} from './gth-save-policy.mjs';
+import {evaluateGthSavePolicy,assertAutoNeverAttemptedSave,gthAutoSiteClaims,gthAutoSiteClaimed} from './gth-save-policy.mjs';
 
 const PAGE='https://hr.gtht.com/resume/edit/',ORIGIN='https://hr.gtht.com';
 const SECTION='求职意向';
@@ -204,27 +206,29 @@ export function createGthIntentAutoRunner({api=globalThis.chrome,verifyBeforeFil
     }),lifecycleOptions));
     await assertProfileBinding(api.storage.local,binding,lifecycleOptions);
     if(!response||typeof response!=='object')fail('gth_intent_fill_no_response');
+    const claims=gthAutoSiteClaims(response);
+    const claimed=gthAutoSiteClaimed(claims);
     if(response.ok!==true){
-      const reason=safe(response.error||'gth_intent_fill_failed');
+      const beforeWrite=response.writeStarted===false&&!claimed;
+      const reason=claimed?'gth_intent_save_policy_violated':safe(response.error||'gth_intent_fill_failed');
       const job={
-        state:response.writeStarted===false?'stopped_before_write':'unknown',
+        state:beforeWrite?'stopped_before_write':'unknown',
         reason,
-        outcome:response.writeStarted===false?'failed_before_write':'write_started_unverified',
+        outcome:beforeWrite?'failed_before_write':'write_started_unverified',
         section:SECTION,
         fields:[],
         writeStarted:response.writeStarted===true,
         editorLeftOpen:false,
-        softwareClickedSave:false,
-        softwareClickedSubmit:false,
+        ...claims,
         requestId
       };
-      return {job,responseSummary:{ok:false,writeStarted:job.writeStarted,reason,error:response.error||null},outcome:job.outcome};
+      return {job,responseSummary:{ok:false,writeStarted:job.writeStarted,reason,error:response.error||null,...claims},outcome:job.outcome};
     }
     const data=response.data||{};
     const fields=Array.isArray(data.fields)?data.fields:[];
-    const valid=data.experimental===true&&data.editorLeftOpen===true
+    const valid=!claimed&&data.experimental===true&&data.editorLeftOpen===true
       &&data.savedOnSite===null&&data.submitted===null
-      &&data.softwareClickedSave===false&&data.softwareClickedSubmit===false
+      &&data.softwareClickedSave===false&&data.softwareClickedSubmit===false&&data.softwareClickedDelete!==true
       &&fields.length===QUESTIONS.length
       &&QUESTIONS.every((question,index)=>fields[index]?.id===`gth:求职意向:${question}`
         &&fields[index]?.labels?.length===1&&fields[index].labels[0]===question
@@ -232,17 +236,16 @@ export function createGthIntentAutoRunner({api=globalThis.chrome,verifyBeforeFil
         &&['readback_matched','preexisting_same_value'].includes(fields[index].reason));
     const job={
       state:valid?'completed':'unknown',
-      reason:valid?null:'gth_intent_fill_invalid',
+      reason:claimed?'gth_intent_save_policy_violated':(valid?null:'gth_intent_fill_invalid'),
       outcome:valid?(fields.every(field=>field.reason==='preexisting_same_value')?'verified_preexisting':'verified'):'unknown',
       section:SECTION,
       fields,
       writeStarted:fields.some(field=>field.reason==='readback_matched'),
       editorLeftOpen:data.editorLeftOpen===true,
-      softwareClickedSave:false,
-      softwareClickedSubmit:false,
+      ...claims,
       requestId
     };
-    return {job,responseSummary:{ok:valid,writeStarted:job.writeStarted,reason:job.reason,fieldCount:fields.length},outcome:job.outcome};
+    return {job,responseSummary:{ok:valid,writeStarted:job.writeStarted,reason:job.reason,fieldCount:fields.length,...claims},outcome:job.outcome};
   }
 
   async function auto(message,sender=null){
@@ -295,8 +298,15 @@ export function createGthIntentAutoRunner({api=globalThis.chrome,verifyBeforeFil
     report.job=filled.job;
     report.fill=filled.responseSummary;
     report.saveAllowedByPolicy=evaluateGthSavePolicy({fromAutoPath:true}).saveAllowedByPolicy;
-    assertAutoNeverAttemptedSave(report);
-    report.ok=true;
+    const claims=gthAutoSiteClaims(filled.job);
+    Object.assign(report,claims);
+    const settled=filled.job?.state==='completed'&&filled.responseSummary?.ok===true&&!gthAutoSiteClaimed(claims);
+    report.ok=settled;
+    if(!report.ok)report.reason=filled.job?.reason||filled.responseSummary?.reason||'gth_intent_fill_failed';
+    try{assertAutoNeverAttemptedSave(report);}catch(error){
+      report.ok=false;
+      report.reason=report.reason||safe(error);
+    }
     await api.storage.local.set({resumeGthIntentAutoRun:report});
     return report;
   }

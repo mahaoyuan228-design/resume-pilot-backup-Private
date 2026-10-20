@@ -86,7 +86,7 @@ test('resolveCmbTarget accepts the resume edit host and refuses aliases that are
   ]) assert.throws(() => resolveCmbTarget(bad), /cmb_page_invalid/, String(bad));
 });
 
-function harness({ hostPermissions = grantedManifest().host_permissions, probeOk = true, serviceWorker = 'src/background/worker.mjs' } = {}) {
+function harness({ hostPermissions = grantedManifest().host_permissions, probeOk = true, serviceWorker = 'src/background/worker.mjs', fillResult = null } = {}) {
   const data = {
     resumeProfile: {
       schemaVersion: 1,
@@ -157,7 +157,7 @@ function harness({ hostPermissions = grantedManifest().host_permissions, probeOk
           if (src.includes('fillBasic')) {
             stats.fill += 1;
             return [{
-              result: {
+              result: fillResult || {
                 ok: true,
                 siteId: 'cmb',
                 saved: false,
@@ -191,7 +191,7 @@ function harness({ hostPermissions = grantedManifest().host_permissions, probeOk
     api,
     lifecycleOptions: { locks: { request: async (_n, _o, work) => work() }, cryptoImpl: globalThis.crypto }
   });
-  return { invoke, autoSender, badSender, stats, api, runner };
+  return { invoke, autoSender, badSender, stats, api, runner, data };
 }
 
 test('CMB_BASIC_AUTO fail-closed when host permission is missing', async () => {
@@ -254,6 +254,73 @@ test('CMB_BASIC_AUTO fill injects cmb-basic.js once and never Save', async () =>
   assert.equal(h.stats.inject, 1);
   assert.equal(h.stats.fill, 1);
   assert.deepEqual(h.stats.files, [['src/content/cmb-basic.js']]);
+});
+
+test('CMB_BASIC_AUTO keeps a submit or savedOnSite claim and does not report ok', async () => {
+  for (const extra of [
+    { softwareClickedSubmit: true },
+    { softwareClickedDelete: true },
+    { savedOnSite: true },
+    { submitted: true },
+    { saved: true, softwareClickedSave: true }
+  ]) {
+    const h = harness({
+      fillResult: {
+        ok: true,
+        siteId: 'cmb',
+        saved: false,
+        skippedSave: true,
+        writeAttempted: true,
+        results: [{ label: '姓名', ok: true }],
+        href: TAB,
+        ...extra
+      }
+    });
+    const filled = await h.invoke({ type: 'CMB_BASIC_AUTO', mode: 'fill', openIfMissing: false });
+    assert.equal(filled.ok, false, JSON.stringify(extra));
+    assert.equal(filled.reason, 'cmb_save_policy_violation');
+    assert.equal(filled.liveSupportClaimed, false);
+    assert.equal(filled.job.state, 'failed');
+    for (const [key, value] of Object.entries(extra)) {
+      assert.equal(filled.job[key], value, key);
+      assert.equal(filled[key], value, key);
+    }
+    assert.equal(h.data.resumeCmbBasicAutoRun?.ok, false);
+  }
+});
+
+test('CMB_BASIC_AUTO fails closed when ok is true without verified rows or siteId', async () => {
+  const empty = harness({
+    fillResult: {
+      ok: true,
+      siteId: 'cmb',
+      saved: false,
+      skippedSave: true,
+      writeAttempted: false,
+      results: [],
+      href: TAB
+    }
+  });
+  const unsettled = await empty.invoke({ type: 'CMB_BASIC_AUTO', mode: 'fill', openIfMissing: false });
+  assert.equal(unsettled.ok, false);
+  assert.equal(unsettled.reason, 'cmb_basic_status_unsettled');
+  assert.equal(unsettled.job.saved, false);
+  assert.equal(unsettled.liveSupportClaimed, false);
+  const foreign = harness({
+    fillResult: {
+      ok: true,
+      siteId: 'cms',
+      saved: false,
+      skippedSave: true,
+      writeAttempted: true,
+      results: [{ label: '姓名', ok: true }],
+      href: TAB
+    }
+  });
+  const isolated = await foreign.invoke({ type: 'CMB_BASIC_AUTO', mode: 'fill', openIfMissing: false });
+  assert.equal(isolated.ok, false);
+  assert.equal(isolated.reason, 'cmb_site_isolation');
+  assert.equal(isolated.liveSupportClaimed, false);
 });
 
 test('trial worker install registers CMB_BASIC_AUTO', async () => {

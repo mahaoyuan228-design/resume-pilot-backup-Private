@@ -16,4 +16,4 @@ Reason codes:
 - `SITE_TAB_MISSING` — `cms-*` needs a `wecruit.hotjob.cn` tab; `gth-*` needs `hr.gtht.com`. No wait.
 - `BG_NO_RESPONSE` — 5s `PAID_QA_BG_PING` did not return, or the auto page was still on `正在请求后台 *_AUTO` with `lastReport` null at timeout.
 - `AUTO_PAGE_NO_REPORT` — auto page opened (`open_reload` / `auto_begin`) but no `/result` before timeout.
-- `SAVE_CLICK_FORBIDDEN` — capture-phase listener recorded a 保存/提交/Save/Submit click. The runner never sends that click.
+- `SAVE_CLICK_FORBIDDEN` — a 保存/提交/Save/Submit click, or a posted report claiming Save, submit, savedOnSite, or submitted. The runner never sends that click. `UNSETTLED_SUCCESS` — `ok:true` with job state `stopped_before_write` or `unknown`.

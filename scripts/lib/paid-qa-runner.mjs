@@ -16,6 +16,7 @@ export const REASON = {
   AUTO_PAGE_NO_REPORT: 'AUTO_PAGE_NO_REPORT',
   BG_NO_RESPONSE: 'BG_NO_RESPONSE',
   SAVE_CLICK_FORBIDDEN: 'SAVE_CLICK_FORBIDDEN',
+  UNSETTLED_SUCCESS: 'UNSETTLED_SUCCESS',
 };
 
 export const HINTS = {
@@ -26,6 +27,7 @@ export const HINTS = {
   [REASON.AUTO_PAGE_NO_REPORT]: '自动页已打开，但在超时前没有回传报告',
   [REASON.BG_NO_RESPONSE]: '自动页已打开，但卡在请求后台 *_AUTO，超时前没有报告',
   [REASON.SAVE_CLICK_FORBIDDEN]: '检测到保存或提交点击，本段已失败（Never Save）',
+  [REASON.UNSETTLED_SUCCESS]: '回包声称成功，但填写未结算或在写入前停止（不得记为通过）',
 };
 
 export const SITE_HOSTS = {
@@ -178,8 +180,35 @@ export function interpretBgProbe(result, timedOut = false) {
   return { reason: REASON.BG_NO_RESPONSE, result };
 }
 
+function claimNodes(body) {
+  const nodes = [body];
+  if (body.job && typeof body.job === 'object') nodes.push(body.job);
+  if (body.fill && typeof body.fill === 'object') nodes.push(body.fill);
+  return nodes;
+}
+
+/** A posted auto report must not pass when it claims Save/submit or an unsettled fill. */
+export function postedReportBreach(body) {
+  if (!body || typeof body !== 'object') return null;
+  for (const node of claimNodes(body)) {
+    if (
+      node.softwareClickedSave === true
+      || node.softwareClickedSubmit === true
+      || node.softwareClickedDelete === true
+      || node.savedOnSite === true
+      || node.submitted === true
+      || node.saveAttempted === true
+    ) return REASON.SAVE_CLICK_FORBIDDEN;
+  }
+  if (body.ok === true) {
+    const state = body.job?.state || body.state;
+    if (state === 'stopped_before_write' || state === 'unknown') return REASON.UNSETTLED_SUCCESS;
+  }
+  return null;
+}
+
 export function sectionStatus({ ok, reason }) {
-  if (reason === REASON.SAVE_CLICK_FORBIDDEN) return 'fail';
+  if (reason === REASON.SAVE_CLICK_FORBIDDEN || reason === REASON.UNSETTLED_SUCCESS) return 'fail';
   if (
     reason === REASON.AUTO_PAGE_NO_REPORT
     || reason === REASON.BG_NO_RESPONSE
@@ -873,10 +902,11 @@ async function runSection({ section, driver, config, fetchJson, openReportServer
         screenshotError: shot.error,
       });
     }
-    const ok = outcome.body?.ok === true;
+    const breach = postedReportBreach(outcome.body);
+    const ok = !breach && outcome.body?.ok === true;
     return finish({
       ok,
-      reason: ok ? null : (outcome.body?.reason || outcome.body?.job?.reason || 'section_failed'),
+      reason: breach || (ok ? null : (outcome.body?.reason || outcome.body?.job?.reason || 'section_failed')),
       saveClicksBefore,
       saveClicksAfter,
       body: outcome.body,

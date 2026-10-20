@@ -27,6 +27,7 @@ import {
   missingSiteHosts,
   readConfig,
   requiredHostsForSections,
+  postedReportBreach,
   runPaidHandoff,
   saveClickGuardSource,
   sectionStatus,
@@ -242,6 +243,11 @@ test('section status and fill counts', () => {
   assert.equal(sectionStatus({ ok: false, reason: REASON.AUTO_PAGE_NO_REPORT }), 'timeout');
   assert.equal(sectionStatus({ ok: false, reason: 'timeout_180000' }), 'timeout');
   assert.equal(sectionStatus({ ok: false, reason: REASON.SAVE_CLICK_FORBIDDEN }), 'fail');
+  assert.equal(sectionStatus({ ok: false, reason: REASON.UNSETTLED_SUCCESS }), 'fail');
+  assert.equal(postedReportBreach({ ok: true, mode: 'fill', savedOnSite: null, softwareClickedSave: false }), null);
+  assert.equal(postedReportBreach({ ok: true, job: { savedOnSite: true, softwareClickedSave: false } }), REASON.SAVE_CLICK_FORBIDDEN);
+  assert.equal(postedReportBreach({ ok: true, job: { state: 'stopped_before_write', softwareClickedSave: false } }), REASON.UNSETTLED_SUCCESS);
+  assert.equal(postedReportBreach({ ok: false, reason: 'page_hidden', job: { state: 'stopped_before_write' } }), null);
   assert.deepEqual(extractFillCounts({ filled: 2, expected: 6 }), { filled: 2, expected: 6 });
   assert.deepEqual(extractFillCounts({
     job: {
@@ -490,6 +496,36 @@ test('save clicks before or after fill fail the section and do not dispatch a cl
   const afterSummary = JSON.parse(fs.readFileSync(after.outcome.summaryPath, 'utf8'));
   assert.equal(afterSummary.sections[0].reason, REASON.SAVE_CLICK_FORBIDDEN);
   assert.equal(afterSummary.sections[0].status, 'fail');
+});
+
+test('posted ok with a site save or an unsettled job fails closed without a DOM click', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'paid-qa-'));
+  const saved = await runWith(dir, {
+    server: okServer({
+      ok: true,
+      mode: 'fill',
+      kind: 'cms_basic_auto',
+      saveAttempted: false,
+      softwareClickedSave: false,
+      job: { state: 'completed', savedOnSite: true, softwareClickedSave: false },
+    }),
+  });
+  assert.equal(saved.outcome.exitCode, 1);
+  const savedSummary = JSON.parse(fs.readFileSync(saved.outcome.summaryPath, 'utf8'));
+  assert.equal(savedSummary.sections[0].status, 'fail');
+  assert.equal(savedSummary.sections[0].reason, REASON.SAVE_CLICK_FORBIDDEN);
+
+  const unsettled = await runWith(dir, {
+    server: okServer({
+      ok: true,
+      mode: 'fill',
+      saveAttempted: false,
+      job: { state: 'stopped_before_write', softwareClickedSave: false, savedOnSite: null },
+    }),
+  });
+  const unsettledSummary = JSON.parse(fs.readFileSync(unsettled.outcome.summaryPath, 'utf8'));
+  assert.equal(unsettledSummary.sections[0].status, 'fail');
+  assert.equal(unsettledSummary.sections[0].reason, REASON.UNSETTLED_SUCCESS);
 });
 
 test('PAID_QA_BG_PROBE=0 skips the ping and still runs the section', async () => {

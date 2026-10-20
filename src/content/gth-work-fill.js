@@ -3,10 +3,13 @@
 // The caller opens the editor. This script never opens one and never clicks
 // 保存 / 提交 / 投递 / 删除.
 // 任职时间 reuses the education dual el-date-editor--month writer (YYYY-MM | YYYY-MM).
-// The shared writer dismisses sibling panels, then binds the .el-picker-panel
-// that this editor's open click shows (Element-UI teleports it to document.body).
-// It waits out el-zoom-in-top-enter* and commits only that panel's a.cell.
-// End readback must be the requested YYYY-MM. A second panel or a year step
+// The shared writer binds the .el-picker-panel that this editor's open click shows
+// (Element-UI teleports it to document.body; not closest(.el-date-editor)).
+// Education may reuse one panel node. Work's two editors do not: a quiet start
+// husk on body poisons the end open, so that open is dismissed, every quiet husk
+// is detached, and the end editor is opened again with zero quiet panels before
+// a.cell. It waits out el-zoom-in-top-enter*. End readback must be the requested
+// YYYY-MM. A husk that cannot be removed, a second pending panel, or a year step
 // other than ±1 fails closed.
 // 职位类别 and 公司所属行业 use the intent cascader: exact 一级||二级, L1 click, then L2.
 // 薪资 is an el-input/select-l hybrid with no option list in the census, so it stays

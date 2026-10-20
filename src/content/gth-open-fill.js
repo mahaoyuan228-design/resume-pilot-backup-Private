@@ -512,11 +512,19 @@
     // Live work 任职时间 shares this writer with education 在校时间. Element-UI
     // teleports .el-picker-panel.el-popper onto document.body, so the panel is not a
     // child of the .el-date-editor that opened it. Bind the panel that this click
-    // makes pending or shown. A connected display:none husk left after the start
-    // month (pendingCount 0, still on body) sits beside the end panel and the
-    // end a.cell click does not commit. Clear that husk before the sibling
-    // editor's month click. A click while el-zoom-in-top-enter* is applied does
-    // not commit either.
+    // makes pending or shown — never via closest(.el-date-editor).
+    // Education 在校时间 reuses one panel node for both editors. One quiet node
+    // may stay between those opens. Work 任职时间 uses two editors and two panel
+    // nodes. After the start month, one display:none husk stays on body. Opening
+    // the end editor beside that husk does not commit, and removing the husk
+    // after that open is too late: the end a.cell still leaves the input empty.
+    // Trigger count cannot tell these apart (both forms have two icons). A second
+    // distinct panel node means dual editors: dismiss that open, detach every
+    // quiet husk, and open again only when monthPanelNodes() is the new pending
+    // panel. If a husk is still connected at a.cell, or the click leaves the
+    // input empty, fail closed. A click while el-zoom-in-top-enter* is applied
+    // does not commit either. Start-then-end still commits once the end panel
+    // is opened with zero quiet husks, so the dual-editor order stays start first.
     function monthPanelNodes() {
       return [...document.querySelectorAll('.el-picker-panel')].filter(node => node.isConnected);
     }
@@ -601,62 +609,72 @@
     async function closeMonthPanel(input) {
       await dismissMonthInput(input);
     }
-    // Escape and an outside press first. A single quiet panel may be the education
-    // picker reused for the other month, so it stays. Extra quiet husks are detached
-    // so they are gone before the sibling editor opens.
-    async function settleMonthPanels(inputs) {
+    function monthPanelSession() {
+      return { distinctPanels: false, seen: new Set() };
+    }
+    // One quiet panel stays only while a single panel node is being reused.
+    // Once two panel nodes have been seen, every quiet husk is detached.
+    async function settleMonthPanels(inputs, session) {
+      const purgeQuiet = session?.distinctPanels === true;
       for (let attempt = 0; attempt < 4; attempt += 1) {
         if (openMonthPanels().length === 0 && monthPanelNodes().length === 0) return;
         await dismissMonthSurfaces(inputs);
-        if (openMonthPanels().length === 0 && monthPanelNodes().length > 1) detachQuietMonthHusks(null);
+        const quiet = monthPanelNodes().filter(node => !monthPanelPending(node));
+        if (openMonthPanels().length === 0 && (purgeQuiet ? quiet.length > 0 : quiet.length > 1)) detachQuietMonthHusks(null);
         await pause(0);
-        if (openMonthPanels().length === 0 && monthPanelNodes().length <= 1) return;
+        if (openMonthPanels().length === 0 && monthPanelNodes().length === 0) return;
+        if (openMonthPanels().length === 0 && !purgeQuiet && monthPanelNodes().length <= 1) return;
         await pause(40);
       }
-      if (openMonthPanels().length || monthPanelNodes().length > 1) {
+      if (openMonthPanels().length || (purgeQuiet ? monthPanelNodes().length > 0 : monthPanelNodes().length > 1)) {
         step('month_panel_structure_unknown');
         stop('control_not_supported');
       }
     }
-    async function bindOpenedMonthPanel(trigger, company) {
+    async function discardOpenedMonthPanel(company) {
+      await dismissMonthSurfaces(company);
+      detachQuietMonthHusks(null);
+      await pause(0);
+      if (monthPanelNodes().some(node => !monthPanelPending(node))) {
+        detachQuietMonthHusks(null);
+        await pause(0);
+      }
+    }
+    async function bindOpenedMonthPanel(trigger, company, session) {
       for (let attempt = 0; attempt < 4; attempt += 1) {
-        await settleMonthPanels(company);
+        await settleMonthPanels(company, session);
         const beforeOpen = monthPanelSnapshot();
         await guardedClick(trigger, boundAction);
         const opened = await waitUntil(() => panelOpenedByClick(beforeOpen), 1600);
         if (!opened || opened.bad) {
           step('month_panel_structure_unknown');
-          await settleMonthPanels(company);
+          await settleMonthPanels(company, session);
           stop('control_not_supported');
         }
         const panel = opened.panel;
+        session.seen.add(panel);
+        if (session.seen.size > 1) session.distinctPanels = true;
         const siblings = () => monthPanelNodes().filter(node => node !== panel);
-        if (siblings().some(monthPanelPending)) {
+        const otherAtOpen = beforeOpen.filter(row => row.panel !== panel);
+        if (siblings().some(monthPanelPending) || otherAtOpen.some(row => row.pending)) {
           step('month_panel_structure_unknown');
           await dismissMonthSurfaces(company);
           stop('control_not_supported');
         }
-        if (siblings().length) {
-          detachQuietMonthHusks(panel);
-          await pause(0);
-          if (siblings().length) {
-            await dismissMonthSurfaces(company);
-            detachQuietMonthHusks(panel);
-            await pause(0);
-          }
+        // This open ran beside another panel node. Element-UI will not commit
+        // a.cell on it even after the husk is removed. Close it, detach every
+        // quiet node, and open again with only the new pending panel present.
+        if (otherAtOpen.length || siblings().length) {
+          session.distinctPanels = true;
+          await discardOpenedMonthPanel(company);
+          continue;
         }
         if (siblings().length === 0 && monthPanelReady(panel) && panel.isConnected) return panel;
-        if (siblings().some(monthPanelPending)) {
-          step('month_panel_structure_unknown');
-          await dismissMonthSurfaces(company);
-          stop('control_not_supported');
-        }
-        await dismissMonthSurfaces(company);
-        detachQuietMonthHusks(panel);
-        await pause(0);
+        await discardOpenedMonthPanel(company);
       }
       step('month_panel_structure_unknown');
       await dismissMonthSurfaces(company);
+      if (session?.distinctPanels) detachQuietMonthHusks(null);
       stop('control_not_supported');
     }
     async function dispatchInputChange(input) {
@@ -676,15 +694,15 @@
       const anchors = [...cell.querySelectorAll('a.cell')].filter(node => panel.contains(node) && shown(node));
       return anchors.length === 1 ? anchors[0] : null;
     }
-    async function fillOneMonth(item, input, trigger, answer, markWrite, guard, peers = []) {
+    async function fillOneMonth(item, input, trigger, answer, markWrite, guard, peers = [], session = monthPanelSession()) {
       const company = [input, ...peers].filter(Boolean);
-      await settleMonthPanels(company);
+      await settleMonthPanels(company, session);
       if (norm(input.value) === answer) return;
       const peerBefore = peers.map(peer => norm(peer.value));
       const drifted = () => peers.some((peer, index) => norm(peer.value) !== peerBefore[index]);
       step('month_open');
       guard();
-      const panel = await bindOpenedMonthPanel(trigger, company);
+      const panel = await bindOpenedMonthPanel(trigger, company, session);
       const failStructure = async () => {
         step('month_panel_structure_unknown');
         await dismissMonthSurfaces(company);
@@ -735,6 +753,11 @@
         if (cells.length !== 12 || choices.length !== 1 || monthCellDisabled(choices[0])) await failStructure();
         const clickTarget = monthClickTarget(choices[0], panel);
         if (!clickTarget || !panel.contains(clickTarget) || clickTarget.tagName !== 'A') await failStructure();
+        if (session.distinctPanels) {
+          detachQuietMonthHusks(panel);
+          await pause(0);
+          if (siblingPanel() || !panel.isConnected || !monthPanelReady(panel)) await failStructure();
+        }
         step('month_option');
         guard();
         markWrite();
@@ -762,10 +785,12 @@
     }
     async function fillMonthRange(target, fact, markWrite, guard) {
       const before = target.inputs.map(node => norm(node.value));
-      await fillOneMonth(target.item, target.inputs[0], target.triggers[0], fact.start, markWrite, guard, [target.inputs[1]]);
+      const session = monthPanelSession();
+      await fillOneMonth(target.item, target.inputs[0], target.triggers[0], fact.start, markWrite, guard, [target.inputs[1]], session);
       if (norm(target.inputs[0].value) !== fact.start || norm(target.inputs[1].value) !== before[1])
         stop('readback_mismatch');
-      await fillOneMonth(target.item, target.inputs[1], target.triggers[1], fact.end, markWrite, guard, [target.inputs[0]]);
+      if (session.distinctPanels) await settleMonthPanels([target.inputs[0], target.inputs[1]], session);
+      await fillOneMonth(target.item, target.inputs[1], target.triggers[1], fact.end, markWrite, guard, [target.inputs[0]], session);
       const read = `${norm(target.inputs[0].value)} | ${norm(target.inputs[1].value)}`;
       if (read !== `${fact.start} | ${fact.end}`) stop('readback_mismatch');
       return { status: 'verified', reason: before.some(value => value !== '') ? 'readback_reapplied' : 'readback_matched' };

@@ -501,11 +501,13 @@ function raceMonthItem() {
 function wireRaceMonth(document, options = {}) {
   const stats = {
     open: 0, earlyClicks: 0, drift: 0, commits: 0, dualClicks: 0, escapes: 0, huskBlocks: 0,
-    huskRemainedAfterStart: false, panels: {},
+    huskRemainedAfterStart: false, quietAtEndClick: null, endCellClicks: 0, opensBesideHusk: 0, panels: {},
   };
   const editors = Object.fromEntries(['start-date', 'end-date'].map((id) => {
     const panel = document.getElementById(`${id}-panel`);
-    document.body.appendChild(panel);
+    // Live work add form creates each panel on open and leaves it on body.
+    // The end panel is not in the document until the end editor is opened.
+    panel.remove();
     return [id, {
       input: document.getElementById(id),
       panel,
@@ -513,6 +515,7 @@ function wireRaceMonth(document, options = {}) {
       closed: true,
       ready: false,
       committed: false,
+      openedBesideHusk: false,
     }];
   }));
   stats.panels = { start: editors['start-date'].panel, end: editors['end-date'].panel };
@@ -545,6 +548,9 @@ function wireRaceMonth(document, options = {}) {
   const show = (id) => {
     const own = editors[id];
     const other = editors[id === 'start-date' ? 'end-date' : 'start-date'];
+    const husks = [...document.querySelectorAll('.el-picker-panel')].filter((node) => node !== own.panel && node.isConnected);
+    own.openedBesideHusk = husks.length > 0;
+    if (own.openedBesideHusk) stats.opensBesideHusk += 1;
     if (!own.panel.isConnected) document.body.appendChild(own.panel);
     const resurrect = (id === 'end-date' && options.forceDualOnEnd)
       || (!other.closed && other.panel.style.display === 'none' && other.panel.isConnected);
@@ -606,9 +612,15 @@ function wireRaceMonth(document, options = {}) {
         }
         if (cell.classList.contains('disabled')) return;
         // Live work add form: after start commit the panel stays on body, not pending.
-        // A later a.cell click does not commit while that husk is still connected.
+        // Opening the other editor while that husk is connected poisons the panel:
+        // a later a.cell does not commit even if the husk was detached after open.
+        // A quiet husk still connected at the click does not commit either.
         const others = [...document.querySelectorAll('.el-picker-panel')].filter((panel) => panel !== editor.panel && panel.isConnected);
-        if (others.length) {
+        if (editor.input.id === 'end-date') {
+          stats.quietAtEndClick = others.length;
+          stats.endCellClicks += 1;
+        }
+        if (editor.openedBesideHusk || others.length) {
           stats.huskBlocks += 1;
           return;
         }
@@ -654,7 +666,7 @@ function bootRace(options = {}) {
   return { ...booted, doc, months: wireRaceMonth(doc, options) };
 }
 
-test('任职时间 waits out enter animation and reads back both months', async () => {
+test('任职时间 waits out enter animation and commits the end month with zero quiet husks', async () => {
   for (const [startDate, endDate] of [['2023-01', '2024-06'], ['2022-03', '2023-12']]) {
     const { doc, clicks, context, months } = bootRace();
     const result = await context.ResumeGthWorkOpen.trial(request(workProfile({ ...ROW, startDate, endDate })));
@@ -668,6 +680,9 @@ test('任职时间 waits out enter animation and reads back both months', async 
     assert.equal(months.dualClicks, 0);
     assert.equal(months.huskBlocks, 0);
     assert.equal(months.huskRemainedAfterStart, true);
+    assert.equal(months.endCellClicks, 1);
+    assert.equal(months.opensBesideHusk, 1);
+    assert.equal(months.quietAtEndClick, 0);
     assert.equal(months.commits, 2);
     assert.ok(months.escapes >= 2);
     assert.equal(doc.getElementById('start-date-panel'), null);
@@ -693,6 +708,7 @@ test('a leftover start panel or a decade year step fails closed without an empty
   assert.equal(dual.doc.getElementById('end-date').value, '');
   assert.notEqual(`${dual.doc.getElementById('start-date').value} | ${dual.doc.getElementById('end-date').value}`, '2023-01 | 2024-06');
   assert.equal(dual.months.dualClicks, 0);
+  assert.equal(dual.months.endCellClicks, 0);
   assert.equal(dual.doc.getElementById('salary').value, '');
   assert.equal(forbidden(dual.clicks).length, 0);
 
@@ -704,6 +720,7 @@ test('a leftover start panel or a decade year step fails closed without an empty
   assert.equal(drift.doc.getElementById('start-date').value, '');
   assert.equal(drift.doc.getElementById('end-date').value, '');
   assert.equal(drift.months.commits, 0);
+  assert.equal(drift.months.endCellClicks, 0);
   assert.equal(forbidden(drift.clicks).length, 0);
 
   const lied = bootRace({ badCommit: true });
@@ -714,6 +731,7 @@ test('a leftover start panel or a decade year step fails closed without an empty
   assert.equal(liedResult.fields.find((field) => field.question === '任职时间').status, 'failed');
   assert.equal(liedResult.fields.find((field) => field.question === '任职时间').reason, 'readback_mismatch');
   assert.equal(lied.doc.getElementById('end-date').value, '');
+  assert.equal(lied.months.endCellClicks, 0);
   assert.notEqual(lied.doc.getElementById('start-date').value, '2023-01');
   assert.equal(liedResult.fields.find((field) => field.question === '公司名称').reason, 'not_run');
   assert.equal(forbidden(lied.clicks).length, 0);
@@ -727,6 +745,7 @@ test('a leftover start panel or a decade year step fails closed without an empty
   assert.equal(sticky.doc.getElementById('end-date').value, '');
   assert.notEqual(`${sticky.doc.getElementById('start-date').value} | ${sticky.doc.getElementById('end-date').value}`, '2023-01 | 2024-06');
   assert.equal(sticky.months.commits, 1);
+  assert.equal(sticky.months.endCellClicks, 0);
   assert.equal(sticky.months.huskRemainedAfterStart, true);
   assert.equal(sticky.doc.getElementById('salary').value, '');
   assert.equal(forbidden(sticky.clicks).length, 0);

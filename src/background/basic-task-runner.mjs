@@ -1,5 +1,8 @@
 // GTH basic six candidates. Account-owned contacts may be site-read-only.
-// Preparation and writing belong to the worker; three questions are unsupported.
+// Preparation and writing belong to the worker. 现居住地 / 照片 / 参加工作时间
+// stay unsupported: a requested fill records them failed, never as a completed skip.
+// Region facts that are missing a unique confirmed pair fail closed offline.
+// This planner does not look up DOM, invent selectors, fill, Save, or submit.
 import {normalizeProfile} from '../profile/store.js';
 import {assertProfileBinding,canonicalProfileHash,commitBoundJob,reserveBoundJob,dispatchBoundSource,withProfileBinding,invalidateBoundJob} from '../profile/profile-lifecycle.js';
 import {beginRecentRequest,saveRecentResult} from '../popup/recent-result.js';
@@ -46,10 +49,103 @@ export function basicCoverage(response,educationIndex) {
       ||response?.fields?.find(row=>row?.question===question&&row.path===pathFor(key,educationIndex))
       ||response?.completedFields?.find(row=>row?.key===key);
     const valid=validRow(row,key)||row?.status==='skipped'&&row.reason==='not_run';
-    return {key,question,path:pathFor(key,educationIndex),supported,status:supported&&valid?row.status:'skipped',
+    return {key,question,path:pathFor(key,educationIndex),supported,
+      status:supported?(valid?row.status:'skipped'):'failed',
       reason:!supported?'control_not_supported':valid?row.reason:'not_run',
       ...(supported&&isReadOnly(row,key)?{readOnlyState:row.readOnlyState}:{})};
   });
+}
+// Same closed set as CMS region facts, plus the unsupported-control skip that
+// GTH basic used to store as status skipped. None of these may count as complete.
+export const GTH_COVERAGE_FAIL_CLOSED_REASONS=Object.freeze([
+  'control_not_supported',
+  'region_fact_not_unique',
+  'region_fact_unconfirmed',
+  'region_fact_scope_mismatch',
+  'explicit_region_pair_required'
+]);
+const GTH_BASIC_SECTION='基本信息';
+const regionClean=value=>String(value??'').normalize('NFKC').replace(/[＊*：:\s]/gu,'');
+function explicitRegionPair(answer){
+  let pair;
+  try{pair=JSON.parse(answer);}catch{return null;}
+  if(!pair||typeof pair!=='object'||Array.isArray(pair))return null;
+  if(Object.keys(pair).sort().join('|')!=='city|province')return null;
+  if(!['province','city'].every(key=>typeof pair[key]==='string'&&pair[key].trim()
+    &&pair[key].length<=160&&!/[\u0000-\u001f]/u.test(pair[key])))return null;
+  return {province:pair.province,city:pair.city};
+}
+const coverageClosed=(extra)=>({
+  supported:false,liveSupportClaimed:false,fillAllowed:false,saveAllowed:false,
+  writeAttempted:false,softwareClickedSave:false,softwareClickedSubmit:false,
+  softwareClickedDelete:false,selector:null,query:null,status:'failed',ok:false,
+  ...extra
+});
+function planUnsupportedControl(key,question,path){
+  return coverageClosed({key,question,path,reason:'control_not_supported',factSettled:false,matchCount:0});
+}
+function planCurrentCityFact(profile){
+  const closed=coverageClosed({key:'currentCity',question:'现居住地',path:'currentCity'});
+  const value=typeof profile?.currentCity==='string'?profile.currentCity.trim():'';
+  if(!value)return {...closed,reason:'control_not_supported',factSettled:false,matchCount:0};
+  if(!(profile?.confirmedFields||[]).includes('currentCity'))
+    return {...closed,reason:'region_fact_unconfirmed',factSettled:false,matchCount:1};
+  const pair=explicitRegionPair(value);
+  if(!pair)return {...closed,reason:'explicit_region_pair_required',factSettled:false,matchCount:1};
+  return {...closed,reason:'control_not_supported',factSettled:true,matchCount:1,
+    fact:{province:pair.province,city:pair.city,confirmed:true}};
+}
+function planGthResidence(profile,sitePageUrl){
+  const matches=(profile?.customFacts||[]).filter(row=>regionClean(row?.question)==='现居住地');
+  if(matches.length>1)return coverageClosed({key:'currentCity',question:'现居住地',path:'currentCity',
+    reason:'region_fact_not_unique',factSettled:false,matchCount:matches.length});
+  if(matches.length!==1)return planCurrentCityFact(profile);
+  const saved=matches[0];
+  const path=`customAnswers.${saved.question}`;
+  const closed=coverageClosed({key:'currentCity',question:'现居住地',path,matchCount:1,factSettled:false});
+  if(!(profile?.confirmedFields||[]).includes(path)||saved.answer!==profile?.customAnswers?.[saved.question])
+    return {...closed,reason:'region_fact_unconfirmed'};
+  const pair=explicitRegionPair(saved.answer);
+  if(!pair)return {...closed,reason:'explicit_region_pair_required'};
+  const page=typeof sitePageUrl==='string'&&sitePageUrl?sitePageUrl:BASIC_PAGE;
+  const settled=saved.sitePageUrl===page
+    &&regionClean(saved.sectionName)===GTH_BASIC_SECTION
+    &&regionClean(saved.question)==='现居住地'
+    &&(saved.rowContext==='single'||saved.rowContext==='none');
+  if(!settled)return {...closed,reason:'region_fact_scope_mismatch'};
+  // A settled pair still has no GTH control adapter. Do not invent a selector.
+  return {...closed,reason:'control_not_supported',factSettled:true,
+    fact:{province:pair.province,city:pair.city,confirmed:true}};
+}
+export function planGthBasicCoverage(profile,{sitePageUrl=BASIC_PAGE,fillRequested=false}={}){
+  const fields=[
+    planGthResidence(profile,sitePageUrl),
+    planUnsupportedControl('photo','照片',null),
+    planUnsupportedControl('workStart','参加工作时间',null)
+  ];
+  const region=fields.find(field=>field.reason!=='control_not_supported');
+  const blocked=fields.some(field=>field.status==='failed'&&GTH_COVERAGE_FAIL_CLOSED_REASONS.includes(field.reason));
+  return {
+    ok:false,complete:false,blocked,fillRequested:fillRequested===true,
+    fillAllowed:false,saveAllowed:false,writeAttempted:false,liveSupportClaimed:false,
+    softwareClickedSave:false,softwareClickedSubmit:false,softwareClickedDelete:false,
+    selector:null,query:null,
+    reason:region?.reason||'control_not_supported',
+    fields
+  };
+}
+export function sealGthJobCoverage(coverage,plan){
+  const byKey=new Map((plan?.fields||[]).filter(field=>field?.status==='failed'
+    &&GTH_COVERAGE_FAIL_CLOSED_REASONS.includes(field.reason)).map(field=>[field.key,field]));
+  return (Array.isArray(coverage)?coverage:[]).map(row=>{
+    const planned=byKey.get(row?.key);
+    if(!planned)return row;
+    return {...row,supported:false,status:'failed',reason:planned.reason};
+  });
+}
+export function gthRequestedFillBlocksComplete(plan){
+  return plan?.fillRequested===true&&plan.blocked===true&&Array.isArray(plan.fields)
+    &&plan.fields.some(field=>field?.status==='failed'&&GTH_COVERAGE_FAIL_CLOSED_REASONS.includes(field.reason));
 }
 function validResponse(response,index) {
   const rows=response?.fields;
@@ -144,6 +240,14 @@ export function createBasicTaskRunner({api=globalThis.chrome,verifyBeforeFill=nu
       if(!['verified','verified_preexisting','failed_before_write'].includes(outcome)
         ||outcome==='failed_before_write'&&response.writeStarted!==false){
         await save({state:'unknown',...diagnostics(status?.data),coverage,fields});return;
+      }
+      const coveragePlan=planGthBasicCoverage(raw,{fillRequested:true});
+      if(outcome!=='failed_before_write'&&gthRequestedFillBlocksComplete(coveragePlan)){
+        const sealed=sealGthJobCoverage(coverage,coveragePlan);
+        await save({state:'unknown',outcome,...info,reason:coveragePlan.reason,coverage:sealed,fields,
+          supportedComplete:response.supportedComplete===true,operableComplete:response.operableComplete===true,
+          complete:false,liveSupportClaimed:false});
+        return;
       }
       const receipt=await withProfileBinding(api.storage.local,binding,()=>saveReceipt(tab,requestId,BASIC_KIND,outcome==='failed_before_write'?[]:coverage,
         outcome==='failed_before_write'?'stopped_before_write':'readback_complete'),lifecycleOptions);

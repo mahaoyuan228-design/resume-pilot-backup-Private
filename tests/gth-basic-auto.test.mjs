@@ -28,9 +28,9 @@ const fixture = () => ({
   ],
 });
 
-async function harness({ trialResponse, statusOutcome = 'verified_preexisting', patchTrial } = {}) {
+async function harness({ trialResponse, statusOutcome = 'verified_preexisting', patchTrial, profile } = {}) {
   const data = {
-    resumeProfile: fixture(),
+    resumeProfile: profile || fixture(),
     resumeProfileLifecycle: { version: 1, epoch, state: 'ready' },
   };
   const clone = (value) => (value === undefined ? undefined : structuredClone(value));
@@ -88,10 +88,10 @@ async function harness({ trialResponse, statusOutcome = 'verified_preexisting', 
     { key: 'phone', question: '手机号码', path: 'phone', supported: true, status: 'skipped', reason: 'site_readonly', readOnlyState: 'same' },
     { key: 'birthDate', question: '出生年月', path: 'birthDate', supported: true, status: 'verified', reason: 'preexisting_same_value' },
     { key: 'email', question: '电子邮件', path: 'email', supported: true, status: 'skipped', reason: 'site_readonly', readOnlyState: 'same' },
-    { key: 'currentCity', question: '现居住地', path: 'currentCity', supported: false, status: 'skipped', reason: 'control_not_supported' },
+    { key: 'currentCity', question: '现居住地', path: 'currentCity', supported: false, status: 'failed', reason: 'control_not_supported' },
     { key: 'degree', question: '最高学历', path: 'education.5.degree', supported: true, status: 'verified', reason: 'preexisting_same_value' },
-    { key: 'photo', question: '照片', path: null, supported: false, status: 'skipped', reason: 'control_not_supported' },
-    { key: 'workStart', question: '参加工作时间', path: null, supported: false, status: 'skipped', reason: 'control_not_supported' },
+    { key: 'photo', question: '照片', path: null, supported: false, status: 'failed', reason: 'control_not_supported' },
+    { key: 'workStart', question: '参加工作时间', path: null, supported: false, status: 'failed', reason: 'control_not_supported' },
   ];
   const api = {
     storage: { local: storage },
@@ -191,6 +191,18 @@ test('GTH_BASIC_AUTO defaults to readiness when mode omitted', async () => {
   assert.equal(response.ok, true);
   assert.equal(response.mode, 'readiness');
   assert.equal(response.writeAttempted, false);
+  assert.equal(response.complete, false);
+  assert.equal(response.liveSupportClaimed, false);
+  assert.equal(response.readiness?.coverageReadiness?.complete, false);
+  assert.equal(response.readiness?.coverageReadiness?.fillAllowed, false);
+  assert.equal(response.readiness?.coverageReadiness?.saveAllowed, false);
+  assert.equal(response.readiness?.coverageReadiness?.writeAttempted, false);
+  assert.equal(response.readiness?.coverageReadiness?.selector, null);
+  assert.equal(response.readiness?.coverageReadiness?.blocked, true);
+  const closed = response.readiness?.coverageReadiness?.fields || [];
+  assert.deepEqual(closed.map((row) => row.key), ['currentCity', 'photo', 'workStart']);
+  assert.equal(closed.every((row) => row.status === 'failed' && row.supported === false), true);
+  assert.equal(JSON.stringify(response).includes('已支持'), false);
   assert.equal(h.stats.trial, 0);
 });
 
@@ -203,18 +215,32 @@ test('GTH_BASIC_AUTO fill dispatches trial once and never Save', async () => {
     replaceExisting: true,
     originConfirmed: true,
   });
-  assert.equal(response.ok, true);
+  assert.equal(response.ok, false);
   assert.equal(response.mode, 'fill');
+  assert.equal(response.reason, 'control_not_supported');
   assert.equal(response.saveAttempted, false);
   assert.equal(response.saveAllowedByPolicy, false);
+  assert.equal(response.writeAttempted, false);
+  assert.equal(response.complete, false);
+  assert.equal(response.liveSupportClaimed, false);
   assert.equal(h.stats.inject, 1);
   assert.equal(h.stats.trial, 1);
   assert.equal(h.stats.status, 1);
-  assert.equal(response.job?.state, 'completed');
+  assert.equal(response.job?.state, 'unknown');
+  assert.notEqual(response.job?.state, 'completed');
+  assert.equal(response.job?.complete, false);
   assert.equal(response.job?.softwareClickedSave, false);
+  assert.equal(response.job?.softwareClickedSubmit, false);
   assert.equal(response.job?.fields?.length, 6);
-  assert.equal(h.data[basicJobKey(tabId)]?.state, 'completed');
+  const city = response.job?.coverage?.find((row) => row.key === 'currentCity');
+  assert.equal(city?.status, 'failed');
+  assert.equal(city?.reason, 'control_not_supported');
+  assert.equal(response.job?.coverage?.filter((row) => row.status === 'failed').length, 3);
+  assert.equal(h.data[basicJobKey(tabId)]?.state, 'unknown');
+  assert.notEqual(h.data[basicJobKey(tabId)]?.state, 'completed');
+  assert.ok(h.data['resumePendingFillReview:' + tabId]);
   assert.equal(h.data.resumeGthBasicAutoRun?.saveAttempted, false);
+  assert.equal(JSON.stringify(response).includes('已支持'), false);
 });
 
 test('GTH_BASIC_AUTO related GTH tab without edit → login helpNeeded', async () => {
@@ -362,4 +388,51 @@ test('GTH_BASIC_AUTO fill rejects a body whose writeStarted disagrees with field
   assert.equal(response.job?.state, 'unknown');
   assert.equal(h.data[basicJobKey(tabId)]?.state, 'unknown');
   assert.notEqual(h.data[basicJobKey(tabId)]?.state, 'completed');
+});
+
+test('GTH_BASIC_AUTO fill does not complete when unsupported rows are still soft-skipped', async () => {
+  const h = await harness({
+    patchTrial: (trial) => {
+      for (const row of trial.coverage) {
+        if (row.supported === false) row.status = 'skipped';
+      }
+      return trial;
+    },
+  });
+  const response = await h.invoke(fillMessage);
+  assert.equal(response.ok, false);
+  assert.equal(response.reason, 'gth_basic_auto_failed');
+  assert.equal(response.job?.state, 'unknown');
+  assert.notEqual(response.job?.state, 'completed');
+  assert.equal(response.writeAttempted, false);
+  assert.equal(response.saveAttempted, false);
+  assert.equal(response.softwareClickedSave, false);
+  assert.equal(response.job?.coverage?.every((row) => row.supported !== false || row.status === 'failed'), true);
+});
+
+test('GTH_BASIC_AUTO fill fails closed when 现居住地 is not a unique region fact', async () => {
+  const pair = JSON.stringify({ province: 'Synthetic Province', city: 'Synthetic City' });
+  const other = JSON.stringify({ province: 'Synthetic Province', city: 'Synthetic City B' });
+  const profile = fixture();
+  profile.customFacts = [
+    { question: '现居住地', answer: pair, sitePageUrl: BASIC_PAGE, sectionName: '基本信息', rowContext: 'single' },
+    { question: '现居住地', answer: other, sitePageUrl: BASIC_PAGE, sectionName: '基本信息', rowContext: 'single' },
+  ];
+  profile.customAnswers = { 现居住地: pair };
+  const h = await harness({ profile });
+  const response = await h.invoke(fillMessage);
+  assert.equal(response.ok, false);
+  assert.equal(response.reason, 'region_fact_not_unique');
+  assert.equal(response.job?.state, 'unknown');
+  assert.notEqual(response.job?.state, 'completed');
+  assert.equal(response.writeAttempted, false);
+  assert.equal(response.saveAttempted, false);
+  assert.equal(response.softwareClickedSave, false);
+  assert.equal(response.softwareClickedSubmit, false);
+  assert.equal(response.liveSupportClaimed, false);
+  const city = response.job?.coverage?.find((row) => row.key === 'currentCity');
+  assert.equal(city?.status, 'failed');
+  assert.equal(city?.reason, 'region_fact_not_unique');
+  assert.equal(h.data[basicJobKey(tabId)]?.state, 'unknown');
+  assert.equal(JSON.stringify(response).includes('已支持'), false);
 });

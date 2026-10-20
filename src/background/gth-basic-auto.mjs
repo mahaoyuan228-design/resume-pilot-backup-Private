@@ -1,10 +1,13 @@
 // GTH basic auto path (mirror GTH_EDUCATION_AUTO). Default: readiness.
 // Fill-without-save optional. Never clicks Save/Cancel/submit.
 // Fill ok is true only after a settled verified readback. A reported
-// Save/submit/delete click, or a status that is not verified, fails closed.
+// Save/submit/delete click, a status that is not verified, or a requested
+// 现居住地/照片/参加工作时间 that is unsupported or region-unsettled fails closed.
+// Those rows are failed, not a skipped success, and the job is not completed.
 import {captureProfileBinding,assertProfileBinding,canonicalProfileHash,commitBoundJob,
   dispatchBoundSource,withProfileBinding,reserveBoundJob} from '../profile/profile-lifecycle.js';
-import {BASIC_PAGE,BASIC_KIND,BASIC_FIELDS,basicCandidate,basicCoverage,basicJobKey} from './basic-task-runner.mjs';
+import {BASIC_PAGE,BASIC_KIND,BASIC_FIELDS,basicCandidate,basicCoverage,basicJobKey,
+  planGthBasicCoverage,sealGthJobCoverage,gthRequestedFillBlocksComplete} from './basic-task-runner.mjs';
 import {evaluateGthSavePolicy,assertAutoNeverAttemptedSave} from './gth-save-policy.mjs';
 
 const PAGE=BASIC_PAGE,ORIGIN='https://hr.gtht.com';
@@ -175,6 +178,7 @@ export function createGthBasicAutoRunner({api=globalThis.chrome,verifyBeforeFill
     const pending=await get(pendingKey(tab.id));
     const raw=await get('resumeProfile');
     const educationCount=Array.isArray(raw?.education)?raw.education.length:0;
+    const coverageReadiness=planGthBasicCoverage(raw,{fillRequested:false});
     let sources=[];
     try{
       const binding=await captureProfileBinding(api.storage.local,lifecycleOptions);
@@ -195,7 +199,8 @@ export function createGthBasicAutoRunner({api=globalThis.chrome,verifyBeforeFill
         profileEducationCount:educationCount,sources,profileBinding:binding,
         saveAllowedByPolicy:evaluateGthSavePolicy({fromAutoPath:true}).saveAllowedByPolicy,
         savePolicy:evaluateGthSavePolicy({fromAutoPath:true}),
-        note:'Auto path does not Save/submit; six operable basic fields only (city/photo/workStart unsupported)'
+        coverageReadiness,
+        note:'Auto path does not Save/submit. Unsupported or unsettled 现居住地/照片/参加工作时间 fail closed and are not a completed fill.'
       };
     }catch(error){
       return {
@@ -206,7 +211,8 @@ export function createGthBasicAutoRunner({api=globalThis.chrome,verifyBeforeFill
         profileEducationCount:educationCount,sources,
         profileBindingError:safe(error),
         saveAllowedByPolicy:evaluateGthSavePolicy({fromAutoPath:true}).saveAllowedByPolicy,
-        savePolicy:evaluateGthSavePolicy({fromAutoPath:true})
+        savePolicy:evaluateGthSavePolicy({fromAutoPath:true}),
+        coverageReadiness
       };
     }
   }
@@ -282,10 +288,20 @@ export function createGthBasicAutoRunner({api=globalThis.chrome,verifyBeforeFill
       job={...job,state:beforeWrite?'stopped_before_write':'unknown',outcome,coverage,fields,
         reason:beforeWrite?'gth_basic_fill_incomplete':'gth_basic_status_unsettled',
         supportedComplete:response.supportedComplete===true,operableComplete:response.operableComplete===true,
-        writeStarted:response.writeStarted===true,complete:false,at:Date.now(),...clicks};
+        writeStarted:response.writeStarted===true,complete:false,liveSupportClaimed:false,at:Date.now(),...clicks};
       await commitBoundJob(api.storage.local,key,job,binding,lifecycleOptions);
       if(beforeWrite)await withProfileBinding(api.storage.local,binding,()=>api.storage.local.remove(pendingKey(tab.id)),lifecycleOptions);
       return {job,responseSummary:{ok:false,reason:job.reason,writeStarted:response.writeStarted===true,
+        fieldCount:fields.length,...clicks},outcome};
+    }
+    const coveragePlan=planGthBasicCoverage(raw,{fillRequested:true});
+    if(gthRequestedFillBlocksComplete(coveragePlan)){
+      const sealed=sealGthJobCoverage(coverage,coveragePlan);
+      job={...job,state:'unknown',outcome,coverage:sealed,fields,reason:coveragePlan.reason,
+        supportedComplete:response.supportedComplete===true,operableComplete:response.operableComplete===true,
+        writeStarted:response.writeStarted===true,complete:false,liveSupportClaimed:false,at:Date.now(),...clicks};
+      await commitBoundJob(api.storage.local,key,job,binding,lifecycleOptions);
+      return {job,responseSummary:{ok:false,reason:coveragePlan.reason,writeStarted:response.writeStarted===true,
         fieldCount:fields.length,...clicks},outcome};
     }
     job={...job,state:'completed',outcome,coverage,fields,
@@ -310,7 +326,7 @@ export function createGthBasicAutoRunner({api=globalThis.chrome,verifyBeforeFill
       :(Number.isInteger(message.profileIndex)?message.profileIndex:5);
     const report={version:1,kind:'gth_basic_auto',mode,at:Date.now(),educationIndex,
       replaceExisting:message.replaceExisting!==false,steps:[],helpNeeded:false,saveAttempted:false,
-      writeAttempted:false};
+      writeAttempted:false,liveSupportClaimed:false,complete:false};
     const found=await findGthTab(sender?.tab?.id,{openIfMissing});
     report.steps.push({find:found.kind,tabId:found.tab.id,url:found.tab.url||null});
     await focusTab(found.tab);
@@ -341,6 +357,7 @@ export function createGthBasicAutoRunner({api=globalThis.chrome,verifyBeforeFill
       pending:readiness.pending,
       profileEducationCount:readiness.profileEducationCount,
       sources:readiness.sources,
+      coverageReadiness:readiness.coverageReadiness,
       saveAllowedByPolicy:evaluateGthSavePolicy({fromAutoPath:true}).saveAllowedByPolicy,
       savePolicy:evaluateGthSavePolicy({fromAutoPath:true})
     };
@@ -368,7 +385,7 @@ export function createGthBasicAutoRunner({api=globalThis.chrome,verifyBeforeFill
       outcome:filled.job.outcome||null,educationIndex:filled.job.educationIndex,
       supportedComplete:filled.job.supportedComplete===true,operableComplete:filled.job.operableComplete===true,
       fields:filled.job.fields||[],coverage:filled.job.coverage||[],counts:filled.job.counts||null,
-      writeStarted:filled.job.writeStarted===true,...clicks}:null;
+      writeStarted:filled.job.writeStarted===true,complete:false,liveSupportClaimed:false,...clicks}:null;
     report.fill=filled.responseSummary;
     report.saveAllowedByPolicy=evaluateGthSavePolicy({fromAutoPath:true}).saveAllowedByPolicy;
     const settled=filled.job?.state==='completed'&&(filled.outcome==='verified'||filled.outcome==='verified_preexisting');
@@ -390,7 +407,7 @@ export function createGthBasicAutoRunner({api=globalThis.chrome,verifyBeforeFill
       const helpUrl=error?.helpUrl||PAGE;
       const help=reason==='gth_basic_login_or_wrong_page'||reason==='gth_basic_tab_missing'||/\/login\b/i.test(String(helpUrl));
       const payload={ok:false,reason,helpNeeded:help,helpUrl,helpReason:error?.helpReason||(help?'我需要帮助！请打开已登录的国泰海通简历编辑页 https://hr.gtht.com/resume/edit/':''),
-        mode:message?.mode||'readiness',saveAttempted:false,writeAttempted:false,at:Date.now(),version:1,kind:'gth_basic_auto'};
+        mode:message?.mode||'readiness',saveAttempted:false,writeAttempted:false,liveSupportClaimed:false,complete:false,at:Date.now(),version:1,kind:'gth_basic_auto'};
       api.storage.local.set({resumeGthBasicAutoRun:payload}).catch(()=>{});
       sendResponse(payload);
     });

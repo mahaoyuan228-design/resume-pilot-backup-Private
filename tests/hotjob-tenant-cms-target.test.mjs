@@ -133,6 +133,8 @@ function swHarness({ tabUrl, trusted = [] }) {
       sendMessage: async (_id, message) => {
         assert.equal(message.type, 'RESUME_FILL');
         stats.fill += 1;
+        // Unsettled legacy reply: status verified, no readback reason, no
+        // writeStarted/supportedComplete/operableComplete contract. Must not complete.
         return { ok: true, data: { fields: [{ id: 'x', path: 'customAnswers.婚姻状况', status: 'verified',
           scope: { sectionName: '个人基本信息必填' } }], softwareClickedSubmit: false } };
       }
@@ -217,11 +219,18 @@ test('SW tenant fill: per-SU trust scope, one RESUME_FILL, never Save', async ()
   assert.equal(denied.reason, 'cms_basic_origin_unconfirmed', 'baseline origin trust must not cover tenant');
   assert.equal(h.stats.fill, 0);
   const r = await h.invoke({ type: 'CMS_BASIC_AUTO', mode: 'fill', cmsPage: ZL_PAGE, originConfirmed: true });
-  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.equal(r.ok, false);
+  assert.equal(r.reason, 'cms_basic_status_unsettled');
+  assert.equal(r.fill.ok, false);
+  assert.equal(r.job.state, 'unknown');
+  assert.equal(r.job.outcome, 'unknown');
+  assert.equal(r.job.complete, false);
   assert.equal(h.stats.fill, 1);
   assert.equal(r.saveAttempted, false);
+  assert.equal(r.writeAttempted, false);
   assert.equal(r.job.softwareClickedSave, false);
   assert.equal(r.job.softwareClickedSubmit, false);
+  assert.equal(h.data['resumePendingFillReview:5']?.kind, 'cms_basic_auto');
   assert.ok(h.data.resumeTrustedOrigins.includes(`https://wecruit.hotjob.cn/${ZL}/`));
 });
 

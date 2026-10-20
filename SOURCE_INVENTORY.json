@@ -1,6 +1,6 @@
 {
   "version": "0.1.4.9",
-  "sumsSha256": "7f279754ffd0b0b91a640056c6593a50a65da034519bf2bd38881052d74fce1e",
+  "sumsSha256": "c0311ce2a9cf43ae17b09ce81bee369c41e41accf2e092319bf33826d8ef1bc7",
   "inventory": [
     {
       "path": "manifest.json",
@@ -736,8 +736,8 @@
     },
     {
       "path": "src/content/cmb-basic.js",
-      "sha256": "5dabd98fc8032ddf3e45693ce1e670caf17e29ff320462a59f7a4fe179ebbcf8",
-      "sourceSha256": "5dabd98fc8032ddf3e45693ce1e670caf17e29ff320462a59f7a4fe179ebbcf8",
+      "sha256": "e9e69a12b4125bcf5ff83cd3a2c03cc8886fd8e41028d71cb8c8b2b5f709dd10",
+      "sourceSha256": "e9e69a12b4125bcf5ff83cd3a2c03cc8886fd8e41028d71cb8c8b2b5f709dd10",
       "kind": "frozen-product"
     },
     {

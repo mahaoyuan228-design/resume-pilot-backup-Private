@@ -206,7 +206,7 @@ function selectPage({ rows = 1, dedicated = false, duplicateId = '' } = {}) {
   const disabled = () => false;
   const src = fs.readFileSync(path.join(root, 'src/content/engine.js'), 'utf8');
   const names = ['collect', 'formItemQuestion', 'labelTexts', 'fieldId', 'profileValue', 'cmsAntV3Answer', 'logicalEntryKey',
-    'entrySignature', 'entryScope', 'publicEntry', 'meaningfulCurrent', 'exactOptionText', 'fillOwnedContent'];
+    'entrySignature', 'entryScope', 'publicEntry', 'meaningfulCurrent', 'exactOptionText', 'settleUnresolvedEntry', 'fillOwnedContent'];
   const deps = {
     M, cmsDecision, markDuplicateTargets,
     visible: () => true, cmsAntV3InnerSearch: disabled, cmsRegionControl: disabled,

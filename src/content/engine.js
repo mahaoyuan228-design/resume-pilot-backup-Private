@@ -444,6 +444,15 @@
     '求职意向必填':new Set(['意向一期望工作地点','意向二期望工作地点']),
     '教育经历必填':new Set(['城市'])
   };
+  // Same reason set as planCmsRegionFact. Unsettled or non-unique region facts
+  // fail closed. This does not add selectors and does not Save.
+  function settleUnresolvedEntry(entry, reason) {
+    const closed=new Set(["region_fact_not_unique","region_fact_unconfirmed","region_fact_scope_mismatch",
+      "explicit_region_pair_required","region_adapter_missing","unconfirmed_or_incomplete_region_pair"]);
+    if (reason === "duplicate_target") return "failed";
+    if (entry?.kind === "cms_region" && closed.has(reason)) return "failed";
+    return "skipped";
+  }
   const regionLabel=value=>String(value||'').normalize('NFKC').replace(/[＊*：:\s]/gu,'');
   function cmsRegionControl(wrap) {
     if(location.hostname!=='wecruit.hotjob.cn'||!/^\/SU[^/]+\/pb\/resumeOperation\.html$/.test(location.pathname)
@@ -1726,7 +1735,7 @@
             continue;
           }
         } else if (fresh.reason !== "ready") {
-          result.status = fresh.reason === "duplicate_target" ? "failed" : "skipped";
+          result.status = settleUnresolvedEntry(entry, fresh.reason);
           continue;
         }
         if (cmsMenuBlocked) {

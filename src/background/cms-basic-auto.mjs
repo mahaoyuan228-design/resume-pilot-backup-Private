@@ -1,5 +1,8 @@
 // CMS 个人基本信息 auto (mirror GTH_BASIC_AUTO). Default: readiness.
-// Fill uses product RESUME_FILL; report filters to 个人基本信息必填. Never Save/submit.
+// Fill uses product RESUME_FILL; report filters to 个人基本信息必填.
+// Fill ok is true only after a settled 个人基本信息 readback.
+// A reported Save/submit, savedOnSite/submitted, a stopped-before-write,
+// or a personal status that is not verified/skipped fails closed. Never Save.
 import {captureProfileBinding,assertProfileBinding,canonicalProfileHash,
   dispatchBoundSource,withProfileBinding} from '../profile/profile-lifecycle.js';
 import {awaitCmsPageDocumentFocus} from './cms-page-focus.mjs';
@@ -113,6 +116,23 @@ function isPersonalField(field){
   if(labels.some(label=>questions.has(label)||questions.has(label.replace(/［.*?］/gu,'').trim())))return true;
   const id=String(field.id||'');
   return id.startsWith('cms-photo-basic')||id.startsWith('cms-academic-__cms_basic')||id.startsWith('cms-scoped-input-__cms_basic');
+}
+
+function saveClaim(response){
+  const data=response?.data&&typeof response.data==='object'?response.data:{};
+  const claimed=key=>data[key]===true||response?.[key]===true;
+  return {
+    softwareClickedSave:claimed('softwareClickedSave'),
+    softwareClickedSubmit:claimed('softwareClickedSubmit'),
+    savedOnSite:claimed('savedOnSite'),
+    submitted:claimed('submitted')
+  };
+}
+const anySaveClaim=claim=>claim.softwareClickedSave||claim.softwareClickedSubmit||claim.savedOnSite||claim.submitted;
+function personalReadbackSettled(summary){
+  const rows=Array.isArray(summary?.personal)?summary.personal:[];
+  if(!rows.length||summary?.failed>0)return false;
+  return rows.every(row=>row?.status==='verified'||row?.status==='skipped');
 }
 
 function summarizeFields(fields){
@@ -269,20 +289,49 @@ export function createCmsBasicAutoRunner({api=globalThis.chrome,verifyBeforeFill
       throw error;
     }
     await assertProfileBinding(api.storage.local,binding,lifecycleOptions);
-    await withProfileBinding(api.storage.local,binding,()=>api.storage.local.remove(pendingKey(tab.id)),lifecycleOptions);
+    const clearPending=()=>withProfileBinding(api.storage.local,binding,()=>api.storage.local.remove(pendingKey(tab.id)),lifecycleOptions);
+    const data=response?.data&&typeof response.data==='object'?response.data:{};
+    const claim=saveClaim(response);
+    const summary=summarizeFields(data.fields);
+    const writeStarted=response?.writeStarted===true||summary.verified>0||summary.failed>0
+      ||(Array.isArray(data.fields)&&data.fields.some(row=>row?.status==='verified'||row?.reason==='readback_matched'||row?.reason==='readback_reapplied'));
+    // A page-script Save/submit, or a savedOnSite/submitted claim, must not be
+    // rewritten to false or stored as a completed fill. Pending review stays.
+    if(anySaveClaim(claim)){
+      const job={
+        state:'unknown',reason:'cms_basic_save_policy_violated',requestId,outcome:'save_policy_violated',
+        writeStarted,complete:false,at:Date.now(),
+        softwareClickedSave:claim.softwareClickedSave,softwareClickedSubmit:claim.softwareClickedSubmit,
+        savedOnSite:claim.savedOnSite?true:(data.savedOnSite??response?.savedOnSite??null),
+        submitted:claim.submitted?true:(data.submitted??response?.submitted??null),
+        fields:summary.personal,summary,source
+      };
+      return {job,responseSummary:{ok:false,reason:job.reason,writeStarted,fieldCount:summary.personalCount,
+        ...claim},outcome:job.outcome};
+    }
     if(!response||response.ok!==true){
       const reason=safe(response?.error||'cms_basic_fill_failed');
       if(response?.fillNotStarted===true||response?.writeStarted===false){
+        await clearPending();
         return {job:{state:'stopped_before_write',reason,requestId,writeStarted:false,
-          softwareClickedSave:false,softwareClickedSubmit:false,savedOnSite:null,fields:[],summary:summarizeFields([])},
+          softwareClickedSave:false,softwareClickedSubmit:false,savedOnSite:null,submitted:null,
+          fields:[],summary:summarizeFields([])},
           responseSummary:{ok:false,writeStarted:false,reason},outcome:'failed_before_write'};
       }
       fail(reason);
     }
-    const data=response.data||{};
-    if(data.softwareClickedSubmit===true||data.softwareClickedSave===true)fail('cms_basic_save_policy_violated');
-    const summary=summarizeFields(data.fields);
-    const writeStarted=summary.verified>0||summary.failed>0||(Array.isArray(data.fields)&&data.fields.some(row=>row?.status==='verified'||row?.reason==='readback_matched'||row?.reason==='readback_reapplied'));
+    if(!personalReadbackSettled(summary)){
+      const job={
+        state:'unknown',reason:'cms_basic_status_unsettled',requestId,outcome:'unsettled',
+        writeStarted,complete:false,at:Date.now(),
+        softwareClickedSave:false,softwareClickedSubmit:false,
+        savedOnSite:data.savedOnSite??null,submitted:data.submitted??null,
+        fields:summary.personal,summary,source
+      };
+      return {job,responseSummary:{ok:false,reason:job.reason,writeStarted,fieldCount:summary.personalCount,
+        verified:summary.verified,skipped:summary.skipped,failed:summary.failed},outcome:job.outcome};
+    }
+    await clearPending();
     const job={
       state:'completed',requestId,outcome:summary.verified>0?'verified_partial':'completed_no_personal_verified',
       writeStarted,complete:false,at:Date.now(),
@@ -292,7 +341,7 @@ export function createCmsBasicAutoRunner({api=globalThis.chrome,verifyBeforeFill
     };
     return {job,responseSummary:{ok:true,fieldCount:summary.personalCount,verified:summary.verified,
       skipped:summary.skipped,failed:summary.failed,totalReturned:summary.totalReturned,
-      savedOnSite:job.savedOnSite,softwareClickedSubmit:false},outcome:job.outcome};
+      savedOnSite:job.savedOnSite,submitted:job.submitted,softwareClickedSave:false,softwareClickedSubmit:false},outcome:job.outcome};
   }
 
   async function runSeedFromEducation(message){
@@ -396,13 +445,23 @@ export function createCmsBasicAutoRunner({api=globalThis.chrome,verifyBeforeFill
     const filled=await runFill(found.tab,message,readiness,target);
     report.writeAttempted=filled.job?.writeStarted===true;
     report.steps.push({fill:filled.job?.state,outcome:filled.outcome});
+    report.softwareClickedSave=filled.job?.softwareClickedSave===true;
+    report.softwareClickedSubmit=filled.job?.softwareClickedSubmit===true;
+    report.savedOnSite=filled.job?.savedOnSite===true?true:(filled.job?.savedOnSite??null);
+    report.submitted=filled.job?.submitted===true?true:(filled.job?.submitted??null);
     report.job=filled.job?{state:filled.job.state,reason:filled.job.reason||null,requestId:filled.job.requestId,
       outcome:filled.job.outcome||null,writeStarted:filled.job.writeStarted===true,
-      softwareClickedSave:false,softwareClickedSubmit:false,savedOnSite:filled.job.savedOnSite??null,
+      softwareClickedSave:filled.job.softwareClickedSave===true,
+      softwareClickedSubmit:filled.job.softwareClickedSubmit===true,
+      savedOnSite:filled.job.savedOnSite??null,submitted:filled.job.submitted??null,
       fields:filled.job.fields||[],summary:filled.job.summary||null,source:filled.job.source||null}:null;
     report.fill=filled.responseSummary;
     report.saveAttempted=false;
-    report.ok=true;
+    const settled=filled.job?.state==='completed'
+      &&report.softwareClickedSave!==true&&report.softwareClickedSubmit!==true
+      &&report.savedOnSite!==true&&report.submitted!==true;
+    report.ok=settled;
+    if(!report.ok)report.reason=filled.job?.reason||filled.responseSummary?.reason||'cms_basic_fill_failed';
     await api.storage.local.set({resumeCmsBasicAutoRun:report});
     return report;
   }

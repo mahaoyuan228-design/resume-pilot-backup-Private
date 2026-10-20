@@ -4,7 +4,7 @@
 import {captureProfileBinding,assertProfileBinding,canonicalProfileHash,
   dispatchBoundSource,withProfileBinding} from '../profile/profile-lifecycle.js';
 import {awaitCmsPageDocumentFocus} from './cms-page-focus.mjs';
-import {CMS_QUESTION_TEMPLATES,CMS_QUESTION_PAGE} from '../profile/site-question-templates.js';
+import {CMS_QUESTION_TEMPLATES,CMS_QUESTION_PAGE,planCmsRegionFact,CMS_REGION_FACT_FAIL_CLOSED_REASONS} from '../profile/site-question-templates.js';
 import {seedCmsBasicFromEducation,CMS_BASIC_NEVER_SEED,CMS_BASIC_SEEDABLE} from '../profile/cms-basic-seed-from-education.mjs';
 import {SITE_FACTS_KEY} from '../profile/cms-education-site-facts.mjs';
 
@@ -73,19 +73,27 @@ function probePageFunc(expectedSignature,pageUrl){
     sectionName:'个人基本信息必填'};
 }
 
-function basicSource(profile){
+function basicSource(profile,sitePageUrl=PAGE){
   const confirmed=Array.isArray(profile?.confirmedFields)?profile.confirmedFields:[];
   const custom=profile?.customAnswers&&typeof profile.customAnswers==='object'?profile.customAnswers:{};
   const rows=BASIC_TEMPLATES.map(template=>{
     const alias=template.alias||template.question;
     const path=`customAnswers.${alias}`;
+    if(template.kind==='region'){
+      const planned=planCmsRegionFact(profile,{
+        question:template.question,sectionName:SECTION,rowContext:template.rowContext,sitePageUrl
+      });
+      // Unsettled or non-unique 现居住地/籍贯 stay unready. No selectors and no Save.
+      return {
+        question:template.question,alias,path:planned.path||path,kind:template.kind,
+        hasValue:planned.matchCount>0,confirmed:planned.ok===true,ready:planned.ok===true,
+        region:{ok:planned.ok===true,reason:planned.reason,status:planned.status,matchCount:planned.matchCount}
+      };
+    }
     const value=typeof custom[alias]==='string'?custom[alias]
       :(typeof custom[template.question]==='string'?custom[template.question]:'');
-    const hasValue=!!String(value||'').trim()||(template.kind==='region'&&!!(custom[alias]||custom[template.question]));
-    // Region facts may live in customFacts; treat confirmed path or question alias as ready signal.
-    const isConfirmed=confirmed.includes(path)||confirmed.includes(`customAnswers.${template.question}`)
-      ||(Array.isArray(profile?.customFacts)&&profile.customFacts.some(fact=>
-        (fact?.question===alias||fact?.question===template.question)&&fact?.sectionName===SECTION));
+    const hasValue=!!String(value||'').trim();
+    const isConfirmed=confirmed.includes(path)||confirmed.includes(`customAnswers.${template.question}`);
     return {
       question:template.question,
       alias,
@@ -127,8 +135,14 @@ function isPersonalField(field){
   return id.startsWith('cms-photo-basic')||id.startsWith('cms-academic-__cms_basic')||id.startsWith('cms-scoped-input-__cms_basic');
 }
 
+function coerceRegionFailClosed(field){
+  if(!field||field.status!=='skipped'||!CMS_REGION_FACT_FAIL_CLOSED_REASONS.includes(field.reason))return field;
+  const labels=(Array.isArray(field.labels)?field.labels:[field.question]).map(norm);
+  if(!labels.some(label=>label==='现居住地'||label==='籍贯'))return field;
+  return {...field,status:'failed'};
+}
 function summarizeFields(fields){
-  const personal=(Array.isArray(fields)?fields:[]).filter(isPersonalField).map(field=>({
+  const personal=(Array.isArray(fields)?fields:[]).map(coerceRegionFailClosed).filter(isPersonalField).map(field=>({
     id:field.id||null,
     labels:Array.isArray(field.labels)?field.labels.slice(0,2):[],
     path:field.path||null,
@@ -233,9 +247,9 @@ export function createCmsBasicAutoRunner({api=globalThis.chrome,verifyBeforeFill
     return {cleared:remove};
   }
 
-  async function collectReadiness(tab,probeResult){
+  async function collectReadiness(tab,probeResult,sitePageUrl=PAGE){
     const raw=await get('resumeProfile');
-    const source=basicSource(raw);
+    const source=basicSource(raw,sitePageUrl);
     let binding=null,bindingError=null;
     try{binding=await captureProfileBinding(api.storage.local,lifecycleOptions);}
     catch(error){bindingError=safe(error);}
@@ -254,7 +268,7 @@ export function createCmsBasicAutoRunner({api=globalThis.chrome,verifyBeforeFill
     await assertProfileBinding(api.storage.local,binding,lifecycleOptions);
     const raw=await get('resumeProfile');
     if(await canonicalProfileHash(raw,lifecycleOptions.cryptoImpl)!==binding.profileHash)fail('profile_binding_changed');
-    const source=basicSource(raw);
+    const source=basicSource(raw,target.page);
     if(!source.ready)fail(source.hasValueCount?'profile_fact_unconfirmed':'missing_profile_value');
     const trusted=await get('resumeTrustedOrigins');
     const scope=target.trustScope;
@@ -302,9 +316,10 @@ export function createCmsBasicAutoRunner({api=globalThis.chrome,verifyBeforeFill
     const fillFailed=response?.ok!==true||data.ok===false;
     const beforeWrite=fillFailed&&writeStarted!==true
       &&(response?.fillNotStarted===true||response?.writeStarted===false||data.writeStarted===false);
+    const regionFailure=summary.personal.find(row=>row.status==='failed'&&CMS_REGION_FACT_FAIL_CLOSED_REASONS.includes(row.reason));
     const reason=anySaveClaim(clicks)?'cms_basic_save_policy_violated':bindingError
       ||(fillFailed?safe(response?.error||response?.reason||data.reason||'cms_basic_fill_failed')
-        :!verified?'cms_basic_status_unsettled'
+        :!verified?(regionFailure?regionFailure.reason:'cms_basic_status_unsettled')
         :!validContract?'cms_basic_response_incomplete':null);
     const state=reason?(beforeWrite&&!anySaveClaim(clicks)&&!bindingError?'stopped_before_write':'unknown'):'completed';
     const outcome=state==='completed'?(fieldWrite?'verified':'verified_preexisting')
@@ -407,7 +422,7 @@ export function createCmsBasicAutoRunner({api=globalThis.chrome,verifyBeforeFill
     }
     const unlocked=await unlockIfSafe(found.tab.id);
     report.steps.push({unlock:unlocked});
-    const readiness=await collectReadiness(found.tab,probeResult);
+    const readiness=await collectReadiness(found.tab,probeResult,target.page);
     report.readiness={
       pageState:readiness.pageState,
       sectionPresent:readiness.page?.sectionPresent===true,

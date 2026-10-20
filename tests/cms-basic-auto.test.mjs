@@ -740,3 +740,83 @@ test('CMS_BASIC_AUTO fill fails closed when personal readback is failed or missi
   assert.equal(emptyResponse.job?.summary?.personalCount, 0);
   assert.equal(emptyResponse.saveAttempted, false);
 });
+
+test('CMS_BASIC_AUTO fails closed when 现居住地/籍贯 are skipped as region_fact_not_unique', async () => {
+  const h = await harness({ fillResponse: { ok: true, data: {
+    fields: [
+      {
+        id: 'cms-academic-__cms_basic_academic_degree', labels: ['学位'],
+        path: 'customAnswers.__cms_basic_academic_degree', status: 'verified',
+        reason: 'preexisting_same_value', kind: 'cms_ant_v3_select',
+        scope: { sectionName: '个人基本信息必填', rowContext: 'single' },
+      },
+      {
+        id: 'cms-region-residence', labels: ['现居住地*'], path: null, status: 'skipped',
+        reason: 'region_fact_not_unique', kind: 'cms_region',
+        scope: { sectionName: '个人基本信息必填', rowContext: 'single' },
+      },
+      {
+        id: 'cms-region-origin', labels: ['籍贯*'], path: null, status: 'skipped',
+        reason: 'region_fact_not_unique', kind: 'cms_region',
+        scope: { sectionName: '个人基本信息必填', rowContext: 'single' },
+      },
+      {
+        id: 'cms-ant-v3-学历', labels: ['学历*'], path: null, status: 'failed',
+        reason: 'duplicate_target', kind: 'cms_ant_v3_select',
+        scope: { sectionName: '教育经历必填', rowContext: 'multiple' },
+      },
+    ],
+    softwareClickedSave: false, softwareClickedSubmit: false,
+    writeStarted: false, supportedComplete: true, operableComplete: true,
+  } } });
+  const response = await h.invoke({ type: 'CMS_BASIC_AUTO', mode: 'fill', originConfirmed: true });
+  assert.equal(response.ok, false);
+  assert.equal(response.reason, 'region_fact_not_unique');
+  assert.equal(response.saveAttempted, false);
+  assert.equal(response.softwareClickedSave, false);
+  assert.equal(response.softwareClickedSubmit, false);
+  assert.equal(response.job.state, 'unknown');
+  assert.equal(response.job.complete, false);
+  const residence = response.job.fields.find(field => field.labels[0] === '现居住地*');
+  const origin = response.job.fields.find(field => field.labels[0] === '籍贯*');
+  assert.equal(residence.status, 'failed');
+  assert.equal(residence.reason, 'region_fact_not_unique');
+  assert.equal(origin.status, 'failed');
+  assert.equal(origin.reason, 'region_fact_not_unique');
+  assert.equal(response.job.summary.failed, 2);
+  assert.equal(response.job.fields.some(field => field.reason === 'duplicate_target'), false);
+  assert.equal(response.job.summary.totalReturned, 4);
+});
+
+test('CMS_BASIC_AUTO region readiness stays unready when 现居住地 is not unique', () => {
+  const runner = createCmsBasicAutoRunner({
+    api: {
+      storage: { local: { get: async () => ({}), set: async () => {}, remove: async () => {} } },
+      runtime: {
+        id: 'x',
+        getURL: (p) => 'chrome-extension://x/' + p,
+        getManifest: () => ({ background: { service_worker: 'src/background/worker.mjs' } }),
+      },
+      tabs: {},
+      scripting: {},
+    },
+  });
+  const pair = JSON.stringify({ province: 'Synthetic Province', city: 'Synthetic City' });
+  const source = runner.basicSource({
+    customAnswers: { 现居住地: pair, 籍贯: 'not-json' },
+    confirmedFields: ['customAnswers.现居住地', 'customAnswers.籍贯'],
+    customFacts: [
+      { question: '现居住地', answer: pair, sitePageUrl: PAGE, sectionName: '个人基本信息必填', rowContext: 'single' },
+      { question: '现居住地', answer: pair, sitePageUrl: PAGE, sectionName: '个人基本信息必填', rowContext: 'single' },
+      { question: '籍贯', answer: 'not-json', sitePageUrl: PAGE, sectionName: '个人基本信息必填', rowContext: 'single' },
+    ],
+  }, PAGE);
+  const residence = source.questions.find(row => row.question === '现居住地');
+  const origin = source.questions.find(row => row.question === '籍贯');
+  assert.equal(residence.ready, false);
+  assert.equal(residence.region.reason, 'region_fact_not_unique');
+  assert.equal(residence.region.status, 'failed');
+  assert.equal(origin.ready, false);
+  assert.equal(origin.region.reason, 'explicit_region_pair_required');
+  assert.equal(JSON.stringify(source).includes('已支持'), false);
+});

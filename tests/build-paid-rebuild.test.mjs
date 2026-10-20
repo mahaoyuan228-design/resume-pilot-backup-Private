@@ -41,6 +41,7 @@ import {
   assertPackedGthTip,
   assertPackImportsResolve,
   assertPackOmitsGthIntentTest,
+  assertPackOmitsProbeScripts,
   assertSeedOnPaidPackList,
   assertSourcePaidConfigFailClosed,
   assertStaticPaidConfigImport,
@@ -529,5 +530,17 @@ test('a pack containing GTH_INTENT_TEST fails, and the shipped lists omit it', (
   assert.throws(
     () => assertPackOmitsGthIntentTest(['src/content/engine.js'], () => `type:"${GTH_INTENT_TEST_HOOK}"`),
     /pack contains GTH_INTENT_TEST[\s\S]*src\/content\/engine\.js/,
+  );
+  assert.equal(assertPackOmitsProbeScripts(files, read).probeScriptsOmitted, true);
+  assert.equal(assertPackOmitsProbeScripts(packed, read).probeScriptsOmitted, true);
+  assert.equal(files.includes('scripts/probe-gth-intent.mjs'), false);
+  assert.equal(packed.includes('scripts/probe-gth-intent.mjs'), false);
+  assert.throws(
+    () => assertPackOmitsProbeScripts(['scripts/probe-gth-intent.mjs']),
+    /pack contains probe scripts[\s\S]*scripts\/probe-gth-intent\.mjs/,
+  );
+  assert.throws(
+    () => assertPackOmitsProbeScripts(['src/content/engine.js'], () => "import '../scripts/probe-gth-intent.mjs';"),
+    /pack contains probe scripts[\s\S]*src\/content\/engine\.js/,
   );
 });

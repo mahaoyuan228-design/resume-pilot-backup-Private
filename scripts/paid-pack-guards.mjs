@@ -38,6 +38,30 @@ export function assertPackOmitsGthIntentTest(rels, readText) {
   return { gthIntentTestOmitted: true };
 }
 
+// Read-only CDP probes live under scripts/ and must not be copied into an
+// extension pack. The probe does not claim a site is supported.
+export function assertPackOmitsProbeScripts(rels, readText) {
+  if (!Array.isArray(rels)) {
+    throw new Error('assertPackOmitsProbeScripts needs a pack list');
+  }
+  const hits = [];
+  for (const rel of rels) {
+    const text = String(rel || '').replace(/\\/g, '/');
+    if (text.startsWith('scripts/') || text.endsWith('/probe-gth-intent.mjs') || text === 'probe-gth-intent.mjs') {
+      hits.push(text);
+      continue;
+    }
+    if (typeof readText !== 'function') continue;
+    const body = readText(rel);
+    if (typeof body !== 'string') throw new Error(`pack guard could not read ${rel}`);
+    if (body.includes('scripts/probe-gth-intent')) hits.push(text);
+  }
+  if (hits.length) {
+    throw new Error(`pack contains probe scripts:\n${hits.join('\n')}`);
+  }
+  return { probeScriptsOmitted: true };
+}
+
 // Byte-compared into the paid output. An Oct-18 pack predates the 学历 id suffix and region fail-closed.
 export const CMS_TIP_SOURCE_FILES = [
   'src/content/engine.js',
@@ -696,7 +720,9 @@ export async function assertBuiltPaidExtension(extensionRoot, packedFiles) {
     throw new Error(`built manifest service_worker is ${manifest.background?.service_worker}`);
   }
   assertPackImportsResolve(extensionRoot, packedFiles);
-  const intentHook = assertPackOmitsGthIntentTest(packedFiles, (rel) => fs.readFileSync(path.join(extensionRoot, rel), 'utf8'));
+  const readPacked = (rel) => fs.readFileSync(path.join(extensionRoot, rel), 'utf8');
+  const intentHook = assertPackOmitsGthIntentTest(packedFiles, readPacked);
+  const probeScripts = assertPackOmitsProbeScripts(packedFiles, readPacked);
   const tip = assertPackedCmsTip(extensionRoot, packedFiles);
   const gth = assertPackedGthTip(extensionRoot, packedFiles);
   const cmb = assertPackedCmbTip(extensionRoot, packedFiles);
@@ -748,5 +774,6 @@ export async function assertBuiltPaidExtension(extensionRoot, packedFiles) {
     ...gth,
     ...cmb,
     ...intentHook,
+    ...probeScripts,
   };
 }

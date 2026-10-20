@@ -12,6 +12,8 @@
  * Never types a login. Clicks only the unique 求职意向 编辑 affordance, then
  * 取消 or a unique close control. Dropdown options stay closed unless
  * --open-options is set; even then the probe only reads them and presses Escape.
+ * Picker choices are read by scripts/gth-option-reader.mjs, including hidden
+ * .eo-cascader-panel li.branch levels (L1 has-child, L2 already rendered).
  *
  * A section form is an opened editor when that section's 编辑 link is hidden
  * (present but not visible) or, for 求职意向, absent while the form is visible.
@@ -26,6 +28,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
 import { connectCdp, getJson } from '../tools/live-harvest/cdp-client.mjs';
 import { isTimeout } from '../tools/live-harvest/errors.mjs';
+import { readGthOptionLists } from './gth-option-reader.mjs';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -609,18 +612,12 @@ export async function probeIntentEditor(doc, options = {}) {
     return [...doc.querySelectorAll('.el-popper, .el-select-dropdown, .el-cascader-panel, .el-picker-panel, .popover')].filter((node) => visible(node));
   }
 
-  function readOptionNodes(poppers) {
-    const options = [];
-    for (const popper of poppers) {
-      for (const node of popper.querySelectorAll('.el-select-dropdown__item, .el-cascader-node, [role="option"]')) {
-        if (!visible(node)) continue;
-        const text = norm(node.textContent).slice(0, 80);
-        if (!text) continue;
-        options.push({ text, classes: classTokens([node]) });
-        if (options.length >= 40) return options;
-      }
-    }
-    return options;
+  function readOptionNodes(roots) {
+    const read = readGthOptionLists(roots);
+    return {
+      options: read.options.slice(0, 200),
+      levels: read.levels
+    };
   }
 
   function pressEscape() {
@@ -640,13 +637,22 @@ export async function probeIntentEditor(doc, options = {}) {
       optionsClicked: false,
       reason: null
     };
+    const rendered = readOptionNodes(item);
+    if (rendered.options.length) {
+      base.options = rendered.options;
+      base.levels = rendered.levels;
+      base.renderedInPlace = true;
+      return base;
+    }
     if (!trigger || !trigger.isConnected) return { ...base, reason: 'trigger_not_found' };
     if (trigger.disabled || forbiddenName(accessibleName(trigger))) return { ...base, reason: 'trigger_not_safe' };
     const before = new Set(visiblePoppers());
     clickTrigger(trigger);
     await waitFor(() => visiblePoppers().some((node) => !before.has(node)) || null, 800);
     const poppers = visiblePoppers().filter((node) => !before.has(node));
-    base.options = readOptionNodes(poppers);
+    const opened = readOptionNodes(poppers.length ? poppers : item);
+    base.options = opened.options;
+    base.levels = opened.levels;
     base.popperClasses = classTokens(poppers);
     pressEscape();
     base.escapePressed = true;
@@ -884,6 +890,7 @@ export function buildProbeExpression({ openOptions = false } = {}) {
   const flag = openOptions === true ? 'true' : 'false';
   return [
     '(() => {',
+    `const readGthOptionLists = ${readGthOptionLists.toString()};`,
     `const redactUrl = ${redactUrl.toString()};`,
     `const isSavePost = ${isSavePost.toString()};`,
     `const networkReport = ${networkReport.toString()};`,

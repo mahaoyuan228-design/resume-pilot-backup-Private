@@ -40,6 +40,8 @@ export function assertPackOmitsGthIntentTest(rels, readText) {
 
 // Read-only CDP probes live under scripts/ and must not be copied into an
 // extension pack. The probe does not claim a site is supported.
+const PROBE_FILE = /(?:^|\/)(?:probe-gth-[^/]*\.mjs|gth-option-reader\.mjs)$/u;
+
 export function assertPackOmitsProbeScripts(rels, readText) {
   if (!Array.isArray(rels)) {
     throw new Error('assertPackOmitsProbeScripts needs a pack list');
@@ -47,14 +49,16 @@ export function assertPackOmitsProbeScripts(rels, readText) {
   const hits = [];
   for (const rel of rels) {
     const text = String(rel || '').replace(/\\/g, '/');
-    if (text.startsWith('scripts/') || text.endsWith('/probe-gth-intent.mjs') || text === 'probe-gth-intent.mjs') {
+    if (text.startsWith('scripts/') || PROBE_FILE.test(text)) {
       hits.push(text);
       continue;
     }
     if (typeof readText !== 'function') continue;
     const body = readText(rel);
     if (typeof body !== 'string') throw new Error(`pack guard could not read ${rel}`);
-    if (body.includes('scripts/probe-gth-intent')) hits.push(text);
+    if (body.includes('scripts/probe-gth') || body.includes('scripts/gth-option-reader') || body.includes('probe-gth-section.mjs')) {
+      hits.push(text);
+    }
   }
   if (hits.length) {
     throw new Error(`pack contains probe scripts:\n${hits.join('\n')}`);

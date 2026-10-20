@@ -535,12 +535,32 @@ test('a pack containing GTH_INTENT_TEST fails, and the shipped lists omit it', (
   assert.equal(assertPackOmitsProbeScripts(packed, read).probeScriptsOmitted, true);
   assert.equal(files.includes('scripts/probe-gth-intent.mjs'), false);
   assert.equal(packed.includes('scripts/probe-gth-intent.mjs'), false);
+  assert.equal(files.includes('scripts/probe-gth-section.mjs'), false);
+  assert.equal(packed.includes('scripts/probe-gth-section.mjs'), false);
+  assert.equal(files.includes('scripts/gth-option-reader.mjs'), false);
+  assert.equal(packed.includes('scripts/gth-option-reader.mjs'), false);
   assert.throws(
     () => assertPackOmitsProbeScripts(['scripts/probe-gth-intent.mjs']),
     /pack contains probe scripts[\s\S]*scripts\/probe-gth-intent\.mjs/,
   );
   assert.throws(
+    () => assertPackOmitsProbeScripts(['scripts/probe-gth-section.mjs']),
+    /pack contains probe scripts[\s\S]*scripts\/probe-gth-section\.mjs/,
+  );
+  assert.throws(
+    () => assertPackOmitsProbeScripts(['scripts/gth-option-reader.mjs']),
+    /pack contains probe scripts[\s\S]*scripts\/gth-option-reader\.mjs/,
+  );
+  assert.throws(
     () => assertPackOmitsProbeScripts(['src/content/engine.js'], () => "import '../scripts/probe-gth-intent.mjs';"),
     /pack contains probe scripts[\s\S]*src\/content\/engine\.js/,
+  );
+  assert.throws(
+    () => assertPackOmitsProbeScripts(['src/content/engine.js'], () => "import '../scripts/probe-gth-section.mjs';"),
+    /pack contains probe scripts[\s\S]*src\/content\/engine\.js/,
+  );
+  assert.throws(
+    () => assertPackOmitsProbeScripts(['src/content/gth-intent.js'], () => "import '../scripts/gth-option-reader.mjs';"),
+    /pack contains probe scripts[\s\S]*src\/content\/gth-intent\.js/,
   );
 });

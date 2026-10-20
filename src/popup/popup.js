@@ -2,6 +2,7 @@
 import {captureProfileBinding,assertProfileBinding,withProfileBinding,dispatchBoundSource} from "../profile/profile-lifecycle.js";
 import {isCmb,cmbBasicInjectFiles} from "../content/cmb-profile-map.mjs";
 import {cmbPopupOutcome} from "../background/cmb-basic-auto.mjs";
+import {assessGthIntentFill, GTH_INTENT_FILL_TYPE, intentFillPayload} from "../background/gth-intent-auto.mjs";
 import { clearAttachment, loadAttachment, saveAttachment, MAX_ATTACHMENT_BYTES } from "../import/attachment-store.js";
 import { MAX_CUSTOM_FACTS, collectScopedQuestionDrafts, loadProfile, normalizeQuestionKey, saveProfile, questionIdentity, normalizeScopedQuestion } from "../profile/store.js";
 import { beginRecentRequest, loadRecentResult, recentResultText, saveRecentResult } from "./recent-result.js";
@@ -255,10 +256,10 @@ function setBusy(value) {
     : !gthSalaryEligible || fillOutcomeUncertain);
   elements.gthSalaryButton.textContent = gthPendingReview
     ? "核对上次试填状态（只读）" : "试填期望薪资并读回（不保存）";
-  elements.gthIntentButton.disabled = value || !gthIntentPendingReview
-    || !activeTab || activeTab.url !== GTH_RESUME_PAGE;
+  elements.gthIntentButton.disabled = value || !activeTab || activeTab.url !== GTH_RESUME_PAGE
+    || (fillOutcomeUncertain && !gthIntentPendingReview);
   elements.gthIntentButton.textContent = gthIntentPendingReview
-    ? "核对上次五项试填状态（只读）" : "求职意向五项实验试填未纳入交付包";
+    ? "核对上次求职意向试填状态（只读）" : "试填求职意向并读回（不保存）";
   elements.gthEducationButtons.forEach((button, rowIndex) => {
     button.disabled = value || (gthEducationPendingReview
       ? !activeTab || activeTab.url !== GTH_RESUME_PAGE || gthEducationPendingRow !== rowIndex || gthEducationPendingFull
@@ -1336,12 +1337,32 @@ async function performGthSalaryTrial() {
   }
 }
 
-// The experimental intent-test status route is not in the shipped pack. An old
-// pending trial stays locked; this read does not message the page or infer success.
 async function reviewPendingGthIntent(tab, record) {
   if (tab.url !== GTH_RESUME_PAGE || record?.kind !== "gth_intent_trial"
     || typeof record.requestId !== "string") return "unknown";
-  return "unknown";
+  const profileBinding = record?.profileBinding;
+  try { await assertProfileBinding(chrome.storage.local, profileBinding); } catch { return "unknown"; }
+  let response;
+  try {
+    await ownedGthResult(profileBinding, boundedChromeCall(() => dispatchBoundSource(chrome.storage.local, profileBinding, () => chrome.scripting.executeScript({
+      target: { tabId: tab.id }, files: ["src/content/gth-intent.js"]
+    })), SCRIPT_TIMEOUT_MS, "script"));
+    response = await ownedGthResult(profileBinding, boundedChromeCall(() => chrome.tabs.sendMessage(tab.id, {
+      type: "GTH_INTENT_FILL_STATUS", requestId: record.requestId, profileBinding
+    }), INSPECT_TIMEOUT_MS, "inspect_response"));
+  } catch { return "unknown"; }
+  if (!response?.ok || response.data?.requestId !== record.requestId
+    || response.data?.state !== "settled") return "unknown";
+  const outcome = response.data.outcome;
+  if (outcome !== "verified" && outcome !== "verified_preexisting" && outcome !== "failed_before_write") return "unknown";
+  await withProfileBinding(chrome.storage.local, profileBinding, () => replacePendingReview(tab, record.requestId));
+  const remaining = await pendingReviewFor(tab);
+  fillOutcomeUncertain = !!remaining;
+  gthIntentPendingReview = remaining?.kind === "gth_intent_trial";
+  if (!remaining) await withProfileBinding(chrome.storage.local, profileBinding, () => rememberResult(tab, record.requestId, "gth_intent_trial",
+    [{ status: outcome === "failed_before_write" ? "skipped" : "verified" }],
+    outcome === "failed_before_write" ? "stopped_before_write" : "verified"));
+  return fillOutcomeUncertain ? "unknown" : outcome;
 }
 
 function gthIntentReviewMessage(outcome) {
@@ -1352,13 +1373,38 @@ function gthIntentReviewMessage(outcome) {
   return "上次五项试填可能仍在运行，或页面已刷新、读回不一致；本页已锁定，没有再次填写。";
 }
 
+const gthIntentErrors = {
+  license_required: "授权核验未通过，本次没有填写。",
+  wrong_page: "当前不是国泰海通简历编辑页，未试填。",
+  page_hidden: "网页在后台，未试填。请切回国泰海通页面。",
+  page_not_ready: "招聘网页尚未加载完成，未试填。",
+  section_structure_changed: "国泰海通分区结构已变化，未试填。",
+  other_section_editor_open: "其他分区仍有打开的编辑器，已停止求职意向试填（未点保存）。",
+  intent_editor_not_unique: "求职意向编辑器无法唯一确定，未试填。",
+  intent_edit_not_unique: "求职意向编辑入口无法唯一确定，未试填。",
+  intent_target_not_unique: "期望薪资题目不唯一，未试填。",
+  intent_target_not_plain_text: "期望薪资不是已验证的普通文本框，未试填。",
+  intent_value_too_long: "期望薪资答案超过网站字数限制，未试填。",
+  intent_other_values_changed: "试填时其他网页字段发生变化，结果待核对。",
+  intent_readback_mismatch: "期望薪资读回不一致，结果待核对。",
+  intent_site_validation_failed: "期望薪资虽已显示，但网站仍提示校验错误，结果待核对。",
+  control_not_supported: "没有录到编辑器控件的求职意向项已记为失败。本次不记为完成，没有点击保存或投递。",
+  existing_value: "网站的期望薪资已有不同内容，已保留原值。本次不记为完成，没有点击保存或投递。",
+  missing_profile_value: "求职意向答案不完整，没有向网页发送填写。",
+  profile_fact_unconfirmed: "求职意向答案尚未限定本页或未核对，没有向网页发送填写。",
+  fill_in_progress: "网页里已有填写在运行，本次未重复试填。"
+};
+
 async function performGthIntentTrial() {
   if (busy) return;
   setBusy(true);
+  let tab = null;
+  let requestId = null;
   try {
+    const profileBinding = await captureProfileBinding(chrome.storage.local);
     const active = await chrome.tabs.query({ active: true, currentWindow: true });
     if (active.length !== 1) throw new Error("当前 Edge 窗口的活动页面不唯一，已停止。");
-    const tab = await getTab();
+    tab = await getTab();
     if (tab.url !== GTH_RESUME_PAGE || active[0].id !== tab.id || active[0].url !== tab.url)
       throw new Error("请进入国泰海通准确的简历编辑页，未试填。");
     const pending = await pendingReviewFor(tab);
@@ -1368,11 +1414,53 @@ async function performGthIntentTrial() {
       return;
     }
     if (fillOutcomeUncertain || pending)
-      throw new Error("本页已有其他结果待核对的填写请求；五项试填保持锁定。");
-    throw new Error("求职意向五项实验试填不在当前交付包中，没有向网页发送填写。不会保存或投递。");
+      throw new Error("本页已有其他结果待核对的填写请求；求职意向试填保持锁定。");
+    const profile = await loadProfile();
+    gthIntentEligible = confirmedGthIntent(profile);
+    if (!gthIntentEligible) throw new Error(gthIntentGapsZh(profile));
+    const payload = intentFillPayload(profile);
+    const origin = authorizationScope(tab.url);
+    const { resumeTrustedOrigins } = await chrome.storage.local.get("resumeTrustedOrigins");
+    const trusted = Array.isArray(resumeTrustedOrigins) ? resumeTrustedOrigins : [];
+    if (!trusted.includes(origin)) {
+      if (!window.confirm(`即将把已核对的求职意向试填到 ${origin}。没有录到控件的项会失败，不点击网站保存或投递。`))
+        throw new Error("已取消本次试填。");
+      await withProfileBinding(chrome.storage.local, profileBinding, () => chrome.storage.local.set({ resumeTrustedOrigins: [...trusted, origin].slice(-100) }));
+    }
+    await ownedGthResult(profileBinding, boundedChromeCall(() => dispatchBoundSource(chrome.storage.local, profileBinding, () => chrome.scripting.executeScript({
+      target: { tabId: tab.id }, files: ["src/content/gth-intent.js"]
+    })), SCRIPT_TIMEOUT_MS, "script"));
+    const activeAgain = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (activeAgain.length !== 1 || activeAgain[0].id !== tab.id || activeAgain[0].url !== tab.url)
+      throw new Error("招聘网页已切换，未发送试填请求。");
+    const fresh = await loadProfile();
+    if (!confirmedGthIntent(fresh)) throw new Error("资料库已变化，未发送试填指令。");
+    if (await pendingReviewFor(tab)) throw new Error("本页已有待核对请求，未重复试填。");
+    requestId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    await withProfileBinding(chrome.storage.local, profileBinding, () => beginRecentRequest(tab, requestId));
+    await withProfileBinding(chrome.storage.local, profileBinding, () => chrome.storage.local.set({ [pendingFillReviewKey(tab.id)]: {
+      tabId: tab.id, origin, at: Date.now(), requestId, profileBinding, kind: "gth_intent_trial"
+    } }));
+    showRecentResult(null);
+    fillOutcomeUncertain = true;
+    gthIntentPendingReview = true;
+    setMessage("正在试填求职意向并逐项读回；不点击保存或投递…");
+    const response = await ownedGthResult(profileBinding, boundedChromeCall(() => dispatchBoundSource(chrome.storage.local, profileBinding, () => chrome.tabs.sendMessage(tab.id, {
+      type: GTH_INTENT_FILL_TYPE, requestId, profileBinding, replaceExisting: false,
+      answers: payload.answers, profile: payload.profile
+    })), FILL_TIMEOUT_MS, "fill_response"));
+    const assessed = assessGthIntentFill(response || {});
+    if (!assessed.ok) {
+      if (assessed.writeStarted !== true) await reviewPendingGthIntent(tab, await pendingReviewFor(tab));
+      throw new Error(gthIntentErrors[assessed.reason] || gthIntentErrors[response?.reason]
+        || "求职意向试填结果待核对；请查看网页编辑器，暂不要重复操作。不会保存或投递。");
+    }
+    const outcome = await reviewPendingGthIntent(tab, await pendingReviewFor(tab));
+    if (outcome !== "verified" && outcome !== "verified_preexisting") throw new Error(gthIntentReviewMessage(outcome));
+    setMessage("求职意向各项在当前编辑器内读回一致。软件没有点击保存或投递；网站保存状态尚未验证。");
   } catch (error) {
     if(error?.message==="profile_binding_unavailable")error.message="暂时无法核对当前资料，已停止后续填写；已发出的操作请核对网站当前内容。";else if(/^profile_/u.test(error?.message||""))error.message="客户资料已变化，已停止后续填写；已发出的操作请核对网站当前内容。";
-    setMessage(error?.message || "求职意向五项试填未完成，请核对当前网页。", true);
+    setMessage(error?.message || "求职意向试填未完成，请核对当前网页。", true);
   } finally {
     setBusy(false);
   }

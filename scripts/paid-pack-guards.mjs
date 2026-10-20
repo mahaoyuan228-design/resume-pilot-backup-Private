@@ -177,16 +177,21 @@ export const GTH_TIP_SOURCE_FILES = [
   'src/background/basic-task-runner.mjs',
   'src/background/gth-basic-auto.mjs',
   'src/popup/gth-basic-actions.js',
+  'src/content/gth-intent.js',
+  'src/background/gth-intent-auto.mjs',
+  'src/popup/popup.js',
 ];
 
 export const GTH_RUNNER_FILES = [
   'src/background/gth-basic-auto.mjs',
   'src/background/basic-task-runner.mjs',
+  'src/background/gth-intent-auto.mjs',
 ];
 
 // executeScript path named as a string. Import walk does not see it.
 export const GTH_REQUIRED_INJECT = [
   'src/content/gth-basic.js',
+  'src/content/gth-intent.js',
 ];
 
 export const GTH_TIP_MARKERS = [
@@ -239,6 +244,33 @@ export const GTH_TIP_MARKERS = [
     needles: [
       'GTH_COVERAGE_FAIL_CLOSED_REASONS',
       '现居住地、照片或参加工作时间未能填写（控件尚未支持，或地区资料未定）。本次不记为完成，未保存、未提交。',
+    ],
+  },
+  {
+    rel: 'src/content/gth-intent.js',
+    group: 'gth-intent-fail-closed',
+    needles: [
+      "message?.type !== 'GTH_INTENT_FILL'",
+      "kind:'unsupported'",
+      "'control_not_supported'",
+      'function overwriteProgressOk',
+    ],
+  },
+  {
+    rel: 'src/background/gth-intent-auto.mjs',
+    group: 'gth-intent-fail-closed',
+    needles: [
+      "'src/content/gth-intent.js'",
+      'export function assessGthIntentFill',
+      'Unsupported or unsettled intent fields fail closed and are not a completed fill.',
+    ],
+  },
+  {
+    rel: 'src/popup/popup.js',
+    group: 'gth-intent-fail-closed',
+    needles: [
+      'GTH_INTENT_FILL',
+      '"src/content/gth-intent.js"',
     ],
   },
 ];

@@ -1400,6 +1400,7 @@ const gthIntentErrors = {
   picker_structure_changed: "求职意向的选择控件结构已变化，未填写，没有保存。",
   picker_level1_missing: "没有找到精确的一级选项，已关闭选择框，没有保存。",
   picker_level2_missing: "点击一级后没有出现精确的二级选项，已关闭选择框，没有保存。",
+  picker_level2_menu_missing: "点击一级后没有出现二级菜单，已关闭选择框，没有保存。",
   picker_selection_limit: "该选择已达数量上限，未改选，没有保存。",
   picker_existing_selection_conflict: "该题已有其他选项，未取消原选项，没有保存。",
   picker_readback_mismatch: "选择后读回不一致，已关闭选择框，没有保存。",

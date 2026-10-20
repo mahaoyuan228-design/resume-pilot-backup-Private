@@ -100,12 +100,31 @@ function mount(formOptions = {}, wire = {}) {
   return { dom, form, stats, api: install(dom) };
 }
 
-function itemInput(form, label) {
-  const item = [...form.querySelectorAll('.el-form-item')].find((node) => {
+function itemByLabel(form, label) {
+  return [...form.querySelectorAll('.el-form-item')].find((node) => {
     const labels = [...node.querySelectorAll('.el-form-item__label')].filter((labelNode) => labelNode.closest('.el-form-item') === node);
     return labels.length === 1 && labels[0].textContent.trim() === label;
   });
-  return item.querySelector('input.el-input__inner');
+}
+
+function itemInput(form, label) {
+  return itemByLabel(form, label).querySelector('input.el-input__inner');
+}
+
+function menuCount(form, label) {
+  return itemByLabel(form, label).querySelectorAll('.eo-cascader-panel > .eo-cascader-menu.simple-tree-outer').length;
+}
+
+function leaveL1Only(form, label) {
+  const menus = [...itemByLabel(form, label).querySelectorAll('.eo-cascader-panel > .eo-cascader-menu.simple-tree-outer')];
+  menus.slice(1).forEach((menu) => menu.remove());
+}
+
+function clearPicker(form, label, counter = '(0/5)') {
+  const item = itemByLabel(form, label);
+  item.querySelector('.input-l.pointer input.el-input__inner').value = '';
+  item.querySelector('.selected-view-data').replaceChildren();
+  item.querySelector('.selected-counter > p').textContent = counter;
 }
 
 function flags(result) {
@@ -202,7 +221,7 @@ test('a chip and trigger that already show the level-2 text are left unchanged',
   assert.equal(stats.confirm, 0);
   assert.equal(stats.checkbox, 0);
   assert.equal(stats.level1, 0);
-  assert.equal(stats.panelCancel, 3);
+  assert.equal(stats.panelCancel, 0);
   assert.equal(stats.formCancel, 0);
   assert.equal(assessGthIntentFill(result).outcome, 'verified_preexisting');
 });
@@ -359,7 +378,7 @@ test('a foreign chip is not cleared and cancels as a selection conflict', async 
   assert.equal(result.writeStarted, false);
   assert.equal(stats.checkbox, 0);
   assert.equal(stats.confirm, 0);
-  assert.equal(stats.panelCancel, 3);
+  assert.equal(stats.panelCancel, 1);
   assert.equal(stats.save, 0);
   assert.equal(itemInput(form, '现从事职位类别').value, '投资/证券/基金');
   assert.equal(itemInput(form, '期望薪资').value, '300000');
@@ -385,7 +404,7 @@ test('到岗日期 uses the in-item el-select and reads the exact option back', 
   assert.equal(itemInput(form, '到岗日期').value, '一周内');
   assert.equal(stats.option, 1);
   assert.equal(stats.confirm, 0);
-  assert.equal(stats.panelCancel, 3);
+  assert.equal(stats.panelCancel, 0);
   assert.equal(stats.save, 0);
   assert.equal(assessGthIntentFill(result).ok, true);
 });
@@ -458,4 +477,253 @@ test('期望工作地区 fills 北京 then an exact district when that fact is p
   assert.equal(stats.save, 0);
   assert.equal(assessGthIntentFill(result).ok, true);
   assert.equal(result.liveSupportClaimed, false);
+});
+
+test('a level-1-only menu gains its level-2 menu after the exact level-1 click', async () => {
+  const { form, stats, api } = mount({
+    pickers: {
+      期望工作地区: EMPTY,
+      期望从事职位类别: { ...EMPTY, l1Only: true },
+      现从事行业: { ...EMPTY, l1Only: true },
+      现从事职位类别: { ...EMPTY, l1Only: true },
+    },
+    salaries: { 期望薪资: '', 现薪资: '' },
+  });
+  assert.equal(menuCount(form, '期望从事职位类别'), 1);
+  assert.equal(menuCount(form, '现从事行业'), 1);
+  assert.equal(menuCount(form, '现从事职位类别'), 1);
+  const result = await api.trial(request());
+  assert.equal(result.ok, true);
+  assert.equal(result.writeStarted, true);
+  assert.equal(result.reason, null);
+  flags(result);
+  assert.equal(itemInput(form, '期望从事职位类别').value, '投资/证券/基金');
+  assert.equal(itemInput(form, '现从事行业').value, '证券/投资/基金/信托');
+  assert.equal(itemInput(form, '现从事职位类别').value, '银行');
+  assert.equal(menuCount(form, '期望从事职位类别'), 2);
+  assert.equal(menuCount(form, '现从事行业'), 2);
+  assert.equal(menuCount(form, '现从事职位类别'), 2);
+  assert.equal(stats.level1, 3);
+  assert.equal(stats.checkbox, 3);
+  assert.equal(stats.confirm, 3);
+  assert.equal(stats.panelCancel, 0);
+  assert.equal(stats.save, 0);
+  assert.equal(result.liveSupportClaimed, false);
+});
+
+test('a level-1 click that never reveals a level-2 menu cancels and fails closed', async () => {
+  const { form, stats, api } = mount({
+    pickers: {
+      期望从事职位类别: { ...EMPTY, l1Only: true },
+      现从事行业: EMPTY,
+      现从事职位类别: EMPTY,
+    },
+    salaries: { 期望薪资: '', 现薪资: '' },
+  }, {
+    pickers: {
+      期望从事职位类别: { onLevel1() {} },
+    },
+  });
+  const result = await api.trial(request());
+  assert.equal(result.ok, false);
+  assert.equal(result.reason, 'picker_level2_menu_missing');
+  assert.equal(result.writeStarted, false);
+  flags(result);
+  assert.equal(stats.level1, 1);
+  assert.equal(stats.checkbox, 0);
+  assert.equal(stats.confirm, 0);
+  assert.equal(stats.panelCancel, 1);
+  assert.equal(stats.save, 0);
+  assert.equal(menuCount(form, '期望从事职位类别'), 1);
+  const panel = itemByLabel(form, '期望从事职位类别').querySelector('.dialog-wrap');
+  assert.equal(panel.style.display, 'none');
+  assert.equal(itemInput(form, '期望从事职位类别').value, '');
+  assert.equal(assessGthIntentFill(result).state, 'stopped_before_write');
+  assert.equal(assessGthIntentFill(result).reason, 'picker_level2_menu_missing');
+});
+
+test('a full-width selection counter still allows a picker write', async () => {
+  const wide = { trigger: '', chips: [], counter: '（0/5）' };
+  const { form, stats, api } = mount({
+    pickers: {
+      期望工作地区: wide,
+      期望从事职位类别: wide,
+      现从事行业: wide,
+      现从事职位类别: wide,
+    },
+    salaries: { 期望薪资: '', 现薪资: '' },
+  });
+  const result = await api.trial(request());
+  assert.equal(result.ok, true);
+  assert.equal(result.writeStarted, true);
+  assert.equal(result.reason, null);
+  flags(result);
+  assert.equal(itemInput(form, '期望从事职位类别').value, '投资/证券/基金');
+  assert.equal(itemInput(form, '现从事行业').value, '证券/投资/基金/信托');
+  assert.equal(itemInput(form, '现从事职位类别').value, '银行');
+  assert.equal(stats.confirm, 3);
+  assert.equal(stats.checkbox, 3);
+  assert.equal(stats.panelCancel, 0);
+  assert.equal(stats.save, 0);
+  assert.equal(result.fields.every((row) => row.reason === 'readback_matched'), true);
+});
+
+test('a full-width full counter refuses another checkbox and cancels the panel', async () => {
+  const { stats, api } = mount({
+    pickers: {
+      期望从事职位类别: { trigger: '', chips: [], counter: '（5/5）' },
+      现从事行业: EMPTY,
+      现从事职位类别: EMPTY,
+    },
+    salaries: { 期望薪资: '', 现薪资: '' },
+  });
+  const result = await api.trial(request());
+  assert.equal(result.reason, 'picker_selection_limit');
+  assert.equal(result.writeStarted, false);
+  assert.equal(stats.level1, 1);
+  assert.equal(stats.checkbox, 0);
+  assert.equal(stats.confirm, 0);
+  assert.equal(stats.panelCancel, 1);
+  assert.equal(stats.save, 0);
+  assert.equal(assessGthIntentFill(result).reason, 'picker_selection_limit');
+});
+
+test('single-select industry and role apply on the level-2 click without 确定', async () => {
+  const singleEmpty = { trigger: '', chips: [], single: true, counter: '（0/1）' };
+  const { form, stats, api } = mount({
+    pickers: {
+      期望从事职位类别: EMPTY,
+      现从事行业: singleEmpty,
+      现从事职位类别: singleEmpty,
+    },
+    salaries: { 期望薪资: '', 现薪资: '' },
+  });
+  const industryFoot = itemByLabel(form, '现从事行业').querySelector('.pop-foot');
+  const roleFoot = itemByLabel(form, '现从事职位类别').querySelector('.pop-foot');
+  assert.equal(industryFoot.style.display, 'none');
+  assert.equal(roleFoot.style.display, 'none');
+  const result = await api.trial(request());
+  assert.equal(result.ok, true);
+  assert.equal(result.writeStarted, true);
+  assert.equal(result.reason, null);
+  flags(result);
+  assert.equal(itemInput(form, '期望从事职位类别').value, '投资/证券/基金');
+  assert.equal(itemInput(form, '现从事行业').value, '证券/投资/基金/信托');
+  assert.equal(itemInput(form, '现从事职位类别').value, '银行');
+  assert.equal(stats.confirm, 1);
+  assert.equal(stats.checkbox, 1);
+  assert.equal(stats.level2, 2);
+  assert.equal(stats.level1, 3);
+  assert.equal(stats.panelCancel, 0);
+  assert.equal(stats.save, 0);
+  assert.equal(itemByLabel(form, '现从事行业').querySelector('.dialog-wrap').style.display, 'none');
+  assert.equal(itemByLabel(form, '现从事职位类别').querySelector('.dialog-wrap').style.display, 'none');
+  assert.equal(result.fields.find((row) => row.question === '现从事行业').reason, 'readback_matched');
+  assert.equal(result.fields.find((row) => row.question === '现从事职位类别').reason, 'readback_matched');
+  assert.equal(result.liveSupportClaimed, false);
+});
+
+test('a different single-select chip is left in place', async () => {
+  const { form, stats, api } = mount({
+    pickers: {
+      现从事行业: { trigger: '银行', chips: ['银行'], single: true, counter: '（1/1）' },
+      现从事职位类别: { trigger: '银行', chips: ['银行'], single: true, counter: '（1/1）' },
+    },
+    salaries: { 期望薪资: '300000', 现薪资: '200000' },
+  });
+  const result = await api.trial(request());
+  assert.equal(result.reason, 'picker_existing_selection_conflict');
+  assert.equal(result.writeStarted, false);
+  flags(result);
+  assert.equal(stats.level1, 0);
+  assert.equal(stats.level2, 0);
+  assert.equal(stats.checkbox, 0);
+  assert.equal(stats.confirm, 0);
+  assert.equal(stats.panelCancel, 1);
+  assert.equal(stats.save, 0);
+  assert.equal(itemInput(form, '现从事行业').value, '银行');
+  assert.deepEqual(
+    [...itemByLabel(form, '现从事行业').querySelectorAll('.selected-view-data > li p')].map((node) => node.textContent.trim()),
+    ['银行']
+  );
+  assert.equal(itemByLabel(form, '现从事行业').querySelector('.dialog-wrap').style.display, 'none');
+});
+
+test('an exact chip and trigger skip the panel, then a later level-1-only write still fills', async () => {
+  const mounted = mount({
+    pickers: {
+      现从事职位类别: { trigger: '银行', chips: ['银行'], counter: '(1/5)' },
+    },
+    salaries: { 期望薪资: '300000', 现薪资: '200000' },
+  });
+  const first = await mounted.api.trial(request());
+  assert.equal(first.ok, true);
+  assert.equal(first.writeStarted, false);
+  assert.equal(first.fields.every((row) => row.reason === 'preexisting_same_value'), true);
+  assert.equal(mounted.stats.panelCancel, 0);
+  assert.equal(mounted.stats.level1, 0);
+  assert.equal(mounted.stats.confirm, 0);
+  flags(first);
+  for (const label of ['期望工作地区', '期望从事职位类别', '现从事行业', '现从事职位类别']) leaveL1Only(mounted.form, label);
+  clearPicker(mounted.form, '期望从事职位类别');
+  assert.equal(menuCount(mounted.form, '期望从事职位类别'), 1);
+  assert.equal(menuCount(mounted.form, '现从事行业'), 1);
+  const second = await mounted.api.trial(request());
+  assert.equal(second.ok, true);
+  assert.equal(second.writeStarted, true);
+  flags(second);
+  assert.equal(second.fields.find((row) => row.question === '期望从事职位类别').reason, 'readback_matched');
+  assert.equal(second.fields.find((row) => row.question === '现从事行业').reason, 'preexisting_same_value');
+  assert.equal(second.fields.find((row) => row.question === '现从事职位类别').reason, 'preexisting_same_value');
+  assert.equal(second.fields.find((row) => row.question === '期望薪资').reason, 'preexisting_same_value');
+  assert.equal(itemInput(mounted.form, '期望从事职位类别').value, '投资/证券/基金');
+  assert.equal(menuCount(mounted.form, '期望从事职位类别'), 2);
+  assert.equal(mounted.stats.confirm, 1);
+  assert.equal(mounted.stats.checkbox, 1);
+  assert.equal(mounted.stats.panelCancel, 0);
+  assert.equal(mounted.stats.save, 0);
+  assert.equal(second.liveSupportClaimed, false);
+});
+
+test('a same-value open and cancel leaves the picker writable in that editor', async () => {
+  const mounted = mount({
+    pickers: {
+      现从事职位类别: { trigger: '银行', chips: [], counter: '(0/5)' },
+    },
+    salaries: { 期望薪资: '300000', 现薪资: '200000' },
+  }, {
+    pickers: {
+      现从事职位类别: {
+        onOpen({ panel }) {
+          if (panel.dataset.revealed === '1') return;
+          panel.dataset.revealed = '1';
+          panel.querySelector('.selected-view-data').innerHTML = '<li><p>银行</p><i></i></li>';
+          panel.querySelector('.selected-counter > p').textContent = '(1/5)';
+        },
+      },
+    },
+  });
+  const first = await mounted.api.trial(request());
+  assert.equal(first.ok, true);
+  assert.equal(first.writeStarted, false);
+  assert.equal(first.fields.find((row) => row.question === '现从事职位类别').reason, 'preexisting_same_value');
+  assert.equal(mounted.stats.panelCancel, 1);
+  assert.equal(mounted.stats.confirm, 0);
+  assert.equal(mounted.stats.checkbox, 0);
+  assert.equal(menuCount(mounted.form, '现从事职位类别'), 1);
+  assert.equal(itemInput(mounted.form, '现从事职位类别').value, '银行');
+  flags(first);
+  clearPicker(mounted.form, '现从事职位类别');
+  const second = await mounted.api.trial(request());
+  assert.equal(second.ok, true);
+  assert.equal(second.writeStarted, true);
+  flags(second);
+  assert.equal(second.fields.find((row) => row.question === '现从事职位类别').reason, 'readback_matched');
+  assert.equal(second.fields.find((row) => row.question === '期望从事职位类别').reason, 'preexisting_same_value');
+  assert.equal(itemInput(mounted.form, '现从事职位类别').value, '银行');
+  assert.equal(menuCount(mounted.form, '现从事职位类别'), 2);
+  assert.equal(mounted.stats.confirm, 1);
+  assert.equal(mounted.stats.checkbox, 1);
+  assert.equal(mounted.stats.save, 0);
+  assert.equal(second.liveSupportClaimed, false);
 });

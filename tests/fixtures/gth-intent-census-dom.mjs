@@ -1,9 +1,11 @@
 /**
  * DOM fixture built from the 2026-10-20 opened 求职意向 census.
- * Option text and element shapes come from that JSON. The counter text
- * "(n/5)" is the live pattern described with the census; the JSON records
- * the counter element but not its text. Level-2 for a branch other than the
- * one that was open is not in the census and is left empty on purpose.
+ * Option text and element shapes come from that JSON. Counter text is ASCII
+ * "(n/5)" or the live full-width "（n/m）". Level-2 for a branch other than
+ * the one that was open is not in the census and is left empty on purpose.
+ * l1Only omits the level-2 menu until a level-1 click, matching the editor
+ * after 取消. single hides the chip strip and 确定/取消; a level-2 click
+ * applies that one value and closes the panel.
  */
 import { readFileSync } from 'node:fs';
 
@@ -67,10 +69,16 @@ function pickerHtml(label, override = {}) {
   const model = pickerModel(label);
   const chips = override.chips ?? (model.trigger ? [model.trigger] : []);
   const trigger = override.trigger ?? model.trigger;
-  const counter = override.counter ?? `(${chips.length}/5)`;
+  const single = override.single === true;
+  const counter = override.counter ?? (single ? `（${chips.length}/1）` : `(${chips.length}/5)`);
   const l2Rows = override.emptyL2 ? '' : model.l2.map(l2Item).join('');
   const triggerClass = label === '期望工作地区' ? 'input-l pointer local---222' : 'input-l pointer';
   const chipHtml = chips.map((text) => `<li><p>${esc(text)}</p><i></i></li>`).join('');
+  const l2Menu = override.l1Only === true
+    ? ''
+    : `<div class="eo-cascader-menu simple-tree-outer"><ul class="simple-tree-wrapper">${l2Rows}</ul></div>`;
+  const viewStyle = single ? ' style="display:none"' : '';
+  const footStyle = single ? ' style="display:none"' : '';
   return `<div class="el-form-item is-required">
     <label class="el-form-item__label">${esc(label)}</label>
     <div class="el-form-item__content cascader-wrap">
@@ -81,7 +89,7 @@ function pickerHtml(label, override = {}) {
         <span class="el-input__suffix"><span class="el-input__suffix-inner"><i class="el-select__caret el-input__icon el-icon-arrow-up"></i></span></span>
       </div>
       <div class="dialog-wrap plugin-dialog-wrap popover blue" style="display:none">
-        <div class="eo-checked-wrap selected-view-outer">
+        <div class="eo-checked-wrap selected-view-outer"${viewStyle}>
           <ul class="selected-view-data">${chipHtml}</ul>
           <div class="selected-counter"><p>${esc(counter)}</p></div>
         </div>
@@ -94,9 +102,9 @@ function pickerHtml(label, override = {}) {
         </div>
         <div class="eo-cascader-panel">
           <div class="eo-cascader-menu simple-tree-outer"><ul class="simple-tree-wrapper">${model.l1.map(l1Item).join('')}</ul></div>
-          <div class="eo-cascader-menu simple-tree-outer"><ul class="simple-tree-wrapper">${l2Rows}</ul></div>
+          ${l2Menu}
         </div>
-        <div class="pop-foot plugin-dialog-pop-foot"><div class="btn-group-outer">
+        <div class="pop-foot plugin-dialog-pop-foot"${footStyle}><div class="btn-group-outer">
           <a class="confirm pop-btn">确定</a>
           <a class="cancel pop-btn">取消</a>
         </div></div>
@@ -178,7 +186,7 @@ function checkedText(box) {
 
 export function wireIntentForm(form, { pickers = {}, arrivalWrites = true } = {}) {
   const stats = {
-    save: 0, formCancel: 0, confirm: 0, panelCancel: 0, checkbox: 0, level1: 0, option: 0
+    save: 0, formCancel: 0, confirm: 0, panelCancel: 0, checkbox: 0, level1: 0, level2: 0, option: 0
   };
   form.querySelector('#intent-save')?.addEventListener('click', () => { stats.save += 1; });
   form.querySelector('#intent-cancel')?.addEventListener('click', () => { stats.formCancel += 1; });
@@ -187,23 +195,72 @@ export function wireIntentForm(form, { pickers = {}, arrivalWrites = true } = {}
     const panel = item.querySelector('.dialog-wrap.plugin-dialog-wrap.popover.blue');
     const trigger = item.querySelector('.el-form-item__content.cascader-wrap > .input-l.pointer');
     const input = trigger.querySelector('input.el-input__inner');
-    const menus = [...panel.querySelectorAll(':scope > .eo-cascader-panel > .eo-cascader-menu.simple-tree-outer')];
-    const l2Html = menus[1].querySelector(':scope > ul.simple-tree-wrapper').innerHTML;
+    const cascader = panel.querySelector(':scope > .eo-cascader-panel');
+    const menuNodes = () => [...cascader.querySelectorAll(':scope > .eo-cascader-menu.simple-tree-outer')];
+    const initialL2 = menuNodes()[1]?.querySelector(':scope > ul.simple-tree-wrapper');
+    const l2Html = initialL2 ? initialL2.innerHTML : pickerModel(label).l2.map(l2Item).join('');
     const observed = pickerModel(label).observedL1;
     const hook = pickers[label] || {};
-    trigger.addEventListener('click', () => { panel.style.display = 'block'; });
-    menus[0].addEventListener('click', (event) => {
-      const li = event.target.closest('li.branch.has-child');
-      if (!li || !menus[0].contains(li)) return;
-      stats.level1 += 1;
-      const text = norm(li.querySelector(':scope > span')?.textContent);
-      const list = menus[1].querySelector(':scope > ul.simple-tree-wrapper');
-      if (typeof hook.onLevel1 === 'function') hook.onLevel1({ text, list, observed, l2Html });
-      else list.innerHTML = text === observed ? l2Html : '';
+    const ensureL2Menu = () => {
+      let menusNow = menuNodes();
+      if (menusNow.length === 1) {
+        const menu = form.ownerDocument.createElement('div');
+        menu.className = 'eo-cascader-menu simple-tree-outer';
+        menu.innerHTML = '<ul class="simple-tree-wrapper"></ul>';
+        cascader.appendChild(menu);
+        menusNow = menuNodes();
+      }
+      return menusNow[1] || null;
+    };
+    const panelIsSingle = () => {
+      const foot = panel.querySelector(':scope > .pop-foot.plugin-dialog-pop-foot');
+      if (foot && foot.style.display === 'none') return true;
+      const raw = norm(panel.querySelector('.selected-counter > p')?.textContent);
+      const match = raw.match(/^[（(]\d+\/(\d+)[）)]$/u);
+      return !!match && Number(match[1]) === 1;
+    };
+    trigger.addEventListener('click', () => {
+      panel.style.display = 'block';
+      if (typeof hook.onOpen === 'function') hook.onOpen({ panel, input });
     });
-    menus[1].addEventListener('click', (event) => {
+    cascader.addEventListener('click', (event) => {
+      const menusNow = menuNodes();
+      if (menusNow[0]?.contains(event.target)) {
+        const li = event.target.closest('li.branch.has-child');
+        if (!li || !menusNow[0].contains(li)) return;
+        stats.level1 += 1;
+        const text = norm(li.querySelector(':scope > span')?.textContent);
+        if (typeof hook.onLevel1 === 'function') {
+          hook.onLevel1({
+            text,
+            list: menusNow[1]?.querySelector(':scope > ul.simple-tree-wrapper') || null,
+            observed,
+            l2Html,
+            ensureL2: ensureL2Menu
+          });
+          return;
+        }
+        const list = ensureL2Menu()?.querySelector(':scope > ul.simple-tree-wrapper');
+        if (list) list.innerHTML = text === observed ? l2Html : '';
+        return;
+      }
+      const l2Menu = menuNodes()[1];
+      if (!l2Menu?.contains(event.target)) return;
+      if (panelIsSingle()) {
+        if (event.target.closest('input')) return;
+        const li = event.target.closest('li.branch');
+        if (!li || li.classList.contains('has-child') || !l2Menu.contains(li)) return;
+        const text = norm(li.querySelector('label')?.textContent || li.querySelector(':scope > span')?.textContent);
+        if (!text) return;
+        stats.level2 += 1;
+        const chips = panel.querySelector('.selected-view-data');
+        chips.innerHTML = `<li><p>${esc(text)}</p><i></i></li>`;
+        input.value = text;
+        panel.style.display = 'none';
+        return;
+      }
       const box = event.target.closest('input[type="checkbox"]');
-      if (!box || !menus[1].contains(box)) return;
+      if (!box || !l2Menu.contains(box)) return;
       stats.checkbox += 1;
       const text = checkedText(box);
       const chips = panel.querySelector('.selected-view-data');
@@ -231,6 +288,7 @@ export function wireIntentForm(form, { pickers = {}, arrivalWrites = true } = {}
     });
     panel.querySelector('a.cancel.pop-btn').addEventListener('click', () => {
       stats.panelCancel += 1;
+      menuNodes()[1]?.remove();
       panel.style.display = 'none';
     });
   }

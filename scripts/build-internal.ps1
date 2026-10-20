@@ -185,11 +185,13 @@ if ($manifest.declarative_net_request.rule_resources) {
 }
 
 # Check local imports and HTML asset links in our source (vendor bundles are self-contained).
+# Module specifiers include `from '…'`, dynamic `import('…')`, and side-effect `import '…'`
+# (no from). `import './bg-ping.mjs'` must fail this check when that file is off the list.
 $sourceFiles = $files | Where-Object { $_ -like 'src/*' -and $_ -notlike 'src/import/vendor/*' -and $_ -match '\.(?:html|js|mjs)$' }
 foreach ($relative in $sourceFiles) {
   $source = Join-Path $repoRoot ($relative -replace '/', '\')
   $content = Get-Content -LiteralPath $source -Raw -Encoding UTF8
-  $patterns = if ($relative -like '*.html') { @('(?:src|href)\s*=\s*["'']([^"'']+)["'']') } else { @('(?:from\s*|import\s*\()\s*["''](\.[^"'']+)["'']') }
+  $patterns = if ($relative -like '*.html') { @('(?:src|href)\s*=\s*["'']([^"'']+)["'']') } else { @('(?:from\s*|import\s*\(|import\s*)\s*["''](\.[^"'']+)["'']') }
   foreach ($pattern in $patterns) {
     foreach ($match in [regex]::Matches($content, $pattern)) {
       $reference = $match.Groups[1].Value
@@ -198,6 +200,7 @@ foreach ($relative in $sourceFiles) {
       if (-not $resolved.StartsWith($repoRoot + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase)) { throw "源码引用越界：$relative -> $reference" }
       $local = $resolved.Substring($repoRoot.Length + 1).Replace('\', '/')
       if (-not $allowed.Contains($local)) { throw "源码引用未纳入打包清单：$relative -> $local" }
+      if (-not (Test-Path -LiteralPath $resolved -PathType Leaf)) { throw "源码引用文件不存在：$relative -> $local" }
     }
   }
 }

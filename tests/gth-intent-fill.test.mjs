@@ -163,7 +163,11 @@ test('a salary-only editor fails closed before any write', async () => {
   assert.equal(result.reason, 'picker_structure_changed');
   assert.equal(result.fields.length, 5);
   assert.deepEqual(Array.from(result.fields, (row) => String(row.question)), QUESTIONS);
-  assert.equal(result.fields.every((row) => row.status === 'failed' && row.reason === 'picker_structure_changed'), true);
+  assert.equal(result.fields[0].question, '期望从事职位类别');
+  assert.equal(result.fields[0].status, 'failed');
+  assert.equal(result.fields[0].reason, 'picker_structure_changed');
+  assert.deepEqual(Array.from(result.fields.slice(1), (row) => String(row.reason)), ['not_run', 'not_run', 'not_run', 'not_run']);
+  assert.equal(result.fields.every((row) => row.status === 'failed'), true);
   assert.equal(result.fields.every((row) => row.status !== 'skipped'), true);
   const assessed = assessGthIntentFill(result);
   assert.equal(assessed.ok, false);
@@ -233,6 +237,8 @@ test('another section editor blocks intent fill and is not saved', async () => {
   assert.equal(result.ok, false);
   assert.equal(result.reason, 'other_section_editor_open');
   assert.equal(result.writeStarted, false);
+  assert.equal(result.fields.every((row) => row.status === 'failed' && row.reason === 'not_run'), true);
+  assert.equal(assessGthIntentFill(result).reason, 'other_section_editor_open');
   assert.equal(clicks.save, 0);
   assert.equal(clicks.edit, 0);
   assert.equal(dom.window.document.getElementById('foreign-value').value, 'other-section');

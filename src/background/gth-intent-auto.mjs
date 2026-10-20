@@ -24,7 +24,7 @@ export const GTH_INTENT_FAIL_CLOSED_REASONS=Object.freeze([
   'picker_level1_missing','picker_level1_ambiguous','picker_level2_missing','picker_level2_menu_missing','picker_level2_ambiguous',
   'picker_level2_checkbox_missing','picker_counter_unknown','picker_selection_limit',
   'picker_existing_selection_conflict','picker_chip_unknown','picker_confirm_not_unique','picker_cancel_not_unique',
-  'picker_readback_mismatch','picker_selection_not_applied','select_label_ambiguous','select_structure_changed',
+  'picker_readback_mismatch','picker_replace_unverified','picker_selection_not_applied','select_label_ambiguous','select_structure_changed',
   'select_menu_not_unique','select_option_missing','select_option_ambiguous'
 ]);
 export function intentPickerAnswer(value){
@@ -199,8 +199,9 @@ export function assessGthIntentFill(response){
     &&response?.softwareClickedSave===false&&response?.softwareClickedSubmit===false
     &&response?.softwareClickedDelete!==true&&response?.editorLeftOpen===true
     &&response?.liveSupportClaimed!==true;
-  const failed=fields.find(row=>row&&row.status!=='verified'&&GTH_INTENT_FAIL_CLOSED_REASONS.includes(row.reason))
-    ||fields.find(row=>row&&row.status!=='verified');
+  const unmet=row=>row&&row.status!=='verified'&&row.reason!=='not_run';
+  const failed=fields.find(row=>unmet(row)&&GTH_INTENT_FAIL_CLOSED_REASONS.includes(row.reason))
+    ||fields.find(unmet);
   const writeAgrees=writeStarted===wrote;
   let reason=null;
   if(claimed)reason='gth_intent_save_policy_violated';

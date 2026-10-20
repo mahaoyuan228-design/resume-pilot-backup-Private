@@ -27,6 +27,7 @@ import {
   missingSiteHosts,
   readConfig,
   requiredHostsForSections,
+  postedReportBreach,
   runPaidHandoff,
   saveClickGuardSource,
   sectionStatus,
@@ -258,6 +259,11 @@ test('section status and fill counts', () => {
   assert.equal(sectionStatus({ ok: false, reason: REASON.AUTO_PAGE_NO_REPORT }), 'timeout');
   assert.equal(sectionStatus({ ok: false, reason: 'timeout_180000' }), 'timeout');
   assert.equal(sectionStatus({ ok: false, reason: REASON.SAVE_CLICK_FORBIDDEN }), 'fail');
+  assert.equal(sectionStatus({ ok: false, reason: REASON.UNSETTLED_SUCCESS }), 'fail');
+  assert.equal(postedReportBreach({ ok: true, mode: 'fill', savedOnSite: null, softwareClickedSave: false }), null);
+  assert.equal(postedReportBreach({ ok: true, job: { savedOnSite: true, softwareClickedSave: false } }), REASON.SAVE_CLICK_FORBIDDEN);
+  assert.equal(postedReportBreach({ ok: true, job: { state: 'stopped_before_write', softwareClickedSave: false } }), REASON.UNSETTLED_SUCCESS);
+  assert.equal(postedReportBreach({ ok: false, reason: 'page_hidden', job: { state: 'stopped_before_write' } }), null);
   assert.deepEqual(extractFillCounts({ filled: 2, expected: 6 }), { filled: 2, expected: 6 });
   assert.deepEqual(extractFillCounts({
     job: {
@@ -501,6 +507,36 @@ test('save clicks before or after fill fail the section and do not dispatch a cl
   assert.equal(afterSummary.sections[0].status, 'fail');
 });
 
+test('posted ok with a site save or an unsettled job fails closed without a DOM click', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'paid-qa-'));
+  const saved = await runWith(dir, {
+    server: okServer({
+      ok: true,
+      mode: 'fill',
+      kind: 'cms_basic_auto',
+      saveAttempted: false,
+      softwareClickedSave: false,
+      job: { state: 'completed', savedOnSite: true, softwareClickedSave: false },
+    }),
+  });
+  assert.equal(saved.outcome.exitCode, 1);
+  const savedSummary = JSON.parse(fs.readFileSync(saved.outcome.summaryPath, 'utf8'));
+  assert.equal(savedSummary.sections[0].status, 'fail');
+  assert.equal(savedSummary.sections[0].reason, REASON.SAVE_CLICK_FORBIDDEN);
+
+  const unsettled = await runWith(dir, {
+    server: okServer({
+      ok: true,
+      mode: 'fill',
+      saveAttempted: false,
+      job: { state: 'stopped_before_write', softwareClickedSave: false, savedOnSite: null },
+    }),
+  });
+  const unsettledSummary = JSON.parse(fs.readFileSync(unsettled.outcome.summaryPath, 'utf8'));
+  assert.equal(unsettledSummary.sections[0].status, 'fail');
+  assert.equal(unsettledSummary.sections[0].reason, REASON.UNSETTLED_SUCCESS);
+});
+
 test('PAID_QA_BG_PROBE=0 skips the ping and still runs the section', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'paid-qa-'));
   const { outcome, driver } = await runWith(dir, { env: { PAID_QA_BG_PROBE: '0' } });
@@ -540,7 +576,7 @@ for (const section of ['cms-basic', 'gth-basic']) {
       assert.equal(outcome.exitCode, 1);
       const summary = JSON.parse(fs.readFileSync(outcome.summaryPath, 'utf8'));
       assert.equal(summary.sections[0].status, 'fail');
-      assert.equal(summary.sections[0].reason, REASON.AUTO_FILL_NOT_VERIFIED);
+      assert.equal(summary.sections[0].reason, REASON.UNSETTLED_SUCCESS);
       const evidence = JSON.parse(fs.readFileSync(summary.sections[0].evidenceJson, 'utf8'));
       assert.equal(evidence.ok, false);
       assert.deepEqual(evidence.body, body, 'retain the original report for review');
@@ -548,7 +584,7 @@ for (const section of ['cms-basic', 'gth-basic']) {
   });
 }
 
-for (const flag of ['softwareClickedSave', 'softwareClickedSubmit']) {
+for (const flag of ['softwareClickedSave', 'softwareClickedSubmit', 'savedOnSite', 'submitted']) {
   test(`paid QA rejects reported ${flag} without a captured DOM click and retains evidence`, async () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'paid-qa-'));
     for (const location of ['top', 'job', 'fill', 'trial']) {

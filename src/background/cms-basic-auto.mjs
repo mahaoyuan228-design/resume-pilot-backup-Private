@@ -23,12 +23,15 @@ const base=url=>{try{const parsed=new URL(url);return parsed.origin+parsed.pathn
 const norm=value=>String(value||'').replace(/[\s\u00a0＊*？?]+/gu,' ').trim();
 const verifiedReasons=['readback_matched','readback_reapplied','preexisting_same_value'];
 const wroteField=field=>['readback_matched','readback_reapplied'].includes(field?.reason);
-const clickFlags=(...reports)=>({
+const saveClaim=(...reports)=>({
   softwareClickedSave:reports.some(report=>report?.softwareClickedSave===true),
   softwareClickedSubmit:reports.some(report=>report?.softwareClickedSubmit===true),
-  softwareClickedDelete:reports.some(report=>report?.softwareClickedDelete===true)
+  softwareClickedDelete:reports.some(report=>report?.softwareClickedDelete===true),
+  savedOnSite:reports.some(report=>report?.savedOnSite===true),
+  submitted:reports.some(report=>report?.submitted===true)
 });
-const anySiteClick=flags=>flags.softwareClickedSave||flags.softwareClickedSubmit||flags.softwareClickedDelete;
+const anySaveClaim=flags=>flags.softwareClickedSave||flags.softwareClickedSubmit||flags.softwareClickedDelete
+  ||flags.savedOnSite||flags.submitted;
 // Basic-fill target page. Default 招商 baseline; a hotjob same-shell tenant may be passed as message.cmsPage.
 // Only https://wecruit.hotjob.cn/SU<id>/pb/resumeOperation.html (no query/hash) is accepted. Photo/education/
 // internship paths remain pinned to the 招商 baseline in their own modules (engine CMS_PHOTO_PAGE etc.).
@@ -280,7 +283,7 @@ export function createCmsBasicAutoRunner({api=globalThis.chrome,verifyBeforeFill
     const data=response?.data||{};
     // Inspect both envelopes before handling errors or pre-write claims. A trial
     // must never erase a reported click by also reporting ok:false/writeStarted:false.
-    const clicks=clickFlags(response,data);
+    const clicks=saveClaim(response,data);
     const summary=summarizeFields(data.fields);
     const fieldWrite=Array.isArray(data.fields)&&data.fields.some(wroteField);
     const writeStarted=data.writeStarted===true||response?.writeStarted===true||fieldWrite?true
@@ -299,18 +302,19 @@ export function createCmsBasicAutoRunner({api=globalThis.chrome,verifyBeforeFill
     const fillFailed=response?.ok!==true||data.ok===false;
     const beforeWrite=fillFailed&&writeStarted!==true
       &&(response?.fillNotStarted===true||response?.writeStarted===false||data.writeStarted===false);
-    const reason=anySiteClick(clicks)?'cms_basic_save_policy_violated':bindingError
+    const reason=anySaveClaim(clicks)?'cms_basic_save_policy_violated':bindingError
       ||(fillFailed?safe(response?.error||response?.reason||data.reason||'cms_basic_fill_failed')
-        :!hasContract?'cms_basic_response_incomplete':!verified?'cms_basic_status_unsettled'
+        :!verified?'cms_basic_status_unsettled'
         :!validContract?'cms_basic_response_incomplete':null);
-    const state=reason?(beforeWrite&&!anySiteClick(clicks)&&!bindingError?'stopped_before_write':'unknown'):'completed';
+    const state=reason?(beforeWrite&&!anySaveClaim(clicks)&&!bindingError?'stopped_before_write':'unknown'):'completed';
     const outcome=state==='completed'?(fieldWrite?'verified':'verified_preexisting')
       :state==='stopped_before_write'?'failed_before_write':'unknown';
     const job={
       state,reason,requestId,outcome,writeStarted,complete:false,at:Date.now(),...clicks,
       supportedComplete:typeof data.supportedComplete==='boolean'?data.supportedComplete:null,
       operableComplete:typeof data.operableComplete==='boolean'?data.operableComplete:null,
-      savedOnSite:data.savedOnSite??null,submitted:data.submitted??null,
+      savedOnSite:clicks.savedOnSite?true:(data.savedOnSite??response?.savedOnSite??null),
+      submitted:clicks.submitted?true:(data.submitted??response?.submitted??null),
       fields:summary.personal,summary,source
     };
     // Unknown outcomes retain pending review. Only a verified fill or an
@@ -320,7 +324,7 @@ export function createCmsBasicAutoRunner({api=globalThis.chrome,verifyBeforeFill
       supportedComplete:job.supportedComplete,operableComplete:job.operableComplete,
       fieldCount:summary.personalCount,verified:summary.verified,
       skipped:summary.skipped,failed:summary.failed,totalReturned:summary.totalReturned,
-      savedOnSite:job.savedOnSite},outcome};
+      savedOnSite:job.savedOnSite,submitted:job.submitted},outcome};
   }
 
   async function runSeedFromEducation(message){
@@ -424,17 +428,19 @@ export function createCmsBasicAutoRunner({api=globalThis.chrome,verifyBeforeFill
     const filled=await runFill(found.tab,message,readiness,target);
     report.writeAttempted=filled.job?.writeStarted===true;
     report.steps.push({fill:filled.job?.state,outcome:filled.outcome});
-    const clicks=clickFlags(filled.job,filled.responseSummary);
+    const clicks=saveClaim(filled.job,filled.responseSummary);
     Object.assign(report,clicks);
+    report.savedOnSite=filled.job?.savedOnSite??null;
+    report.submitted=filled.job?.submitted??null;
     report.job=filled.job?{state:filled.job.state,reason:filled.job.reason||null,requestId:filled.job.requestId,
       outcome:filled.job.outcome||null,writeStarted:filled.job.writeStarted,complete:false,
       supportedComplete:filled.job.supportedComplete,operableComplete:filled.job.operableComplete,
-      ...clicks,savedOnSite:filled.job.savedOnSite??null,
+      ...clicks,savedOnSite:filled.job.savedOnSite??null,submitted:filled.job.submitted??null,
       fields:filled.job.fields||[],summary:filled.job.summary||null,source:filled.job.source||null}:null;
     report.fill=filled.responseSummary;
     report.saveAttempted=false;
     report.ok=filled.job?.state==='completed'&&['verified','verified_preexisting'].includes(filled.outcome)
-      &&filled.responseSummary?.ok===true&&!anySiteClick(clicks);
+      &&filled.responseSummary?.ok===true&&!anySaveClaim(clicks);
     if(!report.ok)report.reason=filled.job?.reason||filled.responseSummary?.reason||'cms_basic_fill_failed';
     await api.storage.local.set({resumeCmsBasicAutoRun:report});
     return report;

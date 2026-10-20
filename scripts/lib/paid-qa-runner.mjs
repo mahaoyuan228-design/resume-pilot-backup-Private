@@ -16,7 +16,7 @@ export const REASON = {
   AUTO_PAGE_NO_REPORT: 'AUTO_PAGE_NO_REPORT',
   BG_NO_RESPONSE: 'BG_NO_RESPONSE',
   SAVE_CLICK_FORBIDDEN: 'SAVE_CLICK_FORBIDDEN',
-  AUTO_FILL_NOT_VERIFIED: 'AUTO_FILL_NOT_VERIFIED',
+  UNSETTLED_SUCCESS: 'UNSETTLED_SUCCESS',
 };
 
 export const HINTS = {
@@ -27,7 +27,7 @@ export const HINTS = {
   [REASON.AUTO_PAGE_NO_REPORT]: '自动页已打开，但在超时前没有回传报告',
   [REASON.BG_NO_RESPONSE]: '自动页已打开，但卡在请求后台 *_AUTO，超时前没有报告',
   [REASON.SAVE_CLICK_FORBIDDEN]: '检测到保存或提交点击，本段已失败（Never Save）',
-  [REASON.AUTO_FILL_NOT_VERIFIED]: '基本信息填充缺少已核对完成的结果或完成合约，本段未通过',
+  [REASON.UNSETTLED_SUCCESS]: '填写未结算，或基本信息缺少已核对完成的结果或完成合约，本段未通过',
 };
 
 export const SITE_HOSTS = {
@@ -181,7 +181,7 @@ export function interpretBgProbe(result, timedOut = false) {
 }
 
 export function sectionStatus({ ok, reason }) {
-  if (reason === REASON.SAVE_CLICK_FORBIDDEN) return 'fail';
+  if (reason === REASON.SAVE_CLICK_FORBIDDEN || reason === REASON.UNSETTLED_SUCCESS) return 'fail';
   if (
     reason === REASON.AUTO_PAGE_NO_REPORT
     || reason === REASON.BG_NO_RESPONSE
@@ -191,18 +191,22 @@ export function sectionStatus({ ok, reason }) {
   return 'fail';
 }
 
-function reportsForbiddenClick(body) {
+/** A posted report must not pass with a save-state claim at any nested level. */
+export function postedReportBreach(body) {
   const pending = [body];
   const seen = new Set();
   while (pending.length) {
     const value = pending.pop();
     if (!value || typeof value !== 'object' || seen.has(value)) continue;
     seen.add(value);
-    if (['softwareClickedSave', 'softwareClickedSubmit', 'softwareClickedDelete', 'saveAttempted']
-      .some(key => value[key] === true)) return true;
+    if (['softwareClickedSave', 'softwareClickedSubmit', 'softwareClickedDelete', 'saveAttempted', 'savedOnSite', 'submitted']
+      .some(key => value[key] === true)) return REASON.SAVE_CLICK_FORBIDDEN;
     pending.push(...Object.values(value).filter(item => item && typeof item === 'object'));
   }
-  return false;
+  if (body?.ok === true && ['stopped_before_write', 'unknown'].includes(body.job?.state || body.state)) {
+    return REASON.UNSETTLED_SUCCESS;
+  }
+  return null;
 }
 
 function basicFillVerified(section, body) {
@@ -902,7 +906,8 @@ async function runSection({ section, driver, config, fetchJson, openReportServer
     clearTimeout(timer);
     const saveClicksAfter = await readClicks(driver, siteTargetId);
     const shot = await shotOf(driver, siteTargetId);
-    if (saveClicksAfter.length || reportsForbiddenClick(outcome.body)) {
+    const breach = postedReportBreach(outcome.body);
+    if (saveClicksAfter.length || breach === REASON.SAVE_CLICK_FORBIDDEN) {
       return finish({
         ok: false,
         reason: REASON.SAVE_CLICK_FORBIDDEN,
@@ -915,11 +920,11 @@ async function runSection({ section, driver, config, fetchJson, openReportServer
       });
     }
     const verified = basicFillVerified(section, outcome.body);
-    const ok = outcome.body?.ok === true && verified;
+    const ok = !breach && outcome.body?.ok === true && verified;
     return finish({
       ok,
-      reason: ok ? null : (outcome.body?.reason || outcome.body?.job?.reason
-        || (!verified ? REASON.AUTO_FILL_NOT_VERIFIED : 'section_failed')),
+      reason: breach || (ok ? null : (outcome.body?.reason || outcome.body?.job?.reason
+        || (!verified ? REASON.UNSETTLED_SUCCESS : 'section_failed'))),
       saveClicksBefore,
       saveClicksAfter,
       body: outcome.body,

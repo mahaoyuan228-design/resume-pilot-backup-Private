@@ -16,6 +16,7 @@ export const REASON = {
   AUTO_PAGE_NO_REPORT: 'AUTO_PAGE_NO_REPORT',
   BG_NO_RESPONSE: 'BG_NO_RESPONSE',
   SAVE_CLICK_FORBIDDEN: 'SAVE_CLICK_FORBIDDEN',
+  AUTO_FILL_NOT_VERIFIED: 'AUTO_FILL_NOT_VERIFIED',
 };
 
 export const HINTS = {
@@ -26,6 +27,7 @@ export const HINTS = {
   [REASON.AUTO_PAGE_NO_REPORT]: '自动页已打开，但在超时前没有回传报告',
   [REASON.BG_NO_RESPONSE]: '自动页已打开，但卡在请求后台 *_AUTO，超时前没有报告',
   [REASON.SAVE_CLICK_FORBIDDEN]: '检测到保存或提交点击，本段已失败（Never Save）',
+  [REASON.AUTO_FILL_NOT_VERIFIED]: '基本信息填充缺少已核对完成的结果或完成合约，本段未通过',
 };
 
 export const SITE_HOSTS = {
@@ -187,6 +189,45 @@ export function sectionStatus({ ok, reason }) {
   ) return 'timeout';
   if (ok === true) return 'pass';
   return 'fail';
+}
+
+function reportsForbiddenClick(body) {
+  const pending = [body];
+  const seen = new Set();
+  while (pending.length) {
+    const value = pending.pop();
+    if (!value || typeof value !== 'object' || seen.has(value)) continue;
+    seen.add(value);
+    if (['softwareClickedSave', 'softwareClickedSubmit', 'softwareClickedDelete', 'saveAttempted']
+      .some(key => value[key] === true)) return true;
+    pending.push(...Object.values(value).filter(item => item && typeof item === 'object'));
+  }
+  return false;
+}
+
+function basicFillVerified(section, body) {
+  if (!['cms-basic', 'gth-basic'].includes(section.id)) return true;
+  const job = body?.job;
+  const fields = job?.fields;
+  if (body?.mode !== 'fill' || job?.state !== 'completed'
+    || !['verified', 'verified_preexisting'].includes(job.outcome)
+    || typeof job.writeStarted !== 'boolean' || typeof job.supportedComplete !== 'boolean'
+    || job.operableComplete !== true || body.fill?.ok !== true
+    || job.outcome !== (job.writeStarted ? 'verified' : 'verified_preexisting')
+    || body.writeAttempted !== job.writeStarted
+    || !Array.isArray(fields) || !fields.length) return false;
+  const verified = row => row?.status === 'verified'
+    && ['readback_matched', 'readback_reapplied', 'preexisting_same_value'].includes(row.reason);
+  const allVerified = fields.every(verified);
+  if (job.supportedComplete !== allVerified) return false;
+  if (!job.writeStarted && fields.some(row => verified(row)
+    && ['readback_matched', 'readback_reapplied'].includes(row.reason))) return false;
+  // CMS has no read-only exception contract. GTH keeps its existing phone/email
+  // site_readonly result; the QA gate does not claim these fields were filled.
+  return fields.every(row => verified(row) || section.id === 'gth-basic'
+    && row?.status === 'skipped' && row.reason === 'site_readonly'
+    && ['phone', 'email'].includes(row.path)
+    && ['same', 'different', 'empty', 'source_unavailable'].includes(row.readOnlyState));
 }
 
 function asNumber(value) {
@@ -861,7 +902,7 @@ async function runSection({ section, driver, config, fetchJson, openReportServer
     clearTimeout(timer);
     const saveClicksAfter = await readClicks(driver, siteTargetId);
     const shot = await shotOf(driver, siteTargetId);
-    if (saveClicksAfter.length) {
+    if (saveClicksAfter.length || reportsForbiddenClick(outcome.body)) {
       return finish({
         ok: false,
         reason: REASON.SAVE_CLICK_FORBIDDEN,
@@ -873,10 +914,12 @@ async function runSection({ section, driver, config, fetchJson, openReportServer
         screenshotError: shot.error,
       });
     }
-    const ok = outcome.body?.ok === true;
+    const verified = basicFillVerified(section, outcome.body);
+    const ok = outcome.body?.ok === true && verified;
     return finish({
       ok,
-      reason: ok ? null : (outcome.body?.reason || outcome.body?.job?.reason || 'section_failed'),
+      reason: ok ? null : (outcome.body?.reason || outcome.body?.job?.reason
+        || (!verified ? REASON.AUTO_FILL_NOT_VERIFIED : 'section_failed')),
       saveClicksBefore,
       saveClicksAfter,
       body: outcome.body,

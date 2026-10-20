@@ -1,5 +1,6 @@
 // CMS 个人基本信息 auto (mirror GTH_BASIC_AUTO). Default: readiness.
 // Fill uses product RESUME_FILL; report filters to 个人基本信息必填. Never Save/submit.
+// Legacy RESUME_FILL replies without an explicit completion contract fail closed.
 import {captureProfileBinding,assertProfileBinding,canonicalProfileHash,
   dispatchBoundSource,withProfileBinding} from '../profile/profile-lifecycle.js';
 import {awaitCmsPageDocumentFocus} from './cms-page-focus.mjs';
@@ -20,6 +21,14 @@ const safe=error=>{const value=typeof error==='string'?error:(error?.message||''
 const sleep=ms=>new Promise(done=>setTimeout(done,ms));
 const base=url=>{try{const parsed=new URL(url);return parsed.origin+parsed.pathname;}catch{return '';}};
 const norm=value=>String(value||'').replace(/[\s\u00a0＊*？?]+/gu,' ').trim();
+const verifiedReasons=['readback_matched','readback_reapplied','preexisting_same_value'];
+const wroteField=field=>['readback_matched','readback_reapplied'].includes(field?.reason);
+const clickFlags=(...reports)=>({
+  softwareClickedSave:reports.some(report=>report?.softwareClickedSave===true),
+  softwareClickedSubmit:reports.some(report=>report?.softwareClickedSubmit===true),
+  softwareClickedDelete:reports.some(report=>report?.softwareClickedDelete===true)
+});
+const anySiteClick=flags=>flags.softwareClickedSave||flags.softwareClickedSubmit||flags.softwareClickedDelete;
 // Basic-fill target page. Default 招商 baseline; a hotjob same-shell tenant may be passed as message.cmsPage.
 // Only https://wecruit.hotjob.cn/SU<id>/pb/resumeOperation.html (no query/hash) is accepted. Photo/education/
 // internship paths remain pinned to the 招商 baseline in their own modules (engine CMS_PHOTO_PAGE etc.).
@@ -268,31 +277,50 @@ export function createCmsBasicAutoRunner({api=globalThis.chrome,verifyBeforeFill
       await withProfileBinding(api.storage.local,binding,()=>api.storage.local.remove(pendingKey(tab.id)),lifecycleOptions).catch(()=>{});
       throw error;
     }
-    await assertProfileBinding(api.storage.local,binding,lifecycleOptions);
-    await withProfileBinding(api.storage.local,binding,()=>api.storage.local.remove(pendingKey(tab.id)),lifecycleOptions);
-    if(!response||response.ok!==true){
-      const reason=safe(response?.error||'cms_basic_fill_failed');
-      if(response?.fillNotStarted===true||response?.writeStarted===false){
-        return {job:{state:'stopped_before_write',reason,requestId,writeStarted:false,
-          softwareClickedSave:false,softwareClickedSubmit:false,savedOnSite:null,fields:[],summary:summarizeFields([])},
-          responseSummary:{ok:false,writeStarted:false,reason},outcome:'failed_before_write'};
-      }
-      fail(reason);
-    }
-    const data=response.data||{};
-    if(data.softwareClickedSubmit===true||data.softwareClickedSave===true)fail('cms_basic_save_policy_violated');
+    const data=response?.data||{};
+    // Inspect both envelopes before handling errors or pre-write claims. A trial
+    // must never erase a reported click by also reporting ok:false/writeStarted:false.
+    const clicks=clickFlags(response,data);
     const summary=summarizeFields(data.fields);
-    const writeStarted=summary.verified>0||summary.failed>0||(Array.isArray(data.fields)&&data.fields.some(row=>row?.status==='verified'||row?.reason==='readback_matched'||row?.reason==='readback_reapplied'));
+    const fieldWrite=Array.isArray(data.fields)&&data.fields.some(wroteField);
+    const writeStarted=data.writeStarted===true||response?.writeStarted===true||fieldWrite?true
+      :typeof data.writeStarted==='boolean'?data.writeStarted
+      :typeof response?.writeStarted==='boolean'?response.writeStarted:null;
+    let bindingError=null;
+    try{await assertProfileBinding(api.storage.local,binding,lifecycleOptions);}
+    catch(error){bindingError=safe(error);}
+    const hasContract=['writeStarted','supportedComplete','operableComplete'].every(key=>typeof data[key]==='boolean');
+    const expectedOutcome=fieldWrite?'verified':'verified_preexisting';
+    const verified=summary.personalCount>0&&summary.personal.every(row=>row.status==='verified'&&verifiedReasons.includes(row.reason))
+      &&[data.status,data.outcome].every(status=>status===undefined||status===expectedOutcome);
+    const validContract=hasContract&&data.supportedComplete===true&&data.operableComplete===true
+      &&data.writeStarted===fieldWrite&&response?.fillNotStarted!==true
+      &&(response?.writeStarted===undefined||response.writeStarted===data.writeStarted);
+    const fillFailed=response?.ok!==true||data.ok===false;
+    const beforeWrite=fillFailed&&writeStarted!==true
+      &&(response?.fillNotStarted===true||response?.writeStarted===false||data.writeStarted===false);
+    const reason=anySiteClick(clicks)?'cms_basic_save_policy_violated':bindingError
+      ||(fillFailed?safe(response?.error||response?.reason||data.reason||'cms_basic_fill_failed')
+        :!hasContract?'cms_basic_response_incomplete':!verified?'cms_basic_status_unsettled'
+        :!validContract?'cms_basic_response_incomplete':null);
+    const state=reason?(beforeWrite&&!anySiteClick(clicks)&&!bindingError?'stopped_before_write':'unknown'):'completed';
+    const outcome=state==='completed'?(fieldWrite?'verified':'verified_preexisting')
+      :state==='stopped_before_write'?'failed_before_write':'unknown';
     const job={
-      state:'completed',requestId,outcome:summary.verified>0?'verified_partial':'completed_no_personal_verified',
-      writeStarted,complete:false,at:Date.now(),
-      softwareClickedSave:false,softwareClickedSubmit:false,
+      state,reason,requestId,outcome,writeStarted,complete:false,at:Date.now(),...clicks,
+      supportedComplete:typeof data.supportedComplete==='boolean'?data.supportedComplete:null,
+      operableComplete:typeof data.operableComplete==='boolean'?data.operableComplete:null,
       savedOnSite:data.savedOnSite??null,submitted:data.submitted??null,
       fields:summary.personal,summary,source
     };
-    return {job,responseSummary:{ok:true,fieldCount:summary.personalCount,verified:summary.verified,
+    // Unknown outcomes retain pending review. Only a verified fill or an
+    // explicit, consistent pre-write failure can release this request.
+    if(state!=='unknown')await withProfileBinding(api.storage.local,binding,()=>api.storage.local.remove(pendingKey(tab.id)),lifecycleOptions);
+    return {job,responseSummary:{ok:state==='completed',reason,writeStarted,...clicks,
+      supportedComplete:job.supportedComplete,operableComplete:job.operableComplete,
+      fieldCount:summary.personalCount,verified:summary.verified,
       skipped:summary.skipped,failed:summary.failed,totalReturned:summary.totalReturned,
-      savedOnSite:job.savedOnSite,softwareClickedSubmit:false},outcome:job.outcome};
+      savedOnSite:job.savedOnSite},outcome};
   }
 
   async function runSeedFromEducation(message){
@@ -396,13 +424,18 @@ export function createCmsBasicAutoRunner({api=globalThis.chrome,verifyBeforeFill
     const filled=await runFill(found.tab,message,readiness,target);
     report.writeAttempted=filled.job?.writeStarted===true;
     report.steps.push({fill:filled.job?.state,outcome:filled.outcome});
+    const clicks=clickFlags(filled.job,filled.responseSummary);
+    Object.assign(report,clicks);
     report.job=filled.job?{state:filled.job.state,reason:filled.job.reason||null,requestId:filled.job.requestId,
-      outcome:filled.job.outcome||null,writeStarted:filled.job.writeStarted===true,
-      softwareClickedSave:false,softwareClickedSubmit:false,savedOnSite:filled.job.savedOnSite??null,
+      outcome:filled.job.outcome||null,writeStarted:filled.job.writeStarted,complete:false,
+      supportedComplete:filled.job.supportedComplete,operableComplete:filled.job.operableComplete,
+      ...clicks,savedOnSite:filled.job.savedOnSite??null,
       fields:filled.job.fields||[],summary:filled.job.summary||null,source:filled.job.source||null}:null;
     report.fill=filled.responseSummary;
     report.saveAttempted=false;
-    report.ok=true;
+    report.ok=filled.job?.state==='completed'&&['verified','verified_preexisting'].includes(filled.outcome)
+      &&filled.responseSummary?.ok===true&&!anySiteClick(clicks);
+    if(!report.ok)report.reason=filled.job?.reason||filled.responseSummary?.reason||'cms_basic_fill_failed';
     await api.storage.local.set({resumeCmsBasicAutoRun:report});
     return report;
   }

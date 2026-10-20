@@ -119,6 +119,22 @@ function okServer(body, events = [{ event: 'auto_begin', at: 1 }]) {
   };
 }
 
+// Synthetic auto-report contract; no employer DOM or live support claim.
+function verifiedBasicReport() {
+  return {
+    ok: true, mode: 'fill', helpNeeded: false, writeAttempted: true,
+    softwareClickedSave: false, softwareClickedSubmit: false,
+    filled: 2, expected: 6,
+    job: {
+      state: 'completed', outcome: 'verified', writeStarted: true,
+      supportedComplete: true, operableComplete: true,
+      softwareClickedSave: false, softwareClickedSubmit: false,
+      fields: [{ status: 'verified', reason: 'readback_matched' }],
+    },
+    fill: { ok: true, softwareClickedSave: false, softwareClickedSubmit: false },
+  };
+}
+
 function hangingServer(events = [{ event: 'auto_begin', at: 1 }]) {
   let rejectResult;
   const resultPromise = new Promise((resolve, reject) => {
@@ -159,7 +175,7 @@ async function runWith(dir, { targets, env, state, server, fetchError, connectEr
       if (connectError) throw connectError;
       return driver;
     },
-    startReportServer: async () => (typeof server === 'function' ? server() : (server || okServer({ ok: true, mode: 'fill', helpNeeded: false, writeAttempted: true, filled: 2, expected: 6 }))),
+    startReportServer: async () => (typeof server === 'function' ? server() : (server || okServer(verifiedBasicReport()))),
   });
   return { outcome, driver };
 }
@@ -416,14 +432,7 @@ test('passing section writes summary, counts, and site-tab png', async () => {
       probeResult: { ok: true, answered: true, lastError: 'The message port closed before a response was received.' },
       staleSnapshot: { bodyText: LIVE_STUCK_TEXT, lastReport: null, readyState: 'complete' },
     },
-    server: okServer({
-      ok: true,
-      mode: 'fill',
-      helpNeeded: false,
-      writeAttempted: true,
-      filled: 2,
-      expected: 6,
-    }),
+    server: okServer(verifiedBasicReport()),
   });
   assert.equal(outcome.exitCode, 0);
   const summary = JSON.parse(fs.readFileSync(outcome.summaryPath, 'utf8'));
@@ -498,6 +507,88 @@ test('PAID_QA_BG_PROBE=0 skips the ping and still runs the section', async () =>
   assert.equal(outcome.exitCode, 0);
   assert.equal(driver.calls.some((call) => call[2] === 'ping'), false);
   assert.equal(driver.calls.some((call) => call[0] === 'html'), false);
+});
+
+for (const section of ['cms-basic', 'gth-basic']) {
+  test(`paid QA ${section} rejects a green envelope without verified completion`, async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'paid-qa-'));
+    for (const patch of [
+      body => { delete body.job; },
+      body => { body.mode = 'readiness'; },
+      body => { body.job.state = 'unknown'; },
+      body => { body.job.state = 'stopped_before_write'; },
+      body => { body.job.outcome = 'unknown'; },
+      body => { delete body.job.writeStarted; },
+      body => { delete body.job.supportedComplete; },
+      body => { delete body.job.operableComplete; },
+      body => { body.job.operableComplete = false; },
+      body => { body.job.fields[0].status = 'unknown'; },
+      body => { body.job.fields = []; },
+      body => { body.fill.ok = false; },
+      body => { delete body.fill; },
+      body => { body.job.outcome = 'verified_preexisting'; },
+      body => { body.writeAttempted = false; },
+      body => {
+        body.job.outcome = 'verified_preexisting';
+        body.job.writeStarted = false;
+        body.writeAttempted = false;
+      },
+    ]) {
+      const body = verifiedBasicReport();
+      patch(body);
+      const { outcome } = await runWith(dir, { env: { ONLY: section }, server: okServer(body) });
+      assert.equal(outcome.exitCode, 1);
+      const summary = JSON.parse(fs.readFileSync(outcome.summaryPath, 'utf8'));
+      assert.equal(summary.sections[0].status, 'fail');
+      assert.equal(summary.sections[0].reason, REASON.AUTO_FILL_NOT_VERIFIED);
+      const evidence = JSON.parse(fs.readFileSync(summary.sections[0].evidenceJson, 'utf8'));
+      assert.equal(evidence.ok, false);
+      assert.deepEqual(evidence.body, body, 'retain the original report for review');
+    }
+  });
+}
+
+for (const flag of ['softwareClickedSave', 'softwareClickedSubmit']) {
+  test(`paid QA rejects reported ${flag} without a captured DOM click and retains evidence`, async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'paid-qa-'));
+    for (const location of ['top', 'job', 'fill', 'trial']) {
+      const body = verifiedBasicReport();
+      if (location === 'top') body[flag] = true;
+      else if (location === 'trial') body.fill.trial = { data: { [flag]: true } };
+      else body[location][flag] = true;
+      const { outcome } = await runWith(dir, { server: okServer(body) });
+      assert.equal(outcome.exitCode, 1);
+      const summary = JSON.parse(fs.readFileSync(outcome.summaryPath, 'utf8'));
+      assert.equal(summary.sections[0].reason, REASON.SAVE_CLICK_FORBIDDEN);
+      const evidence = JSON.parse(fs.readFileSync(summary.sections[0].evidenceJson, 'utf8'));
+      assert.equal(evidence.ok, false);
+      assert.equal(evidence.status, 'fail');
+      assert.deepEqual(evidence.saveClicksAfter, []);
+      assert.deepEqual(evidence.body, body);
+    }
+  });
+}
+
+test('paid QA accepts explicit verified/preexisting basic reports without Save', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'paid-qa-'));
+  for (const section of ['cms-basic', 'gth-basic']) {
+    const body = verifiedBasicReport();
+    body.job.outcome = 'verified_preexisting';
+    body.job.writeStarted = false;
+    body.writeAttempted = false;
+    body.job.fields[0].reason = 'preexisting_same_value';
+    const { outcome } = await runWith(dir, { env: { ONLY: section }, server: okServer(body) });
+    assert.equal(outcome.exitCode, 0);
+  }
+});
+
+test('paid QA keeps the verified GTH phone/email read-only exception', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'paid-qa-'));
+  const body = verifiedBasicReport();
+  body.job.supportedComplete = false;
+  body.job.fields.push({ path: 'phone', status: 'skipped', reason: 'site_readonly', readOnlyState: 'same' });
+  const { outcome } = await runWith(dir, { env: { ONLY: 'gth-basic' }, server: okServer(body) });
+  assert.equal(outcome.exitCode, 0);
 });
 
 test('runner source never dispatches a mouse click', () => {

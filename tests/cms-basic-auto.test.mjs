@@ -36,7 +36,7 @@ const fixture = () => ({
   ],
 });
 
-async function harness({ fillResponse } = {}) {
+async function harness({ fillResponse, patchFill } = {}) {
   const data = {
     resumeProfile: fixture(),
     resumeProfileLifecycle: { version: 1, epoch, state: 'ready' },
@@ -96,6 +96,10 @@ async function harness({ fillResponse } = {}) {
       savedOnSite: null,
       submitted: null,
       softwareClickedSubmit: false,
+      softwareClickedSave: false,
+      writeStarted: false,
+      supportedComplete: true,
+      operableComplete: true,
     },
   };
   const api = {
@@ -119,7 +123,9 @@ async function harness({ fillResponse } = {}) {
       sendMessage: async (_tab, message) => {
         if (message.type === 'RESUME_FILL') {
           stats.fill += 1;
-          return fillResponse || defaultFill;
+          const response = structuredClone(fillResponse || defaultFill);
+          patchFill?.(response);
+          return response;
         }
         throw Error('unexpected_message:' + message.type);
       },
@@ -214,6 +220,10 @@ test('CMS_BASIC_AUTO fill dispatches RESUME_FILL once and never Save', async () 
   assert.equal(h.stats.inject, 1);
   assert.equal(h.stats.fill, 1);
   assert.equal(response.job?.state, 'completed');
+  assert.equal(response.job?.outcome, 'verified_preexisting');
+  assert.equal(response.job?.writeStarted, false);
+  assert.equal(response.job?.supportedComplete, true);
+  assert.equal(response.job?.operableComplete, true);
   assert.equal(response.job?.softwareClickedSave, false);
   assert.equal(response.job?.softwareClickedSubmit, false);
   assert.equal(response.job?.summary?.personalCount, 1);
@@ -406,7 +416,7 @@ test('CMS_BASIC_AUTO isPersonalField filters education/internship rows out of su
   assert.equal(source.ready, true);
 });
 
-test('CMS_BASIC_AUTO fill rejects softwareClickedSave as policy violation', async () => {
+test('CMS_BASIC_AUTO fill rejects softwareClickedSave and preserves the click evidence', async () => {
   const h = await harness({
     fillResponse: {
       ok: true,
@@ -431,6 +441,13 @@ test('CMS_BASIC_AUTO fill rejects softwareClickedSave as policy violation', asyn
   assert.equal(response.ok, false);
   assert.equal(response.reason, 'cms_basic_save_policy_violated');
   assert.equal(response.saveAttempted, false);
+  assert.equal(response.softwareClickedSave, true);
+  assert.equal(response.job.state, 'unknown');
+  assert.equal(response.job.softwareClickedSave, true);
+  assert.equal(response.fill.softwareClickedSave, true);
+  assert.equal(h.data.resumeCmsBasicAutoRun.softwareClickedSave, true);
+  assert.equal(h.data.resumeCmsBasicAutoRun.job.softwareClickedSave, true);
+  assert.ok(h.data[`resumePendingFillReview:${tabId}`]);
 });
 
 test('CMS_BASIC_AUTO excludes path-null education 学历 duplicate_target from personal failures', async () => {
@@ -438,8 +455,8 @@ test('CMS_BASIC_AUTO excludes path-null education 学历 duplicate_target from p
     fields: [
       {
         id: 'cms-academic-__cms_basic_education_level', labels: ['学历*'],
-        path: 'customAnswers.__cms_basic_education_level', status: 'skipped',
-        reason: 'existing_value', kind: 'cms_ant_v3_select',
+        path: 'customAnswers.__cms_basic_education_level', status: 'verified',
+        reason: 'preexisting_same_value', kind: 'cms_ant_v3_select',
         scope: { sectionName: '个人基本信息必填', rowContext: 'single' },
       },
       {
@@ -448,14 +465,146 @@ test('CMS_BASIC_AUTO excludes path-null education 学历 duplicate_target from p
         scope: { sectionName: '教育经历必填', rowContext: 'multiple' },
       },
     ], softwareClickedSave: false, softwareClickedSubmit: false,
+    writeStarted: false, supportedComplete: true, operableComplete: true,
   } } });
   const response = await h.invoke({ type: 'CMS_BASIC_AUTO', mode: 'fill', originConfirmed: true });
   assert.equal(response.ok, true);
   assert.equal(response.job.summary.personalCount, 1);
-  assert.equal(response.job.summary.skipped, 1);
+  assert.equal(response.job.summary.verified, 1);
   assert.equal(response.job.summary.failed, 0);
   assert.equal(response.job.summary.totalReturned, 2);
   assert.equal(response.saveAttempted, false);
   assert.equal(response.job.softwareClickedSave, false);
   assert.equal(response.job.softwareClickedSubmit, false);
 });
+
+// Synthetic protocol responses only: these are not captured employer DOM or a
+// claim that the legacy RESUME_FILL producer supplies a completion contract.
+for (const status of ['unknown', 'pending', 'failed', 'skipped', null, undefined]) {
+  test(`CMS_BASIC_AUTO does not complete an unverified personal status (${status})`, async () => {
+    const h = await harness({ patchFill: response => {
+      response.data.fields[0].status = status;
+    } });
+    const response = await h.invoke({ type: 'CMS_BASIC_AUTO', mode: 'fill' });
+    assert.equal(response.ok, false);
+    assert.equal(response.job.state, 'unknown');
+    assert.equal(response.job.complete, false);
+    assert.equal(h.data.resumeCmsBasicAutoRun.ok, false);
+    assert.ok(h.data[`resumePendingFillReview:${tabId}`]);
+  });
+}
+
+for (const key of ['writeStarted', 'supportedComplete', 'operableComplete']) {
+  for (const value of [undefined, null, 'true', 1]) {
+    test(`CMS_BASIC_AUTO requires a boolean ${key} (${value})`, async () => {
+      const h = await harness({ patchFill: response => {
+        if (value === undefined) delete response.data[key];
+        else response.data[key] = value;
+      } });
+      const response = await h.invoke({ type: 'CMS_BASIC_AUTO', mode: 'fill' });
+      assert.equal(response.ok, false);
+      assert.equal(response.job.state, 'unknown');
+      assert.equal(response.reason, 'cms_basic_response_incomplete');
+      assert.equal(h.data.resumeCmsBasicAutoRun.ok, false);
+    });
+  }
+}
+
+for (const key of ['supportedComplete', 'operableComplete']) {
+  test(`CMS_BASIC_AUTO refuses incomplete ${key}`, async () => {
+    const h = await harness({ patchFill: response => { response.data[key] = false; } });
+    const response = await h.invoke({ type: 'CMS_BASIC_AUTO', mode: 'fill' });
+    assert.equal(response.ok, false);
+    assert.equal(response.job.state, 'unknown');
+  });
+}
+
+test('CMS_BASIC_AUTO requires personal readback evidence and consistent writeStarted', async () => {
+  for (const patchFill of [
+    response => { response.data.fields = []; },
+    response => { response.data.fields.shift(); },
+    response => { response.data.fields[0].reason = 'ready'; },
+    response => { response.data.fields[0].reason = 'readback_matched'; },
+    response => { response.data.writeStarted = true; },
+    response => { response.writeStarted = true; },
+    response => { response.fillNotStarted = true; },
+    response => { response.data.status = 'unknown'; },
+    response => { response.data.outcome = 'unknown'; },
+    response => { response.data.status = 'verified'; },
+    response => { response.data.ok = false; },
+  ]) {
+    const h = await harness({ patchFill });
+    const response = await h.invoke({ type: 'CMS_BASIC_AUTO', mode: 'fill' });
+    assert.equal(response.ok, false);
+    assert.notEqual(response.job.state, 'completed');
+    assert.equal(response.saveAttempted, false);
+  }
+});
+
+test('CMS_BASIC_AUTO retains a reported click even if the profile binding changes after fill', async () => {
+  const h = await harness({ patchFill: response => {
+    response.data.softwareClickedSave = true;
+    h.data.resumeProfile.fullName = 'Changed synthetic profile';
+  } });
+  const response = await h.invoke({ type: 'CMS_BASIC_AUTO', mode: 'fill' });
+  assert.equal(response.ok, false);
+  assert.equal(response.reason, 'cms_basic_save_policy_violated');
+  assert.equal(response.job.state, 'unknown');
+  assert.equal(response.softwareClickedSave, true);
+  assert.equal(h.data.resumeCmsBasicAutoRun.job.softwareClickedSave, true);
+});
+
+test('CMS_BASIC_AUTO completes a verified write with an explicit contract, without Save', async () => {
+  const h = await harness({ patchFill: response => {
+    response.data.fields[0].reason = 'readback_matched';
+    response.data.writeStarted = true;
+  } });
+  const response = await h.invoke({ type: 'CMS_BASIC_AUTO', mode: 'fill' });
+  assert.equal(response.ok, true);
+  assert.equal(response.job.state, 'completed');
+  assert.equal(response.job.outcome, 'verified');
+  assert.equal(response.writeAttempted, true);
+  assert.equal(response.job.complete, false);
+  assert.equal(response.softwareClickedSave, false);
+  assert.equal(response.softwareClickedSubmit, false);
+  assert.equal(response.saveAttempted, false);
+  assert.equal(h.data[`resumePendingFillReview:${tabId}`], undefined);
+});
+
+test('CMS_BASIC_AUTO pre-write failures stay false instead of being greened by auto()', async () => {
+  const h = await harness({ fillResponse: {
+    ok: false, error: 'site_session_unverified', fillNotStarted: true, writeStarted: false,
+  } });
+  const response = await h.invoke({ type: 'CMS_BASIC_AUTO', mode: 'fill' });
+  assert.equal(response.ok, false);
+  assert.equal(response.job.state, 'stopped_before_write');
+  assert.equal(response.writeAttempted, false);
+  assert.equal(response.reason, 'site_session_unverified');
+  assert.equal(h.data.resumeCmsBasicAutoRun.ok, false);
+  assert.equal(h.data[`resumePendingFillReview:${tabId}`], undefined);
+});
+
+for (const flag of ['softwareClickedSave', 'softwareClickedSubmit']) {
+  for (const location of ['envelope', 'data']) {
+    for (const ok of [true, false]) {
+      test(`CMS_BASIC_AUTO preserves ${location}.${flag} even with ok=${ok}`, async () => {
+        const h = await harness({ patchFill: response => {
+          response.ok = ok;
+          response.writeStarted = false;
+          response.fillNotStarted = true;
+          (location === 'data' ? response.data : response)[flag] = true;
+        } });
+        const response = await h.invoke({ type: 'CMS_BASIC_AUTO', mode: 'fill' });
+        assert.equal(response.ok, false);
+        assert.equal(response.reason, 'cms_basic_save_policy_violated');
+        assert.equal(response.job.state, 'unknown');
+        assert.equal(response[flag], true);
+        assert.equal(response.job[flag], true);
+        assert.equal(response.fill[flag], true);
+        assert.equal(h.data.resumeCmsBasicAutoRun[flag], true);
+        assert.equal(h.data.resumeCmsBasicAutoRun.job[flag], true);
+        assert.ok(h.data[`resumePendingFillReview:${tabId}`]);
+      });
+    }
+  }
+}

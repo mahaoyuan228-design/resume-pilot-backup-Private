@@ -292,7 +292,8 @@ if ($popupHtml -notmatch 'license/activate\.html') {
 
 # No-hand-patch gate. A copied 20261018 dist is not this build. Fail closed when the
 # seed is absent, paid-config is still a top-level await import, or any relative
-# import in the output tree does not resolve (Edge 155 will not register that SW).
+# import in the output tree does not resolve, including side-effect `import './…'`
+# (Edge 155 will not register that SW).
 $seedRel = 'src/profile/cms-basic-seed-from-education.mjs'
 if ($productFiles -notcontains $seedRel) {
   throw "付费包清单缺少 ${seedRel}。cms-basic-auto 的 seed import 无法在新构建中解析。不要用手改 dist 补文件。"
@@ -348,7 +349,8 @@ foreach ($relative in $packedList) {
   $packedFile = Join-Path $extensionRoot ($relative -replace '/', '\')
   if (-not (Test-Path -LiteralPath $packedFile -PathType Leaf)) { throw "付费包引用扫描缺少文件：$relative" }
   $content = [IO.File]::ReadAllText($packedFile)
-  $patterns = if ($relative -like '*.html') { @('(?:src|href)\s*=\s*["'']([^"'']+)["'']') } else { @('(?:from\s*|import\s*\()\s*["''](\.[^"'']+)["'']') }
+  # Same graph as build-internal: `from '…'`, `import('…')`, and side-effect `import '…'`.
+  $patterns = if ($relative -like '*.html') { @('(?:src|href)\s*=\s*["'']([^"'']+)["'']') } else { @('(?:from\s*|import\s*\(|import\s*)\s*["''](\.[^"'']+)["'']') }
   foreach ($pattern in $patterns) {
     foreach ($match in [regex]::Matches($content, $pattern)) {
       $reference = $match.Groups[1].Value

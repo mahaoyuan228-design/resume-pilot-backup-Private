@@ -274,10 +274,15 @@ export function assertSourcePaidConfigFailClosed(source) {
   }
 }
 
+// `from '…'` and `import('…')` miss a bare side-effect `import './file.mjs'`.
+// worker.mjs / guard-worker.mjs load bg-ping that way; omitting it keeps the MV3 worker from starting.
+export const RELATIVE_MODULE_IMPORT_SOURCE =
+  '(?:from\\s*|import\\s*\\(|import\\s*)\\s*["\'](\\.[^"\']+)["\']';
+
 export function relativeSpecifiers(source, isHtml) {
   const pattern = isHtml
     ? /(?:src|href)\s*=\s*["'](\.[^"']+)["']/g
-    : /(?:from\s*|import\s*\()\s*["'](\.[^"']+)["']/g;
+    : new RegExp(RELATIVE_MODULE_IMPORT_SOURCE, 'g');
   return [...source.matchAll(pattern)].map((item) => item[1]);
 }
 

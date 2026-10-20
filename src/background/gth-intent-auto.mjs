@@ -12,12 +12,35 @@ const PAGE='https://hr.gtht.com/resume/edit/',ORIGIN='https://hr.gtht.com';
 const SECTION='求职意向';
 const SECTION_INDEX=2;
 const QUESTIONS=['期望从事职位类别','期望薪资','现从事行业','现从事职位类别','现薪资'];
+const OPTIONAL_QUESTIONS=['期望工作地区','到岗日期'];
+const PICKER_QUESTIONS=['期望从事职位类别','现从事行业','现从事职位类别','期望工作地区'];
+export const GTH_INTENT_ARRIVAL_OPTIONS=Object.freeze(['一周内','一个月内','一个月以上','即时','面议']);
 export const GTH_INTENT_FILL_TYPE='GTH_INTENT_FILL';
 export const GTH_INTENT_FAIL_CLOSED_REASONS=Object.freeze([
   'control_not_supported','missing_profile_value','profile_fact_unconfirmed','invalid_profile_value',
   'existing_value','blocked_by_unsettled_field','intent_target_not_unique','intent_target_not_plain_text',
-  'intent_readback_mismatch','intent_other_values_changed','intent_site_validation_failed','intent_value_too_long'
+  'intent_readback_mismatch','intent_other_values_changed','intent_site_validation_failed','intent_value_too_long',
+  'picker_label_ambiguous','picker_structure_changed','picker_panel_not_unique','picker_panel_already_open',
+  'picker_level1_missing','picker_level1_ambiguous','picker_level2_missing','picker_level2_ambiguous',
+  'picker_level2_checkbox_missing','picker_counter_unknown','picker_selection_limit',
+  'picker_existing_selection_conflict','picker_chip_unknown','picker_confirm_not_unique','picker_cancel_not_unique',
+  'picker_readback_mismatch','picker_selection_not_applied','select_label_ambiguous','select_structure_changed',
+  'select_menu_not_unique','select_option_missing','select_option_ambiguous'
 ]);
+export function intentPickerAnswer(value){
+  const text=typeof value==='string'?value:'';
+  const parts=text.split('||');
+  if(parts.length!==2||text.length>80||/[\r\n\u0000-\u001f]/u.test(text))return null;
+  if(parts.some(part=>!part||part!==part.trim()))return null;
+  return {l1:parts[0],l2:parts[1]};
+}
+export function intentValueShape(question,answer){
+  if(typeof answer!=='string'||!answer.trim()||answer.length>80||/[\r\n\u0000-\u001f]/u.test(answer))return false;
+  if(question==='期望薪资'||question==='现薪资')return /^\d{1,10}$/u.test(answer.trim());
+  if(question==='到岗日期')return GTH_INTENT_ARRIVAL_OPTIONS.includes(answer);
+  if(PICKER_QUESTIONS.includes(question))return !!intentPickerAnswer(answer);
+  return false;
+}
 const VERIFIED_REASONS=['readback_matched','readback_reapplied','preexisting_same_value'];
 const TITLES=['基本信息','教育经历','求职意向','工作经验','职业技能与特长','附件简历','其他信息'];
 const fail=reason=>{throw Error(reason);};
@@ -72,8 +95,7 @@ export function intentSource(profile){
     const trimmed=answer.trim();
     const matched=facts.filter(item=>item?.question===question);
     const fact=matched.length===1?matched[0]:null;
-    const salaryOk=!['期望薪资','现薪资'].includes(question)||/^\d{1,10}$/u.test(trimmed);
-    const hasAnswer=!!trimmed&&trimmed.length<=80&&!/[\r\n\u0000-\u001f]/u.test(trimmed)&&salaryOk;
+    const hasAnswer=intentValueShape(question,answer);
     const factOk=!!fact&&fact.answer===trimmed&&fact.sitePageUrl===PAGE
       &&fact.sectionName===SECTION&&fact.rowContext==='none';
     const fieldConfirmed=confirmed.has(`customAnswers.${question}`);
@@ -87,13 +109,26 @@ export function intentSource(profile){
   });
   const missing=items.filter(item=>!item.hasAnswer).map(item=>item.question);
   const unconfirmed=items.filter(item=>item.hasAnswer&&(!item.factOk||!item.confirmed)).map(item=>item.question);
+  const optional=OPTIONAL_QUESTIONS.map(question=>{
+    const answer=typeof profile?.customAnswers?.[question]==='string'?profile.customAnswers[question]:'';
+    if(!answer.trim())return {question,include:false,ready:true};
+    const matched=facts.filter(item=>item?.question===question);
+    const fact=matched.length===1?matched[0]:null;
+    const shape=intentValueShape(question,answer);
+    const factOk=!!fact&&fact.answer===answer&&fact.sitePageUrl===PAGE&&fact.sectionName===SECTION&&fact.rowContext==='none';
+    const fieldConfirmed=confirmed.has(`customAnswers.${question}`);
+    return {question,include:true,ready:shape&&factOk&&fieldConfirmed,shape,factOk,confirmed:fieldConfirmed};
+  });
+  if(optional.some(item=>item.include&&!item.shape))missing.push(...optional.filter(item=>item.include&&!item.shape).map(item=>item.question));
+  if(optional.some(item=>item.include&&item.shape&&!item.ready))unconfirmed.push(...optional.filter(item=>item.include&&item.shape&&!item.ready).map(item=>item.question));
   return {
     section:SECTION,
     questions:[...QUESTIONS],
     items,
+    optional,
     readyCount:items.filter(item=>item.ready).length,
     requiredCount:QUESTIONS.length,
-    ready:items.every(item=>item.ready),
+    ready:items.every(item=>item.ready)&&optional.every(item=>item.ready),
     missing,
     unconfirmed
   };
@@ -107,13 +142,15 @@ export function intentFillPayload(profile){
     error.unconfirmed=source.unconfirmed;
     throw error;
   }
-  const answers=Object.fromEntries(QUESTIONS.map(question=>[question,profile.customAnswers[question]]));
+  const optional=source.optional.filter(item=>item.include&&item.ready).map(item=>item.question);
+  const questions=[...QUESTIONS,...optional];
+  const answers=Object.fromEntries(questions.map(question=>[question,profile.customAnswers[question]]));
   return {
     answers,
     profile:{
       customAnswers:{...answers},
-      confirmedFields:QUESTIONS.map(question=>`customAnswers.${question}`),
-      customFacts:QUESTIONS.map(question=>({
+      confirmedFields:questions.map(question=>`customAnswers.${question}`),
+      customFacts:questions.map(question=>({
         question,answer:answers[question],sitePageUrl:PAGE,sectionName:SECTION,rowContext:'none'
       }))
     }
@@ -138,9 +175,19 @@ export function assessGthIntentFill(response){
   const claims=gthAutoSiteClaims(response);
   const claimed=gthAutoSiteClaimed(claims);
   const fields=Array.isArray(response?.fields)?response.fields:[];
-  const aligned=fields.length===QUESTIONS.length&&QUESTIONS.every((question,index)=>fields[index]?.question===question
+  const tail=fields.slice(QUESTIONS.length);
+  let optionalCursor=0;
+  const tailOk=tail.every(row=>{
+    const at=OPTIONAL_QUESTIONS.indexOf(row?.question,optionalCursor);
+    if(at<0||row.path!==`customAnswers.${row.question}`)return false;
+    if(!Array.isArray(row.labels)||row.labels.length!==1||row.labels[0]!==row.question)return false;
+    optionalCursor=at+1;
+    return true;
+  });
+  const aligned=fields.length>=QUESTIONS.length&&fields.length<=QUESTIONS.length+OPTIONAL_QUESTIONS.length
+    &&QUESTIONS.every((question,index)=>fields[index]?.question===question
     &&fields[index]?.path===`customAnswers.${question}`&&Array.isArray(fields[index]?.labels)
-    &&fields[index].labels.length===1&&fields[index].labels[0]===question);
+    &&fields[index].labels.length===1&&fields[index].labels[0]===question)&&tailOk;
   const verified=row=>row?.status==='verified'&&VERIFIED_REASONS.includes(row.reason);
   const allVerified=aligned&&fields.every(verified);
   const wrote=fields.some(row=>row?.reason==='readback_matched'||row?.reason==='readback_reapplied');

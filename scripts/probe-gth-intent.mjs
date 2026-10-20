@@ -1,9 +1,8 @@
 #!/usr/bin/env node
 /**
  * Read-only census of the opened GTH 求职意向 editor on an already logged-in Edge.
- * Never Save. Does not claim any control is supported, and does not change the
- * shipped fill. 期望从事职位类别, 现从事行业, 现从事职位类别, and 现薪资 stay
- * unsupported in product code until a later change reads a real census.
+ * Never Save. Does not claim the live site is supported. Product writers are
+ * listed in shippedWritable; supportClaimed stays false.
  *
  *   node scripts/probe-gth-intent.mjs --port 9239
  *   node scripts/probe-gth-intent.mjs --port 9239 --url-match hr.gtht.com/resume/edit --open-options
@@ -14,10 +13,12 @@
  * 取消 or a unique close control. Dropdown options stay closed unless
  * --open-options is set; even then the probe only reads them and presses Escape.
  *
- * A section form counts as an opened editor only when that section also has an
- * 编辑 trigger, or the form sits in a dialog/drawer. An always-on inline form
- * in a section with no 编辑 trigger is recorded as staticInlineForms and does
- * not block. This script stays out of extension packs.
+ * A section form is an opened editor when that section's 编辑 link is hidden
+ * (present but not visible) or, for 求职意向, absent while the form is visible.
+ * GTH hides 编辑 while its editor is open. An always-on form in a section that
+ * never has an 编辑 link (基本信息) stays staticInlineForms and does not block.
+ * This script stays out of extension packs. Before the census it sends
+ * Page.setWebLifecycleState {state:"active"} so a frozen background tab wakes.
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -31,8 +32,10 @@ const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..'
 export const DEFAULT_PORT = 9239;
 export const DEFAULT_URL_MATCH = 'hr.gtht.com/resume/edit';
 export const EDIT_PAGE = 'https://hr.gtht.com/resume/edit/';
-export const SHIPPED_WRITABLE = Object.freeze(['期望薪资']);
-export const STILL_UNSUPPORTED = Object.freeze(['期望从事职位类别', '现从事行业', '现从事职位类别', '现薪资']);
+export const SHIPPED_WRITABLE = Object.freeze([
+  '期望工作地区', '期望从事职位类别', '期望薪资', '到岗日期', '现从事行业', '现从事职位类别', '现薪资'
+]);
+export const STILL_UNSUPPORTED = Object.freeze([]);
 
 export const HELP = `Usage:
   node scripts/probe-gth-intent.mjs --port 9239
@@ -412,9 +415,10 @@ export async function probeIntentEditor(doc, options = {}) {
     return [...card.querySelectorAll('a, button, [role="button"]')].filter((node) => visible(node) && accessibleName(node) === '编辑');
   }
 
-  function sectionEditTriggers(section) {
+  function sectionEditNodes(section) {
     if (!section) return [];
-    return editCandidates(section).filter((node) => node.closest('.r-section') === section);
+    return [...section.querySelectorAll('a, button, [role="button"]')].filter((node) =>
+      node.closest('.r-section') === section && accessibleName(node) === '编辑');
   }
 
   function isToggledEditorShell(node) {
@@ -425,7 +429,10 @@ export async function probeIntentEditor(doc, options = {}) {
     if (!node || node.tagName !== 'FORM' || isToggledEditorShell(node)) return false;
     const section = node.closest('.r-section');
     if (!section) return false;
-    return sectionEditTriggers(section).length === 0;
+    // A hidden 编辑 link means the editor is open. No 编辑 node at all is an
+    // always-on form, except 求职意向, whose 编辑 link is absent while open.
+    if (sectionEditNodes(section).length > 0) return false;
+    return titleText(section) !== '求职意向';
   }
 
   function staticInlineFormRecord(form) {
@@ -794,6 +801,8 @@ export async function probeIntentEditor(doc, options = {}) {
       if (!appeared) {
         result.reason = 'editor_not_opened';
         result.editorLeftOpen = true;
+        const stray = editorNodes().filter((node) => card.contains(node) && node.tagName === 'FORM');
+        if (stray.length === 1) editor = stray[0];
         return result;
       }
       if (appeared.ambiguous) {
@@ -834,11 +843,11 @@ export async function probeIntentEditor(doc, options = {}) {
     result.ok = false;
     result.reason = error?.reason || result.reason || 'probe_failed';
     result.error = String(error?.message || error).slice(0, 300);
+    return result;
+  } finally {
     if (editor && !actions.some((action) => action.label === '取消' || action.label === '关闭')) {
       try { await dismiss(editor); } catch { /* the failure is already recorded */ }
     }
-    return result;
-  } finally {
     try { restore(); } catch { /* leave the page hooks as they were if restore fails */ }
     result.openedByUs = openedByUs || result.openedByUs === true;
     result.actions = actions.map((action) => ({
@@ -1054,6 +1063,7 @@ export async function runGthIntentProbe(options = {}) {
     meta.tab = target;
     if (!target.webSocketDebuggerUrl) throw fail('cdp_endpoint_invalid');
     const session = await attach(target.webSocketDebuggerUrl, 'page_attach');
+    await session.send('Page.setWebLifecycleState', { state: 'active' }, { timeoutMs: stepTimeoutMs, step: 'page_lifecycle_active' });
     try {
       await session.send('Network.enable', {}, { timeoutMs: stepTimeoutMs, step: 'network_enable' });
       meta.cdpNetwork = true;

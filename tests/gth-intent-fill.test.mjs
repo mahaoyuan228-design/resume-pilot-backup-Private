@@ -1,7 +1,7 @@
 /**
- * Shipped GTH intent fill. DOM doubles use only the plain-text salary shape
- * from the shipped salary trial, plus closed-card question names. Cascader
- * option clicks are not implemented. Never Save.
+ * Shipped GTH intent fill on pages that are not the opened-editor census.
+ * A salary-only editor fails closed before any write. Census picker success
+ * paths live in gth-intent-picker.test.mjs. Never Save.
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -23,10 +23,10 @@ const binding = {
 
 function profile(salary = '300000') {
   const answers = {
-    期望从事职位类别: '投资银行',
+    期望从事职位类别: '金融/保险||投资/证券/基金',
     期望薪资: salary,
-    现从事行业: '证券',
-    现从事职位类别: '研究员',
+    现从事行业: '金融||证券/投资/基金/信托',
+    现从事职位类别: '金融/保险||银行',
     现薪资: '200000',
   };
   return {
@@ -110,15 +110,18 @@ function page({ salary = '', salaryHtml = '', foreign = '', formOpen = true } = 
   return { dom, clicks, api: install(dom) };
 }
 
-test('intent content does not revive the test hook or cascader option clicks', () => {
+test('intent content does not revive the test hook and uses the census picker', () => {
   assert.equal(source.includes('GTH_INTENT_TEST'), false);
   assert.equal(source.includes('dialog-search-wrap'), false);
-  assert.equal(source.includes('simple-tree'), false);
-  assert.equal(source.includes('pop-btn'), false);
+  assert.equal(source.includes('simple-tree'), true);
+  assert.equal(source.includes('pop-btn'), true);
   assert.equal(source.includes("status:'skipped'"), false);
   assert.match(source, /message\?\.type !== 'GTH_INTENT_FILL'/);
   assert.match(source, /kind:'unsupported'/);
   assert.match(source, /control_not_supported/);
+  assert.match(source, /picker_existing_selection_conflict/);
+  assert.match(source, /picker_level2_missing/);
+  assert.match(source, /picker_selection_limit/);
   assert.match(source, /overwriteProgressOk/);
   assert.match(source, /sectionForms = sections => \[\.\.\.sections\[SECTION_INDEX\]\.querySelectorAll\('form'\)\]/);
   assert.doesNotMatch(source, /textContent\) === '保存'|textContent\)==='保存'/);
@@ -129,11 +132,11 @@ test('intent content does not revive the test hook or cascader option clicks', (
   assert.equal(fn.includes('GTH_INTENT_TEST'), false);
   assert.equal(fn.includes('不在当前交付包'), false);
   const fields = [
-    ['期望从事职位类别', 'unsupported', 'probe-gth-edit.json closed-card label only'],
+    ['期望从事职位类别', 'picker', 'cascader-wrap exact L1 then L2'],
     ['期望薪资', 'text', 'engine.js gthSalaryTrial plain text'],
-    ['现从事行业', 'unsupported', 'probe-gth-edit.json closed-card label only'],
-    ['现从事职位类别', 'unsupported', 'probe-gth-edit.json closed-card label only'],
-    ['现薪资', 'unsupported', 'salary trial does not name this control'],
+    ['现从事行业', 'picker', 'cascader-wrap exact L1 then L2'],
+    ['现从事职位类别', 'picker', 'cascader-wrap exact L1 then L2'],
+    ['现薪资', 'text', 'plain input.el-input__inner'],
   ];
   for (const [question, kind, evidence] of fields) {
     assert.match(source, new RegExp(`question:'${question}', kind:'${kind}'`));
@@ -141,14 +144,14 @@ test('intent content does not revive the test hook or cascader option clicks', (
   }
 });
 
-test('empty plain-text 期望薪资 is read back and unsupported siblings stay failed', async () => {
+test('a salary-only editor fails closed before any write', async () => {
   const { dom, clicks, api } = page();
   const result = await api.trial(request());
-  assert.equal(dom.window.document.getElementById('salary').value, '300000');
+  assert.equal(dom.window.document.getElementById('salary').value, '');
   assert.equal(dom.window.document.getElementById('other').value, 'keep-me');
   assert.equal(clicks.save, 0);
   assert.equal(clicks.cancel, 0);
-  assert.equal(result.writeStarted, true);
+  assert.equal(result.writeStarted, false);
   assert.equal(result.ok, false);
   assert.equal(result.supportedComplete, false);
   assert.equal(result.operableComplete, false);
@@ -157,53 +160,35 @@ test('empty plain-text 期望薪资 is read back and unsupported siblings stay f
   assert.equal(result.softwareClickedSubmit, false);
   assert.equal(result.softwareClickedDelete, false);
   assert.equal(result.liveSupportClaimed, false);
-  assert.equal(result.reason, 'control_not_supported');
+  assert.equal(result.reason, 'picker_structure_changed');
   assert.equal(result.fields.length, 5);
   assert.deepEqual(Array.from(result.fields, (row) => String(row.question)), QUESTIONS);
+  assert.equal(result.fields.every((row) => row.status === 'failed' && row.reason === 'picker_structure_changed'), true);
   assert.equal(result.fields.every((row) => row.status !== 'skipped'), true);
-  for (const question of ['期望从事职位类别', '现从事行业', '现从事职位类别', '现薪资']) {
-    const row = result.fields.find((item) => item.question === question);
-    assert.equal(row.status, 'failed');
-    assert.equal(row.reason, 'control_not_supported');
-    assert.equal(row.supported, false);
-  }
-  const salary = result.fields.find((row) => row.question === '期望薪资');
-  assert.equal(salary.status, 'verified');
-  assert.equal(salary.reason, 'readback_matched');
   const assessed = assessGthIntentFill(result);
   assert.equal(assessed.ok, false);
-  assert.equal(assessed.state, 'unknown');
+  assert.equal(assessed.state, 'stopped_before_write');
   assert.notEqual(assessed.state, 'completed');
-  assert.equal(assessed.reason, 'control_not_supported');
+  assert.equal(assessed.reason, 'picker_structure_changed');
 });
 
-test('different existing 期望薪资 is kept unless replaceExisting is set', async () => {
+test('salary-only existing values are not a reason to write before the picker shape is proven', async () => {
   const kept = page({ salary: '100000' });
   const blocked = await kept.api.trial(request());
   assert.equal(kept.dom.window.document.getElementById('salary').value, '100000');
   assert.equal(kept.clicks.save, 0);
   assert.equal(blocked.writeStarted, false);
-  assert.equal(blocked.fields.find((row) => row.question === '期望薪资').status, 'failed');
-  assert.equal(blocked.fields.find((row) => row.question === '期望薪资').reason, 'existing_value');
+  assert.equal(blocked.reason, 'picker_structure_changed');
   assert.equal(assessGthIntentFill(blocked).state, 'stopped_before_write');
-
-  const replaced = page({ salary: '100000' });
-  const written = await replaced.api.trial(request({ replaceExisting: true }));
-  assert.equal(replaced.dom.window.document.getElementById('salary').value, '300000');
-  assert.equal(replaced.dom.window.document.getElementById('other').value, 'keep-me');
-  assert.equal(replaced.clicks.save, 0);
-  assert.equal(written.writeStarted, true);
-  assert.equal(written.fields.find((row) => row.question === '期望薪资').reason, 'readback_reapplied');
-  assert.equal(written.supportedComplete, false);
 });
 
-test('the same plain-text value is verified without another write', async () => {
+test('the same plain-text value is not verified when the picker shape is missing', async () => {
   const { dom, clicks, api } = page({ salary: '300000' });
   const result = await api.trial(request());
   assert.equal(dom.window.document.getElementById('salary').value, '300000');
   assert.equal(clicks.save, 0);
   assert.equal(result.writeStarted, false);
-  assert.equal(result.fields.find((row) => row.question === '期望薪资').reason, 'preexisting_same_value');
+  assert.equal(result.reason, 'picker_structure_changed');
   assert.equal(result.ok, false);
   assert.equal(result.supportedComplete, false);
 });
@@ -217,8 +202,7 @@ test('two 期望薪资 targets and a cascader-shaped control fail before write',
   assert.equal(doubled.dom.window.document.getElementById('salary-2').value, 'untouched');
   assert.equal(doubled.clicks.save, 0);
   assert.equal(ambiguous.writeStarted, false);
-  assert.equal(ambiguous.reason, 'intent_target_not_plain_text');
-  assert.equal(ambiguous.fields.find((row) => row.question === '期望从事职位类别').reason, 'control_not_supported');
+  assert.equal(ambiguous.reason, 'picker_structure_changed');
 
   const widget = page({
     salaryHtml: '<div class="cascader-wrap"><input id="salary" type="text" readonly value=""></div>',
@@ -227,18 +211,18 @@ test('two 期望薪资 targets and a cascader-shaped control fail before write',
   assert.equal(widget.dom.window.document.getElementById('salary').value, '');
   assert.equal(widget.clicks.save, 0);
   assert.equal(refused.writeStarted, false);
-  assert.equal(refused.reason, 'intent_target_not_plain_text');
+  assert.equal(refused.reason, 'picker_structure_changed');
   assert.equal(refused.supportedComplete, false);
 });
 
-test('a second label for 期望薪资 is not a unique target', async () => {
+test('a salary-only page with two 期望薪资 labels still fails on the missing picker', async () => {
   const { dom, clicks, api } = page({
     salaryHtml: `</div><div class="el-form-item"><label class="el-form-item__label">期望薪资</label><input id="salary" type="text" value="stays">`,
   });
   const result = await api.trial(request());
   assert.equal(clicks.save, 0);
   assert.equal(result.writeStarted, false);
-  assert.equal(result.reason, 'intent_target_not_unique');
+  assert.equal(result.reason, 'picker_structure_changed');
   assert.equal(dom.window.document.getElementById('salary').value, 'stays');
 });
 
@@ -274,7 +258,8 @@ test('a closed editor is opened from the unique 编辑 link and cancelled when n
   assert.equal(clicks.cancel, 1);
   assert.equal(result.writeStarted, false);
   assert.equal(result.editorLeftOpen, false);
-  assert.equal(result.fields.find((row) => row.question === '期望薪资').reason, 'preexisting_same_value');
+  assert.equal(result.reason, 'picker_structure_changed');
+  assert.equal(result.writeStarted, false);
   assert.equal(result.ok, false);
 });
 

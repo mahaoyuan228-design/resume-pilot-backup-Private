@@ -14,6 +14,22 @@ const records = (value, keys, max = 30) => Array.isArray(value)
   ? value.slice(0, max).filter((item) => item && typeof item === 'object' && !Array.isArray(item))
       .map((item) => Object.fromEntries(keys.map((key) => [key, text(item[key])])) )
   : [];
+const EXPERIENCE_KEYS = ['type', 'organization', 'position', 'startDate', 'endDate', 'description'];
+const EXPERIENCE_EXTRAS = ['jobCategory', 'industry', 'workArea', 'companyIntro', 'department', 'reportTo', 'subordinateCount', 'leaveReason'];
+function experienceRecords(value) {
+  if (!Array.isArray(value)) return [];
+  const rows = [];
+  for (const item of value.slice(0, 30)) {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) continue;
+    const row = Object.fromEntries(EXPERIENCE_KEYS.map((key) => [key, text(item[key])]));
+    for (const key of EXPERIENCE_EXTRAS) {
+      const extra = text(item[key]);
+      if (extra) row[key] = extra;
+    }
+    rows.push(row);
+  }
+  return rows;
+}
 
 export function emptyProfile() {
   return {
@@ -49,7 +65,7 @@ export function normalizeProfile(input) {
       row.unifiedAdmissions = '';
     }
   }
-  profile.experience = records(source.experience, ['type', 'organization', 'position', 'startDate', 'endDate', 'description']);
+  profile.experience = experienceRecords(source.experience);
   profile.projects = records(source.projects, ['name', 'role', 'description']);
   profile.familyDisclosureEnabled = source.familyDisclosureEnabled === true;
   profile.familyMembers = records(source.familyMembers, ['relation', 'occupation', 'employer']);

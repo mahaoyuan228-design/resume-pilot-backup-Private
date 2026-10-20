@@ -105,7 +105,7 @@ function confirmedMappingSources() {
   const titles = {
     fullName:'姓名',identityNumber:'证件号码',gender:'性别',height:'身高',selfEvaluation:'自我评价',birthDate:'出生日期',email:'邮箱',phone:'电话',currentCity:'现居住地',expectedSalary:'期望薪资',availableDate:'到岗日期',availabilityNote:'到岗说明',
     school:'学校',degree:'学历',major:'专业',startDate:'开始日期',endDate:'结束日期',majorCategory:'专业类别',unifiedAdmissions:'是否统招',campusActivities:'在校活动／职务',gradeRank:'成绩排名',majorDescription:'专业描述',gpa:'绩点',schoolLocation:'学校所在地',
-    type:'工作类型',organization:'单位',position:'岗位',description:'主要内容',name:'名称',role:'角色',relation:'关系',occupation:'职业',employer:'工作单位'
+    type:'工作类型',organization:'单位',position:'岗位',description:'主要内容',jobCategory:'职位类别',industry:'公司所属行业',workArea:'工作地区',companyIntro:'公司介绍',department:'所属部门',reportTo:'汇报对象',subordinateCount:'下属人数',leaveReason:'离职原因',name:'名称',role:'角色',relation:'关系',occupation:'职业',employer:'工作单位'
   };
   const preview = value => value.length > 160 ? value.slice(0,160)+'…' : value;
   return [...new Set(listFilledPaths(profile))].flatMap(path => {
@@ -209,9 +209,17 @@ function sectionMarkup(section) {
       listField('单位', 'experience', index, 'organization'),
       listField('岗位', 'experience', index, 'position'), listField('开始日期（须补零：YYYY-MM 或 YYYY-MM-DD）', 'experience', index, 'startDate', { maxlength: 10, placeholder: '例：2022-09 或 2022-09-01' }),
       listField('结束日期（须补零：YYYY-MM 或 YYYY-MM-DD）', 'experience', index, 'endDate', { maxlength: 10, placeholder: '例：2022-12 或 2022-12-01' }),
-      listField('主要工作', 'experience', index, 'description', { type: 'textarea', wide: true })
+      listField('主要工作', 'experience', index, 'description', { type: 'textarea', wide: true }),
+      listField('职位类别（一级||二级）', 'experience', index, 'jobCategory', { wide: true, placeholder: '与网站选项原文一致，例如 金融/保险||银行' }),
+      listField('公司所属行业（一级||二级）', 'experience', index, 'industry', { wide: true, placeholder: '与网站选项原文一致，例如 金融||证券/投资/基金/信托' }),
+      listField('工作地区', 'experience', index, 'workArea'),
+      listField('公司介绍', 'experience', index, 'companyIntro', { type: 'textarea', wide: true }),
+      listField('所属部门', 'experience', index, 'department'),
+      listField('汇报对象', 'experience', index, 'reportTo'),
+      listField('下属人数', 'experience', index, 'subordinateCount'),
+      listField('离职原因', 'experience', index, 'leaveReason', { type: 'textarea', wide: true })
     ], '还没有工作或实习经历。没有经历可以保持空白。')
-      + '<div class="hint">日期月、日须两位（如 2022-09-01，不要写成 2022-9-1）。离开输入框或点确认时会自动补零；无法识别的格式仍须你改正。</div>';
+      + '<div class="hint">日期月、日须两位（如 2022-09-01，不要写成 2022-9-1）。离开输入框或点确认时会自动补零；无法识别的格式仍须你改正。国泰海通已打开的工作经验编辑器只接受 YYYY-MM 任职时间，职位类别和公司所属行业须为「一级||二级」。薪资控件尚未支持，这里不采集。</div>';
     case 'projects': return listEditor('projects', '项目经历', (index) => [
       listField('项目名称', 'projects', index, 'name'), listField('你的角色', 'projects', index, 'role'),
       listField('项目内容与成果', 'projects', index, 'description', { type: 'textarea', wide: true })
@@ -523,7 +531,11 @@ function addEntry(list) {
       majorCategory: '', unifiedAdmissions: '', campusActivities: '',
       gradeRank: '', majorDescription: '', gpa: '', schoolLocation: ''
     },
-    experience: { type: '', organization: '', position: '', startDate: '', endDate: '', description: '' },
+    experience: {
+      type: '', organization: '', position: '', startDate: '', endDate: '', description: '',
+      jobCategory: '', industry: '', workArea: '', companyIntro: '', department: '', reportTo: '',
+      subordinateCount: '', leaveReason: ''
+    },
     projects: { name: '', role: '', description: '' },
     familyMembers: { relation: '', occupation: '', employer: '' },
     customFacts: { question: '', answer: '', sitePageUrl: '', sectionName: '', rowContext: '' },

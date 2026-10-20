@@ -1,6 +1,6 @@
 {
   "version": "0.1.4.9",
-  "sumsSha256": "eefcea0c58c30522fc3981a7f9f7c4bea4207a3bfc10cf3f4ec31f6d7a67d15a",
+  "sumsSha256": "93e22d4b6ee9495b7ee37aff400ade003a8086e8f2556e71a8edf50d8ae78c4c",
   "inventory": [
     {
       "path": "manifest.json",
@@ -304,8 +304,8 @@
     },
     {
       "path": "src/content/gth-open-fill.js",
-      "sha256": "590fc81cbc93d6487e2e64d5142a9a75c200e54aee91487535965344136d483e",
-      "sourceSha256": "590fc81cbc93d6487e2e64d5142a9a75c200e54aee91487535965344136d483e",
+      "sha256": "7f63dbec3b950b3367e7a28af59120b329c36903056768123e49cb5cde49f46f",
+      "sourceSha256": "7f63dbec3b950b3367e7a28af59120b329c36903056768123e49cb5cde49f46f",
       "kind": "frozen-product"
     },
     {
@@ -322,8 +322,14 @@
     },
     {
       "path": "src/content/gth-education-fill.js",
-      "sha256": "3c9834b10969f5613ec5e7c5d848604b72250d019ed544b9f5d066a5a1ce6cf1",
-      "sourceSha256": "3c9834b10969f5613ec5e7c5d848604b72250d019ed544b9f5d066a5a1ce6cf1",
+      "sha256": "61dc593ca4c77fa31ab6c338e7543a0154aaefad1dff1319bb4c4c50af06581b",
+      "sourceSha256": "61dc593ca4c77fa31ab6c338e7543a0154aaefad1dff1319bb4c4c50af06581b",
+      "kind": "frozen-product"
+    },
+    {
+      "path": "src/content/gth-work-fill.js",
+      "sha256": "af1595cd5e5641261c643b15b7bb9d7fd9198337e06138bc4e645ebecf214cb6",
+      "sourceSha256": "af1595cd5e5641261c643b15b7bb9d7fd9198337e06138bc4e645ebecf214cb6",
       "kind": "frozen-product"
     },
     {
@@ -472,14 +478,14 @@
     },
     {
       "path": "src/popup/popup.html",
-      "sha256": "5618cb92b9e4483f7888d76e110b5b34be381c45a251a9d68fb2b808822608bb",
-      "sourceSha256": "5618cb92b9e4483f7888d76e110b5b34be381c45a251a9d68fb2b808822608bb",
+      "sha256": "f269b42f14b47a02f5130a196f28872e4052f6113194e7d4dfbdd04042dc07c1",
+      "sourceSha256": "f269b42f14b47a02f5130a196f28872e4052f6113194e7d4dfbdd04042dc07c1",
       "kind": "frozen-product"
     },
     {
       "path": "src/popup/popup.js",
-      "sha256": "cba58565785d5e2c2d540193d5559f6aa67500bb64f839b752f9952d93d99962",
-      "sourceSha256": "cba58565785d5e2c2d540193d5559f6aa67500bb64f839b752f9952d93d99962",
+      "sha256": "3023315baaf83646a362d90f07be0ce9cc7a3427278c55de192240ef6f98f6b5",
+      "sourceSha256": "3023315baaf83646a362d90f07be0ce9cc7a3427278c55de192240ef6f98f6b5",
       "kind": "frozen-product"
     },
     {
@@ -526,8 +532,8 @@
     },
     {
       "path": "src/profile/options.js",
-      "sha256": "3de8391d4729469922554400503905a379e5e9476df06a2e5544f47cb13495ca",
-      "sourceSha256": "3de8391d4729469922554400503905a379e5e9476df06a2e5544f47cb13495ca",
+      "sha256": "c38577341f2efffdd8c8c244e71555799af8c4c54379fd6b6033e00f7d3e0175",
+      "sourceSha256": "c38577341f2efffdd8c8c244e71555799af8c4c54379fd6b6033e00f7d3e0175",
       "kind": "frozen-product"
     },
     {
@@ -544,8 +550,8 @@
     },
     {
       "path": "src/profile/store.js",
-      "sha256": "fd03db8fca7a925db657aef543bacf200427928ecf29cd487dfd46e824d0ad4f",
-      "sourceSha256": "fd03db8fca7a925db657aef543bacf200427928ecf29cd487dfd46e824d0ad4f",
+      "sha256": "a3bdd9c70b03001105b6fcd6ca9a593a98c0e694086e3344a31ee40d5cd871ca",
+      "sourceSha256": "a3bdd9c70b03001105b6fcd6ca9a593a98c0e694086e3344a31ee40d5cd871ca",
       "kind": "frozen-product"
     },
     {
@@ -616,8 +622,8 @@
     },
     {
       "path": "src/background/gth-open-fills.mjs",
-      "sha256": "7f9b75b2c52d6daa5325b783816fed1fb5c240e3a07cecc3147b6571fa99fc43",
-      "sourceSha256": "7f9b75b2c52d6daa5325b783816fed1fb5c240e3a07cecc3147b6571fa99fc43",
+      "sha256": "1e3349650ac1cb92ba100e87a3fffb91b45448e3612c78b0dd2f0cef2f65918e",
+      "sourceSha256": "1e3349650ac1cb92ba100e87a3fffb91b45448e3612c78b0dd2f0cef2f65918e",
       "kind": "frozen-product"
     },
     {
@@ -796,8 +802,8 @@
     },
     {
       "path": "scripts/build-internal.ps1",
-      "sha256": "d1c68a57d8184f52b82ee24d22b7ad9f3aa3e3540a4e76a6b5974e2bd7cbd8f5",
-      "sourceSha256": "d1c68a57d8184f52b82ee24d22b7ad9f3aa3e3540a4e76a6b5974e2bd7cbd8f5",
+      "sha256": "230ec9590b6e9d250ed7cd8fe590f049268f0cf1f4d90d438a39b2c63dca7ef9",
+      "sourceSha256": "230ec9590b6e9d250ed7cd8fe590f049268f0cf1f4d90d438a39b2c63dca7ef9",
       "kind": "required-build"
     },
     {

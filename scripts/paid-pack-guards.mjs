@@ -211,6 +211,7 @@ export const GTH_TIP_SOURCE_FILES = [
   'src/content/gth-skills.js',
   'src/content/gth-other.js',
   'src/content/gth-education-fill.js',
+  'src/content/gth-work-fill.js',
   'src/background/gth-open-fills.mjs',
   'src/popup/popup.js',
 ];
@@ -230,6 +231,7 @@ export const GTH_REQUIRED_INJECT = [
   'src/content/gth-skills.js',
   'src/content/gth-other.js',
   'src/content/gth-education-fill.js',
+  'src/content/gth-work-fill.js',
 ];
 
 export const GTH_TIP_MARKERS = [
@@ -339,6 +341,11 @@ export const GTH_TIP_MARKERS = [
     needles: ["messageType: 'GTH_EDUCATION_FILL'"],
   },
   {
+    rel: 'src/content/gth-work-fill.js',
+    group: 'gth-open-section-fail-closed',
+    needles: ["messageType: 'GTH_WORK_FILL'", "'control_not_supported'"],
+  },
+  {
     rel: 'src/background/gth-open-fills.mjs',
     group: 'gth-open-section-fail-closed',
     needles: [
@@ -346,9 +353,11 @@ export const GTH_TIP_MARKERS = [
       "'src/content/gth-skills.js'",
       "'src/content/gth-other.js'",
       "'src/content/gth-education-fill.js'",
+      "'src/content/gth-work-fill.js'",
       'export function assessGthSkillsFill',
       'export function assessGthOtherFill',
       'export function assessGthEducationOpenFill',
+      'export function assessGthWorkOpenFill',
       'Unsupported controls fail closed and are not a completed fill.',
     ],
   },
@@ -359,10 +368,12 @@ export const GTH_TIP_MARKERS = [
       'GTH_SKILLS_FILL',
       'GTH_OTHER_FILL',
       'GTH_EDUCATION_FILL',
+      'GTH_WORK_FILL',
       '"src/content/gth-open-fill.js"',
       '"src/content/gth-skills.js"',
       '"src/content/gth-other.js"',
       '"src/content/gth-education-fill.js"',
+      '"src/content/gth-work-fill.js"',
     ],
   },
 ];

@@ -146,6 +146,7 @@ $productFiles = @(
   'src/content/gth-skills.js',
   'src/content/gth-other.js',
   'src/content/gth-education-fill.js',
+  'src/content/gth-work-fill.js',
   'src/content/gth-other-section.js',
   'src/content/gth-section-discovery.js',
   'src/content/gth-simple-section.js',
@@ -485,6 +486,7 @@ $gthTipFiles = @(
   'src/content/gth-skills.js',
   'src/content/gth-other.js',
   'src/content/gth-education-fill.js',
+  'src/content/gth-work-fill.js',
   'src/background/gth-open-fills.mjs',
   'src/popup/popup.js'
 )
@@ -500,7 +502,8 @@ $gthRequiredInject = @(
   'src/content/gth-open-fill.js',
   'src/content/gth-skills.js',
   'src/content/gth-other.js',
-  'src/content/gth-education-fill.js'
+  'src/content/gth-education-fill.js',
+  'src/content/gth-work-fill.js'
 )
 foreach ($relative in $gthTipFiles) {
   $source = Join-Path $repoRoot ($relative -replace '/', '\')
@@ -551,10 +554,13 @@ Require-PackedNeedle 'src/content/gth-open-fill.js' 'editor_not_unique' 'GTH'
 Require-PackedNeedle 'src/content/gth-skills.js' "messageType: 'GTH_SKILLS_FILL'" 'GTH'
 Require-PackedNeedle 'src/content/gth-other.js' "messageType: 'GTH_OTHER_FILL'" 'GTH'
 Require-PackedNeedle 'src/content/gth-education-fill.js' "messageType: 'GTH_EDUCATION_FILL'" 'GTH'
+Require-PackedNeedle 'src/content/gth-work-fill.js' "messageType: 'GTH_WORK_FILL'" 'GTH'
 Require-PackedNeedle 'src/background/gth-open-fills.mjs' "'src/content/gth-open-fill.js'" 'GTH'
 Require-PackedNeedle 'src/background/gth-open-fills.mjs' "'src/content/gth-skills.js'" 'GTH'
 Require-PackedNeedle 'src/background/gth-open-fills.mjs' "'src/content/gth-other.js'" 'GTH'
 Require-PackedNeedle 'src/background/gth-open-fills.mjs' "'src/content/gth-education-fill.js'" 'GTH'
+Require-PackedNeedle 'src/background/gth-open-fills.mjs' "'src/content/gth-work-fill.js'" 'GTH'
+Require-PackedNeedle 'src/background/gth-open-fills.mjs' 'export function assessGthWorkOpenFill' 'GTH'
 Require-PackedNeedle 'src/background/gth-open-fills.mjs' 'export function assessGthSkillsFill' 'GTH'
 Require-PackedNeedle 'src/background/gth-open-fills.mjs' 'export function assessGthOtherFill' 'GTH'
 Require-PackedNeedle 'src/background/gth-open-fills.mjs' 'export function assessGthEducationOpenFill' 'GTH'
@@ -566,6 +572,8 @@ Require-PackedNeedle 'src/popup/popup.js' '"src/content/gth-open-fill.js"' 'GTH'
 Require-PackedNeedle 'src/popup/popup.js' '"src/content/gth-skills.js"' 'GTH'
 Require-PackedNeedle 'src/popup/popup.js' '"src/content/gth-other.js"' 'GTH'
 Require-PackedNeedle 'src/popup/popup.js' '"src/content/gth-education-fill.js"' 'GTH'
+Require-PackedNeedle 'src/popup/popup.js' 'GTH_WORK_FILL' 'GTH'
+Require-PackedNeedle 'src/popup/popup.js' '"src/content/gth-work-fill.js"' 'GTH'
 $seenGthInject = New-Object 'System.Collections.Generic.HashSet[string]'
 foreach ($relative in $gthRunnerFiles) {
   $runnerPath = Join-Path $extensionRoot ($relative -replace '/', '\')

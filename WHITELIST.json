@@ -61,6 +61,7 @@
     "src/content/gth-skills.js",
     "src/content/gth-other.js",
     "src/content/gth-education-fill.js",
+    "src/content/gth-work-fill.js",
     "src/content/gth-other-section.js",
     "src/content/gth-section-discovery.js",
     "src/content/gth-simple-section.js",
@@ -152,7 +153,8 @@
     "scripts/auto-gth-intent.mjs",
     "tests/gth-intent-auto.test.mjs",
     "tests/gth-intent-fill.test.mjs",
-    "tests/gth-open-sections.test.mjs"
+    "tests/gth-open-sections.test.mjs",
+    "tests/gth-work-fill.test.mjs"
   ],
   "productPaths": [
     "manifest.json",
@@ -209,6 +211,7 @@
     "src/content/gth-skills.js",
     "src/content/gth-other.js",
     "src/content/gth-education-fill.js",
+    "src/content/gth-work-fill.js",
     "src/content/gth-other-section.js",
     "src/content/gth-section-discovery.js",
     "src/content/gth-simple-section.js",

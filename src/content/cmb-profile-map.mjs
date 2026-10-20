@@ -186,7 +186,23 @@ function normMeasure(value) {
  * Birth date is never filled here. A present birthDate is a blocker with
  * reason datepicker_hint_only (confirmed) and is not written.
  * The hint-only path cannot Save.
+ * A present optional value that is unconfirmed, invalid, ambiguous, or
+ * hint-only stays a blocker. It is not a skipped success.
  */
+export const CMB_REQUESTED_FILL_FAIL_CLOSED_REASONS = Object.freeze([
+  'item_ambiguous',
+  'radio_readback_ambiguous',
+  'select_readback_ambiguous',
+  'datepicker_hint_only',
+  'profile_fact_unconfirmed',
+  'invalid_profile_value'
+]);
+
+export function cmbRequestedFillBlockers(plan) {
+  const rows = Array.isArray(plan?.blockers) ? plan.blockers : [];
+  return rows.filter((row) => row && CMB_REQUESTED_FILL_FAIL_CLOSED_REASONS.includes(row.reason));
+}
+
 export function planCmbBasicFromProfile(profile) {
   if (!profile || typeof profile !== 'object' || Array.isArray(profile)) {
     return {

@@ -77,6 +77,8 @@ if (mode === 'reload') {
       const posted = await postReport(result || { ok: false, reason: 'empty_response' });
       if (result?.helpNeeded) {
         show(`我需要帮助！ ${result.helpReason || result.reason || ''}`.trim(), { ...result, posted });
+      } else if (result?.ok && result.readiness?.profilePlan?.requestedFillBlocked === true && autoMode !== 'fill') {
+        show(`${LABEL} 简历页已打开。请求的字段里有不明确或不能填写的项，没有当作通过。`, { ...result, posted });
       } else if (result?.ok) {
         show(`${LABEL} 基本信息自动完成：mode=${result.mode || autoMode} state=${result.job?.state || result.readiness?.pageState || '?'}`, { ...result, posted });
       } else {

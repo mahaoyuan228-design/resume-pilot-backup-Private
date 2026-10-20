@@ -127,6 +127,51 @@ test('popup fill fails closed when the body is unsettled or reports a save', () 
   assert.equal(foreign.reason, 'cmb_site_isolation');
   assert.equal(cmbPopupOutcome(null, 'fill').reason, 'cmb_fill_empty_response');
   assert.equal(cmbPopupOutcome(null, 'fill').fillNotStarted, true);
+
+  const hinted = cmbPopupOutcome({
+    ...okBody,
+    birthDateHint: { reason: 'datepicker_hint_only', saved: false, skippedSave: true, writeAttempted: false }
+  }, 'fill');
+  assert.equal(hinted.ok, false);
+  assert.equal(hinted.reason, 'datepicker_hint_only');
+  assert.equal(hinted.fillNotStarted, false);
+  assert.equal(assessCmbFillReport({
+    ...okBody,
+    birthDateHint: { reason: 'datepicker_hint_only' }
+  }).state, 'failed');
+
+  const ambiguous = cmbPopupOutcome({
+    ...okBody,
+    ok: true,
+    writeAttempted: false,
+    results: [{ label: '姓名', ok: true, reason: 'item_ambiguous', path: 'fullName' }]
+  }, 'fill');
+  assert.equal(ambiguous.ok, false);
+  assert.equal(ambiguous.reason, 'item_ambiguous');
+  assert.equal(ambiguous.fillNotStarted, false);
+
+  const explicitHint = cmbPopupOutcome({
+    ok: false,
+    siteId: 'cmb',
+    skippedSave: true,
+    saved: false,
+    writeAttempted: false,
+    reason: 'datepicker_hint_only',
+    results: []
+  }, 'fill');
+  assert.equal(explicitHint.ok, false);
+  assert.equal(explicitHint.fillNotStarted, false);
+
+  const radio = cmbPopupOutcome({
+    ...okBody,
+    ok: false,
+    reason: 'radio_readback_ambiguous',
+    results: [{ label: '性别', ok: false, reason: 'radio_readback_ambiguous', path: 'gender' }]
+  }, 'fill');
+  assert.equal(radio.ok, false);
+  assert.equal(radio.reason, 'radio_readback_ambiguous');
+  assert.equal(radio.fillNotStarted, false);
+  assert.equal(radio.view, undefined);
 });
 
 test('popup probe lists the resume contract and asks for help off the edit page', () => {

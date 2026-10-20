@@ -3,13 +3,35 @@
 // Trial Edge injects per tab via scripting; host match is manifest host_permissions.
 // Missing that match fails closed before any tab or script work. 招行 is not supported.
 // A Save/submit/delete or saved/submitted claim is kept and fails closed. ok requires
-// siteId cmb plus a non-empty result list whose rows are all ok.
+// siteId cmb plus a non-empty verified result list. A requested field that is
+// ambiguous, unsupported, or unsettled is failed and stays pending review.
+// It is not omitted so the other rows can complete.
 import {captureProfileBinding,assertProfileBinding,canonicalProfileHash,
-  dispatchBoundSource} from '../profile/profile-lifecycle.js';
-import {planCmbBasicFromProfile,isCmbHost,isCmbResumeEditPath,isCmbResumeEditPage} from '../content/cmb-profile-map.mjs';
+  dispatchBoundSource,withProfileBinding} from '../profile/profile-lifecycle.js';
+import {planCmbBasicFromProfile,cmbRequestedFillBlockers,CMB_REQUESTED_FILL_FAIL_CLOSED_REASONS,
+  isCmbHost,isCmbResumeEditPath,isCmbResumeEditPage} from '../content/cmb-profile-map.mjs';
 
 const SITE_ID = 'cmb';
 const SAMPLE_PAGE = 'https://career.cmbchina.com/center/resume';
+const pendingKey = (tabId) => `resumePendingFillReview:${tabId}`;
+const VERIFIED_ROW_REASONS = new Set(['matched', 'readback_matched', 'preexisting_same_value']);
+const EXPLICIT_UNSETTLED_REASONS = new Set([
+  'invalid_gender',
+  'invalid_height',
+  'invalid_weight',
+  'invalid_formal_work',
+  'invalid_marital_status',
+  'invalid_politics',
+  'invalid_ethnicity',
+  'invalid_id_card_type',
+  'invalid_education_level',
+  'invalid_relationship_type',
+  'invalid_relationship_type_row1',
+  'invalid_award_level',
+  'invalid_english_level',
+  'invalid_channel_type',
+  'invalid_interview_city'
+]);
 export const CMB_HOST_MATCH = 'https://career.cmbchina.com/*';
 const HELP_HINT = '我需要帮助！请打开已登录的招行简历页 https://career.cmbchina.com/center/resume';
 const fail = (reason) => { throw Error(reason); };
@@ -58,9 +80,76 @@ const CMB_LABEL_PATH = {
   体重: 'weight'
 };
 
+function rowVerified(row) {
+  if (!row || row.ok !== true) return false;
+  const reason = typeof row.reason === 'string' ? row.reason : '';
+  if (CMB_REQUESTED_FILL_FAIL_CLOSED_REASONS.includes(reason)) return false;
+  return reason === '' || VERIFIED_ROW_REASONS.has(reason);
+}
+
+function failClosedReason(report) {
+  const rows = [
+    ...(Array.isArray(report?.results) ? report.results : []),
+    ...(Array.isArray(report?.blockers) ? report.blockers : [])
+  ];
+  const hit = rows.find((row) => CMB_REQUESTED_FILL_FAIL_CLOSED_REASONS.includes(row?.reason));
+  if (hit) return hit.reason;
+  if (report?.birthDateHint?.reason === 'datepicker_hint_only') return 'datepicker_hint_only';
+  if (CMB_REQUESTED_FILL_FAIL_CLOSED_REASONS.includes(report?.reason)) return report.reason;
+  return null;
+}
+
+/**
+ * Keep a reported Save/submit claim. Do not drop requested blockers so the
+ * remaining rows can look complete.
+ */
+export function sealCmbRequestedFill(report, plan) {
+  const blocked = cmbRequestedFillBlockers(plan);
+  if (!blocked.length || !report || typeof report !== 'object') return report;
+  const results = Array.isArray(report.results) ? report.results.slice() : [];
+  for (const row of blocked) {
+    if (results.some((item) => item && (item.path === row.path || item.label === row.label))) continue;
+    results.push({
+      label: row.label || '',
+      path: row.path || null,
+      ok: false,
+      reason: row.reason,
+      before: '',
+      after: '',
+      expected: row.value || '',
+      saved: false,
+      skippedSave: true,
+      writeAttempted: false
+    });
+  }
+  const hinted = blocked.some((row) => row.reason === 'datepicker_hint_only');
+  return {
+    ...report,
+    ok: false,
+    reason: report.ok === false && typeof report.reason === 'string' && report.reason
+      ? report.reason
+      : blocked[0].reason,
+    results,
+    blockers: blocked,
+    ...(hinted && !report.birthDateHint ? {
+      birthDateHint: { reason: 'datepicker_hint_only', saveAllowed: false, saved: false, skippedSave: true, writeAttempted: false }
+    } : {})
+  };
+}
+
+/** Ambiguous, unsupported, or unsettled fill outcomes stay pending review. */
+export function cmbOutcomeKeepsPendingReview(reason) {
+  return reason === 'cmb_basic_status_unsettled'
+    || reason === 'cmb_save_policy_violation'
+    || reason === 'cmb_fill_partial'
+    || CMB_REQUESTED_FILL_FAIL_CLOSED_REASONS.includes(reason)
+    || EXPLICIT_UNSETTLED_REASONS.has(reason);
+}
+
 /**
  * Fail-closed reading of a cmb-basic fill body.
- * ok requires siteId cmb, skippedSave, and a non-empty list of ok rows.
+ * ok requires siteId cmb, skippedSave, and a non-empty list of verified rows.
+ * A requested ambiguous, unsupported, or unsettled field is failed, not skipped.
  * A Save/submit/delete or saved/submitted claim is kept and is not ok.
  * ok:true with no verified rows is unsettled.
  */
@@ -76,15 +165,18 @@ export function assessCmbFillReport(report) {
   const claimed = claims.softwareClickedSave || claims.softwareClickedSubmit || claims.softwareClickedDelete
     || claims.savedOnSite || claims.submitted || claims.saved || report?.skippedSave !== true;
   const results = Array.isArray(report?.results) ? report.results : [];
-  const rowsVerified = report?.ok === true && results.length > 0 && results.every((row) => row && row.ok === true);
+  const closed = failClosedReason(report);
+  const rowsVerified = report?.ok === true && results.length > 0 && results.every(rowVerified) && !closed;
   const isolated = report?.siteId === SITE_ID;
   const reason = claimed
     ? 'cmb_save_policy_violation'
     : !isolated
       ? 'cmb_site_isolation'
-      : !rowsVerified
-        ? (report?.ok === true ? 'cmb_basic_status_unsettled' : (report?.reason || 'cmb_fill_partial'))
-        : null;
+      : closed
+        ? closed
+        : !rowsVerified
+          ? (report?.ok === true ? 'cmb_basic_status_unsettled' : (report?.reason || 'cmb_fill_partial'))
+          : null;
   return {
     state: reason ? 'failed' : 'completed',
     reason,
@@ -151,10 +243,10 @@ export function cmbFillView(report) {
     siteId: SITE_ID,
     cmbBasic: true,
     liveSupportClaimed: false,
-    saved: false,
-    skippedSave: true,
-    softwareClickedSave: false,
-    softwareClickedSubmit: false,
+    saved: report?.saved === true,
+    skippedSave: report?.skippedSave === true,
+    softwareClickedSave: report?.softwareClickedSave === true,
+    softwareClickedSubmit: report?.softwareClickedSubmit === true,
     fields
   };
 }
@@ -170,8 +262,7 @@ export function cmbPopupOutcome(report, mode = 'inspect') {
       // Unsettled or a save claim stays pending even when writeAttempted is false:
       // the popup must not clear the review marker or present a completed fill.
       const settledBeforeWrite = assessed.writeStarted !== true
-        && assessed.reason !== 'cmb_basic_status_unsettled'
-        && assessed.reason !== 'cmb_save_policy_violation';
+        && !cmbOutcomeKeepsPendingReview(assessed.reason);
       return {
         ok: false,
         reason: assessed.reason,
@@ -346,6 +437,9 @@ export function createCmbBasicAutoRunner({ api = globalThis.chrome, verifyBefore
         ok: plan.ok === true,
         reason: plan.reason,
         readyCount: (plan.fields || []).filter((row) => row.ready).length,
+        requestedFillBlocked: cmbRequestedFillBlockers(plan).length > 0,
+        fillAllowed: plan.ok === true && cmbRequestedFillBlockers(plan).length === 0,
+        complete: false,
         blockers: (plan.blockers || []).map((row) => ({
           label: row.label || null,
           path: row.path || null,
@@ -366,6 +460,23 @@ export function createCmbBasicAutoRunner({ api = globalThis.chrome, verifyBefore
     if (await canonicalProfileHash(raw, lifecycleOptions.cryptoImpl) !== binding.profileHash) fail('profile_binding_changed');
     const plan = planCmbBasicFromProfile(raw);
     if (!plan.ok) fail(plan.reason || 'profile_fields_unavailable');
+    const requestId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const review = {
+      tabId: tab.id,
+      origin: 'https://career.cmbchina.com',
+      at: Date.now(),
+      requestId,
+      kind: 'cmb_basic_auto',
+      profileBinding: binding,
+      pendingReviewRequired: true,
+      auto: true
+    };
+    await withProfileBinding(
+      api.storage.local,
+      binding,
+      () => api.storage.local.set({ [pendingKey(tab.id)]: review }),
+      lifecycleOptions
+    );
 
     await bounded(() => dispatchBoundSource(
       api.storage.local,
@@ -386,9 +497,27 @@ export function createCmbBasicAutoRunner({ api = globalThis.chrome, verifyBefore
     ), 60000);
 
     await assertProfileBinding(api.storage.local, binding, lifecycleOptions);
-    const report = replies?.[0]?.result;
-    if (!report || typeof report !== 'object') fail('cmb_fill_empty_response');
+    const rawReport = replies?.[0]?.result;
+    if (!rawReport || typeof rawReport !== 'object') fail('cmb_fill_empty_response');
+    const report = sealCmbRequestedFill(rawReport, plan);
     const assessed = assessCmbFillReport(report);
+    if (assessed.state === 'completed') {
+      await withProfileBinding(
+        api.storage.local,
+        binding,
+        () => api.storage.local.remove(pendingKey(tab.id)),
+        lifecycleOptions
+      );
+    } else {
+      await withProfileBinding(
+        api.storage.local,
+        binding,
+        () => api.storage.local.set({
+          [pendingKey(tab.id)]: { ...review, at: Date.now(), reason: assessed.reason, pendingReviewRequired: true }
+        }),
+        lifecycleOptions
+      );
+    }
     return {
       state: assessed.state,
       reason: assessed.reason,
@@ -422,7 +551,9 @@ export function createCmbBasicAutoRunner({ api = globalThis.chrome, verifyBefore
       saveAttempted: false,
       writeAttempted: false,
       skippedSave: true,
-      liveSupportClaimed: false
+      liveSupportClaimed: false,
+      complete: false,
+      pendingReviewRequired: false
     };
     const found = await findTab(sender?.tab?.id, { openIfMissing, page: target.page });
     report.steps.push({ find: found.kind, tabId: found.tab.id, url: found.tab.url || null });
@@ -458,6 +589,8 @@ export function createCmbBasicAutoRunner({ api = globalThis.chrome, verifyBefore
 
     if (mode === 'readiness') {
       report.ok = true;
+      report.complete = false;
+      report.pendingReviewRequired = false;
       await api.storage.local.set({ resumeCmbBasicAutoRun: report });
       return report;
     }
@@ -487,6 +620,8 @@ export function createCmbBasicAutoRunner({ api = globalThis.chrome, verifyBefore
       && !report.submitted
       && !report.saved;
     report.liveSupportClaimed = false;
+    report.complete = false;
+    report.pendingReviewRequired = filled.state !== 'completed';
     if (!report.ok) report.reason = filled.reason || 'cmb_fill_failed';
     await api.storage.local.set({ resumeCmbBasicAutoRun: report });
     return report;

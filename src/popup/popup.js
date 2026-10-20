@@ -754,6 +754,12 @@ function cmbRouteMessage(reason) {
     cmb_basic_status_unsettled: "招行试填没有逐项确认读回，结果仍不明确。请核对网页后再决定。",
     cmb_fill_empty_response: "招行页面没有返回填写结果。请刷新后再试。",
     cmb_fill_partial: "招行试填有字段未读回一致。请核对网页，本次不能当作完成。",
+    datepicker_hint_only: "出生日期只能提示，没有写入。请核对网页后再决定。",
+    profile_fact_unconfirmed: "有资料尚未核对，本次不能当作完成。",
+    invalid_profile_value: "有资料对不上网页选项，本次不能当作完成。",
+    item_ambiguous: "有字段对应到多处，没有猜选。请核对网页后再决定。",
+    radio_readback_ambiguous: "有选项读回不唯一，没有猜选。请核对网页后再决定。",
+    select_readback_ambiguous: "有下拉读回不唯一，没有猜选。请核对网页后再决定。",
     profile_fields_unavailable: "姓名、手机号或邮箱尚未核对完整，本次没有开始填写。",
     wrong_page: "我需要帮助！请打开已登录的招行简历页 https://career.cmbchina.com/center/resume"
   };

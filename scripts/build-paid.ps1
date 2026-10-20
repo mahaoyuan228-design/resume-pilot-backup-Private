@@ -133,6 +133,7 @@ $productFiles = @(
   'src/content/hotjob-mc-basic.js',
   'src/content/hotjob-mc-profile-map.mjs',
   'src/content/cmb-basic.js',
+  'src/content/cmb-birthdate-picker.mjs',
   'src/content/cmb-profile-map.mjs',
   'src/content/cmb-gated-dicts.mjs',
   'src/content/gth-basic.js',

@@ -785,9 +785,10 @@ test('gated select plan maps harvested text or code and does not fill birth date
     confirmedFields: [...base.confirmedFields, 'birthDate']
   });
   assert.equal(birth.ok, true);
-  assert.equal(birth.values.birthDate, undefined);
-  assert.equal(birth.blockers.find((row) => row.path === 'birthDate')?.reason, 'datepicker_hint_only');
-  assert.equal(birth.blockers.find((row) => row.path === 'birthDate')?.kind, 'DatePicker');
+  assert.equal(birth.values.birthDate, '1990-01-02');
+  assert.equal(birth.blockers.find((row) => row.path === 'birthDate'), undefined);
+  assert.equal(birth.fields.find((row) => row.path === 'birthDate')?.ready, true);
+  assert.equal(birth.birthDateHint.liveFillClaimed, false);
 
   const idReady = planCmbBasicFromProfile({
     ...base,
@@ -906,7 +907,8 @@ function assertGatedSelectKnife(label, liveReason, passReason, latestName, text,
   assert.equal(payload.neighbor?.birthdayNode, false);
   assert.equal(payload.neighbor?.ethnicity?.search, '');
   assert.deepEqual(payload.neighbor?.workedChecked, ['否']);
-  assert.equal(payload.planReady?.blockers?.some((row) => row.reason === 'datepicker_hint_only'), true);
+  assert.equal(payload.planReady?.values?.birthDate, '1990-01-02');
+  assert.equal(payload.planReady?.blockers?.some((row) => row.path === 'birthDate'), false);
   assert.ok(payload.fillBasic?.results?.every((row) => row.ok));
 }
 
@@ -1579,27 +1581,29 @@ test('synthetic harness interview city select covers the first and last cities a
   assert.equal(payload.neighbor?.channel?.text, '');
 });
 
-test('birth date knife records the DatePicker hint and does not write', () => {
+test('birth date knife fills the synthetic Ant picker and does not save', () => {
   const run = spawnSync(process.execPath, ['scripts/auto-cmb-basic.mjs', '--only', '出生日期'], {
     cwd: root,
     encoding: 'utf8',
     timeout: 20000
   });
-  assert.equal(run.status, 3, run.stderr || run.stdout);
+  assert.equal(run.status, 0, run.stderr || run.stdout);
   const payload = JSON.parse(run.stdout);
-  assert.equal(payload.ok, false);
-  assert.equal(payload.reason, 'datepicker_hint_only');
+  assert.equal(payload.ok, true);
+  assert.equal(payload.reason, 'synthetic_birthdate_picker_pass');
   assert.equal(payload.kind, 'DatePicker');
   assert.equal(payload.selectId, 'resume_basicInfo_birthday');
   assert.equal(payload.placeholder, '请选择日期');
   assert.equal(payload.readOnly, true);
-  assert.equal(payload.syntheticDom, false);
   assert.equal(payload.formFillClaimed, false);
-  assert.equal(payload.writeAttempted, false);
   assert.equal(payload.liveFillClaimed, false);
+  assert.equal(payload.supported, false);
   assert.equal(payload.saved, false);
+  assert.equal(payload.saveClicks, 0);
+  assert.equal(payload.result?.after, '1990-01-02');
   assert.match(payload.fillHint, /Never Save/);
   const latest = JSON.parse(readFileSync(resolve(root, 'dist/auto-runs/cmb-birthdate-hint-latest.json'), 'utf8'));
-  assert.equal(latest.reason, 'datepicker_hint_only');
-  assert.equal(latest.syntheticDom, false);
+  assert.equal(latest.reason, 'synthetic_birthdate_picker_pass');
+  assert.equal(latest.saved, false);
+  assert.equal(latest.liveFillClaimed, false);
 });

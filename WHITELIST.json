@@ -270,6 +270,7 @@
     "src/auto/cmb-basic-auto.html",
     "src/auto/cmb-basic-auto.js",
     "src/content/cmb-basic.js",
+    "src/content/cmb-birthdate-picker.mjs",
     "src/content/cmb-profile-map.mjs",
     "src/content/cmb-gated-dicts.mjs"
   ],
@@ -278,6 +279,6 @@
     "No real browser drivers, customer profile or backup data, private snapshots, screenshots or logs.",
     "No .git/.codex/.agents/.env/keys/server storage/payment credentials.",
     "No installer, ready package, paid build, test receipts or source archive nested in source.",
-    "No src/license paid scaffolding or scripts/build-paid.ps1 in the internal 125-file product package (paid flavor is a separate dist path)."
+    "No src/license paid scaffolding or scripts/build-paid.ps1 in the internal 126-file product package (paid flavor is a separate dist path)."
   ]
 }

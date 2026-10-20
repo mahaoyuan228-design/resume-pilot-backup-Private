@@ -118,6 +118,156 @@ function birthEvidencePaths(now = stampIso()) {
   return { file, latest };
 }
 
+function birthPickerMarkup(state) {
+  if (state.mode === 'year') {
+    const cells = [];
+    for (let year = state.decadeStart; year < state.decadeStart + 10; year += 1) {
+      cells.push(`<td title="${year}" class="ant-picker-cell"><div class="ant-picker-cell-inner">${year}</div></td>`);
+    }
+    return `<div class="ant-picker-panel"><div class="ant-picker-year-panel"><div class="ant-picker-header"><button type="button" class="ant-picker-header-super-prev-btn"></button><button type="button" class="ant-picker-decade-btn">${state.decadeStart}-${state.decadeStart + 9}</button><button type="button" class="ant-picker-header-super-next-btn"></button></div><div class="ant-picker-body"><table><tbody><tr>${cells.join('')}</tr></tbody></table></div></div></div>`;
+  }
+  if (state.mode === 'month') {
+    const cells = [];
+    for (let month = 1; month <= 12; month += 1) {
+      const title = `${state.year}-${String(month).padStart(2, '0')}`;
+      cells.push(`<td title="${title}" class="ant-picker-cell"><div class="ant-picker-cell-inner">${month}月</div></td>`);
+    }
+    return `<div class="ant-picker-panel"><div class="ant-picker-month-panel"><div class="ant-picker-header"><button type="button" class="ant-picker-year-btn">${state.year}</button></div><div class="ant-picker-body"><table><tbody><tr>${cells.join('')}</tr></tbody></table></div></div></div>`;
+  }
+  const title = `${state.year}-${String(state.month).padStart(2, '0')}-02`;
+  const showDay = state.year === 1990 && state.month === 1;
+  const day = showDay
+    ? `<td title="${title}" class="ant-picker-cell ant-picker-cell-in-view"><div class="ant-picker-cell-inner">2</div></td>`
+    : `<td title="${state.year}-${String(state.month).padStart(2, '0')}-01" class="ant-picker-cell"><div class="ant-picker-cell-inner">1</div></td>`;
+  return `<div class="ant-picker-panel"><div class="ant-picker-date-panel"><div class="ant-picker-header"><button type="button" class="ant-picker-header-super-prev-btn"></button><button type="button" class="ant-picker-header-prev-btn"></button><div class="ant-picker-header-view"><button type="button" class="ant-picker-year-btn">${state.year}</button><button type="button" class="ant-picker-month-btn">${state.month}月</button></div><button type="button" class="ant-picker-header-next-btn"></button><button type="button" class="ant-picker-header-super-next-btn"></button></div><div class="ant-picker-body"><table><tbody><tr>${day}</tr></tbody></table></div></div></div>`;
+}
+
+async function runSyntheticBirthDate() {
+  const { JSDOM } = await import('jsdom');
+  const { fillCmbBirthDatePicker } = await import('../src/content/cmb-birthdate-picker.mjs');
+  const { planCmbBasicFromProfile } = await import('../src/content/cmb-profile-map.mjs');
+  const dom = new JSDOM('<!DOCTYPE html><body><button type="button" id="save-btn">保存</button><button type="submit" id="submit-btn">提交</button><button type="button" id="delete-btn">删除</button><div class="ant-picker"><div class="ant-picker-input"><input id="resume_basicInfo_birthday" readonly placeholder="请选择日期" value=""></div></div><input id="other-date" value="leave-me"></body>');
+  const { document } = dom.window;
+  const input = document.getElementById('resume_basicInfo_birthday');
+  const state = { mode: 'date', year: 2026, month: 10, decadeStart: 2020 };
+  let saveClicks = 0;
+  document.addEventListener('click', (event) => {
+    const el = event.target.closest && event.target.closest('button');
+    if (el && /保存|提交|删除|投递/u.test(el.textContent || '')) saveClicks += 1;
+  }, true);
+  const render = () => {
+    document.querySelectorAll('.ant-picker-dropdown').forEach((node) => node.remove());
+    const dropdown = document.createElement('div');
+    dropdown.className = 'ant-picker-dropdown';
+    dropdown.innerHTML = birthPickerMarkup(state);
+    document.body.appendChild(dropdown);
+  };
+  input.addEventListener('mousedown', () => {
+    if (!document.querySelector('.ant-picker-dropdown:not(.ant-picker-dropdown-hidden)')) render();
+  });
+  document.addEventListener('click', (event) => {
+    const dropdown = event.target.closest && event.target.closest('.ant-picker-dropdown');
+    if (!dropdown) return;
+    const yearButton = event.target.closest('.ant-picker-year-btn');
+    const monthButton = event.target.closest('.ant-picker-month-btn');
+    const superPrev = event.target.closest('.ant-picker-header-super-prev-btn');
+    const superNext = event.target.closest('.ant-picker-header-super-next-btn');
+    const cell = event.target.closest('.ant-picker-cell');
+    if (yearButton && state.mode === 'date') {
+      state.mode = 'year';
+      render();
+      return;
+    }
+    if (monthButton && state.mode === 'date') {
+      state.mode = 'month';
+      render();
+      return;
+    }
+    if (superPrev && state.mode === 'year') {
+      state.decadeStart -= 10;
+      render();
+      return;
+    }
+    if (superNext && state.mode === 'year') {
+      state.decadeStart += 10;
+      render();
+      return;
+    }
+    if (cell && state.mode === 'year') {
+      state.year = Number(cell.getAttribute('title'));
+      state.mode = 'month';
+      render();
+      return;
+    }
+    if (cell && state.mode === 'month') {
+      const title = cell.getAttribute('title') || '';
+      state.year = Number(title.slice(0, 4));
+      state.month = Number(title.slice(5, 7));
+      state.mode = 'date';
+      render();
+      return;
+    }
+    if (cell && state.mode === 'date') {
+      input.value = String(cell.getAttribute('title') || '').replace(/-/gu, '/');
+      dropdown.remove();
+    }
+  });
+  const result = await fillCmbBirthDatePicker(document, '1990/01/02');
+  const plan = planCmbBasicFromProfile({
+    fullName: '测试甲',
+    phone: '13800138000',
+    email: 'cmb.user@example.com',
+    birthDate: '1990/01/02',
+    confirmedFields: ['fullName', 'phone', 'email', 'birthDate']
+  });
+  const ok = result.ok === true
+    && result.status === 'verified'
+    && result.reason === 'matched'
+    && result.after === '1990-01-02'
+    && result.saved === false
+    && result.supported === false
+    && result.liveFillClaimed === false
+    && result.liveSupportClaimed === false
+    && input.value === '1990/01/02'
+    && document.getElementById('other-date').value === 'leave-me'
+    && saveClicks === 0
+    && plan.values.birthDate === '1990-01-02'
+    && !plan.blockers.some((row) => row.path === 'birthDate')
+    && plan.birthDateHint.liveFillClaimed === false
+    && plan.birthDateHint.saveAllowed === false;
+  const payload = basePayload({
+    ok,
+    reason: ok ? 'synthetic_birthdate_picker_pass' : 'synthetic_birthdate_picker_fail',
+    surface: 'synthetic-datepicker',
+    liveEdge: false,
+    formFillClaimed: false,
+    liveFillClaimed: false,
+    supported: false,
+    saveAllowed: false,
+    saveRefused: true,
+    selector: null,
+    writeAttempted: result.writeAttempted === true,
+    syntheticDom: true,
+    label: '出生日期',
+    kind: 'DatePicker',
+    selectId: 'resume_basicInfo_birthday',
+    placeholder: '请选择日期',
+    readOnly: true,
+    fillHint: 'antd DatePicker readonly; format likely YYYY-MM-DD; Never Save',
+    result,
+    saveClicks,
+    planReady: {
+      ok: plan.ok,
+      values: { birthDate: plan.values.birthDate },
+      blockers: plan.blockers
+    }
+  });
+  const written = birthEvidencePaths();
+  fs.writeFileSync(written.file, JSON.stringify(payload, null, 2), 'utf8');
+  fs.copyFileSync(written.file, written.latest);
+  return { payload, written };
+}
+
 const GATED_SPECS = {
   marital: {
     label: '婚姻状况',
@@ -1524,8 +1674,8 @@ async function runSyntheticGated(kind) {
       && (neighbor?.englishScore ?? '') === ''
       && planReady?.ok === true
       && planReady?.values?.[spec.path] === spec.second.text
-      && planReady?.blockers?.some((row) => row.path === 'birthDate' && row.reason === 'datepicker_hint_only')
-      && !planReady?.values?.birthDate
+      && planReady?.values?.birthDate === '1990-01-02'
+      && !planReady?.blockers?.some((row) => row.path === 'birthDate')
       && isolationOk;
 
     const payload = basePayload({
@@ -1796,7 +1946,7 @@ async function main() {
       process.exit(1);
     }
   }
-  if (kind === 'birthDate') {
+  if (kind === 'birthDate' && args.live && !args.synthetic) {
     const gate = CMB_BIRTHDATE_OFFLINE_GATE;
     const payload = basePayload({
       ok: false,
@@ -1804,13 +1954,12 @@ async function main() {
       surface: 'hint-only',
       liveEdge: false,
       formFillClaimed: false,
-      writeAttempted: false,
-      syntheticDom: false,
       liveFillClaimed: false,
-      supported: gate.supported,
+      supported: false,
       saveAllowed: gate.saveAllowed,
       saveRefused: gate.saveRefused,
-      selector: gate.selector,
+      selector: null,
+      writeAttempted: false,
       label: '出生日期',
       kind: 'DatePicker',
       selectId: 'resume_basicInfo_birthday',
@@ -1821,8 +1970,37 @@ async function main() {
     const { file, latest } = birthEvidencePaths();
     fs.writeFileSync(file, JSON.stringify(payload, null, 2), 'utf8');
     fs.copyFileSync(file, latest);
-    console.log(JSON.stringify({ event: 'recorded', file, latest, ...payload }, null, 2));
+    console.log(JSON.stringify({ event: 'refused', file, latest, ...payload }, null, 2));
     process.exit(3);
+  }
+  if (kind === 'birthDate') {
+    try {
+      const { payload, written } = await runSyntheticBirthDate();
+      console.log(JSON.stringify({
+        event: 'saved',
+        ...written,
+        ...payload
+      }, null, 2));
+      process.exit(payload.ok ? 0 : 2);
+    } catch (error) {
+      const payload = basePayload({
+        ok: false,
+        reason: String(error?.message || error).slice(0, 300),
+        surface: 'synthetic-datepicker',
+        liveEdge: false,
+        formFillClaimed: false,
+        liveFillClaimed: false,
+        supported: false,
+        saved: false,
+        skippedSave: true,
+        error: String(error?.stack || error).slice(0, 800)
+      });
+      const { file, latest } = birthEvidencePaths();
+      fs.writeFileSync(file, JSON.stringify(payload, null, 2), 'utf8');
+      fs.copyFileSync(file, latest);
+      console.error(JSON.stringify({ event: 'error', file, latest, ...payload }, null, 2));
+      process.exit(1);
+    }
   }
   if (GATED_SPECS[kind] && args.live && !args.synthetic) {
     const cdpPort = Number.parseInt(process.env.CDP_PORT || '9237', 10);

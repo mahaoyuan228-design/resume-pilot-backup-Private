@@ -73,7 +73,10 @@ test('verdict module is constants only and the fill path does not import it for 
   assert.doesNotMatch(moduleSource, /document|querySelector|click\(|fillBasic|ant-picker|ant-calendar|日历|保存|提交|投递/);
   assert.match(moduleSource, /Never Save/);
   assert.doesNotMatch(engineSource, /cmb-birthdate-hint-verdict|CMB_BIRTHDATE_HINT_VERDICT|CMB_BIRTHDATE_RECORDED_VERDICT/);
-  assert.doesNotMatch(engineSource, /DOB_HINT_|DOB_CONTROL_|DOB_FORMAT_|fillBirthDate|ant-picker|ant-calendar|日历|type="date"/);
+  assert.doesNotMatch(engineSource, /DOB_HINT_|DOB_CONTROL_|DOB_FORMAT_/);
+  assert.match(engineSource, /function fillBirthDate\(/);
+  assert.match(engineSource, /#resume_basicInfo_birthday|resume_basicInfo_birthday/);
+  assert.match(engineSource, /ant-picker-dropdown/);
   assert.doesNotMatch(engineSource, /click\(.*保存|保存.*\.click/);
   assert.doesNotMatch(harness, /cmb-birthdate-hint-verdict/);
   assert.equal(CMB_RANKINGMAJOR_RECORDED_VERDICT, 'DOM_CONTROL_MISSING');

@@ -350,12 +350,12 @@ test('CMB_BASIC_AUTO does not complete when a requested field is unsupported or 
   const hinted = harness({ fillResult: pageOk });
   hinted.data.resumeProfile = {
     ...hinted.data.resumeProfile,
-    birthDate: '1990-01-02',
+    birthDate: '不是日期',
     confirmedFields: ['fullName', 'phone', 'email', 'birthDate']
   };
   const birth = await hinted.invoke({ type: 'CMB_BASIC_AUTO', mode: 'fill', openIfMissing: false });
   assert.equal(birth.ok, false);
-  assert.equal(birth.reason, 'datepicker_hint_only');
+  assert.equal(birth.reason, 'birthdate_unparseable');
   assert.equal(birth.job.state, 'failed');
   assert.notEqual(birth.job.state, 'completed');
   assert.equal(birth.pendingReviewRequired, true);
@@ -363,9 +363,9 @@ test('CMB_BASIC_AUTO does not complete when a requested field is unsupported or 
   assert.equal(birth.softwareClickedSave, false);
   assert.equal(birth.saved, false);
   assert.equal(birth.liveSupportClaimed, false);
-  assert.equal(birth.job.results.some((row) => row.path === 'birthDate' && row.ok === false && row.reason === 'datepicker_hint_only'), true);
+  assert.equal(birth.job.results.some((row) => row.path === 'birthDate' && row.ok === false && row.reason === 'birthdate_unparseable'), true);
   assert.equal(hinted.data['resumePendingFillReview:42']?.pendingReviewRequired, true);
-  assert.equal(hinted.data['resumePendingFillReview:42']?.reason, 'datepicker_hint_only');
+  assert.equal(hinted.data['resumePendingFillReview:42']?.reason, 'birthdate_unparseable');
   assert.equal(JSON.stringify(birth).includes('已支持'), false);
 
   const unsettled = harness({ fillResult: pageOk });
@@ -428,7 +428,7 @@ test('CMB_BASIC_AUTO readiness names a blocked requested fill and does not write
   const h = harness();
   h.data.resumeProfile = {
     ...h.data.resumeProfile,
-    birthDate: '1990-01-02',
+    birthDate: '不是日期',
     confirmedFields: ['fullName', 'phone', 'email', 'birthDate']
   };
   const ready = await h.invoke({ type: 'CMB_BASIC_AUTO', mode: 'readiness', openIfMissing: false });
@@ -439,7 +439,16 @@ test('CMB_BASIC_AUTO readiness names a blocked requested fill and does not write
   assert.equal(ready.readiness.profilePlan.requestedFillBlocked, true);
   assert.equal(ready.readiness.profilePlan.fillAllowed, false);
   assert.equal(ready.readiness.profilePlan.complete, false);
-  assert.equal(ready.readiness.profilePlan.blockers.some((row) => row.reason === 'datepicker_hint_only'), true);
+  assert.equal(ready.readiness.profilePlan.blockers.some((row) => row.reason === 'birthdate_unparseable'), true);
+  h.data.resumeProfile = {
+    ...h.data.resumeProfile,
+    birthDate: '1990-01-02'
+  };
+  const parseable = await h.invoke({ type: 'CMB_BASIC_AUTO', mode: 'readiness', openIfMissing: false });
+  assert.equal(parseable.readiness.profilePlan.requestedFillBlocked, false);
+  assert.equal(parseable.readiness.profilePlan.fillAllowed, true);
+  assert.equal(parseable.readiness.profilePlan.complete, false);
+  assert.equal(parseable.liveSupportClaimed, false);
   assert.equal(h.stats.fill, 0);
   assert.equal(h.data['resumePendingFillReview:42'], undefined);
   assert.match(await readFile(resolve(root, 'src/auto/cmb-basic-auto.js'), 'utf8'), /requestedFillBlocked/);

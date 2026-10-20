@@ -2,9 +2,12 @@
 // Control shapes are the opened editor census of 2026-10-20 on
 // hr.gtht.com/resume/edit/ (期望工作地区 / 职位类别 / 行业 pickers,
 // 期望薪资 / 现薪资 plain text, optional 到岗日期 el-select).
-// Closed-card guesses used kind:'unsupported' until that census. Unknown
-// shapes still fail closed ('control_not_supported'). Picker answers are
-// exact "一级||二级" text. No fuzzy match. Never clicks 保存 / 提交 / 投递.
+// A later opened editor (2026-10-20 17:40 UTC+8) keeps one cascader menu
+// after 取消, renders counters as （n/m） (U+FF08/U+FF09), and uses a
+// single-select level-2 click for 现从事行业 / 现从事职位类别 (counter max
+// 1, hidden 确定/取消). Closed-card guesses used kind:'unsupported' until
+// that census. Unknown shapes still fail closed ('control_not_supported').
+// Picker answers are exact "一级||二级" text. No fuzzy match. Never clicks 保存 / 提交 / 投递.
 // liveSupportClaimed stays false: a writer is not a claim the live site is supported.
 (() => {
   const previous = globalThis.ResumeGthIntent;
@@ -17,8 +20,8 @@
   const FIELDS = [
     {question:'期望从事职位类别', kind:'picker', evidence:CENSUS+' cascader-wrap exact L1 then L2'},
     {question:'期望薪资', kind:'text', evidence:'engine.js gthSalaryTrial plain text; census div.el-input.select-l'},
-    {question:'现从事行业', kind:'picker', evidence:CENSUS+' cascader-wrap exact L1 then L2'},
-    {question:'现从事职位类别', kind:'picker', evidence:CENSUS+' cascader-wrap exact L1 then L2'},
+    {question:'现从事行业', kind:'picker', evidence:CENSUS+' cascader-wrap exact L1 then L2; single-select when counter max is 1 or 确定/取消 is hidden'},
+    {question:'现从事职位类别', kind:'picker', evidence:CENSUS+' cascader-wrap exact L1 then L2; single-select when counter max is 1 or 确定/取消 is hidden'},
     {question:'现薪资', kind:'text', evidence:CENSUS+' plain input.el-input__inner'}
   ];
   const OPTIONAL = [
@@ -140,11 +143,11 @@
     const panel = panels[0];
     const inputs = [...triggers[0].querySelectorAll('input.el-input__inner')].filter(node => !panel.contains(node));
     const search = [...panel.querySelectorAll('input.search-input')];
-    const menus = [...panel.querySelectorAll(':scope > div.eo-cascader-panel > div.eo-cascader-menu.simple-tree-outer')];
+    const menus = cascaderMenus(panel);
     if (inputs.length !== 1 || !(inputs[0] instanceof HTMLInputElement) || inputs[0].type !== 'text'
       || !inputs[0].readOnly || inputs[0].disabled || !shown(inputs[0])
       || search.length !== 1 || search[0].getAttribute('placeholder') !== '请输入关键字'
-      || menus.length !== 2
+      || menus.length < 1 || menus.length > 2
       || panel.querySelectorAll('.selected-view-data').length !== 1
       || panel.querySelectorAll('.selected-counter').length !== 1
       || panel.querySelectorAll('.pop-foot a.confirm.pop-btn').length !== 1
@@ -252,7 +255,7 @@
   function readCounter(panel) {
     const nodes = [...panel.querySelectorAll('.selected-counter > p')];
     if (nodes.length !== 1) return null;
-    const match = norm(nodes[0].textContent).match(/^\((\d+)\/(\d+)\)$/u);
+    const match = norm(nodes[0].textContent).match(/^[（(](\d+)\/(\d+)[）)]$/u);
     if (!match) return null;
     const current = Number(match[1]);
     const max = Number(match[2]);
@@ -267,16 +270,35 @@
     if (nodes.length !== 1 || !nodes[0].isConnected) stop('picker_cancel_not_unique');
     await boundAction(() => { if (!nodes[0].isConnected) stop('profile_action_target_changed'); return nodes[0].click(); });
   }
+  function cascaderMenus(panel) {
+    return [...panel.querySelectorAll(':scope > div.eo-cascader-panel > div.eo-cascader-menu.simple-tree-outer')];
+  }
+  function footHidden(panel) {
+    const feet = [...panel.querySelectorAll(':scope > div.pop-foot.plugin-dialog-pop-foot')];
+    return feet.length === 1 && !shown(feet[0]);
+  }
   function l1Rows(panel) {
-    const menus = [...panel.querySelectorAll(':scope > div.eo-cascader-panel > div.eo-cascader-menu.simple-tree-outer')];
-    if (menus.length !== 2) stop('picker_structure_changed');
+    const menus = cascaderMenus(panel);
+    if (menus.length < 1 || menus.length > 2) stop('picker_structure_changed');
     return [...menus[0].querySelectorAll(':scope > ul.simple-tree-wrapper > li.branch.has-child')];
   }
   function l2Rows(panel) {
-    const menus = [...panel.querySelectorAll(':scope > div.eo-cascader-panel > div.eo-cascader-menu.simple-tree-outer')];
-    if (menus.length !== 2) stop('picker_structure_changed');
+    const menus = cascaderMenus(panel);
+    if (menus.length !== 2) return [];
     return [...menus[1].querySelectorAll(':scope > ul.simple-tree-wrapper > li.branch')]
       .filter(row => !row.classList.contains('has-child'));
+  }
+  function l2LeafText(row) {
+    const label = rowLabel(row);
+    if (label) return norm(label.textContent);
+    return rowSpanText(row);
+  }
+  function l2Clickable(row, text) {
+    const label = rowLabel(row);
+    if (label && norm(label.textContent) === text) return label;
+    const span = [...row.children].find(node => node.tagName === 'SPAN');
+    if (span && norm(span.textContent) === text) return span;
+    return norm(row.textContent) === text ? row : null;
   }
   function rowSpanText(row) {
     const span = [...row.children].find(node => node.tagName === 'SPAN');
@@ -329,24 +351,47 @@
     guard();
     await boundAction(() => { if (!span.isConnected) stop('profile_action_target_changed'); return span.click(); });
     step('picker_level2');
+    let sawL2Menu = false;
     const found = await waitUntil(() => {
       guard();
+      const menus = cascaderMenus(panel);
+      if (menus.length > 2) return {bad:'picker_structure_changed'};
+      if (menus.length !== 2) return null;
+      sawL2Menu = true;
       const rows = l2Rows(panel).filter(shown);
-      const matches = rows.filter(row => norm(rowLabel(row)?.textContent) === l2);
+      const matches = rows.filter(row => l2LeafText(row) === l2);
       if (matches.length > 1) return {ambiguous:true};
       return matches.length === 1 ? {row:matches[0]} : null;
     });
-    if (!found) await abort('picker_level2_missing');
-    if (found.ambiguous) await abort('picker_level2_ambiguous');
+    if (found?.bad) await abort(found.bad);
+    if (found?.ambiguous) await abort('picker_level2_ambiguous');
+    if (!found) await abort(sawL2Menu ? 'picker_level2_missing' : 'picker_level2_menu_missing');
+    const counter = readCounter(panel);
+    const single = footHidden(panel) || counter?.max === 1;
+    if (!counter && !single) await abort('picker_counter_unknown');
+    if (!single && counter.current >= counter.max) await abort('picker_selection_limit');
+    const beforeChips = chipTexts(panel);
+    if (!beforeChips || beforeChips.length) await abort('picker_existing_selection_conflict');
+    if (single) {
+      const clickable = l2Clickable(found.row, l2);
+      if (!clickable) await abort('picker_level2_missing');
+      step('picker_single');
+      guard();
+      markWrite();
+      await boundAction(() => { if (!clickable.isConnected) stop('profile_action_target_changed'); return clickable.click(); });
+      const matched = await waitUntil(() => {
+        const now = chipTexts(panel);
+        return !shown(panel) && norm(input.value) === l2 && now && now.length === 1 && now[0] === l2 ? true : null;
+      });
+      if (!matched || !siteValid(target)) await abort('picker_readback_mismatch');
+      opened = false;
+      guard();
+      return {status:'verified', reason:'readback_matched'};
+    }
     const label = rowLabel(found.row);
     const box = label ? [...label.querySelectorAll('input[type="checkbox"]')].find(node => label.contains(node)) : null;
     if (!label || norm(label.textContent) !== l2 || !(box instanceof HTMLInputElement) || box.disabled || box.checked)
       await abort('picker_level2_checkbox_missing');
-    const counter = readCounter(panel);
-    if (!counter) await abort('picker_counter_unknown');
-    if (counter.current >= counter.max) await abort('picker_selection_limit');
-    const beforeChips = chipTexts(panel);
-    if (!beforeChips || beforeChips.length) await abort('picker_existing_selection_conflict');
     step('picker_checkbox');
     guard();
     markWrite();
@@ -420,7 +465,7 @@
     if (!chips) return {action:'fail', reason:'picker_chip_unknown'};
     const triggerValue = norm(target.input.value);
     if (chips.length === 1 && chips[0] === parts.l2 && triggerValue === parts.l2) return {action:'same'};
-    // Foreign chips are resolved after the panel opens so its 取消 can close it.
+    // A different chip is confirmed after the panel opens, then 取消 closes it.
     return {action:'fill'};
   }
   function closedTextDecision(target, answer, replaceExisting) {
@@ -535,7 +580,7 @@
         for (const plan of ordered) {
           state.progress.activeField = plan.field.question;
           const answer = answerOf(plan.field);
-          if (plan.decision.action === 'same' && plan.field.kind !== 'picker') {
+          if (plan.decision.action === 'same') {
             record(plan.field, 'verified', 'preexisting_same_value');
             continue;
           }
@@ -669,7 +714,7 @@
     return true;
   };
   globalThis.ResumeGthIntent = Object.freeze({
-    implementationRevision:2, installed:true, trial, listener,
+    implementationRevision:3, installed:true, trial, listener,
     fields:FIELDS.map(field => ({question:field.question, kind:field.kind, evidence:field.evidence})),
     optional:OPTIONAL.map(field => ({question:field.question, kind:field.kind, evidence:field.evidence}))
   });

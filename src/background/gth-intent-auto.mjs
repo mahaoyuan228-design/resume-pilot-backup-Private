@@ -21,7 +21,7 @@ export const GTH_INTENT_FAIL_CLOSED_REASONS=Object.freeze([
   'existing_value','blocked_by_unsettled_field','intent_target_not_unique','intent_target_not_plain_text',
   'intent_readback_mismatch','intent_other_values_changed','intent_site_validation_failed','intent_value_too_long',
   'picker_label_ambiguous','picker_structure_changed','picker_panel_not_unique','picker_panel_already_open',
-  'picker_level1_missing','picker_level1_ambiguous','picker_level2_missing','picker_level2_ambiguous',
+  'picker_level1_missing','picker_level1_ambiguous','picker_level2_missing','picker_level2_menu_missing','picker_level2_ambiguous',
   'picker_level2_checkbox_missing','picker_counter_unknown','picker_selection_limit',
   'picker_existing_selection_conflict','picker_chip_unknown','picker_confirm_not_unique','picker_cancel_not_unique',
   'picker_readback_mismatch','picker_selection_not_applied','select_label_ambiguous','select_structure_changed',

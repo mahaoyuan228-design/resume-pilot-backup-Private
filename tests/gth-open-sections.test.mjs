@@ -54,12 +54,16 @@ function boot(html) {
     clicks.push(this);
     return original.call(this);
   };
+  const listeners = new Set();
   const chrome = {
     runtime: {
       id: 'synthetic-extension',
       getManifest: () => ({ background: { service_worker: 'src/background/worker.mjs' } }),
       sendMessage: async (message) => (message?.type === 'RESUME_PROFILE_BINDING_CHECK' ? { allowed: true } : { allowed: false }),
-      onMessage: { addListener() {}, removeListener() {} },
+      onMessage: {
+        addListener(listener) { listeners.add(listener); },
+        removeListener(listener) { listeners.delete(listener); },
+      },
     },
   };
   const context = vm.createContext({
@@ -72,7 +76,7 @@ function boot(html) {
   vm.runInContext(skillsSource, context);
   vm.runInContext(otherSource, context);
   vm.runInContext(educationSource, context);
-  return { dom, clicks, context };
+  return { dom, clicks, context, listeners };
 }
 
 function forbiddenClicks(clicks) {
@@ -175,6 +179,32 @@ function assertNeverForbidden(clicks) {
   assert.equal(forbiddenClicks(clicks).length, 0);
 }
 
+test('reinjecting the open-fill scripts replaces the previous listener', async () => {
+  const html = shell('职业技能与特长', formWrap(textItem('职业技能与特长', { tag: 'textarea', max: '4000', id: 'skills' })));
+  const { clicks, context, listeners } = boot(html);
+  const before = listeners.size;
+  vm.runInContext(core, context);
+  vm.runInContext(skillsSource, context);
+  vm.runInContext(otherSource, context);
+  vm.runInContext(educationSource, context);
+  assert.equal(listeners.size, before);
+  const profile = customProfile('职业技能与特长', { 职业技能与特长: 'Python' });
+  const message = { type: 'GTH_SKILLS_FILL', ...request(profile) };
+  const replies = [];
+  for (const listener of listeners) {
+    listener(message, { id: 'synthetic-extension' }, (payload) => replies.push(payload));
+  }
+  const deadline = Date.now() + 2000;
+  while (replies.length < 1 && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  assert.equal(replies.length, 1);
+  assert.equal(replies[0].ok, true);
+  assert.equal(replies[0].fields[0].reason, 'readback_matched');
+  assertNeverForbidden(clicks);
+});
+
 test('skills writes the textarea, dispatches input and change, and never clicks save or delete', async () => {
   const html = shell('职业技能与特长', formWrap(textItem('职业技能与特长', { tag: 'textarea', max: '4000', id: 'skills' })));
   const { dom, clicks, context } = boot(html);
@@ -247,7 +277,7 @@ test('other info writes 标题 and 描述 and leaves a different existing value 
   assert.equal(dom.window.document.getElementById('title').value, '开源贡献');
   assert.equal(dom.window.document.getElementById('desc').value, '维护过一个小工具');
   assert.equal(result.ok, true);
-  assert.deepEqual(result.fields.map((row) => row.question), ['标题', '描述']);
+  assert.deepEqual([...result.fields.map((row) => row.question)], ['标题', '描述']);
   assert.equal(assessGthOtherFill(result).ok, true);
   assertNeverForbidden(clicks);
 

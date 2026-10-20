@@ -5,7 +5,14 @@
 // liveSupportClaimed stays false: a writer is not a claim the live site is supported.
 (() => {
   const previous = globalThis.ResumeGthOpenFill;
-  const installed = previous?.registry instanceof Map ? previous.registry : new Map();
+  const priorApis = previous?.registry instanceof Map
+    ? [...previous.registry.values()]
+    : (Array.isArray(previous?.registry) ? previous.registry : []);
+  for (const api of priorApis) {
+    if (!api?.listener) continue;
+    try { chrome.runtime.onMessage.removeListener(api.listener); } catch { /* reload */ }
+  }
+  const installed = new Map();
   const PAGE = 'https://hr.gtht.com/resume/edit/';
   const TITLES = ['基本信息', '教育经历', '求职意向', '工作经验', '职业技能与特长', '附件简历', '其他信息'];
   const FORBIDDEN = new Set(['保存', '提交', '投递', '删除', '取消', '编辑']);
@@ -580,14 +587,9 @@
     const ok = keepOk === false ? false : verified;
     return { ok, ...result, ...info, complete: false, liveSupportClaimed: false };
   }
-  if (previous?.installed) {
-    for (const api of previous.registry || []) {
-      try { chrome.runtime.onMessage.removeListener(api.listener); } catch { /* reload */ }
-    }
-  }
   globalThis.ResumeGthOpenFill = Object.freeze({
     install,
-    registry: [...installed.values()],
+    registry: installed,
     implementationRevision: 1
   });
 })();

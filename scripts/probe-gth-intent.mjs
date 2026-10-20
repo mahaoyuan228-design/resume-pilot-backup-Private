@@ -13,6 +13,11 @@
  * Never types a login. Clicks only the unique 求职意向 编辑 affordance, then
  * 取消 or a unique close control. Dropdown options stay closed unless
  * --open-options is set; even then the probe only reads them and presses Escape.
+ *
+ * A section form counts as an opened editor only when that section also has an
+ * 编辑 trigger, or the form sits in a dialog/drawer. An always-on inline form
+ * in a section with no 编辑 trigger is recorded as staticInlineForms and does
+ * not block. This script stays out of extension packs.
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -221,6 +226,14 @@ function strings(values, max) {
   return values.filter((value) => typeof value === 'string' && value.length > 0).slice(0, max);
 }
 
+function publicStaticInlineForms(rows) {
+  if (!Array.isArray(rows)) return [];
+  return rows.slice(0, 20).map((row) => ({
+    section: String(row?.section || '').slice(0, 80),
+    labels: strings(row?.labels, 40)
+  }));
+}
+
 function plainField(field) {
   return {
     label: String(field?.label || ''),
@@ -282,6 +295,7 @@ export async function probeIntentEditor(doc, options = {}) {
     openedByUs: false,
     cardVia: null,
     detail: null,
+    staticInlineForms: [],
     fields: [],
     optionReads: null,
     optionsOpened: false,
@@ -398,9 +412,50 @@ export async function probeIntentEditor(doc, options = {}) {
     return [...card.querySelectorAll('a, button, [role="button"]')].filter((node) => visible(node) && accessibleName(node) === '编辑');
   }
 
+  function sectionEditTriggers(section) {
+    if (!section) return [];
+    return editCandidates(section).filter((node) => node.closest('.r-section') === section);
+  }
+
+  function isToggledEditorShell(node) {
+    return !!(node && typeof node.closest === 'function' && node.closest('.el-dialog, .el-drawer, [role="dialog"]'));
+  }
+
+  function isStaticInlineForm(node) {
+    if (!node || node.tagName !== 'FORM' || isToggledEditorShell(node)) return false;
+    const section = node.closest('.r-section');
+    if (!section) return false;
+    return sectionEditTriggers(section).length === 0;
+  }
+
+  function staticInlineFormRecord(form) {
+    const section = form.closest('.r-section');
+    const labels = [];
+    for (const item of form.querySelectorAll('.el-form-item')) {
+      if (item.closest('form') !== form) continue;
+      const labelNode = [...item.querySelectorAll('.el-form-item__label')].find((node) => node.closest('.el-form-item') === item);
+      const text = norm(labelNode ? labelNode.textContent : '').replace(/^\*\s*/u, '');
+      if (text) labels.push(text);
+    }
+    return {
+      section: section ? titleText(section) : '',
+      labels: labels.slice(0, 40)
+    };
+  }
+
   function editorNodes() {
     return [...doc.querySelectorAll('form, .el-dialog, .el-drawer, [role="dialog"]')]
       .filter((node) => visible(node) && node.querySelector('.el-form-item'));
+  }
+
+  function splitEditors(nodes) {
+    const opened = [];
+    const staticInlineForms = [];
+    for (const node of nodes) {
+      if (isStaticInlineForm(node)) staticInlineForms.push(staticInlineFormRecord(node));
+      else opened.push(node);
+    }
+    return { opened, staticInlineForms };
   }
 
   function preferEditor(nodes) {
@@ -693,8 +748,10 @@ export async function probeIntentEditor(doc, options = {}) {
     result.cardVia = found.via;
     const card = found.card;
     const before = editorNodes();
-    const outside = before.filter((node) => !card.contains(node));
-    const inside = before.filter((node) => card.contains(node));
+    const split = splitEditors(before);
+    result.staticInlineForms = split.staticInlineForms;
+    const outside = split.opened.filter((node) => !card.contains(node));
+    const inside = split.opened.filter((node) => card.contains(node));
     if (outside.length) {
       result.reason = 'other_editor_open';
       result.detail = { editorCount: outside.length };
@@ -727,7 +784,7 @@ export async function probeIntentEditor(doc, options = {}) {
       result.openedByUs = true;
       const editorWaitMs = Number.isFinite(options.editorWaitMs) ? options.editorWaitMs : 4000;
       const appeared = await waitFor(() => {
-        const now = editorNodes().filter((node) => !before.includes(node));
+        const now = editorNodes().filter((node) => !before.includes(node) && !isStaticInlineForm(node));
         if (!now.length) return null;
         const insideNow = now.filter((node) => card.contains(node));
         const chosen = preferEditor(insideNow.length ? insideNow : now);
@@ -894,6 +951,7 @@ export function buildReport(page, meta) {
       editCount: Number.isInteger(page.detail.editCount) ? page.detail.editCount : null,
       editorCount: Number.isInteger(page.detail.editorCount) ? page.detail.editorCount : null
     } : null,
+    staticInlineForms: publicStaticInlineForms(page?.staticInlineForms),
     fields: Array.isArray(page?.fields) ? page.fields.map(plainField) : [],
     evidence: questionEvidence(page?.fields),
     optionReads: page?.optionsOpened === true && Array.isArray(page.optionReads) ? page.optionReads.slice(0, 12) : null,

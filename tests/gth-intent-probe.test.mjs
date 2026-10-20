@@ -107,30 +107,65 @@ function menus() {
     <div id="role-menu" class="el-cascader-panel" style="display:none"><div class="el-cascader-node">研究员</div></div>`;
 }
 
-function card(id, { edits = 1, open = false, cancelType = 'button' } = {}) {
-  const links = Array.from({ length: edits }, (_, index) => `<a class="h-e-btn" href="javascript:;">编辑</a>`).join('');
+const BASIC_LABELS = ['姓名', '性别', '手机号码', '出生年月', '电子邮件', '现居住地', '最高学历', '照片', '参加工作时间'];
+const STATIC_VALUE = 'STATIC_FORM_VALUE_DO_NOT_RECORD';
+const LIVE_BEFORE = ['教育经历'];
+const LIVE_AFTER = ['工作经验', '职业技能与特长', '附件简历', '其他信息'];
+
+function staticBasicSection() {
+  const items = BASIC_LABELS.map((label) => {
+    const modify = label === '手机号码' || label === '电子邮件'
+      ? '<a class="h-e-btn" href="javascript:;">修改</a>'
+      : '';
+    const control = label === '照片'
+      ? '<div class="photo"></div>'
+      : `<input type="text" value="${label === '姓名' ? STATIC_VALUE : ''}">`;
+    return `<div class="el-form-item"><label class="el-form-item__label">${label}</label><div class="el-form-item__content">${control}${modify}</div></div>`;
+  }).join('');
+  return `<section class="r-section" id="basic"><div class="title_">基本信息</div><form class="el-form sec-form" id="basic-form">${items}<button type="button" class="el-button el-button--default is-plain" id="basic-cancel">取消</button><button type="button" id="basic-save">保存</button></form></section>`;
+}
+
+function liveSection(title, index, openTitle) {
+  const id = `live-${index}`;
+  if (title === openTitle) {
+    return `<section class="r-section" id="${id}"><div class="title_">${title}<a class="h-e-btn el-link--primary" href="javascript:;">编辑</a></div><form class="el-form" id="open-form"><div class="el-form-item"><label class="el-form-item__label">学校</label><div class="el-form-item__content"><input type="text" value="示例学校"></div></div><button type="button" class="el-button el-button--default is-plain" id="open-cancel">取消</button><button type="button" id="open-save">保存</button></form></section>`;
+  }
+  return `<section class="r-section" id="${id}"><div class="title_">${title}<a class="h-e-btn el-link--primary" href="javascript:;">编辑</a></div><div class="sec-view">查看</div></section>`;
+}
+
+function card(id, { edits = 1, open = false, cancelType = 'button', editClass = 'h-e-btn' } = {}) {
+  const links = Array.from({ length: edits }, () => `<a class="${editClass}" href="javascript:;">编辑</a>`).join('');
   const form = open ? editorForm({ cancelType }) : '';
   return `<section class="r-section" id="${id}"><div class="title_">求职意向${links}</div>${form}</section>`;
 }
 
-function mount({ cards = 1, edits = 1, open = false, foreign = false, cancelType = 'button', fallback = false } = {}) {
+function mount({ cards = 1, edits = 1, open = false, foreign = false, cancelType = 'button', fallback = false, staticBasic = false, toggledOpen = null } = {}) {
   const intent = fallback
     ? `<div id="intent"><span>求职意向</span><a class="h-e-btn" href="javascript:;">编辑</a><button type="button" id="intent-save">保存</button></div>`
     : Array.from({ length: cards }, (_, index) => card(index === 0 ? 'intent' : `intent-${index}`, {
       edits: index === 0 ? edits : 1,
       open: index === 0 ? open : false,
-      cancelType
+      cancelType,
+      editClass: staticBasic ? 'h-e-btn el-link--primary' : 'h-e-btn'
     })).join('');
+  const basic = staticBasic
+    ? staticBasicSection()
+    : `<section class="r-section" id="basic"><div class="title_">基本信息<a class="h-e-btn" href="javascript:;">编辑</a></div><button type="button" id="basic-save">保存</button></section>`;
+  const showLive = staticBasic || toggledOpen;
+  const lead = showLive ? LIVE_BEFORE.map((title, index) => liveSection(title, index, toggledOpen)).join('') : '';
+  const trail = showLive ? LIVE_AFTER.map((title, index) => liveSection(title, index + LIVE_BEFORE.length, toggledOpen)).join('') : '';
   const html = `<!DOCTYPE html><body>
-    <section class="r-section" id="basic"><div class="title_">基本信息<a class="h-e-btn" href="javascript:;">编辑</a></div><button type="button" id="basic-save">保存</button></section>
+    ${basic}
+    ${lead}
     ${intent}
+    ${trail}
     ${foreign ? `<div class="el-dialog" id="foreign"><form id="foreign-form"><div class="el-form-item"><label class="el-form-item__label">学校</label><input type="text" value="示例大学"></div><button type="button" id="foreign-save">保存</button><button type="button" id="foreign-cancel">取消</button></form></div>` : ''}
     ${menus()}
   </body>`;
   const dom = new JSDOM(html, { url: PAGE, pretendToBeVisual: true, runScripts: 'dangerously' });
   const { document } = dom.window;
   dom.window.Element.prototype.getClientRects = () => [{ width: 8, height: 8, top: 0, left: 0, bottom: 8, right: 8 }];
-  const clicks = { edit: 0, cancel: 0, save: 0, submit: 0, deliver: 0, basicEdit: 0, basicSave: 0, option: 0, escape: 0, formSubmit: 0, trigger: 0, foreign: 0 };
+  const clicks = { edit: 0, cancel: 0, save: 0, submit: 0, deliver: 0, basicEdit: 0, basicSave: 0, basicCancel: 0, modify: 0, otherEdit: 0, option: 0, escape: 0, formSubmit: 0, trigger: 0, foreign: 0 };
   const titleOf = (section) => {
     const title = section.querySelector('.title_');
     if (!title) return '';
@@ -148,13 +183,18 @@ function mount({ cards = 1, edits = 1, open = false, foreign = false, cancelType
     const title = section ? titleOf(section) : '';
     if (name === '编辑' && title === '求职意向') clicks.edit += 1;
     if (name === '编辑' && title === '基本信息') clicks.basicEdit += 1;
+    if (name === '编辑' && title && title !== '求职意向' && title !== '基本信息') clicks.otherEdit += 1;
     if (name === '编辑' && !section) clicks.edit += 1;
+    if (name === '修改') clicks.modify += 1;
     if (name.includes('保存')) clicks.save += 1;
     if (name === '提交') clicks.submit += 1;
     if (name === '投递') clicks.deliver += 1;
-    if (name === '取消') clicks.cancel += 1;
+    if (name === '取消') {
+      if (control.closest('form.sec-form')) clicks.basicCancel += 1;
+      else clicks.cancel += 1;
+    }
     if (control.closest('#foreign')) clicks.foreign += 1;
-    if (name === '取消' && control.tagName === 'BUTTON' && (control.getAttribute('type') || '').toLowerCase() === 'button') {
+    if (name === '取消' && control.tagName === 'BUTTON' && (control.getAttribute('type') || '').toLowerCase() === 'button' && !control.closest('form.sec-form')) {
       const form = control.closest('form');
       if (form) form.style.display = 'none';
     }
@@ -165,11 +205,12 @@ function mount({ cards = 1, edits = 1, open = false, foreign = false, cancelType
     for (const menu of document.querySelectorAll('.el-cascader-panel, .el-select-dropdown')) menu.style.display = 'none';
   });
   const wire = (root) => {
-    const form = root.querySelector('#intent-form');
-    form?.addEventListener('submit', (event) => {
-      event.preventDefault();
-      clicks.formSubmit += 1;
-    });
+    for (const form of root.querySelectorAll('#intent-form, #basic-form, #open-form, #foreign-form')) {
+      form.addEventListener('submit', (event) => {
+        event.preventDefault();
+        clicks.formSubmit += 1;
+      });
+    }
     for (const [triggerId, menuId] of [['#cat-trigger', '#cat-menu'], ['#ind-trigger', '#ind-menu'], ['#role-trigger', '#role-menu']]) {
       root.querySelector(triggerId)?.addEventListener('click', () => {
         const menu = document.querySelector(menuId);
@@ -207,6 +248,7 @@ test('probe source clicks once, never navigates, and never claims support', () =
   assert.match(HELP, /node scripts\/probe-gth-intent\.mjs --port 9239/);
   assert.match(HELP, /--open-options/);
   assert.match(HELP, /Never Save/);
+  assert.match(source, /staticInlineForms/);
 });
 
 test('args default to CDP 9239 and reject a second port', () => {
@@ -267,6 +309,7 @@ test('opened editor census clicks 编辑 and 取消, never 保存 提交 or 投�
   assert.equal(result.network.savePostObserved, false);
   assert.deepEqual(clicks, {
     edit: 1, cancel: 1, save: 0, submit: 0, deliver: 0, basicEdit: 0, basicSave: 0,
+    basicCancel: 0, modify: 0, otherEdit: 0,
     option: 0, escape: 0, formSubmit: 0, trigger: 0, foreign: 0
   });
   assert.deepEqual(kinds(result), {
@@ -368,6 +411,169 @@ test('another section editor stops the probe before 求职意向 is clicked', as
   assert.equal(clicks.cancel, 0);
   assert.equal(clicks.save, 0);
   assert.equal(clicks.foreign, 0);
+  assert.deepEqual(result.staticInlineForms, []);
+});
+
+test('a permanent 基本信息 form without 编辑 is recorded and does not block', async () => {
+  const { document, clicks } = mount({ staticBasic: true });
+  assert.equal(document.querySelectorAll('#intent a.h-e-btn.el-link--primary').length, 1);
+  assert.equal(document.querySelector('#intent form'), null);
+  assert.equal(document.querySelector('#basic-form').className, 'el-form sec-form');
+  assert.equal(document.querySelector('#basic-cancel').className, 'el-button el-button--default is-plain');
+  assert.equal([...document.querySelectorAll('#basic a, #basic button')].some((node) => (node.textContent || '').trim() === '编辑'), false);
+  assert.equal(document.querySelectorAll('#basic a').length, 2);
+  document.querySelector('#basic-cancel').click();
+  assert.equal(document.querySelector('#basic-form').style.display, '');
+  assert.equal(document.querySelector('#basic-form').isConnected, true);
+  assert.equal(clicks.formSubmit, 0);
+  assert.equal(clicks.save, 0);
+  assert.equal(clicks.basicCancel, 1);
+  clicks.basicCancel = 0;
+
+  const result = await probeIntentEditor(document, { openOptions: false });
+  assert.equal(result.ok, true);
+  assert.equal(result.reason, null);
+  assert.equal(result.editorLeftOpen, false);
+  assert.deepEqual(result.clickedLabels, ['编辑', '取消']);
+  assert.deepEqual(result.staticInlineForms, [{ section: '基本信息', labels: BASIC_LABELS }]);
+  assert.equal(result.fields.some((field) => field.label === '姓名'), false);
+  assert.equal(result.fields.some((field) => field.label === '期望薪资'), true);
+  assert.equal(JSON.stringify(result).includes(STATIC_VALUE), false);
+  assert.equal(result.supported, false);
+  assert.equal(result.claimedSupported, false);
+  assert.equal(result.liveSupportClaimed, false);
+  assert.equal(result.network.savePostObserved, false);
+  assert.deepEqual(result.network.posts, []);
+  assert.equal(clicks.edit, 1);
+  assert.equal(clicks.cancel, 1);
+  assert.equal(clicks.basicCancel, 0);
+  assert.equal(clicks.modify, 0);
+  assert.equal(clicks.otherEdit, 0);
+  assert.equal(clicks.save, 0);
+  assert.equal(clicks.submit, 0);
+  assert.equal(clicks.deliver, 0);
+  assert.equal(clicks.formSubmit, 0);
+  assert.equal(document.querySelector('#basic-form').style.display, '');
+  assert.equal(document.querySelector('#basic-form input').value, STATIC_VALUE);
+  const report = buildReport(result, {
+    probedAt: '2026-10-20T08:41:00.000Z',
+    port: DEFAULT_PORT,
+    urlMatch: DEFAULT_URL_MATCH,
+    openOptions: false,
+    tabAction: 'attached',
+    cdpPosts: [],
+    cdpNetwork: true
+  });
+  assert.equal(report.ok, true);
+  assert.equal(report.supported, false);
+  assert.equal(report.claimedSupported, false);
+  assert.equal(report.liveSupportClaimed, false);
+  assert.equal(report.productSupportUnchanged, true);
+  assert.equal(report.softwareClickedSave, false);
+  assert.equal(report.softwareClickedSubmit, false);
+  assert.equal(report.softwareClickedDeliver, false);
+  assert.deepEqual(report.staticInlineForms, [{ section: '基本信息', labels: BASIC_LABELS }]);
+  assert.equal(JSON.stringify(report).includes(STATIC_VALUE), false);
+
+  const again = mount({ staticBasic: true });
+  const bundled = await vm.runInContext(buildProbeExpression({ openOptions: false }), again.dom.getInternalVMContext());
+  assert.equal(bundled.ok, true);
+  assert.deepEqual(JSON.parse(JSON.stringify(bundled.staticInlineForms)), [{ section: '基本信息', labels: BASIC_LABELS }]);
+  assert.deepEqual([...bundled.clickedLabels].map((label) => String(label)), ['编辑', '取消']);
+  assert.equal(again.clicks.save, 0);
+  assert.equal(again.clicks.basicCancel, 0);
+  assert.equal(again.clicks.submit, 0);
+  assert.equal(again.clicks.deliver, 0);
+});
+
+test('a section with 编辑 and an open form still blocks, and the static form does not add to the count', async () => {
+  const { document, clicks } = mount({ staticBasic: true, toggledOpen: '教育经历' });
+  const result = await probeIntentEditor(document);
+  assert.equal(result.ok, false);
+  assert.equal(result.reason, 'other_editor_open');
+  assert.equal(result.detail.editorCount, 1);
+  assert.deepEqual(result.staticInlineForms, [{ section: '基本信息', labels: BASIC_LABELS }]);
+  assert.deepEqual(result.clickedLabels, []);
+  assert.equal(clicks.edit, 0);
+  assert.equal(clicks.otherEdit, 0);
+  assert.equal(clicks.cancel, 0);
+  assert.equal(clicks.basicCancel, 0);
+  assert.equal(clicks.save, 0);
+  assert.equal(clicks.submit, 0);
+  assert.equal(clicks.deliver, 0);
+  assert.equal(clicks.formSubmit, 0);
+  assert.equal(document.querySelector('#open-form').style.display, '');
+  assert.equal(document.querySelector('#basic-form').style.display, '');
+  assert.equal(JSON.stringify(result).includes(STATIC_VALUE), false);
+});
+
+test('a drawer in a section without 编辑 still blocks as a toggled editor', async () => {
+  const { document, clicks } = mount({ staticBasic: true });
+  document.body.insertAdjacentHTML('beforeend', `<section class="r-section" id="drawer-sec"><div class="title_">弹层</div><div class="el-drawer" id="drawer"><form id="drawer-form"><div class="el-form-item"><label class="el-form-item__label">公司</label><input type="text" value="示例"></div><button type="button" id="drawer-cancel">取消</button><button type="button" id="drawer-save">保存</button></form></div></section>`);
+  const result = await probeIntentEditor(document);
+  assert.equal(result.reason, 'other_editor_open');
+  assert.equal(result.detail.editorCount, 2);
+  assert.deepEqual(result.staticInlineForms, [{ section: '基本信息', labels: BASIC_LABELS }]);
+  assert.deepEqual(result.clickedLabels, []);
+  assert.equal(clicks.edit, 0);
+  assert.equal(clicks.cancel, 0);
+  assert.equal(clicks.basicCancel, 0);
+  assert.equal(clicks.save, 0);
+  assert.equal(document.querySelector('#drawer-form').style.display, '');
+});
+
+test('an already-open 求职意向 editor closes only itself when 基本信息 stays inline', async () => {
+  const { document, clicks } = mount({ staticBasic: true, open: true });
+  const result = await probeIntentEditor(document);
+  assert.equal(result.ok, true);
+  assert.equal(result.editorAlreadyOpen, true);
+  assert.deepEqual(result.clickedLabels, ['取消']);
+  assert.deepEqual(result.staticInlineForms, [{ section: '基本信息', labels: BASIC_LABELS }]);
+  assert.equal(clicks.edit, 0);
+  assert.equal(clicks.cancel, 1);
+  assert.equal(clicks.basicCancel, 0);
+  assert.equal(clicks.save, 0);
+  assert.equal(document.querySelector('#basic-form').style.display, '');
+  assert.equal(document.querySelector('#intent-form').style.display, 'none');
+});
+
+test('two 求职意向 编辑 triggers still stop before any click when 基本信息 is inline', async () => {
+  const { document, clicks } = mount({ staticBasic: true, edits: 2 });
+  const result = await probeIntentEditor(document);
+  assert.equal(result.reason, 'intent_edit_not_unique');
+  assert.equal(result.detail.editCount, 2);
+  assert.deepEqual(result.clickedLabels, []);
+  assert.deepEqual(result.staticInlineForms, [{ section: '基本信息', labels: BASIC_LABELS }]);
+  assert.equal(clicks.edit, 0);
+  assert.equal(clicks.cancel, 0);
+  assert.equal(clicks.basicCancel, 0);
+  assert.equal(clicks.save, 0);
+});
+
+test('a missing 求职意向 section still stops before any click when 基本信息 is inline', async () => {
+  const { document, clicks } = mount({ staticBasic: true, cards: 0 });
+  const result = await probeIntentEditor(document);
+  assert.equal(result.reason, 'intent_card_not_found');
+  assert.equal(result.detail.cardCount, 0);
+  assert.deepEqual(result.clickedLabels, []);
+  assert.equal(clicks.edit, 0);
+  assert.equal(clicks.basicCancel, 0);
+  assert.equal(clicks.save, 0);
+  assert.equal(clicks.modify, 0);
+});
+
+test('a dialog still blocks when 基本信息 has a static form', async () => {
+  const { document, clicks } = mount({ staticBasic: true, foreign: true });
+  const result = await probeIntentEditor(document);
+  assert.equal(result.reason, 'other_editor_open');
+  assert.equal(result.detail.editorCount, 2);
+  assert.deepEqual(result.staticInlineForms, [{ section: '基本信息', labels: BASIC_LABELS }]);
+  assert.deepEqual(result.clickedLabels, []);
+  assert.equal(clicks.edit, 0);
+  assert.equal(clicks.cancel, 0);
+  assert.equal(clicks.foreign, 0);
+  assert.equal(clicks.save, 0);
+  assert.equal(clicks.basicCancel, 0);
 });
 
 test('a missing editor does not fall through to 保存', async () => {
@@ -636,4 +842,22 @@ test('buildReport cannot be talked into a support claim', () => {
   assert.deepEqual(report.stillUnsupportedInProduct, ['期望从事职位类别', '现从事行业', '现从事职位类别', '现薪资']);
   assert.equal(report.evidence.find((row) => row.question === '期望从事职位类别').supportClaimed, false);
   assert.equal(report.fields[0].supportClaimed, false);
+  assert.deepEqual(report.staticInlineForms, []);
+  const leaked = buildReport({
+    ok: true,
+    reason: null,
+    editorLeftOpen: false,
+    staticInlineForms: [{ section: '基本信息', labels: ['姓名'], value: 'secret-value' }]
+  }, {
+    probedAt: '2026-10-20T08:14:00.000Z',
+    port: 9239,
+    urlMatch: DEFAULT_URL_MATCH,
+    openOptions: false,
+    tabAction: 'attached',
+    cdpPosts: [],
+    cdpNetwork: false
+  });
+  assert.deepEqual(leaked.staticInlineForms, [{ section: '基本信息', labels: ['姓名'] }]);
+  assert.equal(JSON.stringify(leaked.staticInlineForms).includes('secret-value'), false);
+  assert.equal(leaked.supported, false);
 });

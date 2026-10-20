@@ -10,7 +10,9 @@
 # the service worker at guard-worker.mjs (static import of that config), and fails if
 # the seed is off the list or guard-worker still top-level await-imports paid-config.
 # It also fails unless the packed tree matches tip CMS 学历 duplicate_target content,
-# region fail-closed markers, and CMS auto inject files. Never Save. No live-site claim.
+# region fail-closed markers, and CMS auto inject files. It fails when packed GTH
+# basic still treats unsupported or unsettled 现居住地/照片/参加工作时间 as a completed
+# skip. Never Save. No live-site claim.
 # Node proof without Edge: node scripts/build-paid-smoke.mjs
 # Optional Ed25519 public key embed (documentation / real operator key — NEVER private key):
 #   -PublicKeyPemPath 'tests/fixtures/license/EXAMPLE_ed25519_public.pem'   # EXAMPLE only
@@ -400,10 +402,10 @@ foreach ($relative in $cmsTipFiles) {
   $text = [IO.File]::ReadAllText($target)
   if ($text -match 'softwareClickedSave\s*=\s*true') { throw "付费包试图 Save：$relative。Never Save。" }
 }
-function Require-PackedNeedle([string]$Relative, [string]$Needle) {
+function Require-PackedNeedle([string]$Relative, [string]$Needle, [string]$Label = 'CMS') {
   $target = Join-Path $extensionRoot ($Relative -replace '/', '\')
   $text = [IO.File]::ReadAllText($target)
-  if (-not $text.Contains($Needle)) { throw "付费包缺少 tip CMS 内容：${Relative} :: ${Needle}" }
+  if (-not $text.Contains($Needle)) { throw "付费包缺少 tip ${Label} 内容：${Relative} :: ${Needle}" }
 }
 Require-PackedNeedle 'src/content/engine.js' 'education 学历'
 Require-PackedNeedle 'src/content/engine.js' 'cms-ant-v3-${M.normalize(labels[0])}-${position}'
@@ -459,6 +461,70 @@ foreach ($local in $cmsRequiredInject) {
   if (-not $seenInject.Contains($local)) { throw "付费包 CMS 注入文件未纳入清单：自动注入集合缺少 $local" }
 }
 
+# GTH basic fail-closed gate. Unsupported or unsettled 现居住地/照片/参加工作时间
+# are failed, and a requested fill is not stored as completed. executeScript of
+# gth-basic.js is a string, so the import walk above does not see it.
+$gthTipFiles = @(
+  'src/content/gth-basic.js',
+  'src/background/basic-task-runner.mjs',
+  'src/background/gth-basic-auto.mjs',
+  'src/popup/gth-basic-actions.js'
+)
+$gthRunnerFiles = @(
+  'src/background/gth-basic-auto.mjs',
+  'src/background/basic-task-runner.mjs'
+)
+$gthRequiredInject = @(
+  'src/content/gth-basic.js'
+)
+foreach ($relative in $gthTipFiles) {
+  $source = Join-Path $repoRoot ($relative -replace '/', '\')
+  $target = Join-Path $extensionRoot ($relative -replace '/', '\')
+  if (-not (Test-Path -LiteralPath $target -PathType Leaf)) { throw "付费包缺少 tip GTH 文件：$relative" }
+  $sourceHash = (Get-FileHash -LiteralPath $source -Algorithm SHA256).Hash
+  $targetHash = (Get-FileHash -LiteralPath $target -Algorithm SHA256).Hash
+  if ($sourceHash -ne $targetHash) { throw "付费包与 tip 源码不一致：$relative。不要热补 dist，包括 20261018 旧包。" }
+  $text = [IO.File]::ReadAllText($target)
+  if ($text -match 'softwareClickedSave\s*=\s*true') { throw "付费包试图 Save：$relative。Never Save。" }
+}
+Require-PackedNeedle 'src/content/gth-basic.js' "status:field.kind==='unsupported'?'failed':'skipped'" 'GTH'
+Require-PackedNeedle 'src/content/gth-basic.js' "reason:field.kind==='unsupported'?'control_not_supported':'not_run'" 'GTH'
+Require-PackedNeedle 'src/background/basic-task-runner.mjs' "status:supported?(valid?row.status:'skipped'):'failed'" 'GTH'
+Require-PackedNeedle 'src/background/basic-task-runner.mjs' 'export const GTH_COVERAGE_FAIL_CLOSED_REASONS' 'GTH'
+Require-PackedNeedle 'src/background/basic-task-runner.mjs' 'export function planGthBasicCoverage' 'GTH'
+Require-PackedNeedle 'src/background/basic-task-runner.mjs' 'export function sealGthJobCoverage' 'GTH'
+Require-PackedNeedle 'src/background/basic-task-runner.mjs' 'export function gthRequestedFillBlocksComplete' 'GTH'
+Require-PackedNeedle 'src/background/basic-task-runner.mjs' "'control_not_supported'" 'GTH'
+Require-PackedNeedle 'src/background/basic-task-runner.mjs' "'region_fact_not_unique'" 'GTH'
+Require-PackedNeedle 'src/background/basic-task-runner.mjs' "'region_fact_unconfirmed'" 'GTH'
+Require-PackedNeedle 'src/background/basic-task-runner.mjs' "selector:null,query:null,status:'failed',ok:false" 'GTH'
+Require-PackedNeedle 'src/background/basic-task-runner.mjs' "const blocked=fields.some(field=>field.status==='failed'&&GTH_COVERAGE_FAIL_CLOSED_REASONS.includes(field.reason));" 'GTH'
+Require-PackedNeedle 'src/background/basic-task-runner.mjs' "if(outcome!=='failed_before_write'&&gthRequestedFillBlocksComplete(coveragePlan)){" 'GTH'
+Require-PackedNeedle 'src/background/gth-basic-auto.mjs' 'planGthBasicCoverage' 'GTH'
+Require-PackedNeedle 'src/background/gth-basic-auto.mjs' 'sealGthJobCoverage' 'GTH'
+Require-PackedNeedle 'src/background/gth-basic-auto.mjs' 'gthRequestedFillBlocksComplete' 'GTH'
+Require-PackedNeedle 'src/background/gth-basic-auto.mjs' 'if(gthRequestedFillBlocksComplete(coveragePlan)){' 'GTH'
+Require-PackedNeedle 'src/background/gth-basic-auto.mjs' 'Unsupported or unsettled 现居住地/照片/参加工作时间 fail closed and are not a completed fill.' 'GTH'
+Require-PackedNeedle 'src/background/gth-basic-auto.mjs' "'src/content/gth-basic.js'" 'GTH'
+Require-PackedNeedle 'src/popup/gth-basic-actions.js' 'GTH_COVERAGE_FAIL_CLOSED_REASONS' 'GTH'
+Require-PackedNeedle 'src/popup/gth-basic-actions.js' '现居住地、照片或参加工作时间未能填写（控件尚未支持，或地区资料未定）。本次不记为完成，未保存、未提交。' 'GTH'
+$seenGthInject = New-Object 'System.Collections.Generic.HashSet[string]'
+foreach ($relative in $gthRunnerFiles) {
+  $runnerPath = Join-Path $extensionRoot ($relative -replace '/', '\')
+  $runnerText = [IO.File]::ReadAllText($runnerPath)
+  $found = @([regex]::Matches($runnerText, "'(src/[^']+\.(?:js|mjs|html))'") | ForEach-Object { $_.Groups[1].Value })
+  if ($found.Count -eq 0) { throw "付费包 GTH 注入文件未纳入清单：$relative 没有注入路径" }
+  foreach ($local in $found) {
+    [void]$seenGthInject.Add($local)
+    if (-not $packed.Contains($local)) { throw "付费包 GTH 注入文件未纳入清单：$relative -> $local" }
+    $out = Join-Path $extensionRoot ($local -replace '/', '\')
+    if (-not (Test-Path -LiteralPath $out -PathType Leaf)) { throw "付费包 GTH 注入文件未纳入清单：$relative -> $local 不在输出树" }
+  }
+}
+foreach ($local in $gthRequiredInject) {
+  if (-not $seenGthInject.Contains($local)) { throw "付费包 GTH 注入文件未纳入清单：自动注入集合缺少 $local" }
+}
+
 $readme = @"
 # Paid flavor package (candidate)
 
@@ -474,6 +540,7 @@ $readme = @"
 - guard-worker.mjs static-imports the generated paid-config.mjs. Top-level await import fails Edge 155 SW registration.
 - src/profile/cms-basic-seed-from-education.mjs is on the product list and is copied. cms-basic-auto imports it.
 - Packed CMS tip files match this checkout (学历 generated-id suffix, region fail-closed, CMS auto inject list). A 20261018 tree fails this gate.
+- Packed GTH basic files match this checkout. Unsupported or unsettled 现居住地/照片/参加工作时间 are failed, and that fill is not stored as completed. A tree that still marks those rows skipped fails this gate.
 - Source src/license/paid-config.mjs stays the fail-closed internal placeholder. This folder's copy is generated.
 - Never Save. This package does not claim a live recruiting site is supported.
 - Node proof without launching Edge: node scripts/build-paid-smoke.mjs

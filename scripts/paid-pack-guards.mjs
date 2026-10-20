@@ -3,7 +3,9 @@
 // must copy cms-basic-seed-from-education.mjs and static-import generated paid-config.
 // Edge 155 MV3 does not register a service worker that top-level await-imports paid-config.
 // The packed tree must also carry tip CMS 学历 duplicate_target ids, region fail-closed
-// markers, and the CMS auto inject files. This gate does not claim a live site is supported.
+// markers, and the CMS auto inject files. It must carry tip GTH basic fail-closed
+// coverage: unsupported or unsettled 现居住地/照片/参加工作时间 are failed, and a
+// requested fill is not stored as completed. This gate does not claim a live site is supported.
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -145,6 +147,81 @@ const NEVER_SAVE_FILES = new Set([
   'src/content/engine.js',
 ]);
 
+// Byte-compared into the paid output. Pre-PR#23 GTH basic stored unsupported
+// 现居住地/照片/参加工作时间 as skipped and could still mark the job completed.
+export const GTH_TIP_SOURCE_FILES = [
+  'src/content/gth-basic.js',
+  'src/background/basic-task-runner.mjs',
+  'src/background/gth-basic-auto.mjs',
+  'src/popup/gth-basic-actions.js',
+];
+
+export const GTH_RUNNER_FILES = [
+  'src/background/gth-basic-auto.mjs',
+  'src/background/basic-task-runner.mjs',
+];
+
+// executeScript path named as a string. Import walk does not see it.
+export const GTH_REQUIRED_INJECT = [
+  'src/content/gth-basic.js',
+];
+
+export const GTH_TIP_MARKERS = [
+  {
+    rel: 'src/content/gth-basic.js',
+    group: 'gth-unsupported-failed',
+    needles: [
+      "status:field.kind==='unsupported'?'failed':'skipped'",
+      "reason:field.kind==='unsupported'?'control_not_supported':'not_run'",
+    ],
+  },
+  {
+    rel: 'src/background/basic-task-runner.mjs',
+    group: 'gth-unsupported-failed',
+    needles: [
+      "status:supported?(valid?row.status:'skipped'):'failed'",
+      'export const GTH_COVERAGE_FAIL_CLOSED_REASONS',
+      'export function planGthBasicCoverage',
+      'export function sealGthJobCoverage',
+      'export function gthRequestedFillBlocksComplete',
+      "'control_not_supported'",
+      "'region_fact_not_unique'",
+      "'region_fact_unconfirmed'",
+      "selector:null,query:null,status:'failed',ok:false",
+      "const blocked=fields.some(field=>field.status==='failed'&&GTH_COVERAGE_FAIL_CLOSED_REASONS.includes(field.reason));",
+    ],
+  },
+  {
+    rel: 'src/background/basic-task-runner.mjs',
+    group: 'gth-no-completed-on-skip',
+    needles: [
+      "if(outcome!=='failed_before_write'&&gthRequestedFillBlocksComplete(coveragePlan)){",
+    ],
+  },
+  {
+    rel: 'src/background/gth-basic-auto.mjs',
+    group: 'gth-no-completed-on-skip',
+    needles: [
+      'planGthBasicCoverage',
+      'sealGthJobCoverage',
+      'gthRequestedFillBlocksComplete',
+      'if(gthRequestedFillBlocksComplete(coveragePlan)){',
+      'Unsupported or unsettled 现居住地/照片/参加工作时间 fail closed and are not a completed fill.',
+      "'src/content/gth-basic.js'",
+    ],
+  },
+  {
+    rel: 'src/popup/gth-basic-actions.js',
+    group: 'gth-no-completed-on-skip',
+    needles: [
+      'GTH_COVERAGE_FAIL_CLOSED_REASONS',
+      '现居住地、照片或参加工作时间未能填写（控件尚未支持，或地区资料未定）。本次不记为完成，未保存、未提交。',
+    ],
+  },
+];
+
+const GTH_NEVER_SAVE_FILES = new Set(GTH_TIP_SOURCE_FILES);
+
 const AWAIT_PAID_CONFIG = /await\s+import\s*\(\s*['"]\.\/paid-config\.mjs['"]\s*\)/;
 const STATIC_PAID_CONFIG = /import\s+\{\s*paidConfig\s+as\s+paidConfigImported\s*\}\s+from\s+['"]\.\/paid-config\.mjs['"]/;
 
@@ -269,10 +346,10 @@ export function cmsInjectedRels(source) {
   return [...source.matchAll(/'(src\/[^']+\.(?:js|mjs|html))'/g)].map((item) => item[1]);
 }
 
-export function assertCmsTipMarkers(readText) {
+function assertTipMarkers(readText, markers, neverSaveFiles, label) {
   const missing = [];
   const seen = new Set();
-  for (const item of CMS_TIP_MARKERS) {
+  for (const item of markers) {
     let text;
     try {
       text = readText(item.rel);
@@ -287,28 +364,36 @@ export function assertCmsTipMarkers(readText) {
     for (const needle of item.needles) {
       if (!text.includes(needle)) missing.push(`${item.group}: ${item.rel} missing ${needle}`);
     }
-    if (!seen.has(item.rel) && NEVER_SAVE_FILES.has(item.rel) && /softwareClickedSave\s*=\s*true/.test(text)) {
+    if (!seen.has(item.rel) && neverSaveFiles.has(item.rel) && /softwareClickedSave\s*=\s*true/.test(text)) {
       missing.push(`${item.rel} attempts Save`);
     }
     seen.add(item.rel);
   }
   if (missing.length) {
-    throw new Error(`paid pack missing tip CMS content:\n${missing.join('\n')}`);
+    throw new Error(`paid pack missing tip ${label} content:\n${missing.join('\n')}`);
   }
 }
 
-export function assertCmsInjectedFilesPacked(runnerTexts, packedFiles, exists) {
+export function assertCmsTipMarkers(readText) {
+  assertTipMarkers(readText, CMS_TIP_MARKERS, NEVER_SAVE_FILES, 'CMS');
+}
+
+export function assertGthTipMarkers(readText) {
+  assertTipMarkers(readText, GTH_TIP_MARKERS, GTH_NEVER_SAVE_FILES, 'GTH');
+}
+
+function assertInjectedFilesPacked(runnerFiles, required, runnerTexts, packedFiles, exists, phrases) {
   const allowed = new Set(packedFiles);
   const problems = [];
   const seen = new Set();
-  for (const rel of CMS_RUNNER_FILES) {
+  for (const rel of runnerFiles) {
     const text = runnerTexts[rel];
     if (typeof text !== 'string') {
       problems.push(`missing runner ${rel}`);
       continue;
     }
     const paths = cmsInjectedRels(text);
-    if (!paths.length) problems.push(`${rel} listed no CMS inject paths`);
+    if (!paths.length) problems.push(`${rel} listed no ${phrases.kind} inject paths`);
     for (const injected of paths) {
       seen.add(injected);
       if (!allowed.has(injected)) problems.push(`${rel} -> ${injected} not on paid pack list`);
@@ -317,13 +402,29 @@ export function assertCmsInjectedFilesPacked(runnerTexts, packedFiles, exists) {
       }
     }
   }
-  for (const rel of CMS_REQUIRED_INJECT) {
-    if (!seen.has(rel)) problems.push(`CMS auto inject set dropped ${rel}`);
+  for (const rel of required) {
+    if (!seen.has(rel)) problems.push(`${phrases.dropped} ${rel}`);
   }
   if (problems.length) {
-    throw new Error(`paid pack CMS auto files missing:\n${problems.join('\n')}`);
+    throw new Error(`${phrases.summary}:\n${problems.join('\n')}`);
   }
   return [...seen];
+}
+
+export function assertCmsInjectedFilesPacked(runnerTexts, packedFiles, exists) {
+  return assertInjectedFilesPacked(CMS_RUNNER_FILES, CMS_REQUIRED_INJECT, runnerTexts, packedFiles, exists, {
+    kind: 'CMS',
+    dropped: 'CMS auto inject set dropped',
+    summary: 'paid pack CMS auto files missing',
+  });
+}
+
+export function assertGthInjectedFilesPacked(runnerTexts, packedFiles, exists) {
+  return assertInjectedFilesPacked(GTH_RUNNER_FILES, GTH_REQUIRED_INJECT, runnerTexts, packedFiles, exists, {
+    kind: 'GTH',
+    dropped: 'GTH inject set dropped',
+    summary: 'paid pack GTH inject files missing',
+  });
 }
 
 export function assertPackedCmsTip(extensionRoot, packedFiles) {
@@ -349,7 +450,28 @@ export function assertPackedCmsTip(extensionRoot, packedFiles) {
   };
 }
 
-export function assertPackedBytesMatchSource(repoRoot, extensionRoot, rels = CMS_TIP_SOURCE_FILES) {
+export function assertPackedGthTip(extensionRoot, packedFiles) {
+  const readText = (rel) => {
+    const abs = path.join(extensionRoot, rel);
+    if (!fs.existsSync(abs)) throw new Error(`missing ${rel}`);
+    return fs.readFileSync(abs, 'utf8');
+  };
+  assertGthTipMarkers(readText);
+  const runnerTexts = {};
+  for (const rel of GTH_RUNNER_FILES) runnerTexts[rel] = readText(rel);
+  const injected = assertGthInjectedFilesPacked(
+    runnerTexts,
+    packedFiles,
+    (rel) => fs.existsSync(path.join(extensionRoot, rel)),
+  );
+  return {
+    gthFailClosedPacked: true,
+    gthInjectedFilesPacked: true,
+    gthInjectedCount: injected.length,
+  };
+}
+
+export function assertPackedBytesMatchSource(repoRoot, extensionRoot, rels = [...CMS_TIP_SOURCE_FILES, ...GTH_TIP_SOURCE_FILES]) {
   for (const rel of rels) {
     const sourcePath = path.join(repoRoot, rel);
     const packedPath = path.join(extensionRoot, rel);
@@ -369,6 +491,8 @@ export function assertPackedBytesMatchSource(repoRoot, extensionRoot, rels = CMS
  * - BG_PING is registered (service worker module ran)
  * - CMS/GTH basic auto and CMS education auto listeners are installed (sync deny, no page DOM)
  * - packed CMS files carry tip 学历 / region fail-closed / auto inject pieces
+ * - packed GTH basic files fail closed on unsupported or unsettled 现居住地/照片/参加工作时间
+ *   and do not store that fill as completed
  */
 export async function assertBuiltPaidExtension(extensionRoot, packedFiles) {
   const guardPath = path.join(extensionRoot, GUARD_WORKER);
@@ -395,6 +519,7 @@ export async function assertBuiltPaidExtension(extensionRoot, packedFiles) {
   }
   assertPackImportsResolve(extensionRoot, packedFiles);
   const tip = assertPackedCmsTip(extensionRoot, packedFiles);
+  const gth = assertPackedGthTip(extensionRoot, packedFiles);
 
   let seedMod;
   try {
@@ -440,5 +565,6 @@ export async function assertBuiltPaidExtension(extensionRoot, packedFiles) {
     gthBasicAutoInstalled: true,
     cmsEducationAutoInstalled: true,
     ...tip,
+    ...gth,
   };
 }

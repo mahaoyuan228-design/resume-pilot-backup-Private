@@ -2,12 +2,14 @@
  * GTH_INTENT_AUTO scaffolding smoke:
  * - trusted auto-page sender accepted; wrong sender rejected
  * - default mode=readiness probes without intent fill
- * - fill path injects matcher+engine once, sendMessage GTH_INTENT_TEST, never Save
+ * - test-only fill transport injects matcher+engine once, sendMessage GTH_INTENT_TEST, never Save
+ * - shipped runner (no transport) fails closed before any page script
  * - intentSource ready only with five confirmed site facts
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createGthIntentAutoRunner, intentSource } from '../src/background/gth-intent-auto.mjs';
+import { GTH_INTENT_TEST_TYPE, createGthIntentTestFill } from './gth-intent-test-hook.mjs';
 
 const epoch = '00000000-0000-4000-8000-000000000001';
 const tabId = 42;
@@ -38,7 +40,7 @@ const fixture = () => ({
   })),
 });
 
-async function harness({ fillResponse } = {}) {
+async function harness({ fillResponse, shipped = false } = {}) {
   const data = {
     resumeProfile: fixture(),
     resumeProfileLifecycle: { version: 1, epoch, state: 'ready' },
@@ -106,7 +108,7 @@ async function harness({ fillResponse } = {}) {
       update: async () => ({ id: tabId, url: PAGE, windowId: 1 }),
       sendMessage: async (_tabId, message) => {
         stats.sendMessage += 1;
-        assert.equal(message.type, 'GTH_INTENT_TEST');
+        assert.equal(message.type, GTH_INTENT_TEST_TYPE);
         assert.equal(typeof message.requestId, 'string');
         assert.ok(message.profileBinding);
         for (const q of QUESTIONS) assert.equal(message.answers[q], answers[q]);
@@ -150,6 +152,7 @@ async function harness({ fillResponse } = {}) {
     api,
     timeoutMs: 5000,
     lifecycleOptions: { locks: { request: async (_n, _o, work) => work() }, cryptoImpl: globalThis.crypto },
+    ...(shipped ? {} : { fillIntent: createGthIntentTestFill(api) }),
   });
   return { invoke, stats, data, autoSender, badSender };
 }
@@ -187,6 +190,22 @@ test('GTH_INTENT_AUTO defaults to readiness when mode omitted', async () => {
   assert.equal(response.ok, true);
   assert.equal(response.mode, 'readiness');
   assert.equal(response.writeAttempted, false);
+  assert.equal(h.stats.fill, 0);
+});
+
+test('shipped GTH_INTENT_AUTO fill does not run the experimental hook', async () => {
+  const h = await harness({ shipped: true });
+  const response = await h.invoke({
+    type: 'GTH_INTENT_AUTO',
+    mode: 'fill',
+    originConfirmed: true,
+  });
+  assert.equal(response.ok, false);
+  assert.equal(response.reason, 'gth_intent_fill_not_shipped');
+  assert.equal(response.saveAttempted, false);
+  assert.equal(response.writeAttempted, false);
+  assert.equal(h.stats.inject, 0);
+  assert.equal(h.stats.sendMessage, 0);
   assert.equal(h.stats.fill, 0);
 });
 

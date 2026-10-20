@@ -26,6 +26,7 @@ import {
   CMS_RUNNER_FILES,
   CMS_TIP_MARKERS,
   CMS_TIP_SOURCE_FILES,
+  GTH_INTENT_TEST_HOOK,
   GTH_REQUIRED_INJECT,
   GTH_RUNNER_FILES,
   GTH_TIP_MARKERS,
@@ -39,6 +40,7 @@ import {
   assertPackedCmbTip,
   assertPackedGthTip,
   assertPackImportsResolve,
+  assertPackOmitsGthIntentTest,
   assertSeedOnPaidPackList,
   assertSourcePaidConfigFailClosed,
   assertStaticPaidConfigImport,
@@ -497,4 +499,35 @@ test('rebuild fails when cmb-basic.js is off the packed list or its bytes drift'
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test('a pack containing GTH_INTENT_TEST fails, and the shipped lists omit it', () => {
+  const internal = fs.readFileSync(path.join(root, 'scripts/build-internal.ps1'), 'utf8');
+  const paid = fs.readFileSync(path.join(root, 'scripts/build-paid.ps1'), 'utf8');
+  assert.match(internal, /function Assert-PackedOmitsGthIntentTest/);
+  assert.match(paid, /function Assert-PackedOmitsGthIntentTest/);
+  assert.match(internal, /throw "交付包含有 GTH_INTENT_TEST/);
+  assert.match(paid, /throw "交付包含有 GTH_INTENT_TEST/);
+  assert.doesNotMatch(internal, /仅内部实验：GTH_INTENT_TEST 写入消息仍在试用引擎中/);
+  const files = parsePsStringArray(internal, 'files');
+  const productFiles = parsePsStringArray(paid, 'productFiles');
+  const licenseFiles = parsePsStringArray(paid, 'licenseFiles');
+  const packed = [...productFiles, ...licenseFiles, PAID_CONFIG];
+  const read = (rel) => fs.readFileSync(path.join(root, rel), 'utf8');
+  assert.equal(assertPackOmitsGthIntentTest(files, read).gthIntentTestOmitted, true);
+  assert.equal(assertPackOmitsGthIntentTest(packed, read).gthIntentTestOmitted, true);
+  assert.equal(files.includes('tests/gth-intent-test-hook.mjs'), false);
+  assert.equal(packed.includes('tests/gth-intent-test-hook.mjs'), false);
+  for (const rel of new Set([...files, ...packed])) {
+    if (!rel.startsWith('src/') && rel !== 'manifest.json') continue;
+    const text = read(rel);
+    assert.equal(text.includes('gth-intent-test-hook'), false, `${rel} imports the test-only hook`);
+    assert.equal(text.includes(GTH_INTENT_TEST_HOOK), false, `${rel} still contains ${GTH_INTENT_TEST_HOOK}`);
+  }
+  const hook = fs.readFileSync(path.join(root, 'tests/gth-intent-test-hook.mjs'), 'utf8');
+  assert.equal(hook.includes(GTH_INTENT_TEST_HOOK), true);
+  assert.throws(
+    () => assertPackOmitsGthIntentTest(['src/content/engine.js'], () => `type:"${GTH_INTENT_TEST_HOOK}"`),
+    /pack contains GTH_INTENT_TEST[\s\S]*src\/content\/engine\.js/,
+  );
 });

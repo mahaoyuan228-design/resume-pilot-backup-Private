@@ -623,6 +623,17 @@ $readme = @"
 "@
 [IO.File]::WriteAllText((Join-Path $buildRoot 'PAID_BUILD_README.txt'), $readme, (New-Object Text.UTF8Encoding($false)))
 
+function Assert-PackedOmitsGthIntentTest([string]$Root) {
+  $needle = 'GTH_INTENT_TEST'
+  foreach ($file in (Get-ChildItem -LiteralPath $Root -Recurse -File)) {
+    $packedText = [IO.File]::ReadAllText($file.FullName)
+    if ($packedText.Contains($needle)) {
+      throw "交付包含有 GTH_INTENT_TEST（$($file.FullName)）。实验写入钩子不得进入内部或付费包。"
+    }
+  }
+}
+Assert-PackedOmitsGthIntentTest $extensionRoot
+
 Write-Output "付费候选包：$buildRoot"
 Write-Output "扩展目录：$extensionRoot"
 Write-Output "授权服务 URL：$LicenseServiceUrl"

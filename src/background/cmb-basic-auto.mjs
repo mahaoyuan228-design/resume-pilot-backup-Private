@@ -6,7 +6,7 @@
 // siteId cmb plus a non-empty result list whose rows are all ok.
 import {captureProfileBinding,assertProfileBinding,canonicalProfileHash,
   dispatchBoundSource} from '../profile/profile-lifecycle.js';
-import {planCmbBasicFromProfile,isCmbHost,isCmbResumeEditPath} from '../content/cmb-profile-map.mjs';
+import {planCmbBasicFromProfile,isCmbHost,isCmbResumeEditPath,isCmbResumeEditPage} from '../content/cmb-profile-map.mjs';
 
 const SITE_ID = 'cmb';
 const SAMPLE_PAGE = 'https://career.cmbchina.com/center/resume';
@@ -47,6 +47,154 @@ export function isCmbTabUrl(url) {
   } catch {
     return false;
   }
+}
+
+const CMB_LABEL_PATH = {
+  姓名: 'fullName',
+  手机号: 'phone',
+  邮箱: 'email',
+  性别: 'gender',
+  身高: 'height',
+  体重: 'weight'
+};
+
+/**
+ * Fail-closed reading of a cmb-basic fill body.
+ * ok requires siteId cmb, skippedSave, and a non-empty list of ok rows.
+ * A Save/submit/delete or saved/submitted claim is kept and is not ok.
+ * ok:true with no verified rows is unsettled.
+ */
+export function assessCmbFillReport(report) {
+  const claims = {
+    softwareClickedSave: report?.softwareClickedSave === true,
+    softwareClickedSubmit: report?.softwareClickedSubmit === true,
+    softwareClickedDelete: report?.softwareClickedDelete === true,
+    savedOnSite: report?.savedOnSite === true,
+    submitted: report?.submitted === true,
+    saved: report?.saved === true
+  };
+  const claimed = claims.softwareClickedSave || claims.softwareClickedSubmit || claims.softwareClickedDelete
+    || claims.savedOnSite || claims.submitted || claims.saved || report?.skippedSave !== true;
+  const results = Array.isArray(report?.results) ? report.results : [];
+  const rowsVerified = report?.ok === true && results.length > 0 && results.every((row) => row && row.ok === true);
+  const isolated = report?.siteId === SITE_ID;
+  const reason = claimed
+    ? 'cmb_save_policy_violation'
+    : !isolated
+      ? 'cmb_site_isolation'
+      : !rowsVerified
+        ? (report?.ok === true ? 'cmb_basic_status_unsettled' : (report?.reason || 'cmb_fill_partial'))
+        : null;
+  return {
+    state: reason ? 'failed' : 'completed',
+    reason,
+    writeStarted: report?.writeAttempted === true,
+    ...claims,
+    skippedSave: report?.skippedSave === true && !claimed,
+    results,
+    isolated,
+    rowsVerified
+  };
+}
+
+function cmbFieldFromResult(row) {
+  const ok = row?.ok === true;
+  const before = row?.before ?? '';
+  const after = row?.after ?? '';
+  const expected = row?.expected ?? after;
+  const same = ok && before === after && after === expected;
+  const label = typeof row?.label === 'string' ? row.label : '';
+  const reason = ok
+    ? ((row?.reason === 'matched' || !row?.reason) ? (same ? 'preexisting_same_value' : 'readback_matched') : row.reason)
+    : (row?.reason || 'readback_mismatch');
+  return {
+    id: `cmb:${label || 'field'}`,
+    labels: [label],
+    path: typeof row?.path === 'string' && row.path ? row.path : (CMB_LABEL_PATH[label] || null),
+    status: ok ? 'verified' : 'failed',
+    reason
+  };
+}
+
+export function cmbProbeView(report) {
+  const labels = Array.isArray(report?.labels) ? report.labels : [];
+  const fields = labels.map((row) => {
+    const ready = row?.found === true && row?.hasTextControl === true;
+    const label = typeof row?.label === 'string' ? row.label : '';
+    return {
+      id: `cmb:${label || 'field'}`,
+      labels: [label],
+      path: CMB_LABEL_PATH[label] || null,
+      status: ready ? 'identified' : 'failed',
+      reason: ready ? 'ready' : (row?.found ? 'control_not_found' : 'item_not_found')
+    };
+  });
+  return {
+    url: typeof report?.href === 'string' ? report.href : '',
+    title: typeof report?.title === 'string' && report.title ? report.title : '招商银行简历',
+    siteId: SITE_ID,
+    cmbBasic: true,
+    liveSupportClaimed: false,
+    saved: false,
+    skippedSave: true,
+    softwareClickedSave: false,
+    softwareClickedSubmit: false,
+    fields
+  };
+}
+
+export function cmbFillView(report) {
+  const fields = (Array.isArray(report?.results) ? report.results : []).map(cmbFieldFromResult);
+  return {
+    url: typeof report?.href === 'string' ? report.href : '',
+    title: typeof report?.title === 'string' && report.title ? report.title : '招商银行简历',
+    siteId: SITE_ID,
+    cmbBasic: true,
+    liveSupportClaimed: false,
+    saved: false,
+    skippedSave: true,
+    softwareClickedSave: false,
+    softwareClickedSubmit: false,
+    fields
+  };
+}
+
+/** Popup inspect/fill decision. Never treats an unsettled or save-claiming body as complete. */
+export function cmbPopupOutcome(report, mode = 'inspect') {
+  if (mode === 'fill') {
+    if (!report || typeof report !== 'object') {
+      return { ok: false, reason: 'cmb_fill_empty_response', fillNotStarted: true, writeStarted: false };
+    }
+    const assessed = assessCmbFillReport(report);
+    if (assessed.state !== 'completed') {
+      // Unsettled or a save claim stays pending even when writeAttempted is false:
+      // the popup must not clear the review marker or present a completed fill.
+      const settledBeforeWrite = assessed.writeStarted !== true
+        && assessed.reason !== 'cmb_basic_status_unsettled'
+        && assessed.reason !== 'cmb_save_policy_violation';
+      return {
+        ok: false,
+        reason: assessed.reason,
+        fillNotStarted: settledBeforeWrite,
+        writeStarted: assessed.writeStarted === true
+      };
+    }
+    return { ok: true, view: cmbFillView(report), fillNotStarted: false, writeStarted: true };
+  }
+  if (!report || typeof report !== 'object' || report.siteId !== SITE_ID) {
+    return { ok: false, reason: 'cmb_site_isolation', fillNotStarted: true, helpNeeded: false };
+  }
+  if (report.saved === true || report.softwareClickedSave === true || report.softwareClickedSubmit === true
+      || report.softwareClickedDelete === true || report.savedOnSite === true || report.submitted === true
+      || report.skippedSave !== true) {
+    return { ok: false, reason: 'cmb_save_policy_violation', fillNotStarted: true, helpNeeded: false };
+  }
+  const href = typeof report.href === 'string' ? report.href : '';
+  const onEdit = report.onCmbResumeEdit === true || isCmbResumeEditPage(href);
+  if (!onEdit || report.reason === 'wrong_page') {
+    return { ok: false, reason: 'wrong_page', fillNotStarted: true, helpNeeded: true };
+  }
+  return { ok: true, view: cmbProbeView(report), fillNotStarted: true, helpNeeded: false };
 }
 
 function probePageFunc() {
@@ -240,33 +388,19 @@ export function createCmbBasicAutoRunner({ api = globalThis.chrome, verifyBefore
     await assertProfileBinding(api.storage.local, binding, lifecycleOptions);
     const report = replies?.[0]?.result;
     if (!report || typeof report !== 'object') fail('cmb_fill_empty_response');
-    const claims = {
-      softwareClickedSave: report.softwareClickedSave === true,
-      softwareClickedSubmit: report.softwareClickedSubmit === true,
-      softwareClickedDelete: report.softwareClickedDelete === true,
-      savedOnSite: report.savedOnSite === true,
-      submitted: report.submitted === true,
-      saved: report.saved === true
-    };
-    const claimed = claims.softwareClickedSave || claims.softwareClickedSubmit || claims.softwareClickedDelete
-      || claims.savedOnSite || claims.submitted || claims.saved || report.skippedSave !== true;
-    const results = Array.isArray(report.results) ? report.results : [];
-    const rowsVerified = report.ok === true && results.length > 0 && results.every((row) => row && row.ok === true);
-    const isolated = report.siteId === SITE_ID;
-    const reason = claimed
-      ? 'cmb_save_policy_violation'
-      : !isolated
-        ? 'cmb_site_isolation'
-        : !rowsVerified
-          ? (report.ok === true ? 'cmb_basic_status_unsettled' : (report.reason || 'cmb_fill_partial'))
-          : null;
+    const assessed = assessCmbFillReport(report);
     return {
-      state: reason ? 'failed' : 'completed',
-      reason,
-      writeStarted: report.writeAttempted === true,
-      ...claims,
-      skippedSave: report.skippedSave === true && !claimed,
-      results,
+      state: assessed.state,
+      reason: assessed.reason,
+      writeStarted: assessed.writeStarted,
+      softwareClickedSave: assessed.softwareClickedSave,
+      softwareClickedSubmit: assessed.softwareClickedSubmit,
+      softwareClickedDelete: assessed.softwareClickedDelete,
+      savedOnSite: assessed.savedOnSite,
+      submitted: assessed.submitted,
+      saved: assessed.saved,
+      skippedSave: assessed.skippedSave,
+      results: assessed.results,
       profileSource: report.profileSource || 'resumeProfile',
       href: report.href || tab.url || null
     };

@@ -520,3 +520,30 @@ export function isCmbResumeEditPath(pathname) {
   const path = String(pathname || '');
   return path === '/center/resume' || path.startsWith('/center/resume/');
 }
+
+/** Popup/route recognition for the 招商银行 host. Not hotjob CMS, not 民生. */
+export function isCmb(url) {
+  try {
+    const u = new URL(url);
+    return u.protocol === 'https:' && isCmbHost(u.hostname) && !u.username && !u.password && !u.port;
+  } catch {
+    return false;
+  }
+}
+
+/** Resume edit URL. Query is ignored. Login and other paths are not this page. */
+export function isCmbResumeEditPage(url) {
+  try {
+    const u = new URL(url);
+    return isCmb(url) && isCmbResumeEditPath(u.pathname);
+  } catch {
+    return false;
+  }
+}
+
+export const CMB_BASIC_SCRIPT = 'src/content/cmb-basic.js';
+
+/** Files the popup injects on a CMB tab. Null keeps CMS/GTH inject lists unchanged. */
+export function cmbBasicInjectFiles(url) {
+  return isCmb(url) ? [CMB_BASIC_SCRIPT] : null;
+}

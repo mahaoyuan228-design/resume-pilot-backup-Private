@@ -1,5 +1,7 @@
 "use strict";
 import {captureProfileBinding,assertProfileBinding,withProfileBinding,dispatchBoundSource} from "../profile/profile-lifecycle.js";
+import {isCmb,cmbBasicInjectFiles} from "../content/cmb-profile-map.mjs";
+import {cmbPopupOutcome} from "../background/cmb-basic-auto.mjs";
 import { clearAttachment, loadAttachment, saveAttachment, MAX_ATTACHMENT_BYTES } from "../import/attachment-store.js";
 import { MAX_CUSTOM_FACTS, collectScopedQuestionDrafts, loadProfile, normalizeQuestionKey, saveProfile, questionIdentity, normalizeScopedQuestion } from "../profile/store.js";
 import { beginRecentRequest, loadRecentResult, recentResultText, saveRecentResult } from "./recent-result.js";
@@ -131,7 +133,12 @@ const reasons = {
   site_control_disabled: "网站锁定此项，无法修改，已保留原值",
   site_readonly: "账户资料只读，已保留；修改须进入网站账户设置",
   incomplete_date_pair: "开始和结束月份需同时有已确认资料，本组未操作",
-  not_run: "本轮未执行"
+  not_run: "本轮未执行",
+  item_not_found: "页面上没有这一项",
+  control_not_found: "页面控件无法唯一确定",
+  wrong_page: "当前不是招行简历编辑页",
+  profile_fields_unavailable: "姓名、手机号或邮箱尚未核对完整",
+  datepicker_hint_only: "出生日期只记录填法，本次不填写"
 };
 
 let activeTab = null;
@@ -290,11 +297,14 @@ function setBusy(value) {
   elements.gthBasicButton.textContent = gthBasicPendingReview
     ? "查看基本信息后台结果（只读）" : "试填基本信息并读回（不保存）";
   elements.fill.textContent = fillOutcomeUncertain ? "核对后继续填写"
-    : (activeTab && isCmsPhotoResumePage(activeTab.url) ? "填写并读回（教育请用下方）" : "填写并读回");
+    : (activeTab && isCmb(activeTab.url) ? "试填并读回（不保存）"
+      : (activeTab && isCmsPhotoResumePage(activeTab.url) ? "填写并读回（教育请用下方）" : "填写并读回"));
   if (elements.fill) {
-    elements.fill.title = activeTab && isCmsPhotoResumePage(activeTab.url)
-      ? "此按钮不填写教育经历专业等字段；请用下方「填写全部选定教育并核对」。"
-      : "";
+    elements.fill.title = activeTab && isCmb(activeTab.url)
+      ? "只试填招行基本信息并读回，不点击保存、提交或投递。"
+      : (activeTab && isCmsPhotoResumePage(activeTab.url)
+        ? "此按钮不填写教育经历专业等字段；请用下方「填写全部选定教育并核对」。"
+        : "");
   }
   elements.draftButton.disabled = value || !previewQuestions.length;
   for (const choice of Object.values(cmsPhotoChoices)) {
@@ -548,6 +558,7 @@ function confirmedGthOther(profile) {
   });
 }
 
+// CMS resume match stays wecruit.hotjob.cn only. 招商银行 uses isCmb, not this function.
 function isCmsResumePage(url) {
   try {
     const address = new URL(url);
@@ -736,6 +747,94 @@ async function inspectGth(tab, profile) {
     questionsInventoried };
 }
 
+function cmbRouteMessage(reason) {
+  const copy = {
+    cmb_save_policy_violation: "招行结果报告了保存、提交或投递，已停止。请核对网页。",
+    cmb_site_isolation: "返回结果不是招行页面，已停止。",
+    cmb_basic_status_unsettled: "招行试填没有逐项确认读回，结果仍不明确。请核对网页后再决定。",
+    cmb_fill_empty_response: "招行页面没有返回填写结果。请刷新后再试。",
+    cmb_fill_partial: "招行试填有字段未读回一致。请核对网页，本次不能当作完成。",
+    profile_fields_unavailable: "姓名、手机号或邮箱尚未核对完整，本次没有开始填写。",
+    wrong_page: "我需要帮助！请打开已登录的招行简历页 https://career.cmbchina.com/center/resume"
+  };
+  return copy[reason] || "招行试填没有完成。请核对网页后再决定。";
+}
+
+async function sendCmb(type, tab, selectedOwnerToken) {
+  const files = cmbBasicInjectFiles(tab.url);
+  if (!files) throw new Error("当前不是招商银行页面。");
+  if (type === "RESUME_FILL") {
+    const origin = authorizationScope(tab.url);
+    const { resumeTrustedOrigins } = await chrome.storage.local.get("resumeTrustedOrigins");
+    const trusted = Array.isArray(resumeTrustedOrigins) ? resumeTrustedOrigins : [];
+    if (!trusted.includes(origin)) {
+      if (!window.confirm(`即将把你已核对的资料填入 ${origin} 的当前网页。请确认这是你要申请的招聘网站。不会点击保存、提交或投递。`)) {
+        throw new Error("已取消填写；此网站尚未获准使用资料。");
+      }
+      const trustedBinding = await popupFileOwner.assert(selectedOwnerToken);
+      await withProfileBinding(chrome.storage.local, trustedBinding, () => chrome.storage.local.set({
+        resumeTrustedOrigins: [...trusted, origin].slice(-100)
+      }));
+    }
+  }
+  await boundedChromeCall(() => chrome.scripting.executeScript({ target: { tabId: tab.id }, files }), SCRIPT_TIMEOUT_MS, "script");
+  const filling = type === "RESUME_FILL";
+  let operationBinding = null;
+  let profile = null;
+  let requestId = null;
+  let previousPendingReview = null;
+  if (filling) {
+    operationBinding = await popupFileOwner.assert(selectedOwnerToken);
+    profile = await loadProfile();
+    await assertProfileBinding(chrome.storage.local, operationBinding);
+    try {
+      await withProfileBinding(chrome.storage.local, operationBinding, async () => {
+        previousPendingReview = await pendingReviewFor(tab);
+        requestId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+        await beginRecentRequest(tab, requestId);
+        await chrome.storage.local.set({
+          [pendingFillReviewKey(tab.id)]: {
+            tabId: tab.id,
+            origin: authorizationScope(tab.url),
+            at: Date.now(),
+            requestId,
+            profileBinding: operationBinding
+          }
+        });
+      });
+      showRecentResult(null);
+    } catch {
+      throw new Error("本机无法记录填写状态，已停止发送填写请求。请检查扩展存储后再试。");
+    }
+    fillOutcomeUncertain = true;
+  }
+  const message = filling
+    ? { type: "CMB_BASIC_FILL", siteId: "cmb", profile, profileBinding: operationBinding }
+    : { type: "CMB_BASIC_PROBE", siteId: "cmb" };
+  const response = await boundedChromeCall(() => (
+    filling
+      ? dispatchBoundSource(chrome.storage.local, operationBinding, () => chrome.tabs.sendMessage(tab.id, message))
+      : chrome.tabs.sendMessage(tab.id, message)
+  ), filling ? FILL_TIMEOUT_MS : INSPECT_TIMEOUT_MS, filling ? "fill_response" : "inspect_response");
+  const outcome = cmbPopupOutcome(response, filling ? "fill" : "inspect");
+  if (!outcome.ok) {
+    const error = new Error(cmbRouteMessage(outcome.reason));
+    if (filling && outcome.fillNotStarted) {
+      await replacePendingReview(tab, requestId, previousPendingReview);
+      fillOutcomeUncertain = !!(await pendingReviewFor(tab));
+      error.fillNotStarted = true;
+    }
+    throw error;
+  }
+  if (filling) {
+    await replacePendingReview(tab, requestId);
+    await clearLegacyPendingReview(tab);
+    fillOutcomeUncertain = false;
+    await rememberResult(tab, requestId, "resume_fill", outcome.view.fields);
+  }
+  return { ...outcome.view, profileBinding: operationBinding };
+}
+
 async function send(type) {
   await attachmentReady;
   const tab = await getTab();
@@ -745,6 +844,7 @@ async function send(type) {
       throw new Error("国泰海通自动填写尚未完成真实验收；当前只提供逐段识别，不会发送填写请求。");
     return inspectGth(tab, await loadProfile());
   }
+  if (isCmb(tab.url)) return sendCmb(type, tab, selectedOwnerToken);
   if (type === "RESUME_FILL") {
     const origin = authorizationScope(tab.url);
     const { resumeTrustedOrigins } = await chrome.storage.local.get("resumeTrustedOrigins");
@@ -972,6 +1072,8 @@ async function render(data, filled = false) {
     setMessage(`国泰海通已查看 ${data.sectionsInspected} 个分区：盘点 ${data.questionsInventoried} 道题，匹配器识别 ${fields.length} 个控件${gap ? `，数量差 ${gap} 需人工查看未覆盖题目` : ""}。网页原值未变；自动填写尚未验收，填写按钮已禁用。`);
   }
   else if (!fields.length) setMessage("没有识别到可处理的表单字段。请确认已进入简历编辑页。", true);
+  else if (data.cmbBasic && filled) setMessage(`招行基本信息试填并读回 ${writtenAndVerified} 项，页面原有同值 ${preexistingSame} 项，失败 ${failed} 项。未点击保存、提交或投递。请核对网页后再决定。`, failed > 0);
+  else if (data.cmbBasic) setMessage(`识别到招行简历字段 ${fields.length} 项，其中 ${actionable} 项可试填。不会点击保存、提交或投递。`);
   else if (filled) setMessage(`本次新填并读回 ${writtenAndVerified} 项，页面原有同值 ${preexistingSame} 项，失败 ${failed} 项。请检查待处理项及网站保存状态，再决定是否提交。`, failed > 0);
   else setMessage(`识别到 ${fields.length} 个字段，其中 ${actionable} 项有已核对资料和明确对应。`);
 }

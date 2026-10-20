@@ -2,7 +2,7 @@
 import {captureProfileBinding,assertProfileBinding,withProfileBinding,dispatchBoundSource} from "../profile/profile-lifecycle.js";
 import {isCmb,cmbBasicInjectFiles} from "../content/cmb-profile-map.mjs";
 import {cmbPopupOutcome} from "../background/cmb-basic-auto.mjs";
-import {assessGthIntentFill, GTH_INTENT_FILL_TYPE, intentFillPayload} from "../background/gth-intent-auto.mjs";
+import {assessGthIntentFill, GTH_INTENT_FILL_TYPE, intentFillPayload, intentValueShape} from "../background/gth-intent-auto.mjs";
 import { clearAttachment, loadAttachment, saveAttachment, MAX_ATTACHMENT_BYTES } from "../import/attachment-store.js";
 import { MAX_CUSTOM_FACTS, collectScopedQuestionDrafts, loadProfile, normalizeQuestionKey, saveProfile, questionIdentity, normalizeScopedQuestion } from "../profile/store.js";
 import { beginRecentRequest, loadRecentResult, recentResultText, saveRecentResult } from "./recent-result.js";
@@ -349,18 +349,27 @@ function confirmedGthSalary(profile) {
     && (profile.confirmedFields || []).includes(`customAnswers.${question}`);
 }
 
+const GTH_INTENT_OPTIONAL = ["期望工作地区", "到岗日期"];
+
+function gthIntentFactOk(profile, question, answer) {
+  const facts = (profile.customFacts || []).filter((item) =>
+    normalizeQuestionKey(item?.question) === normalizeQuestionKey(question));
+  return facts.length === 1 && facts[0].question === question
+    && facts[0].answer === answer && facts[0].sitePageUrl === GTH_RESUME_PAGE
+    && facts[0].sectionName === GTH_INTENT_SECTION && facts[0].rowContext === "none"
+    && (profile.confirmedFields || []).includes(`customAnswers.${question}`);
+}
+
 function confirmedGthIntent(profile) {
-  return GTH_INTENT_QUESTIONS.every((question) => {
+  const required = GTH_INTENT_QUESTIONS.every((question) => {
     const answer = profile.customAnswers?.[question];
-    const facts = (profile.customFacts || []).filter((item) =>
-      normalizeQuestionKey(item?.question) === normalizeQuestionKey(question));
-    return typeof answer === "string" && !!answer && answer.length <= 80
-      && !/[\r\n\u0000-\u001f]/u.test(answer)
-      && (!["期望薪资", "现薪资"].includes(question) || /^\d{1,10}$/.test(answer))
-      && facts.length === 1 && facts[0].question === question
-      && facts[0].answer === answer && facts[0].sitePageUrl === GTH_RESUME_PAGE
-      && facts[0].sectionName === GTH_INTENT_SECTION && facts[0].rowContext === "none"
-      && (profile.confirmedFields || []).includes(`customAnswers.${question}`);
+    return intentValueShape(question, answer) && gthIntentFactOk(profile, question, answer);
+  });
+  if (!required) return false;
+  return GTH_INTENT_OPTIONAL.every((question) => {
+    const answer = profile.customAnswers?.[question];
+    if (typeof answer !== "string" || answer.trim() === "") return true;
+    return intentValueShape(question, answer) && gthIntentFactOk(profile, question, answer);
   });
 }
 
@@ -370,17 +379,15 @@ function gthIntentGapsZh(profile) {
   const unconfirmed = [];
   for (const question of GTH_INTENT_QUESTIONS) {
     const answer = profile?.customAnswers?.[question];
-    const hasAnswer = typeof answer === "string" && !!answer.trim() && answer.length <= 80
-      && !/[\r\n\u0000-\u001f]/u.test(answer)
-      && (!["期望薪资", "现薪资"].includes(question) || /^\d{1,10}$/.test(answer.trim()));
+    const hasAnswer = intentValueShape(question, typeof answer === "string" ? answer : "");
     if (!hasAnswer) { missing.push(question); continue; }
-    const facts = (profile.customFacts || []).filter((item) =>
-      normalizeQuestionKey(item?.question) === normalizeQuestionKey(question));
-    const factOk = facts.length === 1 && facts[0].question === question
-      && facts[0].answer === answer && facts[0].sitePageUrl === GTH_RESUME_PAGE
-      && facts[0].sectionName === GTH_INTENT_SECTION && facts[0].rowContext === "none";
-    const fieldConfirmed = (profile.confirmedFields || []).includes(`customAnswers.${question}`);
-    if (!factOk || !fieldConfirmed) unconfirmed.push(question);
+    if (!gthIntentFactOk(profile, question, answer)) unconfirmed.push(question);
+  }
+  for (const question of GTH_INTENT_OPTIONAL) {
+    const answer = profile?.customAnswers?.[question];
+    if (typeof answer !== "string" || answer.trim() === "") continue;
+    if (!intentValueShape(question, answer)) { missing.push(question); continue; }
+    if (!gthIntentFactOk(profile, question, answer)) unconfirmed.push(question);
   }
   const parts = [];
   if (missing.length) parts.push(`缺少已填答案：${missing.join("、")}`);
@@ -1389,6 +1396,16 @@ const gthIntentErrors = {
   intent_readback_mismatch: "期望薪资读回不一致，结果待核对。",
   intent_site_validation_failed: "期望薪资虽已显示，但网站仍提示校验错误，结果待核对。",
   control_not_supported: "没有录到编辑器控件的求职意向项已记为失败。本次不记为完成，没有点击保存或投递。",
+  picker_label_ambiguous: "求职意向里有重名的题目，未猜选，没有保存。",
+  picker_structure_changed: "求职意向的选择控件结构已变化，未填写，没有保存。",
+  picker_level1_missing: "没有找到精确的一级选项，已关闭选择框，没有保存。",
+  picker_level2_missing: "点击一级后没有出现精确的二级选项，已关闭选择框，没有保存。",
+  picker_selection_limit: "该选择已达数量上限，未改选，没有保存。",
+  picker_existing_selection_conflict: "该题已有其他选项，未取消原选项，没有保存。",
+  picker_readback_mismatch: "选择后读回不一致，已关闭选择框，没有保存。",
+  select_option_missing: "到岗日期没有对应选项，没有保存。",
+  select_option_ambiguous: "到岗日期有多个相同选项，未猜选，没有保存。",
+  select_structure_changed: "到岗日期的下拉结构已变化，未填写，没有保存。",
   existing_value: "网站的期望薪资已有不同内容，已保留原值。本次不记为完成，没有点击保存或投递。",
   missing_profile_value: "求职意向答案不完整，没有向网页发送填写。",
   profile_fact_unconfirmed: "求职意向答案尚未限定本页或未核对，没有向网页发送填写。",

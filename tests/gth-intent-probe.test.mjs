@@ -402,6 +402,73 @@ test('an already-open intent editor is censused and closed without 编辑 or 保
   assert.equal(clicks.cancel, 1);
 });
 
+test('a hidden 求职意向 编辑 link means that editor is already open', async () => {
+  const { document, clicks } = mount({ open: true });
+  const link = document.querySelector('#intent a.h-e-btn');
+  link.style.display = 'none';
+  const result = await probeIntentEditor(document);
+  assert.equal(result.ok, true);
+  assert.equal(result.reason, null);
+  assert.equal(result.editorAlreadyOpen, true);
+  assert.equal(result.supported, false);
+  assert.equal(result.liveSupportClaimed, false);
+  assert.deepEqual(result.clickedLabels, ['取消']);
+  assert.equal(clicks.edit, 0);
+  assert.equal(clicks.cancel, 1);
+  assert.equal(clicks.save, 0);
+  assert.equal(clicks.submit, 0);
+  assert.equal(clicks.deliver, 0);
+});
+
+test('hiding 编辑 while it is clicked still finds the opened editor and cancels', async () => {
+  const { document, clicks } = mount();
+  const link = document.querySelector('#intent a.h-e-btn');
+  link.addEventListener('click', () => { link.style.display = 'none'; });
+  const result = await probeIntentEditor(document);
+  assert.equal(result.ok, true);
+  assert.equal(result.editorAlreadyOpen, false);
+  assert.equal(result.editorLeftOpen, false);
+  assert.equal(result.supported, false);
+  assert.deepEqual(result.clickedLabels, ['编辑', '取消']);
+  assert.equal(clicks.edit, 1);
+  assert.equal(clicks.cancel, 1);
+  assert.equal(clicks.save, 0);
+});
+
+test('removing 编辑 while it is clicked still finds the 求职意向 editor and cancels', async () => {
+  const { document, clicks } = mount();
+  const link = document.querySelector('#intent a.h-e-btn');
+  link.addEventListener('click', () => { link.remove(); });
+  const result = await probeIntentEditor(document);
+  assert.equal(result.ok, true);
+  assert.equal(result.editorLeftOpen, false);
+  assert.deepEqual(result.clickedLabels, ['编辑', '取消']);
+  assert.equal(document.querySelector('#intent a.h-e-btn'), null);
+  assert.equal(clicks.edit, 1);
+  assert.equal(clicks.cancel, 1);
+  assert.equal(clicks.save, 0);
+  assert.equal(result.liveSupportClaimed, false);
+});
+
+test('a hidden 编辑 on 教育经历 blocks while 基本信息 with no 编辑 stays static', async () => {
+  const { document, clicks } = mount({ staticBasic: true, toggledOpen: '教育经历' });
+  const edu = [...document.querySelectorAll('.r-section')].find((section) => (section.querySelector('.title_')?.textContent || '').includes('教育经历'));
+  const edit = [...edu.querySelectorAll('a')].find((node) => (node.textContent || '').trim() === '编辑');
+  edit.style.display = 'none';
+  const result = await probeIntentEditor(document);
+  assert.equal(result.ok, false);
+  assert.equal(result.reason, 'other_editor_open');
+  assert.equal(result.detail.editorCount, 1);
+  assert.deepEqual(result.staticInlineForms, [{ section: '基本信息', labels: BASIC_LABELS }]);
+  assert.deepEqual(result.clickedLabels, []);
+  assert.equal(clicks.edit, 0);
+  assert.equal(clicks.cancel, 0);
+  assert.equal(clicks.basicCancel, 0);
+  assert.equal(clicks.save, 0);
+  assert.equal(document.querySelector('#basic-form').style.display, '');
+  assert.equal(document.querySelector('#open-form').style.display, '');
+});
+
 test('another section editor stops the probe before 求职意向 is clicked', async () => {
   const { document, clicks } = mount({ foreign: true });
   const result = await probeIntentEditor(document);
@@ -634,7 +701,7 @@ test('CDP attach does not navigate, and a save POST fails the report without its
     }],
     connectCdp: async (_wsUrl, opts) => ({
       async send(method, params) {
-        calls.push({ method, expression: params?.expression || '', targetUrl: params?.url || '' });
+        calls.push({ method, expression: params?.expression || '', targetUrl: params?.url || '', state: params?.state || '' });
         if (method === 'Network.enable') {
           opts.onEvent?.({
             method: 'Network.requestWillBeSent',
@@ -661,6 +728,10 @@ test('CDP attach does not navigate, and a save POST fails the report without its
   assert.equal(calls.some((call) => call.method === 'Page.navigate'), false);
   assert.equal(calls.some((call) => call.method === 'Target.createTarget'), false);
   assert.equal(calls.some((call) => call.expression.includes('probeIntentEditor')), true);
+  const lifecycle = calls.findIndex((call) => call.method === 'Page.setWebLifecycleState');
+  const probed = calls.findIndex((call) => call.expression.includes('probeIntentEditor'));
+  assert.ok(lifecycle >= 0 && lifecycle < probed);
+  assert.equal(calls[lifecycle].state, 'active');
   assert.equal(report.ok, false);
   assert.equal(report.reason, 'save_post_observed');
   assert.equal(report.exitCode, 3);
@@ -839,7 +910,8 @@ test('buildReport cannot be talked into a support claim', () => {
   assert.equal(report.claimedSupported, false);
   assert.equal(report.liveSupportClaimed, false);
   assert.equal(report.productSupportUnchanged, true);
-  assert.deepEqual(report.stillUnsupportedInProduct, ['期望从事职位类别', '现从事行业', '现从事职位类别', '现薪资']);
+  assert.deepEqual(report.stillUnsupportedInProduct, []);
+  assert.deepEqual(report.shippedWritable, ['期望工作地区', '期望从事职位类别', '期望薪资', '到岗日期', '现从事行业', '现从事职位类别', '现薪资']);
   assert.equal(report.evidence.find((row) => row.question === '期望从事职位类别').supportClaimed, false);
   assert.equal(report.fields[0].supportClaimed, false);
   assert.deepEqual(report.staticInlineForms, []);

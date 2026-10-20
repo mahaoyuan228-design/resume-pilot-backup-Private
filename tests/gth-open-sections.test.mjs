@@ -69,7 +69,7 @@ function boot(html) {
   const context = vm.createContext({
     chrome, document: window.document, location: window.location, performance: window.performance,
     HTMLInputElement: window.HTMLInputElement, HTMLTextAreaElement: window.HTMLTextAreaElement,
-    Event: window.Event, getComputedStyle: window.getComputedStyle.bind(window),
+    Event: window.Event, KeyboardEvent: window.KeyboardEvent, getComputedStyle: window.getComputedStyle.bind(window),
     setTimeout: window.setTimeout.bind(window), clearTimeout: window.clearTimeout.bind(window),
   });
   vm.runInContext(core, context);
@@ -131,12 +131,19 @@ function radioItem(checked = '') {
   return `<div class="el-form-item"><label class="el-form-item__label">是否统招</label><div class="el-form-item__content"><div class="el-radio-group">${box('是')}${box('否')}</div></div></div>`;
 }
 
-function unsupportedItems() {
-  return `<div class="el-form-item"><label class="el-form-item__label">在校时间</label><div class="el-form-item__content"><div class="el-date-editor"><input type="text" readonly value=""></div><div class="el-date-editor"><input type="text" readonly value=""></div></div></div>
-    <div class="el-form-item"><label class="el-form-item__label">专业类别</label><div class="el-form-item__content"><div class="input-l pointer"><input class="el-input__inner" readonly type="text" value=""></div></div></div>`;
+function unknownDateItem() {
+  return `<div class="el-form-item"><label class="el-form-item__label">在校时间</label><div class="el-form-item__content"><div class="el-date-editor"><input type="text" readonly value=""></div><div class="el-date-editor"><input type="text" readonly value=""></div></div></div>`;
 }
 
-function educationFields({ school = '', major = '', rank = '', degree = '', radio = '', activities = '', description = '', gpa = '', location = '' } = {}) {
+function stubCategoryItem() {
+  return `<div class="el-form-item"><label class="el-form-item__label">专业类别</label><div class="el-form-item__content"><div class="input-l pointer"><input class="el-input__inner" readonly type="text" value=""></div></div></div>`;
+}
+
+function unsupportedItems() {
+  return `${unknownDateItem()}${stubCategoryItem()}`;
+}
+
+function educationFields({ school = '', major = '', rank = '', degree = '', radio = '', activities = '', description = '', gpa = '', location = '', dates = '', category = '' } = {}) {
   return [
     textItem('毕业学校', { value: school, id: 'school' }),
     textItem('专业名称', { value: major, id: 'major' }),
@@ -147,7 +154,8 @@ function educationFields({ school = '', major = '', rank = '', degree = '', radi
     textItem('学校所在地', { value: location, id: 'location' }),
     degreeItem(degree),
     radioItem(radio),
-    unsupportedItems(),
+    dates || unknownDateItem(),
+    category || stubCategoryItem(),
   ].join('');
 }
 
@@ -311,7 +319,7 @@ test('education open editor writes plain fields, radio, and el-select, including
   assert.equal(result.liveSupportClaimed, false);
   assert.equal(result.fields.some((field) => field.question === '在校时间'), false);
   assert.equal(result.coverage.find((field) => field.question === '在校时间').reason, 'control_not_supported');
-  assert.equal(result.coverage.find((field) => field.question === '专业类别').reason, 'control_not_supported');
+  assert.equal(result.coverage.find((field) => field.question === '专业类别').reason, 'not_run');
   assert.equal(assessGthEducationOpenFill(result).ok, true);
   assertNeverForbidden(clicks);
 
@@ -345,11 +353,12 @@ test('education same-value select does not open, rank is not reformatted, and un
   wireDegree(dated.dom.window.document);
   wireRadio(dated.dom.window.document);
   const blocked = await dated.context.ResumeGthEducationOpen.trial(request(educationProfile({
-    ...row, startDate: '2018-09',
+    ...row, startDate: '2018-09', endDate: '2022-06',
   }), { profileIndex: 0 }));
   assert.equal(blocked.ok, false);
   assert.equal(blocked.writeStarted, false);
   assert.equal(blocked.reason, 'control_not_supported');
+  assert.equal(blocked.selectorStep, 'month_range_structure_unknown');
   assert.equal(dated.dom.window.document.getElementById('school').value, '');
   assert.equal(blocked.fields.find((field) => field.question === '在校时间').reason, 'control_not_supported');
   assert.equal(blocked.fields.find((field) => field.question === '毕业学校').reason, 'blocked_by_unsettled_field');
@@ -374,4 +383,310 @@ test('education replaceExisting rewrites text, and a title edit link or second f
   assert.equal(editResult.writeStarted, false);
   assert.equal(edit.clicks.filter((node) => node.id === 'edit').length, 0);
   assertNeverForbidden(edit.clicks);
+});
+
+const MONTH_NAMES = ['一月', '二月', '三月', '四月', '五月', '六月', '七月', '八月', '九月', '十月', '十一月', '十二月'];
+
+function monthRangeItem(start = '', end = '') {
+  const editor = (id, value) => `<div class="el-date-editor date-hl el-input el-input--prefix el-input--suffix el-date-editor--month">
+    <span class="el-input__prefix"><i class="el-input__icon el-icon-date" id="${id}-icon"></i></span>
+    <input class="el-input__inner" id="${id}" readonly type="text" value="${value}">
+  </div>`;
+  const cells = MONTH_NAMES.map((name) => `<td><div><a class="cell">${name}</a></div></td>`).join('');
+  return `<div class="el-form-item" id="dates-item"><label class="el-form-item__label">在校时间</label><div class="el-form-item__content">
+    ${editor('start-date', start)}${editor('end-date', end)}
+    <div class="el-picker-panel el-date-picker" id="month-panel" style="display:none">
+      <div class="el-date-picker__header">
+        <i class="el-icon-d-arrow-left" id="month-prev"></i>
+        <span class="el-date-picker__header-label" id="month-year">2024 年</span>
+        <i class="el-icon-d-arrow-right" id="month-next"></i>
+      </div>
+      <table class="el-month-table"><tbody><tr>${cells}</tr></tbody></table>
+    </div>
+  </div></div>`;
+}
+
+function wireMonthRange(document) {
+  const panel = document.getElementById('month-panel');
+  const year = document.getElementById('month-year');
+  let active = null;
+  const stats = { open: 0, cells: 0, years: 0 };
+  const show = (id) => {
+    active = document.getElementById(id);
+    panel.style.display = 'block';
+    stats.open += 1;
+  };
+  document.getElementById('start-date-icon').addEventListener('click', () => show('start-date'));
+  document.getElementById('end-date-icon').addEventListener('click', () => show('end-date'));
+  const shift = (delta) => {
+    const current = Number(year.textContent.match(/\d{4}/u)[0]);
+    year.textContent = `${current + delta} 年`;
+    stats.years += 1;
+  };
+  document.getElementById('month-prev').addEventListener('click', () => shift(-1));
+  document.getElementById('month-next').addEventListener('click', () => shift(1));
+  for (const cell of panel.querySelectorAll('td')) {
+    cell.addEventListener('click', () => {
+      const month = MONTH_NAMES.indexOf(cell.textContent.replace(/\s+/gu, '')) + 1;
+      const current = Number(year.textContent.match(/\d{4}/u)[0]);
+      if (active) active.value = `${current}-${String(month).padStart(2, '0')}`;
+      panel.style.display = 'none';
+      stats.cells += 1;
+    });
+  }
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') panel.style.display = 'none';
+  });
+  return stats;
+}
+
+function categoryItem({ value = '', panel = 'path', confirm = true, trigger = 'input' } = {}) {
+  const rows = panel === 'single'
+    ? '<li class="branch"><span>金融学</span></li><li class="branch"><span>法学</span></li>'
+    : '<li class="branch has-child"><span>经济学</span></li><li class="branch"><span>法学</span></li>';
+  const foot = confirm
+    ? '<a class="confirm pop-btn" id="major-confirm">确定</a><a class="cancel pop-btn" id="major-cancel">取消</a>'
+    : '<div class="pop-foot" style="display:none"><a class="confirm pop-btn" id="major-confirm">确定</a><a class="cancel pop-btn" id="major-cancel">取消</a></div>';
+  const dialog = panel === 'none' ? '' : `<div class="dialog-wrap plugin-dialog-wrap" id="major-panel" style="display:none"><div class="eo-cascader-panel" id="major-cascader"><div class="eo-cascader-menu simple-tree-outer" id="major-l1"><ul class="simple-tree-wrapper">${rows}</ul></div></div>${foot}</div>`;
+  const control = trigger === 'div'
+    ? `<div class="input-l pointer" id="major-trigger"><input class="el-input__inner" id="major-value" readonly type="text" value="${value}"></div>`
+    : `<input id="major-trigger" class="input-l pointer el-input" readonly type="text" value="${value}">`;
+  return `<div class="el-form-item" id="major-item"><label class="el-form-item__label">专业类别</label><div class="el-form-item__content">${control}${dialog}</div></div>`;
+}
+
+function wireCategory(document, { revealL2 = true, closeOnLeaf = false } = {}) {
+  const trigger = document.getElementById('major-trigger');
+  const panel = document.getElementById('major-panel');
+  const valueNode = document.getElementById('major-value') || trigger;
+  const stats = { open: 0, level1: 0, level2: 0, confirm: 0, cancel: 0 };
+  if (!trigger || !panel) return stats;
+  let pending = '';
+  trigger.addEventListener('click', () => {
+    stats.open += 1;
+    panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+  });
+  const armLeaf = (row) => {
+    row.addEventListener('click', () => {
+      stats.level2 += 1;
+      pending = row.querySelector('span')?.textContent.trim() || '';
+      if (closeOnLeaf) {
+        valueNode.value = pending;
+        panel.style.display = 'none';
+      }
+    });
+  };
+  panel.querySelector('#major-l1').addEventListener('click', (event) => {
+    const parent = event.target.closest('li.branch.has-child');
+    if (!parent || !panel.querySelector('#major-l1').contains(parent)) return;
+    stats.level1 += 1;
+    if (!revealL2 || panel.querySelector('#major-l2')) return;
+    const text = parent.querySelector(':scope > span')?.textContent.trim();
+    const menu = document.createElement('div');
+    menu.className = 'eo-cascader-menu simple-tree-outer';
+    menu.id = 'major-l2';
+    menu.innerHTML = `<ul class="simple-tree-wrapper"><li class="branch"><span>${text === '经济学' ? '金融学' : ''}</span></li></ul>`;
+    panel.querySelector('#major-cascader').appendChild(menu);
+    armLeaf(menu.querySelector('li.branch'));
+  });
+  for (const leaf of panel.querySelectorAll('#major-l1 li.branch:not(.has-child)')) armLeaf(leaf);
+  panel.querySelector('#major-confirm')?.addEventListener('click', () => {
+    stats.confirm += 1;
+    if (pending) valueNode.value = pending;
+    panel.style.display = 'none';
+  });
+  panel.querySelector('#major-cancel')?.addEventListener('click', () => {
+    stats.cancel += 1;
+    panel.querySelector('#major-l2')?.remove();
+    panel.style.display = 'none';
+  });
+  return stats;
+}
+
+function assertNeverSave(clicks) {
+  const bad = clicks.filter((node) => {
+    const text = String(node.textContent || '').replace(/[\s\u00a0]+/gu, ' ').trim();
+    if (node.closest?.('.plugin-dialog-wrap, .el-picker-panel')) return false;
+    if (node.matches?.('a.eduexp-opt-icon, .el-icon-delete') || node.closest?.('a.eduexp-opt-icon, .el-icon-delete')) return true;
+    if (node.matches?.('button') || node.closest?.('button')) return true;
+    return ['保存', '提交', '投递', '删除', '取消', '编辑'].includes(text);
+  });
+  assert.equal(bad.length, 0);
+}
+
+test('在校时间 fills the live dual month editors and 专业类别 confirms an exact path', async () => {
+  const row = {
+    school: '示例大学', major: '计算机', degree: '本科', unifiedAdmissions: '是',
+    startDate: '2025-03', endDate: '2026-07', majorCategory: '经济学||金融学',
+  };
+  const html = shell('教育经历', formWrap(educationFields({ dates: monthRangeItem(), category: categoryItem() })));
+  const { dom, clicks, context } = boot(html);
+  const doc = dom.window.document;
+  wireDegree(doc);
+  wireRadio(doc);
+  const months = wireMonthRange(doc);
+  const picker = wireCategory(doc);
+  const events = [];
+  for (const id of ['start-date', 'end-date', 'major-trigger']) {
+    const node = doc.getElementById(id);
+    node.addEventListener('input', () => events.push(`${id}:input`));
+    node.addEventListener('change', () => events.push(`${id}:change`));
+  }
+  const result = await context.ResumeGthEducationOpen.trial(request(educationProfile(row), { profileIndex: 0 }));
+  assert.equal(result.ok, true);
+  assert.equal(result.liveSupportClaimed, false);
+  assert.equal(result.complete, false);
+  assert.equal(doc.getElementById('start-date').value, '2025-03');
+  assert.equal(doc.getElementById('end-date').value, '2026-07');
+  assert.equal(doc.getElementById('major-trigger').value, '金融学');
+  assert.equal(doc.getElementById('school').value, '示例大学');
+  assert.equal(result.fields.find((field) => field.question === '在校时间').reason, 'readback_matched');
+  assert.equal(result.fields.find((field) => field.question === '专业类别').reason, 'readback_matched');
+  assert.equal(result.fields.find((field) => field.question === '专业类别').supported, true);
+  assert.equal(months.open, 2);
+  assert.equal(months.cells, 2);
+  assert.equal(picker.confirm, 1);
+  assert.equal(picker.cancel, 0);
+  assert.deepEqual(events, ['start-date:input', 'start-date:change', 'end-date:input', 'end-date:change', 'major-trigger:input', 'major-trigger:change']);
+  assert.equal(assessGthEducationOpenFill(result).ok, true);
+  assertNeverSave(clicks);
+  assert.equal(clicks.filter((node) => node.id === 'editor-save' || node.id === 'editor-delete').length, 0);
+});
+
+test('在校时间 and 专业类别 keep a matching value without opening', async () => {
+  const row = {
+    school: '示例大学', major: '计算机', degree: '本科', unifiedAdmissions: '是',
+    startDate: '2025-03', endDate: '2026-07', majorCategory: '经济学||金融学',
+  };
+  const html = shell('教育经历', formWrap(educationFields({
+    school: '示例大学', major: '计算机', degree: '本科', radio: '是',
+    dates: monthRangeItem('2025-03', '2026-07'),
+    category: categoryItem({ value: '金融学' }),
+  })));
+  const same = boot(html);
+  wireDegree(same.dom.window.document);
+  wireRadio(same.dom.window.document);
+  const months = wireMonthRange(same.dom.window.document);
+  const picker = wireCategory(same.dom.window.document);
+  const result = await same.context.ResumeGthEducationOpen.trial(request(educationProfile(row), { profileIndex: 0 }));
+  assert.equal(result.ok, true);
+  assert.equal(result.writeStarted, false);
+  assert.equal(result.liveSupportClaimed, false);
+  assert.equal(months.open, 0);
+  assert.equal(picker.open, 0);
+  assert.equal(result.fields.find((field) => field.question === '在校时间').reason, 'preexisting_same_value');
+  assert.equal(result.fields.find((field) => field.question === '专业类别').reason, 'preexisting_same_value');
+  assert.equal(same.dom.window.document.getElementById('editor-save').textContent, '保存');
+  assertNeverSave(same.clicks);
+});
+
+test('在校时间 and 专业类别 stay control_not_supported when the opened structure is not the live one', async () => {
+  const dated = boot(shell('教育经历', formWrap(educationFields({
+    dates: monthRangeItem().replace('el-picker-panel el-date-picker', 'el-dialog'),
+  }))));
+  wireDegree(dated.dom.window.document);
+  wireRadio(dated.dom.window.document);
+  wireMonthRange(dated.dom.window.document);
+  const monthBlocked = await dated.context.ResumeGthEducationOpen.trial(request(educationProfile({
+    school: '示例大学', major: '计算机', degree: '本科', unifiedAdmissions: '是',
+    startDate: '2025-03', endDate: '2026-07',
+  }), { profileIndex: 0 }));
+  assert.equal(monthBlocked.ok, false);
+  assert.equal(monthBlocked.reason, 'control_not_supported');
+  assert.equal(monthBlocked.selectorStep, 'month_panel_structure_unknown');
+  assert.equal(monthBlocked.writeStarted, false);
+  assert.equal(dated.dom.window.document.getElementById('school').value, '');
+  assert.equal(dated.dom.window.document.getElementById('start-date').value, '');
+  assertNeverSave(dated.clicks);
+
+  const plain = boot(shell('教育经历', formWrap(educationFields({
+    category: '<div class="el-form-item"><label class="el-form-item__label">专业类别</label><div class="el-form-item__content"><input id="major-trigger" type="text" value=""></div></div>',
+  }))));
+  wireDegree(plain.dom.window.document);
+  wireRadio(plain.dom.window.document);
+  const categoryBlocked = await plain.context.ResumeGthEducationOpen.trial(request(educationProfile({
+    school: '示例大学', major: '计算机', degree: '本科', unifiedAdmissions: '是', majorCategory: '金融学',
+  }), { profileIndex: 0 }));
+  assert.equal(categoryBlocked.ok, false);
+  assert.equal(categoryBlocked.writeStarted, false);
+  assert.equal(categoryBlocked.reason, 'control_not_supported');
+  assert.equal(categoryBlocked.selectorStep, 'picker_trigger_structure_unknown');
+  assert.equal(plain.dom.window.document.getElementById('school').value, '');
+  assert.equal(plain.dom.window.document.getElementById('major-trigger').value, '');
+  assertNeverForbidden(plain.clicks);
+});
+
+test('专业类别 single-select level-2 closes without 确定, and a missing level cancels', async () => {
+  const row = {
+    school: '示例大学', major: '计算机', degree: '本科', unifiedAdmissions: '是',
+    majorCategory: '经济学||金融学',
+  };
+  const html = shell('教育经历', formWrap(educationFields({ category: categoryItem({ confirm: false }) })));
+  const { dom, clicks, context } = boot(html);
+  wireDegree(dom.window.document);
+  wireRadio(dom.window.document);
+  const picker = wireCategory(dom.window.document, { closeOnLeaf: true });
+  const result = await context.ResumeGthEducationOpen.trial(request(educationProfile(row), { profileIndex: 0 }));
+  assert.equal(result.ok, true);
+  assert.equal(dom.window.document.getElementById('major-trigger').value, '金融学');
+  assert.equal(picker.confirm, 0);
+  assert.equal(picker.level1, 1);
+  assert.equal(result.fields.find((field) => field.question === '专业类别').reason, 'readback_matched');
+  assertNeverSave(clicks);
+
+  const missing = boot(shell('教育经历', formWrap(educationFields({ category: categoryItem() }))));
+  wireDegree(missing.dom.window.document);
+  wireRadio(missing.dom.window.document);
+  const failed = wireCategory(missing.dom.window.document, { revealL2: false });
+  const blocked = await missing.context.ResumeGthEducationOpen.trial(request(educationProfile(row), { profileIndex: 0 }));
+  assert.equal(blocked.ok, false);
+  assert.equal(blocked.writeStarted, false);
+  assert.equal(blocked.fields.find((field) => field.question === '专业类别').reason, 'picker_level2_menu_missing');
+  assert.equal(failed.cancel, 1);
+  assert.equal(missing.dom.window.document.getElementById('major-panel').style.display, 'none');
+  assert.equal(missing.dom.window.document.getElementById('school').value, '');
+  assert.equal(missing.clicks.filter((node) => node.id === 'editor-cancel' || node.id === 'editor-save').length, 0);
+  assertNeverSave(missing.clicks);
+});
+
+test('专业类别 replaceExisting rewrites the leaf and a single-level leaf uses 确定', async () => {
+  const replaced = boot(shell('教育经历', formWrap(educationFields({
+    school: '示例大学', major: '计算机', degree: '本科', radio: '是',
+    category: categoryItem({ value: '法学' }),
+  }))));
+  wireDegree(replaced.dom.window.document);
+  wireRadio(replaced.dom.window.document);
+  wireCategory(replaced.dom.window.document);
+  const result = await replaced.context.ResumeGthEducationOpen.trial(request(educationProfile({
+    school: '示例大学', major: '计算机', degree: '本科', unifiedAdmissions: '是', majorCategory: '经济学||金融学',
+  }), { profileIndex: 0, replaceExisting: true }));
+  assert.equal(replaced.dom.window.document.getElementById('major-trigger').value, '金融学');
+  assert.equal(result.fields.find((field) => field.question === '专业类别').reason, 'readback_reapplied');
+  assert.equal(result.ok, true);
+  assertNeverSave(replaced.clicks);
+
+  const single = boot(shell('教育经历', formWrap(educationFields({ category: categoryItem({ panel: 'single' }) }))));
+  wireDegree(single.dom.window.document);
+  wireRadio(single.dom.window.document);
+  const stats = wireCategory(single.dom.window.document);
+  const picked = await single.context.ResumeGthEducationOpen.trial(request(educationProfile({
+    school: '示例大学', major: '计算机', degree: '本科', unifiedAdmissions: '是', majorCategory: '金融学',
+  }), { profileIndex: 0 }));
+  assert.equal(single.dom.window.document.getElementById('major-trigger').value, '金融学');
+  assert.equal(stats.confirm, 1);
+  assert.equal(stats.level1, 0);
+  assert.equal(picked.fields.find((field) => field.question === '专业类别').reason, 'readback_matched');
+  assert.equal(picked.liveSupportClaimed, false);
+  assertNeverSave(single.clicks);
+
+  const wrapped = boot(shell('教育经历', formWrap(educationFields({ category: categoryItem({ panel: 'single', trigger: 'div' }) }))));
+  wireDegree(wrapped.dom.window.document);
+  wireRadio(wrapped.dom.window.document);
+  wireCategory(wrapped.dom.window.document);
+  const divPicked = await wrapped.context.ResumeGthEducationOpen.trial(request(educationProfile({
+    school: '示例大学', major: '计算机', degree: '本科', unifiedAdmissions: '是', majorCategory: '法学',
+  }), { profileIndex: 0 }));
+  assert.equal(wrapped.dom.window.document.getElementById('major-value').value, '法学');
+  assert.equal(divPicked.fields.find((field) => field.question === '专业类别').reason, 'readback_matched');
+  assert.equal(divPicked.liveSupportClaimed, false);
+  assertNeverSave(wrapped.clicks);
 });

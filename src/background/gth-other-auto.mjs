@@ -1,8 +1,10 @@
 // GTH 其他信息 auto (mirror GTH_SIMPLE_AUTO). Default: readiness.
 // Fill-without-save optional. Never clicks Save/Cancel/submit. Fields: 描述/标题.
+// Fill ok is true only after a settled readback. A Save/submit/delete or
+// savedOnSite/submitted claim is kept and fails closed.
 import {captureProfileBinding,assertProfileBinding,canonicalProfileHash,
   dispatchBoundSource,withProfileBinding} from '../profile/profile-lifecycle.js';
-import {evaluateGthSavePolicy,assertAutoNeverAttemptedSave} from './gth-save-policy.mjs';
+import {evaluateGthSavePolicy,assertAutoNeverAttemptedSave,gthAutoSiteClaims,gthAutoSiteClaimed} from './gth-save-policy.mjs';
 
 const PAGE='https://hr.gtht.com/resume/edit/',ORIGIN='https://hr.gtht.com';
 const SECTION='其他信息';
@@ -179,8 +181,11 @@ export function createGthOtherAutoRunner({api=globalThis.chrome,verifyBeforeFill
     const response=rows?.length===1&&rows[0].frameId===0?rows[0].result:null;
     if(!response||typeof response!=='object')fail('gth_other_fill_no_response');
     const fields=Array.isArray(response.fields)?response.fields:[];
-    const ok=response.ok===true&&response.sectionName===SECTION&&response.editorLeftOpen===true
-      &&response.softwareClickedSave===false&&response.softwareClickedSubmit===false
+    const claims=gthAutoSiteClaims(response);
+    const claimed=gthAutoSiteClaimed(claims);
+    const ok=!claimed&&response.ok===true&&response.sectionName===SECTION&&response.editorLeftOpen===true
+      &&response.softwareClickedSave===false&&response.softwareClickedSubmit===false&&response.softwareClickedDelete!==true
+      &&response.savedOnSite!==true&&response.submitted!==true
       &&fields.length===2
       &&QUESTIONS.every((question,index)=>fields[index]?.question===question)
       &&(response.writeStarted===true
@@ -189,16 +194,15 @@ export function createGthOtherAutoRunner({api=globalThis.chrome,verifyBeforeFill
           ||field.status==='skipped'&&field.reason==='existing_value'));
     const job={
       state:ok?'completed':'unknown',
-      reason:ok?null:safe(response.reason||'gth_other_fill_invalid'),
+      reason:claimed?'gth_other_save_policy_violated':(ok?null:safe(response.reason||'gth_other_fill_invalid')),
       outcome:ok?(response.writeStarted?'verified':'verified_or_skipped_preexisting'):'unknown',
       section:SECTION,
       fields,
       writeStarted:response.writeStarted===true,
       editorLeftOpen:response.editorLeftOpen===true,
-      softwareClickedSave:false,
-      softwareClickedSubmit:false
+      ...claims
     };
-    return {job,responseSummary:{ok,writeStarted:job.writeStarted,reason:job.reason,fieldCount:fields.length},outcome:job.outcome};
+    return {job,responseSummary:{ok,writeStarted:job.writeStarted,reason:job.reason,fieldCount:fields.length,...claims},outcome:job.outcome};
   }
 
   async function auto(message,sender=null){
@@ -251,8 +255,15 @@ export function createGthOtherAutoRunner({api=globalThis.chrome,verifyBeforeFill
     report.job=filled.job;
     report.fill=filled.responseSummary;
     report.saveAllowedByPolicy=evaluateGthSavePolicy({fromAutoPath:true}).saveAllowedByPolicy;
-    assertAutoNeverAttemptedSave(report);
-    report.ok=true;
+    const claims=gthAutoSiteClaims(filled.job);
+    Object.assign(report,claims);
+    const settled=filled.job?.state==='completed'&&filled.responseSummary?.ok===true&&!gthAutoSiteClaimed(claims);
+    report.ok=settled;
+    if(!report.ok)report.reason=filled.job?.reason||filled.responseSummary?.reason||'gth_other_fill_failed';
+    try{assertAutoNeverAttemptedSave(report);}catch(error){
+      report.ok=false;
+      report.reason=report.reason||safe(error);
+    }
     await api.storage.local.set({resumeGthOtherAutoRun:report});
     return report;
   }

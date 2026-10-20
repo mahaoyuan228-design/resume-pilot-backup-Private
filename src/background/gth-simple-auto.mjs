@@ -1,8 +1,10 @@
 // GTH 职业技能与特长 auto (mirror GTH_BASIC_AUTO). Default: readiness.
 // Fill-without-save optional. Never clicks Save/Cancel/submit.
+// Fill ok is true only after a settled readback. A Save/submit/delete or
+// savedOnSite/submitted claim is kept and fails closed.
 import {captureProfileBinding,assertProfileBinding,canonicalProfileHash,
   dispatchBoundSource,withProfileBinding} from '../profile/profile-lifecycle.js';
-import {evaluateGthSavePolicy,assertAutoNeverAttemptedSave} from './gth-save-policy.mjs';
+import {evaluateGthSavePolicy,assertAutoNeverAttemptedSave,gthAutoSiteClaims,gthAutoSiteClaimed} from './gth-save-policy.mjs';
 
 const PAGE='https://hr.gtht.com/resume/edit/',ORIGIN='https://hr.gtht.com';
 const SECTION='职业技能与特长';
@@ -171,14 +173,17 @@ export function createGthSimpleAutoRunner({api=globalThis.chrome,verifyBeforeFil
     const response=rows?.length===1&&rows[0].frameId===0?rows[0].result:null;
     if(!response||typeof response!=='object')fail('gth_simple_fill_no_response');
     const field=Array.isArray(response.fields)&&response.fields.length===1?response.fields[0]:null;
-    const ok=response.ok===true&&response.sectionName===SECTION&&response.editorLeftOpen===true
-      &&response.softwareClickedSave===false&&response.softwareClickedSubmit===false
+    const claims=gthAutoSiteClaims(response);
+    const claimed=gthAutoSiteClaimed(claims);
+    const ok=!claimed&&response.ok===true&&response.sectionName===SECTION&&response.editorLeftOpen===true
+      &&response.softwareClickedSave===false&&response.softwareClickedSubmit===false&&response.softwareClickedDelete!==true
+      &&response.savedOnSite!==true&&response.submitted!==true
       &&field&&field.question===SECTION
       &&(field.status==='verified'&&['preexisting_same_value','readback_matched'].includes(field.reason)
         ||field.status==='skipped'&&field.reason==='existing_value');
     const job={
-      state:ok?(response.writeStarted?'completed':'completed'):'unknown',
-      reason:ok?null:safe(response.reason||'gth_simple_fill_invalid'),
+      state:ok?'completed':'unknown',
+      reason:claimed?'gth_simple_save_policy_violated':(ok?null:safe(response.reason||'gth_simple_fill_invalid')),
       outcome:ok?(field.reason==='readback_matched'?'verified'
         :field.reason==='preexisting_same_value'?'verified_preexisting'
         :field.reason==='existing_value'?'skipped_existing':'unknown'):'unknown',
@@ -186,10 +191,9 @@ export function createGthSimpleAutoRunner({api=globalThis.chrome,verifyBeforeFil
       fields:response.fields||[],
       writeStarted:response.writeStarted===true,
       editorLeftOpen:response.editorLeftOpen===true,
-      softwareClickedSave:false,
-      softwareClickedSubmit:false
+      ...claims
     };
-    return {job,responseSummary:{ok,writeStarted:job.writeStarted,reason:job.reason,field},outcome:job.outcome};
+    return {job,responseSummary:{ok,writeStarted:job.writeStarted,reason:job.reason,field,...claims},outcome:job.outcome};
   }
 
   async function auto(message,sender=null){
@@ -242,8 +246,15 @@ export function createGthSimpleAutoRunner({api=globalThis.chrome,verifyBeforeFil
     report.job=filled.job;
     report.fill=filled.responseSummary;
     report.saveAllowedByPolicy=evaluateGthSavePolicy({fromAutoPath:true}).saveAllowedByPolicy;
-    assertAutoNeverAttemptedSave(report);
-    report.ok=true;
+    const claims=gthAutoSiteClaims(filled.job);
+    Object.assign(report,claims);
+    const settled=filled.job?.state==='completed'&&filled.responseSummary?.ok===true&&!gthAutoSiteClaimed(claims);
+    report.ok=settled;
+    if(!report.ok)report.reason=filled.job?.reason||filled.responseSummary?.reason||'gth_simple_fill_failed';
+    try{assertAutoNeverAttemptedSave(report);}catch(error){
+      report.ok=false;
+      report.reason=report.reason||safe(error);
+    }
     await api.storage.local.set({resumeGthSimpleAutoRun:report});
     return report;
   }

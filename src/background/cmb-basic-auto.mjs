@@ -2,6 +2,8 @@
 // Fill-without-save only. Never clicks 保存/提交/投递. Isolated siteId: cmb.
 // Trial Edge injects per tab via scripting; host match is manifest host_permissions.
 // Missing that match fails closed before any tab or script work. 招行 is not supported.
+// A Save/submit/delete or saved/submitted claim is kept and fails closed. ok requires
+// siteId cmb plus a non-empty result list whose rows are all ok.
 import {captureProfileBinding,assertProfileBinding,canonicalProfileHash,
   dispatchBoundSource} from '../profile/profile-lifecycle.js';
 import {planCmbBasicFromProfile,isCmbHost,isCmbResumeEditPath} from '../content/cmb-profile-map.mjs';
@@ -238,16 +240,33 @@ export function createCmbBasicAutoRunner({ api = globalThis.chrome, verifyBefore
     await assertProfileBinding(api.storage.local, binding, lifecycleOptions);
     const report = replies?.[0]?.result;
     if (!report || typeof report !== 'object') fail('cmb_fill_empty_response');
-    if (report.siteId && report.siteId !== SITE_ID) fail('cmb_site_isolation');
-    if (report.saved === true || report.skippedSave !== true || report.softwareClickedSave === true) fail('cmb_save_policy_violation');
+    const claims = {
+      softwareClickedSave: report.softwareClickedSave === true,
+      softwareClickedSubmit: report.softwareClickedSubmit === true,
+      softwareClickedDelete: report.softwareClickedDelete === true,
+      savedOnSite: report.savedOnSite === true,
+      submitted: report.submitted === true,
+      saved: report.saved === true
+    };
+    const claimed = claims.softwareClickedSave || claims.softwareClickedSubmit || claims.softwareClickedDelete
+      || claims.savedOnSite || claims.submitted || claims.saved || report.skippedSave !== true;
+    const results = Array.isArray(report.results) ? report.results : [];
+    const rowsVerified = report.ok === true && results.length > 0 && results.every((row) => row && row.ok === true);
+    const isolated = report.siteId === SITE_ID;
+    const reason = claimed
+      ? 'cmb_save_policy_violation'
+      : !isolated
+        ? 'cmb_site_isolation'
+        : !rowsVerified
+          ? (report.ok === true ? 'cmb_basic_status_unsettled' : (report.reason || 'cmb_fill_partial'))
+          : null;
     return {
-      state: report.ok === true ? 'completed' : 'failed',
-      reason: report.ok === true ? null : (report.reason || 'cmb_fill_partial'),
+      state: reason ? 'failed' : 'completed',
+      reason,
       writeStarted: report.writeAttempted === true,
-      softwareClickedSave: false,
-      softwareClickedSubmit: false,
-      saved: false,
-      results: Array.isArray(report.results) ? report.results : [],
+      ...claims,
+      skippedSave: report.skippedSave === true && !claimed,
+      results,
       profileSource: report.profileSource || 'resumeProfile',
       href: report.href || tab.url || null
     };
@@ -312,13 +331,28 @@ export function createCmbBasicAutoRunner({ api = globalThis.chrome, verifyBefore
     const filled = await runFill(found.tab, readiness);
     report.writeAttempted = filled.writeStarted === true;
     report.steps.push({ fill: filled.state, reason: filled.reason });
+    report.softwareClickedSave = filled.softwareClickedSave === true;
+    report.softwareClickedSubmit = filled.softwareClickedSubmit === true;
+    report.softwareClickedDelete = filled.softwareClickedDelete === true;
+    report.savedOnSite = filled.savedOnSite === true;
+    report.submitted = filled.submitted === true;
+    report.saved = filled.saved === true;
+    report.skippedSave = filled.skippedSave === true;
     report.job = filled;
     report.fill = {
       ok: filled.state === 'completed',
       fieldCount: filled.results.length,
-      matched: filled.results.filter((row) => row.ok).length
+      matched: filled.results.filter((row) => row && row.ok).length
     };
-    report.ok = filled.state === 'completed';
+    report.ok = filled.state === 'completed'
+      && report.fill.ok === true
+      && !report.softwareClickedSave
+      && !report.softwareClickedSubmit
+      && !report.softwareClickedDelete
+      && !report.savedOnSite
+      && !report.submitted
+      && !report.saved;
+    report.liveSupportClaimed = false;
     if (!report.ok) report.reason = filled.reason || 'cmb_fill_failed';
     await api.storage.local.set({ resumeCmbBasicAutoRun: report });
     return report;

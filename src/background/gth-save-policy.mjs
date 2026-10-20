@@ -161,3 +161,22 @@ export function assertAutoNeverAttemptedSave(report) {
   if (report.saveAllowedByPolicy === true) throw Error('gth_auto_save_policy_true_forbidden_while_deferred');
   return report;
 }
+
+/** Page-reported Save/submit/delete or saved/submitted state. True only; false and null are not claims. */
+export function gthAutoSiteClaims(source) {
+  const body = source && typeof source === 'object' ? source : {};
+  const nested = body.data && typeof body.data === 'object' && !Array.isArray(body.data) ? body.data : {};
+  const pick = (key) => body[key] === true || nested[key] === true;
+  return {
+    softwareClickedSave: pick('softwareClickedSave'),
+    softwareClickedSubmit: pick('softwareClickedSubmit'),
+    softwareClickedDelete: pick('softwareClickedDelete'),
+    savedOnSite: pick('savedOnSite'),
+    submitted: pick('submitted')
+  };
+}
+
+export function gthAutoSiteClaimed(flags) {
+  return flags?.softwareClickedSave === true || flags?.softwareClickedSubmit === true
+    || flags?.softwareClickedDelete === true || flags?.savedOnSite === true || flags?.submitted === true;
+}

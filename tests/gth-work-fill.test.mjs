@@ -163,6 +163,7 @@ const ROW = {
 
 function wireMonthRange(document) {
   const panel = document.getElementById('month-panel');
+  document.body.appendChild(panel);
   const year = document.getElementById('month-year');
   let active = null;
   const stats = { open: 0, cells: 0 };
@@ -478,29 +479,30 @@ test('dispatch injects the work scripts and sends GTH_WORK_FILL', async () => {
   assert.equal(sent[1].profileIndex, 0);
 });
 
-const RACE_ANIM = ['el-zoom-in-top-enter', 'el-zoom-in-top-enter-active'];
+const RACE_ANIM = ['el-zoom-in-top-enter', 'el-zoom-in-top-enter-active', 'el-zoom-in-top-enter-to'];
 
 function raceMonthItem() {
   const cells = MONTH_NAMES.map((name) => `<td><div><a class="cell">${name}</a></div></td>`).join('');
   const editor = (id) => `<div class="el-date-editor date-hl el-input el-input--prefix el-input--suffix el-date-editor--month" id="${id}-editor">
     <span class="el-input__prefix"><i class="el-input__icon el-icon-date" id="${id}-icon"></i></span>
     <input class="el-input__inner" id="${id}" readonly type="text" value="">
-    <div class="el-picker-panel el-date-picker el-popper" id="${id}-panel" style="display:none">
+  </div>`;
+  const panel = (id) => `<div class="el-picker-panel el-date-picker el-popper" id="${id}-panel" style="display:none">
       <div class="el-date-picker__header">
         <i class="el-icon-d-arrow-left"></i>
         <span class="el-date-picker__header-label">2026 年</span>
         <i class="el-icon-d-arrow-right"></i>
       </div>
       <table class="el-month-table"><tbody><tr>${cells}</tr></tbody></table>
-    </div>
-  </div>`;
-  return `<div class="el-form-item" id="dates-item"><label class="el-form-item__label">任职时间</label><div class="el-form-item__content">${editor('start-date')}${editor('end-date')}</div></div>`;
+    </div>`;
+  return `<div class="el-form-item" id="dates-item"><label class="el-form-item__label">任职时间</label><div class="el-form-item__content">${editor('start-date')}${editor('end-date')}</div></div>${panel('start-date')}${panel('end-date')}`;
 }
 
 function wireRaceMonth(document, options = {}) {
   const stats = { open: 0, earlyClicks: 0, drift: 0, commits: 0, dualClicks: 0, escapes: 0 };
   const editors = Object.fromEntries(['start-date', 'end-date'].map((id) => {
     const panel = document.getElementById(`${id}-panel`);
+    document.body.appendChild(panel);
     return [id, {
       input: document.getElementById(id),
       panel,
@@ -542,8 +544,13 @@ function wireRaceMonth(document, options = {}) {
     stats.open += 1;
     const view = document.defaultView;
     view.setTimeout(() => { own.panel.style.visibility = 'visible'; }, 80);
+    // Live keeps el-zoom-in-top-enter-to after enter-active drops. A click in that
+    // window must not count as a commit.
     view.setTimeout(() => {
-      for (const name of RACE_ANIM) own.panel.classList.remove(name);
+      own.panel.classList.remove('el-zoom-in-top-enter', 'el-zoom-in-top-enter-active');
+    }, 160);
+    view.setTimeout(() => {
+      own.panel.classList.remove('el-zoom-in-top-enter-to');
       own.ready = true;
     }, 280);
   };
@@ -559,7 +566,7 @@ function wireRaceMonth(document, options = {}) {
   });
   for (const editor of Object.values(editors)) {
     const shift = (delta) => {
-      const early = !editor.ready || editor.panel.classList.contains('el-zoom-in-top-enter-active');
+      const early = !editor.ready || RACE_ANIM.some((name) => editor.panel.classList.contains(name));
       let step = delta;
       if (early || options.decade) {
         step = delta < 0 ? -10 : 10;
@@ -574,7 +581,7 @@ function wireRaceMonth(document, options = {}) {
     editor.panel.querySelector('.el-icon-d-arrow-right').addEventListener('click', () => shift(1));
     for (const cell of editor.panel.querySelectorAll('td')) {
       cell.querySelector('a.cell').addEventListener('click', () => {
-        const early = !editor.ready || editor.panel.classList.contains('el-zoom-in-top-enter-active');
+        const early = !editor.ready || RACE_ANIM.some((name) => editor.panel.classList.contains(name));
         if (early) {
           stats.earlyClicks += 1;
           return;
@@ -629,6 +636,10 @@ test('任职时间 waits out enter animation and reads back both months', async 
     assert.equal(months.dualClicks, 0);
     assert.equal(months.commits, 2);
     assert.ok(months.escapes >= 2);
+    assert.equal(doc.getElementById('start-date-panel').parentElement, doc.body);
+    assert.equal(doc.getElementById('end-date-panel').parentElement, doc.body);
+    assert.equal(doc.getElementById('start-date-panel').closest('.el-date-editor'), null);
+    assert.equal(doc.getElementById('end-date-panel').closest('.el-date-editor'), null);
     assert.equal(doc.getElementById('start-date-panel').style.display, 'none');
     assert.equal(doc.getElementById('end-date-panel').style.display, 'none');
     assert.equal(doc.getElementById('salary').value, '');

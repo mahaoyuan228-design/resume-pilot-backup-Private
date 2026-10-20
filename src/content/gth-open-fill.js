@@ -509,18 +509,20 @@
       return { status: 'verified', reason: existing ? 'readback_reapplied' : 'readback_matched' };
     }
     const MONTH_NAMES = ['一月', '二月', '三月', '四月', '五月', '六月', '七月', '八月', '九月', '十月', '十一月', '十二月'];
-    // Live work 任职时间 shares this writer with education 在校时间. The end editor
-    // can open while el-zoom-in-top-enter-active still makes shown() flicker, and a
-    // leftover start panel then leaves two .el-picker-panel nodes. A month click in
-    // that window does not commit the end input (readback stays "YYYY-MM | ").
+    // Live work 任职时间 shares this writer with education 在校时间. Element-UI
+    // teleports .el-picker-panel.el-popper onto document.body, so the panel is not a
+    // child of the .el-date-editor that opened it. Bind the panel that this click
+    // makes pending or shown. A leftover sibling panel, or a click while
+    // el-zoom-in-top-enter* is still applied, does not commit the end input.
     function monthPanelNodes() {
       return [...document.querySelectorAll('.el-picker-panel')].filter(node => node.isConnected);
     }
     function monthPanelAnimating(node) {
-      return !!node?.classList?.contains('el-zoom-in-top-enter')
-        || !!node?.classList?.contains('el-zoom-in-top-enter-active')
-        || !!node?.classList?.contains('el-zoom-in-top-leave')
-        || !!node?.classList?.contains('el-zoom-in-top-leave-active');
+      if (!node?.classList) return false;
+      for (const name of node.classList) {
+        if (name.startsWith('el-zoom-in-top-enter') || name.startsWith('el-zoom-in-top-leave')) return true;
+      }
+      return false;
     }
     function monthPanelPending(node) {
       return !!node?.isConnected && (shown(node) || monthPanelAnimating(node));
@@ -531,12 +533,34 @@
     function openMonthPanels() {
       return monthPanelNodes().filter(monthPanelPending);
     }
-    function editorOfMonth(trigger, input) {
-      return trigger?.closest?.('.el-date-editor') || input?.closest?.('.el-date-editor') || null;
+    function monthPanelSnapshot() {
+      return monthPanelNodes().map(panel => ({
+        panel,
+        pending: monthPanelPending(panel),
+        shown: shown(panel),
+      }));
     }
-    function panelsOwnedBy(editor) {
-      if (!editor) return [];
-      return monthPanelNodes().filter(panel => panel.closest('.el-date-editor') === editor);
+    // The panel this open click revealed. Fail closed when none or more than one
+    // unrelated panel is pending — do not use DOM parent under .el-date-editor.
+    function panelOpenedByClick(before) {
+      const pending = openMonthPanels();
+      if (pending.length > 1) return { bad: 'dual' };
+      const prior = new Map(before.map(row => [row.panel, row]));
+      const opened = monthPanelNodes().filter(panel => {
+        const was = prior.get(panel);
+        const nowShown = shown(panel);
+        const becamePending = monthPanelPending(panel) && !was?.pending;
+        const becameShown = nowShown && !was?.shown;
+        const popperShown = panel.classList.contains('el-popper') && nowShown && !was?.shown;
+        return becamePending || becameShown || popperShown;
+      });
+      if (pending.some(panel => !opened.includes(panel))) return { bad: 'dual' };
+      if (opened.length > 1) return { bad: 'dual' };
+      if (opened.length !== 1) return null;
+      const panel = opened[0];
+      if (pending.length === 1 && pending[0] !== panel) return { bad: 'dual' };
+      if (!monthPanelReady(panel)) return null;
+      return { panel };
     }
     async function dismissMonthInput(input) {
       try {
@@ -572,10 +596,9 @@
       if (cell.classList.contains('disabled')) return true;
       return [...cell.querySelectorAll('a')].some(node => node.classList.contains('disabled'));
     }
-    function monthClickTarget(cell) {
-      const anchors = [...cell.querySelectorAll('a.cell')].filter(shown);
-      if (anchors.length > 1) return null;
-      return anchors[0] || cell;
+    function monthClickTarget(cell, panel) {
+      const anchors = [...cell.querySelectorAll('a.cell')].filter(node => panel.contains(node) && shown(node));
+      return anchors.length === 1 ? anchors[0] : null;
     }
     async function fillOneMonth(item, input, trigger, answer, markWrite, guard, peers = []) {
       const company = [input, ...peers].filter(Boolean);
@@ -585,19 +608,9 @@
       const drifted = () => peers.some((peer, index) => norm(peer.value) !== peerBefore[index]);
       step('month_open');
       guard();
-      const editor = editorOfMonth(trigger, input);
-      const owned = panelsOwnedBy(editor);
+      const beforeOpen = monthPanelSnapshot();
       await guardedClick(trigger, boundAction);
-      const opened = await waitUntil(() => {
-        const pending = openMonthPanels();
-        if (owned.length > 1 || pending.length > 1) return { bad: 'dual' };
-        const foreign = pending.filter(panel => owned.length === 1 && panel !== owned[0]);
-        if (foreign.length) return { bad: 'dual' };
-        const panel = owned.length === 1 ? owned[0] : pending[0];
-        if (!panel || !monthPanelReady(panel)) return null;
-        if (owned.length !== 1 && pending[0] !== panel) return { bad: 'dual' };
-        return { panel };
-      }, 1600);
+      const opened = await waitUntil(() => panelOpenedByClick(beforeOpen), 1600);
       if (!opened || opened.bad) {
         step('month_panel_structure_unknown');
         await settleMonthPanels(company);
@@ -651,8 +664,8 @@
           return text === MONTH_NAMES[month - 1] || text === `${month}月`;
         });
         if (cells.length !== 12 || choices.length !== 1 || monthCellDisabled(choices[0])) await failStructure();
-        const clickTarget = monthClickTarget(choices[0]);
-        if (!clickTarget || !panel.contains(clickTarget)) await failStructure();
+        const clickTarget = monthClickTarget(choices[0], panel);
+        if (!clickTarget || !panel.contains(clickTarget) || clickTarget.tagName !== 'A') await failStructure();
         step('month_option');
         guard();
         markWrite();

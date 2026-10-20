@@ -408,6 +408,7 @@ function monthRangeItem(start = '', end = '') {
 
 function wireMonthRange(document) {
   const panel = document.getElementById('month-panel');
+  document.body.appendChild(panel);
   const year = document.getElementById('month-year');
   let active = null;
   const stats = { open: 0, cells: 0, years: 0 };
@@ -544,6 +545,8 @@ test('在校时间 fills the live dual month editors and 专业类别 confirms a
   assert.equal(result.fields.find((field) => field.question === '专业类别').supported, true);
   assert.equal(months.open, 2);
   assert.equal(months.cells, 2);
+  assert.equal(doc.getElementById('month-panel').parentElement, doc.body);
+  assert.equal(doc.getElementById('month-panel').closest('.el-date-editor'), null);
   assert.equal(picker.confirm, 1);
   assert.equal(picker.cancel, 0);
   assert.deepEqual(events, ['start-date:input', 'start-date:change', 'end-date:input', 'end-date:change', 'major-trigger:input', 'major-trigger:change']);

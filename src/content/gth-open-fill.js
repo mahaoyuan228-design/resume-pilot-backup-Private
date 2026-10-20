@@ -510,21 +510,18 @@
     }
     const MONTH_NAMES = ['一月', '二月', '三月', '四月', '五月', '六月', '七月', '八月', '九月', '十月', '十一月', '十二月'];
     // Live work 任职时间 shares this writer with education 在校时间. Element-UI
-    // teleports .el-picker-panel.el-popper onto document.body, so the panel is not a
-    // child of the .el-date-editor that opened it. Bind the panel that this click
-    // makes pending or shown — never via closest(.el-date-editor).
-    // Education 在校时间 reuses one panel node for both editors. One quiet node
-    // may stay between those opens. Work 任职时间 uses two editors and two panel
-    // nodes. After the start month, one display:none husk stays on body. Opening
-    // the end editor beside that husk does not commit, and removing the husk
-    // after that open is too late: the end a.cell still leaves the input empty.
-    // Trigger count cannot tell these apart (both forms have two icons). A second
-    // distinct panel node means dual editors: dismiss that open, detach every
-    // quiet husk, and open again only when monthPanelNodes() is the new pending
-    // panel. If a husk is still connected at a.cell, or the click leaves the
-    // input empty, fail closed. A click while el-zoom-in-top-enter* is applied
-    // does not commit either. Start-then-end still commits once the end panel
-    // is opened with zero quiet husks, so the dual-editor order stays start first.
+    // teleports .el-picker-panel onto document.body, so the panel is not a child
+    // of the .el-date-editor that opened it. Bind the panel that this click makes
+    // pending or shown — never via closest(.el-date-editor).
+    // After the start month commits, one display:none husk stays on body. Opening
+    // the end editor beside that husk does not commit, and discarding the open
+    // afterwards is too late: the end a.cell still leaves the input empty (and a
+    // reopen can still see the husk). Detach every quiet husk after start settles
+    // and before the first end-editor click. Then bind only the panel that click
+    // shows. Education reuses one panel; a fresh end open may show that node again.
+    // If a quiet husk is still connected after the purge, or the end a.cell leaves
+    // the input empty, fail closed. A click while el-zoom-in-top-enter* is applied
+    // does not commit. Start-then-end stays the order.
     function monthPanelNodes() {
       return [...document.querySelectorAll('.el-picker-panel')].filter(node => node.isConnected);
     }
@@ -606,6 +603,9 @@
         if (node.parentNode) node.parentNode.removeChild(node);
       }
     }
+    function quietMonthHusks() {
+      return monthPanelNodes().filter(node => !monthPanelPending(node));
+    }
     async function closeMonthPanel(input) {
       await dismissMonthInput(input);
     }
@@ -619,7 +619,7 @@
       for (let attempt = 0; attempt < 4; attempt += 1) {
         if (openMonthPanels().length === 0 && monthPanelNodes().length === 0) return;
         await dismissMonthSurfaces(inputs);
-        const quiet = monthPanelNodes().filter(node => !monthPanelPending(node));
+        const quiet = quietMonthHusks();
         if (openMonthPanels().length === 0 && (purgeQuiet ? quiet.length > 0 : quiet.length > 1)) detachQuietMonthHusks(null);
         await pause(0);
         if (openMonthPanels().length === 0 && monthPanelNodes().length === 0) return;
@@ -783,13 +783,36 @@
         throw error;
       }
     }
+    // Start has committed. Drop every quiet picker husk before the end editor's
+    // first open click. A husk that is still connected after that purge means the
+    // end panel would open beside it, so fail closed and do not click end.
+    async function purgeQuietMonthHusksBeforeEnd(inputs, session) {
+      await settleMonthPanels(inputs, session);
+      if (openMonthPanels().length) {
+        step('month_panel_structure_unknown');
+        stop('control_not_supported');
+      }
+      if (!quietMonthHusks().length) return;
+      detachQuietMonthHusks(null);
+      await pause(0);
+      if (quietMonthHusks().length || openMonthPanels().length) {
+        detachQuietMonthHusks(null);
+        await pause(0);
+      }
+      if (quietMonthHusks().length || openMonthPanels().length) {
+        step('month_panel_structure_unknown');
+        await dismissMonthSurfaces(inputs);
+        stop('control_not_supported');
+      }
+    }
     async function fillMonthRange(target, fact, markWrite, guard) {
       const before = target.inputs.map(node => norm(node.value));
       const session = monthPanelSession();
+      const inputs = [target.inputs[0], target.inputs[1]];
       await fillOneMonth(target.item, target.inputs[0], target.triggers[0], fact.start, markWrite, guard, [target.inputs[1]], session);
       if (norm(target.inputs[0].value) !== fact.start || norm(target.inputs[1].value) !== before[1])
         stop('readback_mismatch');
-      if (session.distinctPanels) await settleMonthPanels([target.inputs[0], target.inputs[1]], session);
+      await purgeQuietMonthHusksBeforeEnd(inputs, session);
       await fillOneMonth(target.item, target.inputs[1], target.triggers[1], fact.end, markWrite, guard, [target.inputs[0]], session);
       const read = `${norm(target.inputs[0].value)} | ${norm(target.inputs[1].value)}`;
       if (read !== `${fact.start} | ${fact.end}`) stop('readback_mismatch');

@@ -1,16 +1,19 @@
 #!/usr/bin/env node
 // Offline paid-package smoke (no real payment, no Edge, no site claim).
 // Mirrors build-paid.ps1, then imports the OUTPUT guard-worker and seed module.
-// Fails if the seed path is missing from the paid pack list, or if guard-worker
-// still top-level await-imports ./paid-config.mjs.
+// Fails if the seed path is missing from the paid pack list, if guard-worker
+// still top-level await-imports ./paid-config.mjs, or if the packed tree lacks
+// tip CMS 学历 / region fail-closed / CMS auto inject files.
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import {
   CMS_BASIC_SEED,
+  CMS_TIP_SOURCE_FILES,
   GUARD_WORKER,
   PAID_CONFIG,
   assertBuiltPaidExtension,
+  assertPackedBytesMatchSource,
   assertSeedOnPaidPackList,
   assertSourcePaidConfigFailClosed,
   assertStaticPaidConfigImport,
@@ -103,6 +106,7 @@ export const paidConfig = {
   if (fs.readFileSync(path.join(repoRoot, PAID_CONFIG), 'utf8') !== sourcePaidConfig) {
     throw new Error('smoke mutated the source paid-config placeholder');
   }
+  assertPackedBytesMatchSource(repoRoot, extensionRoot, CMS_TIP_SOURCE_FILES);
 
   const packedFiles = [...productFiles, ...licenseFiles, PAID_CONFIG];
   const evaluated = await assertBuiltPaidExtension(extensionRoot, packedFiles);
@@ -118,6 +122,7 @@ export const paidConfig = {
     topLevelAwaitPaidConfig: false,
     sourcePaidConfigFailClosed: true,
     packImportsResolved: true,
+    cmsTipBytesMatchSource: true,
     serviceWorker: paidManifest.background.service_worker,
     popupHasActivate: fs.readFileSync(path.join(extensionRoot, 'src/popup/popup.html'), 'utf8').includes('license/activate.html'),
     licenseServiceUrl: url,

@@ -1,11 +1,13 @@
 /**
  * Fresh paid-pack rebuild must include the CMS basic seed, a static paid-config
- * import, tip CMS 学历 / region fail-closed / CMS auto inject files, and tip GTH
- * basic fail-closed coverage. These checks fail closed when the seed drops off
- * the paid list, when guard-worker goes back to a top-level await
- * import("./paid-config.mjs"), when the packed tree is still an Oct-18-era CMS
- * copy, or when packed GTH basic still records unsupported 现居住地/照片/参加工作时间
- * as skipped and can store that fill as completed. The smoke imports the built output.
+ * import, tip CMS 学历 / region fail-closed / CMS auto inject files, tip GTH
+ * basic fail-closed coverage, and tip CMB basic fail-closed coverage. These
+ * checks fail closed when the seed drops off the paid list, when guard-worker
+ * goes back to a top-level await import("./paid-config.mjs"), when the packed
+ * tree is still an Oct-18-era CMS copy, when packed GTH basic still records
+ * unsupported 现居住地/照片/参加工作时间 as skipped and can store that fill as
+ * completed, or when packed CMB basic still treats an unsettled requested field
+ * as skipped or leaves fillAllowed true. The smoke imports the built output.
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -15,6 +17,10 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { runPaidSmoke } from '../scripts/build-paid-smoke.mjs';
 import {
+  CMB_REQUIRED_INJECT,
+  CMB_RUNNER_FILES,
+  CMB_TIP_MARKERS,
+  CMB_TIP_SOURCE_FILES,
   CMS_BASIC_SEED,
   CMS_REQUIRED_INJECT,
   CMS_RUNNER_FILES,
@@ -26,9 +32,11 @@ import {
   GTH_TIP_SOURCE_FILES,
   PAID_CONFIG,
   assertCmsTipMarkers,
+  assertCmbTipMarkers,
   assertGthTipMarkers,
   assertPackedBytesMatchSource,
   assertPackedCmsTip,
+  assertPackedCmbTip,
   assertPackedGthTip,
   assertPackImportsResolve,
   assertSeedOnPaidPackList,
@@ -144,6 +152,10 @@ test('fresh paid smoke output registers the service worker and resolves the seed
     assert.equal(checks.gthFailClosedPacked, true);
     assert.equal(checks.gthInjectedFilesPacked, true);
     assert.equal(checks.gthInjectedCount > GTH_REQUIRED_INJECT.length, true);
+    assert.equal(checks.cmbTipBytesMatchSource, true);
+    assert.equal(checks.cmbFailClosedPacked, true);
+    assert.equal(checks.cmbInjectedFilesPacked, true);
+    assert.equal(checks.cmbInjectedCount > CMB_REQUIRED_INJECT.length, true);
     assert.equal(checks.injectedCount > CMS_REQUIRED_INJECT.length, true);
     const paidBuild = fs.readFileSync(path.join(root, 'scripts/build-paid.ps1'), 'utf8');
     const packedList = [
@@ -153,6 +165,7 @@ test('fresh paid smoke output registers the service worker and resolves the seed
     ];
     assertPackedCmsTip(path.join(checks.buildRoot, 'extension'), packedList);
     assertPackedGthTip(path.join(checks.buildRoot, 'extension'), packedList);
+    assertPackedCmbTip(path.join(checks.buildRoot, 'extension'), packedList);
     assert.equal(checks.serviceWorker, 'src/license/guard-worker.mjs');
     assert.equal(checks.licenseServiceUrl, 'https://127.0.0.1:8787');
     assert.equal(fs.existsSync(path.join(checks.buildRoot, 'extension', CMS_BASIC_SEED)), true);
@@ -177,6 +190,14 @@ test('fresh paid smoke output registers the service worker and resolves the seed
     const packedAuto = fs.readFileSync(path.join(checks.buildRoot, 'extension/src/background/gth-basic-auto.mjs'), 'utf8');
     assert.match(packedAuto, /if\(gthRequestedFillBlocksComplete\(coveragePlan\)\)\{/);
     assert.doesNotMatch(packedGth, /已支持/);
+    const packedCmb = fs.readFileSync(path.join(checks.buildRoot, 'extension/src/content/cmb-basic.js'), 'utf8');
+    assert.match(packedCmb, /REQUESTED_FILL_FAIL_CLOSED/);
+    assert.match(packedCmb, /const ok = !failed;/);
+    const packedCmbAuto = fs.readFileSync(path.join(checks.buildRoot, 'extension/src/background/cmb-basic-auto.mjs'), 'utf8');
+    assert.match(packedCmbAuto, /requestedFillBlocked: cmbRequestedFillBlockers\(plan\)\.length > 0/);
+    assert.match(packedCmbAuto, /fillAllowed: plan\.ok === true && cmbRequestedFillBlockers\(plan\)\.length === 0/);
+    assert.doesNotMatch(packedCmb, /已支持/);
+    assert.doesNotMatch(packedCmbAuto, /已支持/);
   } finally {
     fs.rmSync(destRoot, { recursive: true, force: true });
   }
@@ -218,6 +239,21 @@ test('build-paid.ps1 lists the same GTH tip files and needles', () => {
   assert.doesNotMatch(script, /已支持/);
 });
 
+test('build-paid.ps1 lists the same CMB tip files and needles', () => {
+  const script = fs.readFileSync(path.join(root, 'scripts/build-paid.ps1'), 'utf8');
+  assert.deepEqual(parsePsStringArray(script, 'cmbTipFiles'), CMB_TIP_SOURCE_FILES);
+  assert.deepEqual(parsePsStringArray(script, 'cmbRunnerFiles'), CMB_RUNNER_FILES);
+  assert.deepEqual(parsePsStringArray(script, 'cmbRequiredInject'), CMB_REQUIRED_INJECT);
+  for (const item of CMB_TIP_MARKERS) {
+    for (const needle of item.needles) {
+      assert.equal(script.includes(needle), true, `build-paid.ps1 missing needle ${needle}`);
+    }
+  }
+  assert.match(script, /付费包缺少 tip CMB/);
+  assert.match(script, /付费包 CMB 注入文件未纳入清单/);
+  assert.doesNotMatch(script, /已支持/);
+});
+
 test('repo tree satisfies the CMS tip pack gate', () => {
   const script = fs.readFileSync(path.join(root, 'scripts/build-paid.ps1'), 'utf8');
   const packed = [
@@ -243,6 +279,19 @@ test('repo tree satisfies the GTH tip pack gate', () => {
   assert.equal(result.gthFailClosedPacked, true);
   assert.equal(result.gthInjectedFilesPacked, true);
   assert.equal(result.gthInjectedCount > GTH_REQUIRED_INJECT.length, true);
+});
+
+test('repo tree satisfies the CMB tip pack gate', () => {
+  const script = fs.readFileSync(path.join(root, 'scripts/build-paid.ps1'), 'utf8');
+  const packed = [
+    ...parsePsStringArray(script, 'productFiles'),
+    ...parsePsStringArray(script, 'licenseFiles'),
+    PAID_CONFIG,
+  ];
+  const result = assertPackedCmbTip(root, packed);
+  assert.equal(result.cmbFailClosedPacked, true);
+  assert.equal(result.cmbInjectedFilesPacked, true);
+  assert.equal(result.cmbInjectedCount > CMB_REQUIRED_INJECT.length, true);
 });
 
 test('rebuild fails when packed GTH basic still records unsupported rows as skipped', () => {
@@ -361,6 +410,87 @@ test('rebuild fails when gth-basic.js is off the packed list or its bytes drift'
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'paid-gth-bytes-'));
   try {
     const rel = 'src/content/gth-basic.js';
+    fs.mkdirSync(path.join(dir, 'src/content'), { recursive: true });
+    fs.writeFileSync(path.join(dir, rel), `${readTip(rel)}\n`);
+    assert.throws(() => assertPackedBytesMatchSource(root, dir, [rel]), /differs from tip source/);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('rebuild fails when unsettled CMB requested fields stay omitted or skipped', () => {
+  const skippedOk = readTip('src/content/cmb-basic.js').replace(
+    'const ok = !failed;',
+    'const ok = results.every((row) => row.ok);',
+  );
+  assert.throws(
+    () => assertCmbTipMarkers((rel) => (rel === 'src/content/cmb-basic.js' ? skippedOk : readTip(rel))),
+    /cmb-requested-failed: src\/content\/cmb-basic\.js missing const ok = !failed/,
+  );
+  const omitted = readTip('src/content/cmb-basic.js').replace(
+    'const blocked = (plan?.blockers || []).filter((row) => REQUESTED_FILL_FAIL_CLOSED.has(row?.reason));',
+    'const blocked = [];',
+  );
+  assert.throws(
+    () => assertCmbTipMarkers((rel) => (rel === 'src/content/cmb-basic.js' ? omitted : readTip(rel))),
+    /cmb-requested-failed: src\/content\/cmb-basic\.js missing const blocked/,
+  );
+  const skippedSuccess = readTip('src/content/cmb-profile-map.mjs').replace(
+    'It is not a skipped success.',
+    'It is a skipped success.',
+  );
+  assert.throws(
+    () => assertCmbTipMarkers((rel) => (rel === 'src/content/cmb-profile-map.mjs' ? skippedSuccess : readTip(rel))),
+    /cmb-requested-failed: src\/content\/cmb-profile-map\.mjs missing It is not a skipped success/,
+  );
+});
+
+test('rebuild fails when CMB fillAllowed stays true for an unsettled requested field', () => {
+  const allowed = readTip('src/background/cmb-basic-auto.mjs').replace(
+    'fillAllowed: plan.ok === true && cmbRequestedFillBlockers(plan).length === 0,',
+    'fillAllowed: true,',
+  );
+  assert.throws(
+    () => assertCmbTipMarkers((rel) => (rel === 'src/background/cmb-basic-auto.mjs' ? allowed : readTip(rel))),
+    /cmb-fill-not-allowed: src\/background\/cmb-basic-auto\.mjs missing fillAllowed/,
+  );
+  const unsealed = readTip('src/background/cmb-basic-auto.mjs').replace(
+    'const report = sealCmbRequestedFill(rawReport, plan);',
+    'const report = rawReport;',
+  );
+  assert.throws(
+    () => assertCmbTipMarkers((rel) => (rel === 'src/background/cmb-basic-auto.mjs' ? unsealed : readTip(rel))),
+    /cmb-fill-not-allowed: src\/background\/cmb-basic-auto\.mjs missing const report = sealCmbRequestedFill/,
+  );
+  const passed = readTip('src/auto/cmb-basic-auto.js').replace(
+    "result?.ok && result.readiness?.profilePlan?.requestedFillBlocked === true && autoMode !== 'fill'",
+    'false',
+  );
+  assert.throws(
+    () => assertCmbTipMarkers((rel) => (rel === 'src/auto/cmb-basic-auto.js' ? passed : readTip(rel))),
+    /cmb-fill-not-allowed: src\/auto\/cmb-basic-auto\.js missing result\?\.ok/,
+  );
+  const oldPopup = readTip('src/popup/popup.js').replace(
+    'datepicker_hint_only: "出生日期只能提示，没有写入。请核对网页后再决定。"',
+    'datepicker_hint_only: "出生日期已跳过。"',
+  );
+  assert.throws(
+    () => assertCmbTipMarkers((rel) => (rel === 'src/popup/popup.js' ? oldPopup : readTip(rel))),
+    /cmb-fill-not-allowed: src\/popup\/popup\.js missing datepicker_hint_only/,
+  );
+});
+
+test('rebuild fails when cmb-basic.js is off the packed list or its bytes drift', () => {
+  const script = fs.readFileSync(path.join(root, 'scripts/build-paid.ps1'), 'utf8');
+  const packed = [
+    ...parsePsStringArray(script, 'productFiles'),
+    ...parsePsStringArray(script, 'licenseFiles'),
+    PAID_CONFIG,
+  ].filter((rel) => rel !== 'src/content/cmb-basic.js');
+  assert.throws(() => assertPackedCmbTip(root, packed), /src\/content\/cmb-basic\.js not on paid pack list/);
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'paid-cmb-bytes-'));
+  try {
+    const rel = 'src/content/cmb-basic.js';
     fs.mkdirSync(path.join(dir, 'src/content'), { recursive: true });
     fs.writeFileSync(path.join(dir, rel), `${readTip(rel)}\n`);
     assert.throws(() => assertPackedBytesMatchSource(root, dir, [rel]), /differs from tip source/);

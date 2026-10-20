@@ -12,7 +12,8 @@
 # It also fails unless the packed tree matches tip CMS 学历 duplicate_target content,
 # region fail-closed markers, and CMS auto inject files. It fails when packed GTH
 # basic still treats unsupported or unsettled 现居住地/照片/参加工作时间 as a completed
-# skip. Never Save. No live-site claim.
+# skip. It fails when packed CMB basic still treats an unsettled requested field
+# as skipped or leaves fillAllowed true. Never Save. No live-site claim.
 # Node proof without Edge: node scripts/build-paid-smoke.mjs
 # Optional Ed25519 public key embed (documentation / real operator key — NEVER private key):
 #   -PublicKeyPemPath 'tests/fixtures/license/EXAMPLE_ed25519_public.pem'   # EXAMPLE only
@@ -528,6 +529,77 @@ foreach ($local in $gthRequiredInject) {
   if (-not $seenGthInject.Contains($local)) { throw "付费包 GTH 注入文件未纳入清单：自动注入集合缺少 $local" }
 }
 
+# CMB basic fail-closed gate. A requested field that is ambiguous, unsupported,
+# or unsettled stays failed (requestedFillBlocked, fillAllowed false). executeScript
+# of cmb-basic.js is a string, so the import walk above does not see it.
+$cmbTipFiles = @(
+  'src/content/cmb-basic.js',
+  'src/content/cmb-profile-map.mjs',
+  'src/background/cmb-basic-auto.mjs',
+  'src/auto/cmb-basic-auto.js',
+  'src/popup/popup.js'
+)
+$cmbRunnerFiles = @(
+  'src/background/cmb-basic-auto.mjs'
+)
+$cmbRequiredInject = @(
+  'src/content/cmb-basic.js'
+)
+foreach ($relative in $cmbTipFiles) {
+  $source = Join-Path $repoRoot ($relative -replace '/', '\')
+  $target = Join-Path $extensionRoot ($relative -replace '/', '\')
+  if (-not (Test-Path -LiteralPath $target -PathType Leaf)) { throw "付费包缺少 tip CMB 文件：$relative" }
+  $sourceHash = (Get-FileHash -LiteralPath $source -Algorithm SHA256).Hash
+  $targetHash = (Get-FileHash -LiteralPath $target -Algorithm SHA256).Hash
+  if ($sourceHash -ne $targetHash) { throw "付费包与 tip 源码不一致：$relative。不要热补 dist，包括 20261018 旧包。" }
+  $text = [IO.File]::ReadAllText($target)
+  if ($text -match 'softwareClickedSave\s*=\s*true') { throw "付费包试图 Save：$relative。Never Save。" }
+}
+Require-PackedNeedle 'src/content/cmb-basic.js' 'const REQUESTED_FILL_FAIL_CLOSED = new Set([' 'CMB'
+Require-PackedNeedle 'src/content/cmb-basic.js' "'item_ambiguous'" 'CMB'
+Require-PackedNeedle 'src/content/cmb-basic.js' "'radio_readback_ambiguous'" 'CMB'
+Require-PackedNeedle 'src/content/cmb-basic.js' "'select_readback_ambiguous'" 'CMB'
+Require-PackedNeedle 'src/content/cmb-basic.js' "'datepicker_hint_only'" 'CMB'
+Require-PackedNeedle 'src/content/cmb-basic.js' "'profile_fact_unconfirmed'" 'CMB'
+Require-PackedNeedle 'src/content/cmb-basic.js' "'invalid_profile_value'" 'CMB'
+Require-PackedNeedle 'src/content/cmb-basic.js' 'They stay failed rows. They are not omitted from a successful fill.' 'CMB'
+Require-PackedNeedle 'src/content/cmb-basic.js' 'const blocked = (plan?.blockers || []).filter((row) => REQUESTED_FILL_FAIL_CLOSED.has(row?.reason));' 'CMB'
+Require-PackedNeedle 'src/content/cmb-basic.js' 'const ok = !failed;' 'CMB'
+Require-PackedNeedle 'src/content/cmb-profile-map.mjs' 'export const CMB_REQUESTED_FILL_FAIL_CLOSED_REASONS' 'CMB'
+Require-PackedNeedle 'src/content/cmb-profile-map.mjs' 'export function cmbRequestedFillBlockers' 'CMB'
+Require-PackedNeedle 'src/content/cmb-profile-map.mjs' 'It is not a skipped success.' 'CMB'
+Require-PackedNeedle 'src/background/cmb-basic-auto.mjs' 'requestedFillBlocked: cmbRequestedFillBlockers(plan).length > 0,' 'CMB'
+Require-PackedNeedle 'src/background/cmb-basic-auto.mjs' 'fillAllowed: plan.ok === true && cmbRequestedFillBlockers(plan).length === 0,' 'CMB'
+Require-PackedNeedle 'src/background/cmb-basic-auto.mjs' 'export function sealCmbRequestedFill' 'CMB'
+Require-PackedNeedle 'src/background/cmb-basic-auto.mjs' 'const report = sealCmbRequestedFill(rawReport, plan);' 'CMB'
+Require-PackedNeedle 'src/background/cmb-basic-auto.mjs' 'A requested ambiguous, unsupported, or unsettled field is failed, not skipped.' 'CMB'
+Require-PackedNeedle 'src/background/cmb-basic-auto.mjs' 'if (CMB_REQUESTED_FILL_FAIL_CLOSED_REASONS.includes(reason)) return false;' 'CMB'
+Require-PackedNeedle 'src/background/cmb-basic-auto.mjs' "'src/content/cmb-basic.js'" 'CMB'
+Require-PackedNeedle 'src/auto/cmb-basic-auto.js' "result?.ok && result.readiness?.profilePlan?.requestedFillBlocked === true && autoMode !== 'fill'" 'CMB'
+Require-PackedNeedle 'src/auto/cmb-basic-auto.js' '请求的字段里有不明确或不能填写的项，没有当作通过。' 'CMB'
+Require-PackedNeedle 'src/popup/popup.js' 'datepicker_hint_only: "出生日期只能提示，没有写入。请核对网页后再决定。"' 'CMB'
+Require-PackedNeedle 'src/popup/popup.js' 'profile_fact_unconfirmed: "有资料尚未核对，本次不能当作完成。"' 'CMB'
+Require-PackedNeedle 'src/popup/popup.js' 'invalid_profile_value: "有资料对不上网页选项，本次不能当作完成。"' 'CMB'
+Require-PackedNeedle 'src/popup/popup.js' 'item_ambiguous: "有字段对应到多处，没有猜选。请核对网页后再决定。"' 'CMB'
+Require-PackedNeedle 'src/popup/popup.js' 'radio_readback_ambiguous: "有选项读回不唯一，没有猜选。请核对网页后再决定。"' 'CMB'
+Require-PackedNeedle 'src/popup/popup.js' 'select_readback_ambiguous: "有下拉读回不唯一，没有猜选。请核对网页后再决定。"' 'CMB'
+$seenCmbInject = New-Object 'System.Collections.Generic.HashSet[string]'
+foreach ($relative in $cmbRunnerFiles) {
+  $runnerPath = Join-Path $extensionRoot ($relative -replace '/', '\')
+  $runnerText = [IO.File]::ReadAllText($runnerPath)
+  $found = @([regex]::Matches($runnerText, "'(src/[^']+\.(?:js|mjs|html))'") | ForEach-Object { $_.Groups[1].Value })
+  if ($found.Count -eq 0) { throw "付费包 CMB 注入文件未纳入清单：$relative 没有注入路径" }
+  foreach ($local in $found) {
+    [void]$seenCmbInject.Add($local)
+    if (-not $packed.Contains($local)) { throw "付费包 CMB 注入文件未纳入清单：$relative -> $local" }
+    $out = Join-Path $extensionRoot ($local -replace '/', '\')
+    if (-not (Test-Path -LiteralPath $out -PathType Leaf)) { throw "付费包 CMB 注入文件未纳入清单：$relative -> $local 不在输出树" }
+  }
+}
+foreach ($local in $cmbRequiredInject) {
+  if (-not $seenCmbInject.Contains($local)) { throw "付费包 CMB 注入文件未纳入清单：自动注入集合缺少 $local" }
+}
+
 $readme = @"
 # Paid flavor package (candidate)
 
@@ -544,6 +616,7 @@ $readme = @"
 - src/profile/cms-basic-seed-from-education.mjs is on the product list and is copied. cms-basic-auto imports it.
 - Packed CMS tip files match this checkout (学历 generated-id suffix, region fail-closed, CMS auto inject list). A 20261018 tree fails this gate.
 - Packed GTH basic files match this checkout. Unsupported or unsettled 现居住地/照片/参加工作时间 are failed, and that fill is not stored as completed. A tree that still marks those rows skipped fails this gate.
+- Packed CMB basic files match this checkout. An unsettled requested field stays failed, with requestedFillBlocked and fillAllowed false. A tree that still skips those fields or sets fillAllowed true fails this gate.
 - Source src/license/paid-config.mjs stays the fail-closed internal placeholder. This folder's copy is generated.
 - Never Save. This package does not claim a live recruiting site is supported.
 - Node proof without launching Edge: node scripts/build-paid-smoke.mjs

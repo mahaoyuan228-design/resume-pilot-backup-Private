@@ -5,7 +5,10 @@
 // The packed tree must also carry tip CMS 学历 duplicate_target ids, region fail-closed
 // markers, and the CMS auto inject files. It must carry tip GTH basic fail-closed
 // coverage: unsupported or unsettled 现居住地/照片/参加工作时间 are failed, and a
-// requested fill is not stored as completed. This gate does not claim a live site is supported.
+// requested fill is not stored as completed. It must carry tip CMB basic fail-closed
+// coverage: a requested field that is ambiguous, unsupported, or unsettled stays
+// failed, with requestedFillBlocked and fillAllowed false. This gate does not claim
+// a live site is supported.
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -222,6 +225,89 @@ export const GTH_TIP_MARKERS = [
 
 const GTH_NEVER_SAVE_FILES = new Set(GTH_TIP_SOURCE_FILES);
 
+// Byte-compared into the paid output. Pre-PR#25 CMB basic omitted unsettled
+// requested fields so the other rows could complete, and readiness had no
+// fillAllowed false. Those rows are failed, and fill stays blocked.
+export const CMB_TIP_SOURCE_FILES = [
+  'src/content/cmb-basic.js',
+  'src/content/cmb-profile-map.mjs',
+  'src/background/cmb-basic-auto.mjs',
+  'src/auto/cmb-basic-auto.js',
+  'src/popup/popup.js',
+];
+
+export const CMB_RUNNER_FILES = [
+  'src/background/cmb-basic-auto.mjs',
+];
+
+// executeScript path named as a string. Import walk does not see it.
+export const CMB_REQUIRED_INJECT = [
+  'src/content/cmb-basic.js',
+];
+
+export const CMB_TIP_MARKERS = [
+  {
+    rel: 'src/content/cmb-basic.js',
+    group: 'cmb-requested-failed',
+    needles: [
+      'const REQUESTED_FILL_FAIL_CLOSED = new Set([',
+      "'item_ambiguous'",
+      "'radio_readback_ambiguous'",
+      "'select_readback_ambiguous'",
+      "'datepicker_hint_only'",
+      "'profile_fact_unconfirmed'",
+      "'invalid_profile_value'",
+      'They stay failed rows. They are not omitted from a successful fill.',
+      'const blocked = (plan?.blockers || []).filter((row) => REQUESTED_FILL_FAIL_CLOSED.has(row?.reason));',
+      'const ok = !failed;',
+    ],
+  },
+  {
+    rel: 'src/content/cmb-profile-map.mjs',
+    group: 'cmb-requested-failed',
+    needles: [
+      'export const CMB_REQUESTED_FILL_FAIL_CLOSED_REASONS',
+      'export function cmbRequestedFillBlockers',
+      'It is not a skipped success.',
+    ],
+  },
+  {
+    rel: 'src/background/cmb-basic-auto.mjs',
+    group: 'cmb-fill-not-allowed',
+    needles: [
+      'requestedFillBlocked: cmbRequestedFillBlockers(plan).length > 0,',
+      'fillAllowed: plan.ok === true && cmbRequestedFillBlockers(plan).length === 0,',
+      'export function sealCmbRequestedFill',
+      'const report = sealCmbRequestedFill(rawReport, plan);',
+      'A requested ambiguous, unsupported, or unsettled field is failed, not skipped.',
+      'if (CMB_REQUESTED_FILL_FAIL_CLOSED_REASONS.includes(reason)) return false;',
+      "'src/content/cmb-basic.js'",
+    ],
+  },
+  {
+    rel: 'src/auto/cmb-basic-auto.js',
+    group: 'cmb-fill-not-allowed',
+    needles: [
+      "result?.ok && result.readiness?.profilePlan?.requestedFillBlocked === true && autoMode !== 'fill'",
+      '请求的字段里有不明确或不能填写的项，没有当作通过。',
+    ],
+  },
+  {
+    rel: 'src/popup/popup.js',
+    group: 'cmb-fill-not-allowed',
+    needles: [
+      'datepicker_hint_only: "出生日期只能提示，没有写入。请核对网页后再决定。"',
+      'profile_fact_unconfirmed: "有资料尚未核对，本次不能当作完成。"',
+      'invalid_profile_value: "有资料对不上网页选项，本次不能当作完成。"',
+      'item_ambiguous: "有字段对应到多处，没有猜选。请核对网页后再决定。"',
+      'radio_readback_ambiguous: "有选项读回不唯一，没有猜选。请核对网页后再决定。"',
+      'select_readback_ambiguous: "有下拉读回不唯一，没有猜选。请核对网页后再决定。"',
+    ],
+  },
+];
+
+const CMB_NEVER_SAVE_FILES = new Set(CMB_TIP_SOURCE_FILES);
+
 const AWAIT_PAID_CONFIG = /await\s+import\s*\(\s*['"]\.\/paid-config\.mjs['"]\s*\)/;
 const STATIC_PAID_CONFIG = /import\s+\{\s*paidConfig\s+as\s+paidConfigImported\s*\}\s+from\s+['"]\.\/paid-config\.mjs['"]/;
 
@@ -387,6 +473,10 @@ export function assertGthTipMarkers(readText) {
   assertTipMarkers(readText, GTH_TIP_MARKERS, GTH_NEVER_SAVE_FILES, 'GTH');
 }
 
+export function assertCmbTipMarkers(readText) {
+  assertTipMarkers(readText, CMB_TIP_MARKERS, CMB_NEVER_SAVE_FILES, 'CMB');
+}
+
 function assertInjectedFilesPacked(runnerFiles, required, runnerTexts, packedFiles, exists, phrases) {
   const allowed = new Set(packedFiles);
   const problems = [];
@@ -429,6 +519,14 @@ export function assertGthInjectedFilesPacked(runnerTexts, packedFiles, exists) {
     kind: 'GTH',
     dropped: 'GTH inject set dropped',
     summary: 'paid pack GTH inject files missing',
+  });
+}
+
+export function assertCmbInjectedFilesPacked(runnerTexts, packedFiles, exists) {
+  return assertInjectedFilesPacked(CMB_RUNNER_FILES, CMB_REQUIRED_INJECT, runnerTexts, packedFiles, exists, {
+    kind: 'CMB',
+    dropped: 'CMB inject set dropped',
+    summary: 'paid pack CMB inject files missing',
   });
 }
 
@@ -476,7 +574,28 @@ export function assertPackedGthTip(extensionRoot, packedFiles) {
   };
 }
 
-export function assertPackedBytesMatchSource(repoRoot, extensionRoot, rels = [...CMS_TIP_SOURCE_FILES, ...GTH_TIP_SOURCE_FILES]) {
+export function assertPackedCmbTip(extensionRoot, packedFiles) {
+  const readText = (rel) => {
+    const abs = path.join(extensionRoot, rel);
+    if (!fs.existsSync(abs)) throw new Error(`missing ${rel}`);
+    return fs.readFileSync(abs, 'utf8');
+  };
+  assertCmbTipMarkers(readText);
+  const runnerTexts = {};
+  for (const rel of CMB_RUNNER_FILES) runnerTexts[rel] = readText(rel);
+  const injected = assertCmbInjectedFilesPacked(
+    runnerTexts,
+    packedFiles,
+    (rel) => fs.existsSync(path.join(extensionRoot, rel)),
+  );
+  return {
+    cmbFailClosedPacked: true,
+    cmbInjectedFilesPacked: true,
+    cmbInjectedCount: injected.length,
+  };
+}
+
+export function assertPackedBytesMatchSource(repoRoot, extensionRoot, rels = [...CMS_TIP_SOURCE_FILES, ...GTH_TIP_SOURCE_FILES, ...CMB_TIP_SOURCE_FILES]) {
   for (const rel of rels) {
     const sourcePath = path.join(repoRoot, rel);
     const packedPath = path.join(extensionRoot, rel);
@@ -498,6 +617,8 @@ export function assertPackedBytesMatchSource(repoRoot, extensionRoot, rels = [..
  * - packed CMS files carry tip 学历 / region fail-closed / auto inject pieces
  * - packed GTH basic files fail closed on unsupported or unsettled 现居住地/照片/参加工作时间
  *   and do not store that fill as completed
+ * - packed CMB basic files fail closed on an unsettled requested field
+ *   (requestedFillBlocked, fillAllowed false) and keep that row failed
  */
 export async function assertBuiltPaidExtension(extensionRoot, packedFiles) {
   const guardPath = path.join(extensionRoot, GUARD_WORKER);
@@ -525,6 +646,7 @@ export async function assertBuiltPaidExtension(extensionRoot, packedFiles) {
   assertPackImportsResolve(extensionRoot, packedFiles);
   const tip = assertPackedCmsTip(extensionRoot, packedFiles);
   const gth = assertPackedGthTip(extensionRoot, packedFiles);
+  const cmb = assertPackedCmbTip(extensionRoot, packedFiles);
 
   let seedMod;
   try {
@@ -571,5 +693,6 @@ export async function assertBuiltPaidExtension(extensionRoot, packedFiles) {
     cmsEducationAutoInstalled: true,
     ...tip,
     ...gth,
+    ...cmb,
   };
 }

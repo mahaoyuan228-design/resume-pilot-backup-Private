@@ -3,6 +3,7 @@
  * - trusted auto-page sender accepted; wrong sender rejected
  * - default mode=readiness probes without GTH_BASIC_TRIAL write
  * - fill path dispatches trial once and never sets saveAttempted
+ * - unsettled status, a Save click, or a pre-write failure does not report ok
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -27,7 +28,7 @@ const fixture = () => ({
   ],
 });
 
-async function harness({ trialResponse } = {}) {
+async function harness({ trialResponse, statusOutcome = 'verified_preexisting', patchTrial } = {}) {
   const data = {
     resumeProfile: fixture(),
     resumeProfileLifecycle: { version: 1, epoch, state: 'ready' },
@@ -113,11 +114,12 @@ async function harness({ trialResponse } = {}) {
       sendMessage: async (_tab, message) => {
         if (message.type === 'GTH_BASIC_TRIAL') {
           stats.trial += 1;
-          return trialResponse || defaultTrial;
+          const body = trialResponse || defaultTrial;
+          return patchTrial ? patchTrial(structuredClone(body)) : body;
         }
         if (message.type === 'GTH_BASIC_TRIAL_STATUS') {
           stats.status += 1;
-          return { ok: true, data: { requestId: message.requestId, state: 'settled', outcome: 'verified_preexisting' } };
+          return { ok: true, data: { requestId: message.requestId, state: 'settled', outcome: statusOutcome } };
         }
         throw Error('unexpected_message:' + message.type);
       },
@@ -280,4 +282,84 @@ test('GTH_BASIC_AUTO fill never Save even when trial reports softwareClickedSave
   assert.equal(response.saveAttempted, false);
   assert.equal(response.saveAllowedByPolicy, false);
   assert.equal(response.job?.softwareClickedSave, false);
+});
+
+const fillMessage = {
+  type: 'GTH_BASIC_AUTO',
+  mode: 'fill',
+  educationIndex: 5,
+  replaceExisting: true,
+  originConfirmed: true,
+};
+
+test('GTH_BASIC_AUTO fill fails closed when post-fill status is unsettled', async () => {
+  const h = await harness({ statusOutcome: 'unknown' });
+  const response = await h.invoke(fillMessage);
+  assert.equal(response.ok, false);
+  assert.equal(response.reason, 'gth_basic_status_unsettled');
+  assert.equal(response.saveAttempted, false);
+  assert.equal(response.saveAllowedByPolicy, false);
+  assert.equal(response.softwareClickedSave, false);
+  assert.equal(response.job?.state, 'unknown');
+  assert.notEqual(response.job?.state, 'completed');
+  assert.equal(h.data[basicJobKey(tabId)]?.state, 'unknown');
+  assert.equal(h.data[basicJobKey(tabId)]?.softwareClickedSave, false);
+  assert.equal(h.data.resumeGthBasicAutoRun?.ok, false);
+  assert.equal(h.stats.trial, 1);
+});
+
+test('GTH_BASIC_AUTO fill fails closed before write and does not complete', async () => {
+  const h = await harness({
+    statusOutcome: 'failed_before_write',
+    trialResponse: {
+      ok: false,
+      writeStarted: false,
+      reason: 'basic_profile_invalid',
+      softwareClickedSave: false,
+      softwareClickedSubmit: false,
+      softwareClickedDelete: false,
+    },
+  });
+  const response = await h.invoke(fillMessage);
+  assert.equal(response.ok, false);
+  assert.equal(response.reason, 'basic_profile_invalid');
+  assert.equal(response.saveAttempted, false);
+  assert.equal(response.saveAllowedByPolicy, false);
+  assert.equal(response.job?.state, 'stopped_before_write');
+  assert.equal(response.job?.softwareClickedSave, false);
+  assert.equal(h.data[basicJobKey(tabId)]?.state, 'stopped_before_write');
+  assert.equal(h.data.resumeGthBasicAutoRun?.ok, false);
+});
+
+test('GTH_BASIC_AUTO fill fails closed when trial reports a Save click', async () => {
+  const h = await harness({
+    patchTrial: (trial) => ({ ...trial, softwareClickedSave: true, writeStarted: true }),
+  });
+  const response = await h.invoke(fillMessage);
+  assert.equal(response.ok, false);
+  assert.equal(response.reason, 'gth_auto_software_clicked_save_forbidden');
+  assert.equal(response.saveAttempted, false);
+  assert.equal(response.saveAllowedByPolicy, false);
+  assert.equal(response.softwareClickedSave, true);
+  assert.equal(response.job?.state, 'unknown');
+  assert.equal(response.job?.softwareClickedSave, true);
+  assert.equal(h.data[basicJobKey(tabId)]?.state, 'unknown');
+  assert.equal(h.data[basicJobKey(tabId)]?.reason, 'gth_basic_save_clicked');
+  assert.equal(h.data[basicJobKey(tabId)]?.softwareClickedSave, true);
+  assert.equal(h.data.resumeGthBasicAutoRun?.ok, false);
+  assert.equal(h.data.resumeGthBasicAutoRun?.softwareClickedSave, true);
+});
+
+test('GTH_BASIC_AUTO fill rejects a body whose writeStarted disagrees with field reasons', async () => {
+  const h = await harness({
+    patchTrial: (trial) => ({ ...trial, writeStarted: true }),
+  });
+  const response = await h.invoke(fillMessage);
+  assert.equal(response.ok, false);
+  assert.equal(response.saveAttempted, false);
+  assert.equal(response.saveAllowedByPolicy, false);
+  assert.equal(response.softwareClickedSave, false);
+  assert.equal(response.job?.state, 'unknown');
+  assert.equal(h.data[basicJobKey(tabId)]?.state, 'unknown');
+  assert.notEqual(h.data[basicJobKey(tabId)]?.state, 'completed');
 });

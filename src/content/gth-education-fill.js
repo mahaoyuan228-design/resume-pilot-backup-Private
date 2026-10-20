@@ -2,7 +2,9 @@
 // Message: GTH_EDUCATION_FILL. Requires src/content/gth-open-fill.js.
 // 学历 reuses the intent el-select rules (body dropdown after the first open,
 // same-value decided from the input before a menu is required).
-// 在校时间 and 专业类别 are control_not_supported. Never clicks 保存 / 提交 / 投递 / 删除.
+// 在校时间 fills two el-date-editor--month inputs when that live shape is present.
+// 专业类别 fills a readonly input-l.pointer / div.input-l.pointer picker.
+// Any other shape stays control_not_supported. Never clicks 保存 / 提交 / 投递 / 删除.
 (() => {
   const engine = globalThis.ResumeGthOpenFill;
   if (typeof engine?.install !== 'function') return;
@@ -25,8 +27,8 @@
       { question: '学校所在地', key: 'schoolLocation', kind: 'text', required: false, max: 200 },
       { question: '学历', key: 'degree', kind: 'select', required: true, max: 20, options: DEGREE_LIST, answers: DEGREE_LIST.slice(1) },
       { question: '是否统招', key: 'unifiedAdmissions', kind: 'radio', required: false, max: 1, answers: ['是', '否'] },
-      { question: '在校时间', key: 'startDate', kind: 'unsupported', required: false, max: 40, shape: 'month', keys: ['startDate', 'endDate'] },
-      { question: '专业类别', key: 'majorCategory', kind: 'unsupported', required: false, max: 500, shape: 'category', keys: ['majorCategory'] }
+      { question: '在校时间', key: 'startDate', kind: 'monthRange', required: false, max: 7, shape: 'month', keys: ['startDate', 'endDate'] },
+      { question: '专业类别', key: 'majorCategory', kind: 'picker', required: false, max: 500, shape: 'category', keys: ['majorCategory'] }
     ]
   });
 })();

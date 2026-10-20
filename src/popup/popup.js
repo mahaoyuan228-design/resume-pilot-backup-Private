@@ -2059,13 +2059,13 @@ async function performGthEducationOpenFill() {
         await withProfileBinding(chrome.storage.local, profileBinding, () => replacePendingReview(tab, requestId));
         fillOutcomeUncertain = !!(await pendingReviewFor(tab));
       }
-      throw new Error("已打开的教育编辑器没有形成完整读回；在校时间和专业类别仍不能填写。未保存、未提交、未删除。");
+      throw new Error("已打开的教育编辑器没有形成完整读回。未保存、未提交、未删除。");
     }
     await withProfileBinding(chrome.storage.local, profileBinding, () => replacePendingReview(tab, requestId));
     fillOutcomeUncertain = !!(await pendingReviewFor(tab));
     setMessage(result.writeStarted
-      ? "已打开的教育编辑器已逐项读回。在校时间和专业类别未填写。软件没有点击保存、提交、投递或删除。"
-      : "已打开的教育编辑器与资料一致，软件没有改写。在校时间和专业类别未填写。没有保存或投递。");
+      ? "已打开的教育编辑器已逐项读回。软件没有点击保存、提交、投递或删除。"
+      : "已打开的教育编辑器与资料一致，软件没有改写。没有保存或投递。");
   } catch (error) {
     if (error?.message === "profile_binding_unavailable") error.message = "暂时无法核对当前资料，已停止后续填写；已发出的操作请核对网站当前内容。";
     else if (/^profile_/u.test(error?.message || "")) error.message = "客户资料已变化，已停止后续填写；已发出的操作请核对网站当前内容。";

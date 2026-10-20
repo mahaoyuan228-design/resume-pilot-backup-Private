@@ -509,11 +509,36 @@
       return { status: 'verified', reason: existing ? 'readback_reapplied' : 'readback_matched' };
     }
     const MONTH_NAMES = ['一月', '二月', '三月', '四月', '五月', '六月', '七月', '八月', '九月', '十月', '十一月', '十二月'];
-    function openMonthPanels() {
-      return [...document.querySelectorAll('.el-picker-panel')].filter(shown);
+    // Live work 任职时间 shares this writer with education 在校时间. The end editor
+    // can open while el-zoom-in-top-enter-active still makes shown() flicker, and a
+    // leftover start panel then leaves two .el-picker-panel nodes. A month click in
+    // that window does not commit the end input (readback stays "YYYY-MM | ").
+    function monthPanelNodes() {
+      return [...document.querySelectorAll('.el-picker-panel')].filter(node => node.isConnected);
     }
-    async function closeMonthPanel(input) {
-      if (!openMonthPanels().length) return;
+    function monthPanelAnimating(node) {
+      return !!node?.classList?.contains('el-zoom-in-top-enter')
+        || !!node?.classList?.contains('el-zoom-in-top-enter-active')
+        || !!node?.classList?.contains('el-zoom-in-top-leave')
+        || !!node?.classList?.contains('el-zoom-in-top-leave-active');
+    }
+    function monthPanelPending(node) {
+      return !!node?.isConnected && (shown(node) || monthPanelAnimating(node));
+    }
+    function monthPanelReady(node) {
+      return shown(node) && !monthPanelAnimating(node);
+    }
+    function openMonthPanels() {
+      return monthPanelNodes().filter(monthPanelPending);
+    }
+    function editorOfMonth(trigger, input) {
+      return trigger?.closest?.('.el-date-editor') || input?.closest?.('.el-date-editor') || null;
+    }
+    function panelsOwnedBy(editor) {
+      if (!editor) return [];
+      return monthPanelNodes().filter(panel => panel.closest('.el-date-editor') === editor);
+    }
+    async function dismissMonthInput(input) {
       try {
         await boundAction(() => {
           if (!input?.isConnected) return null;
@@ -523,6 +548,17 @@
         });
       } catch { /* keep the month reason */ }
     }
+    async function closeMonthPanel(input) {
+      await dismissMonthInput(input);
+    }
+    async function settleMonthPanels(inputs) {
+      for (const input of inputs) await dismissMonthInput(input);
+      const settled = await waitUntil(() => openMonthPanels().length === 0 ? true : null, 1600);
+      if (!settled) {
+        step('month_panel_structure_unknown');
+        stop('control_not_supported');
+      }
+    }
     async function dispatchInputChange(input) {
       await boundAction(() => {
         if (!input?.isConnected) stop('profile_action_target_changed');
@@ -531,79 +567,123 @@
         return null;
       });
     }
-    async function fillOneMonth(item, input, trigger, answer, markWrite, guard) {
+    function monthCellDisabled(cell) {
+      if (!cell?.classList) return true;
+      if (cell.classList.contains('disabled')) return true;
+      return [...cell.querySelectorAll('a')].some(node => node.classList.contains('disabled'));
+    }
+    function monthClickTarget(cell) {
+      const anchors = [...cell.querySelectorAll('a.cell')].filter(shown);
+      if (anchors.length > 1) return null;
+      return anchors[0] || cell;
+    }
+    async function fillOneMonth(item, input, trigger, answer, markWrite, guard, peers = []) {
+      const company = [input, ...peers].filter(Boolean);
+      await settleMonthPanels(company);
       if (norm(input.value) === answer) return;
-      if (openMonthPanels().length) stop('control_not_supported');
+      const peerBefore = peers.map(peer => norm(peer.value));
+      const drifted = () => peers.some((peer, index) => norm(peer.value) !== peerBefore[index]);
       step('month_open');
       guard();
+      const editor = editorOfMonth(trigger, input);
+      const owned = panelsOwnedBy(editor);
       await guardedClick(trigger, boundAction);
       const opened = await waitUntil(() => {
-        const open = openMonthPanels();
-        if (open.length > 1) return { bad: true };
-        return open.length === 1 ? { panel: open[0] } : null;
-      });
+        const pending = openMonthPanels();
+        if (owned.length > 1 || pending.length > 1) return { bad: 'dual' };
+        const foreign = pending.filter(panel => owned.length === 1 && panel !== owned[0]);
+        if (foreign.length) return { bad: 'dual' };
+        const panel = owned.length === 1 ? owned[0] : pending[0];
+        if (!panel || !monthPanelReady(panel)) return null;
+        if (owned.length !== 1 && pending[0] !== panel) return { bad: 'dual' };
+        return { panel };
+      }, 1600);
       if (!opened || opened.bad) {
         step('month_panel_structure_unknown');
-        await closeMonthPanel(input);
+        await settleMonthPanels(company);
         stop('control_not_supported');
       }
       const panel = opened.panel;
       const failStructure = async () => {
         step('month_panel_structure_unknown');
-        await closeMonthPanel(input);
+        for (const node of company) await dismissMonthInput(node);
         stop('control_not_supported');
       };
       try {
+        await pause(40);
+        if (!monthPanelReady(panel) || openMonthPanels().some(node => node !== panel)) await failStructure();
         const year = Number(answer.slice(0, 4));
         const month = Number(answer.slice(5));
         const readYear = () => {
+          if (!panel.isConnected || openMonthPanels().some(node => node !== panel)) return null;
           const years = [...panel.querySelectorAll('.el-date-picker__header-label')].filter(shown)
             .map(node => norm(node.textContent).match(/^(\d{4})\s*年$/u)).filter(Boolean);
           if (years.length !== 1) return null;
           return Number(years[0][1]);
         };
-        if (readYear() == null) await failStructure();
+        if (readYear() == null || drifted()) await failStructure();
         for (let count = 0; readYear() !== year; count += 1) {
-          if (count >= 100 || readYear() == null) await failStructure();
+          if (count >= 100 || readYear() == null || drifted()) await failStructure();
           guard();
           const current = readYear();
           const previous = current > year;
-          const buttons = [...panel.querySelectorAll(previous ? '.el-icon-d-arrow-left' : '.el-icon-d-arrow-right')].filter(shown);
+          const buttons = [...panel.querySelectorAll(previous ? '.el-icon-d-arrow-left' : '.el-icon-d-arrow-right')].filter(node => panel.contains(node) && shown(node));
           if (buttons.length !== 1) await failStructure();
           await guardedClick(buttons[0], boundAction);
-          const moved = await waitUntil(() => readYear() === current + (previous ? -1 : 1) ? true : null, 1500);
-          if (!moved) await failStructure();
+          const moved = await waitUntil(() => {
+            if (drifted() || openMonthPanels().some(node => node !== panel)) return { drift: true };
+            const next = readYear();
+            if (next == null) return null;
+            const delta = next - current;
+            const expect = previous ? -1 : 1;
+            if (delta === expect) return { ok: true };
+            if (delta !== 0) return { drift: true };
+            return null;
+          }, 1500);
+          if (!moved || moved.drift) await failStructure();
         }
-        const tables = [...panel.querySelectorAll('.el-month-table')].filter(shown);
+        if (readYear() !== year || drifted()) await failStructure();
+        const tables = [...panel.querySelectorAll('.el-month-table')].filter(node => panel.contains(node) && shown(node));
         if (tables.length !== 1) await failStructure();
-        const cells = [...tables[0].querySelectorAll('td')].filter(shown);
+        const cells = [...tables[0].querySelectorAll('td')].filter(node => panel.contains(node) && shown(node));
         const choices = cells.filter(node => {
           const text = norm(node.textContent).replace(/\s/gu, '');
           return text === MONTH_NAMES[month - 1] || text === `${month}月`;
         });
-        if (cells.length !== 12 || choices.length !== 1) await failStructure();
+        if (cells.length !== 12 || choices.length !== 1 || monthCellDisabled(choices[0])) await failStructure();
+        const clickTarget = monthClickTarget(choices[0]);
+        if (!clickTarget || !panel.contains(clickTarget)) await failStructure();
         step('month_option');
         guard();
         markWrite();
-        await guardedClick(choices[0], boundAction);
-        const matched = await waitUntil(() => norm(input.value) === answer && !shown(panel) ? true : null);
-        if (!matched) {
-          await closeMonthPanel(input);
-          stop('readback_mismatch');
+        await guardedClick(clickTarget, boundAction);
+        const matched = await waitUntil(() => {
+          if (openMonthPanels().some(node => node !== panel) || drifted()) return { bad: 'dual' };
+          const current = norm(input.value);
+          if (current && current !== answer) return { bad: 'mismatch' };
+          if (current === answer && !monthPanelPending(panel)) return { ok: true };
+          return null;
+        });
+        if (!matched || matched.bad) {
+          for (const node of company) await dismissMonthInput(node);
+          stop(matched?.bad === 'dual' ? 'control_not_supported' : 'readback_mismatch');
         }
         await dispatchInputChange(input);
-        if (norm(input.value) !== answer || shown(panel) || !siteValid(item, input)) stop('readback_mismatch');
+        if (norm(input.value) !== answer || monthPanelPending(panel) || drifted() || !siteValid(item, input))
+          stop('readback_mismatch');
         guard();
       } catch (error) {
-        if (shown(panel)) await closeMonthPanel(input);
+        if (monthPanelPending(panel)) await closeMonthPanel(input);
         throw error;
       }
     }
     async function fillMonthRange(target, fact, markWrite, guard) {
-      const before = target.inputs.map(node => node.value);
-      await fillOneMonth(target.item, target.inputs[0], target.triggers[0], fact.start, markWrite, guard);
-      await fillOneMonth(target.item, target.inputs[1], target.triggers[1], fact.end, markWrite, guard);
-      const read = target.inputs.map(node => norm(node.value)).join(' | ');
+      const before = target.inputs.map(node => norm(node.value));
+      await fillOneMonth(target.item, target.inputs[0], target.triggers[0], fact.start, markWrite, guard, [target.inputs[1]]);
+      if (norm(target.inputs[0].value) !== fact.start || norm(target.inputs[1].value) !== before[1])
+        stop('readback_mismatch');
+      await fillOneMonth(target.item, target.inputs[1], target.triggers[1], fact.end, markWrite, guard, [target.inputs[0]]);
+      const read = `${norm(target.inputs[0].value)} | ${norm(target.inputs[1].value)}`;
       if (read !== `${fact.start} | ${fact.end}`) stop('readback_mismatch');
       return { status: 'verified', reason: before.some(value => value !== '') ? 'readback_reapplied' : 'readback_matched' };
     }

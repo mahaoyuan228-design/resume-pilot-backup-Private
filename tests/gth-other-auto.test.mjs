@@ -55,14 +55,26 @@ async function harness({ fillResponse } = {}) {
     });
   const defaultFill = fillResponse || {
     ok: true,
-    sectionName: SECTION,
-    editorLeftOpen: true,
+    complete: false,
+    scope: 'gth_other_two',
+    section: SECTION,
+    supportedComplete: true,
+    operableComplete: true,
     writeStarted: false,
-    savedOnSite: false,
-    submitted: false,
+    editorLeftOpen: true,
+    savedOnSite: null,
+    submitted: null,
     softwareClickedSave: false,
     softwareClickedSubmit: false,
-    fields: QUESTIONS.map((question) => ({ question, status: 'verified', reason: 'preexisting_same_value' })),
+    softwareClickedDelete: false,
+    liveSupportClaimed: false,
+    fields: ['标题', '描述'].map((question) => ({
+      question,
+      path: `customAnswers.${question}`,
+      labels: [question],
+      status: 'verified',
+      reason: 'preexisting_same_value',
+    })),
   };
   const api = {
     storage: { local: storage },
@@ -82,7 +94,13 @@ async function harness({ fillResponse } = {}) {
         return [{ id: tabId, url: PAGE, active: true, lastAccessed: Date.now() }];
       },
       update: async () => ({ id: tabId, url: PAGE, windowId: 1 }),
-      sendMessage: async () => { throw Error('unexpected_sendMessage'); },
+      sendMessage: async (_tabId, message) => {
+        if (message?.type === 'GTH_OTHER_FILL') {
+          stats.fill += 1;
+          return defaultFill;
+        }
+        throw Error('unexpected_sendMessage');
+      },
     },
     scripting: {
       executeScript: async (request) => {

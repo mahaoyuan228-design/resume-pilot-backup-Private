@@ -1,4 +1,4 @@
-// Shipped GTH open-editor fill engine for 职业技能与特长 / 其他信息 / 教育经历.
+// Shipped GTH open-editor fill engine for 职业技能与特长 / 其他信息 / 教育经历 / 工作经验.
 // The caller opens the editor. This engine never opens or closes one, and never
 // clicks 保存 / 提交 / 投递 / 删除 / 取消 / 编辑 or a.eduexp-opt-icon / .el-icon-delete.
 // Exact el-form-item labels. Writes dispatch input and change. Readback is per field.
@@ -158,6 +158,7 @@
   }
   function unsupportedTarget(form, field) {
     const item = requireItem(form, field.question);
+    if (field.shape === 'salary') return unknownControl(item, 'control_not_supported');
     if (field.shape === 'month') {
       const editors = [...item.querySelectorAll('.el-date-editor')].filter(node => node.closest('.el-form-item') === item);
       if (editors.length !== 2) stop('control_structure_changed');
@@ -227,9 +228,37 @@
     if (panels.length > 1) return unknownControl(item, 'picker_trigger_structure_unknown');
     return { item, trigger, input, panel: panels[0] || null, controls: [input], unsupported: false };
   }
+  function cascaderTarget(form, field) {
+    const item = requireItem(form, field.question);
+    const fail = () => unknownControl(item, 'cascader_structure_unknown');
+    const wraps = [...item.querySelectorAll('.el-form-item__content.cascader-wrap')].filter(node => node.closest('.el-form-item') === item);
+    if (wraps.length !== 1) return fail();
+    const wrap = wraps[0];
+    const triggers = [...wrap.querySelectorAll(':scope > div.input-l.pointer')].filter(shown);
+    const panels = [...wrap.querySelectorAll(':scope > div.dialog-wrap.plugin-dialog-wrap.popover.blue')];
+    if (triggers.length !== 1 || panels.length !== 1) return fail();
+    const panel = panels[0];
+    const inputs = [...triggers[0].querySelectorAll('input.el-input__inner')].filter(node => !panel.contains(node));
+    const search = [...panel.querySelectorAll('input.search-input')];
+    const menus = [...panel.querySelectorAll(':scope > div.eo-cascader-panel > div.eo-cascader-menu.simple-tree-outer')];
+    if (inputs.length !== 1 || !(inputs[0] instanceof HTMLInputElement) || inputs[0].type !== 'text'
+      || !inputs[0].readOnly || inputs[0].disabled || !shown(inputs[0])
+      || search.length !== 1 || search[0].getAttribute('placeholder') !== '请输入关键字'
+      || menus.length < 1 || menus.length > 2
+      || panel.querySelectorAll('.selected-view-data').length !== 1
+      || panel.querySelectorAll('.selected-counter').length !== 1
+      || panel.querySelectorAll('.pop-foot a.confirm.pop-btn').length !== 1
+      || panel.querySelectorAll('.pop-foot a.cancel.pop-btn').length !== 1)
+      return fail();
+    return {
+      item, wrap, panel, trigger: triggers[0], input: inputs[0], controls: inputs, unsupported: false,
+      read: () => norm(inputs[0].value)
+    };
+  }
   function targetOf(form, field) {
     if (field.kind === 'monthRange') return monthRangeTarget(form, field);
     if (field.kind === 'picker') return pickerTarget(form, field);
+    if (field.kind === 'cascader') return cascaderTarget(form, field);
     if (field.kind === 'unsupported') return unsupportedTarget(form, field);
     if (field.kind === 'select') return selectTarget(form, field);
     if (field.kind === 'radio') return radioTarget(form, field);
@@ -249,8 +278,15 @@
     return true;
   }
   const MONTH_VALUE = /^(19|20)\d{2}-(0[1-9]|1[0-2])$/u;
-  function educationRecord(request) {
-    const row = request?.profile?.education?.[request.profileIndex];
+  function collectionName(spec) {
+    if (spec?.fact === 'experience') return 'experience';
+    if (spec?.fact === 'education') return 'education';
+    return '';
+  }
+  function recordRow(spec, request) {
+    const name = collectionName(spec);
+    if (!name) return null;
+    const row = request?.profile?.[name]?.[request.profileIndex];
     return row && typeof row === 'object' ? row : null;
   }
   function confirmedPaths(request) {
@@ -271,32 +307,39 @@
     if (!l1 || !l2 || l1 !== l1.trim() || l2 !== l2.trim() || l1.includes('|') || l2.includes('|')) return null;
     return { mode: 'path', l1, l2, leaf: l2 };
   }
-  function monthFact(request, field) {
-    const row = educationRecord(request);
+  function monthFact(spec, request, field) {
+    const row = recordRow(spec, request);
     const start = typeof row?.startDate === 'string' ? row.startDate : '';
     const end = typeof row?.endDate === 'string' ? row.endDate : '';
     const blank = { value: '', start: '', end: '', leaf: '', parts: null };
-    if (!start.trim() && !end.trim()) return { ...blank, reason: null, skip: true };
+    if (!start.trim() && !end.trim()) {
+      if (field.required) return { ...blank, reason: 'missing_profile_value', skip: false };
+      return { ...blank, reason: null, skip: true };
+    }
     if (!MONTH_VALUE.test(start) || !MONTH_VALUE.test(end) || start > end || start.length > field.max || end.length > field.max)
       return { ...blank, value: `${start}|${end}`, start, end, reason: 'invalid_profile_value', skip: false };
     const confirmed = confirmedPaths(request);
     const index = request.profileIndex;
-    if (!confirmed || !confirmed.has(`education.${index}.startDate`) || !confirmed.has(`education.${index}.endDate`))
+    const prefix = collectionName(spec);
+    if (!confirmed || !confirmed.has(`${prefix}.${index}.startDate`) || !confirmed.has(`${prefix}.${index}.endDate`))
       return { ...blank, value: `${start} | ${end}`, start, end, reason: 'profile_fact_unconfirmed', skip: false };
     return { ...blank, value: `${start} | ${end}`, start, end, reason: null, skip: false };
   }
   function pickerFact(spec, request, field) {
     const answer = readAnswer(spec, request, field);
     const blank = { value: answer, start: '', end: '', leaf: '', parts: null };
-    if (!answer.trim()) return { ...blank, value: '', reason: null, skip: true };
+    if (!answer.trim()) {
+      if (field.required) return { ...blank, value: '', reason: 'missing_profile_value', skip: false };
+      return { ...blank, value: '', reason: null, skip: true };
+    }
     const parts = categoryParts(answer);
     if (!parts || answer.length > field.max) return { ...blank, reason: 'invalid_profile_value', skip: false };
     if (!factConfirmed(spec, request, field, answer)) return { ...blank, ...parts, reason: 'profile_fact_unconfirmed', skip: false };
     return { ...blank, ...parts, reason: null, skip: false };
   }
   function factRow(spec, request, field) {
-    if (field.kind === 'monthRange') return monthFact(request, field);
-    if (field.kind === 'picker') return pickerFact(spec, request, field);
+    if (field.kind === 'monthRange') return monthFact(spec, request, field);
+    if (field.kind === 'picker' || field.kind === 'cascader') return pickerFact(spec, request, field);
     if (field.kind === 'unsupported') {
       const present = unsupportedAnswer(spec, request, field);
       if (!present) return { value: '', reason: null, skip: true };
@@ -313,9 +356,8 @@
     return { value: answer, reason: null, skip: false };
   }
   function readAnswer(spec, request, field) {
-    if (spec.fact === 'education') {
-      const row = request?.profile?.education?.[request.profileIndex];
-      const raw = row?.[field.key];
+    if (spec.fact === 'education' || spec.fact === 'experience') {
+      const raw = recordRow(spec, request)?.[field.key];
       return typeof raw === 'string' ? raw : '';
     }
     const profile = request?.profile;
@@ -325,8 +367,8 @@
     return typeof raw === 'string' ? raw : '';
   }
   function unsupportedAnswer(spec, request, field) {
-    if (spec.fact !== 'education') return '';
-    const row = request?.profile?.education?.[request.profileIndex];
+    if (spec.fact !== 'education' && spec.fact !== 'experience') return '';
+    const row = recordRow(spec, request);
     const keys = field.keys || [field.key];
     const values = keys.map(key => (typeof row?.[key] === 'string' ? row[key].trim() : '')).filter(Boolean);
     return values.join('|');
@@ -335,9 +377,8 @@
     const profile = request?.profile;
     if (!profile || typeof profile !== 'object' || Array.isArray(profile)) return false;
     const confirmed = new Set(Array.isArray(profile.confirmedFields) ? profile.confirmedFields : []);
-    if (spec.fact === 'education') {
-      return confirmed.has(`education.${request.profileIndex}.${field.key}`);
-    }
+    const prefix = collectionName(spec);
+    if (prefix) return confirmed.has(`${prefix}.${request.profileIndex}.${field.key}`);
     const facts = (Array.isArray(profile.customFacts) ? profile.customFacts : []).filter(item => item?.question === field.question);
     const fact = facts.length === 1 ? facts[0] : null;
     return !!fact && fact.answer === answer && fact.sitePageUrl === PAGE
@@ -345,8 +386,9 @@
       && confirmed.has(`customAnswers.${field.question}`);
   }
   function fieldRow(spec, field, status, reason, index) {
-    const path = spec.fact === 'education'
-      ? `education.${index}.${field.key}`
+    const prefix = collectionName(spec);
+    const path = prefix
+      ? `${prefix}.${index}.${field.key}`
       : `customAnswers.${field.question}`;
     return {
       id: `gth:${spec.section}:${field.question}`, question: field.question, labels: [field.question],
@@ -780,6 +822,114 @@
       await dispatchInputChange(input);
       if (norm(input.value) !== leaf || shown(panel)) await abort('readback_mismatch');
     }
+    function strictMenus(panel) {
+      return [...panel.querySelectorAll(':scope > div.eo-cascader-panel > div.eo-cascader-menu.simple-tree-outer')];
+    }
+    function visibleCascaderPanels() {
+      return [...document.querySelectorAll('div.dialog-wrap.plugin-dialog-wrap.popover.blue')].filter(shown);
+    }
+    function cascaderDecision(target, fact, replaceExisting) {
+      const existing = norm(target.input.value);
+      const chips = pickerChips(target.panel);
+      if (chips === null) return { action: 'fail', reason: 'control_not_supported', step: 'cascader_structure_unknown' };
+      const texts = chips.map(entry => entry.text);
+      if (texts.length === 1 && texts[0] === fact.leaf && existing === fact.leaf) return { action: 'same', existing };
+      if ((texts.length > 0 || existing !== '') && replaceExisting !== true) return { action: 'fail', reason: 'existing_value', existing };
+      return { action: 'fill', existing };
+    }
+    async function fillCascader(target, fact, replaceExisting, markWrite, guard) {
+      const { item, panel, trigger, input } = target;
+      const leaf = fact.leaf;
+      let opened = false;
+      const abort = async code => {
+        if (opened) {
+          opened = false;
+          try { await clickPickerCancel(panel); } catch { /* keep the cascader reason */ }
+        }
+        stop(code);
+      };
+      step('picker_open');
+      if (visibleCascaderPanels().length) stop('control_not_supported');
+      guard();
+      await guardedClick(trigger, boundAction);
+      opened = true;
+      const openedPanel = await waitUntil(() => {
+        const open = visibleCascaderPanels();
+        if (open.length > 1) return { bad: 'control_not_supported' };
+        if (open.length === 1) return open[0] === panel ? { ok: true } : { bad: 'control_not_supported' };
+        return null;
+      });
+      if (!openedPanel) {
+        step('cascader_structure_unknown');
+        opened = false;
+        stop('control_not_supported');
+      }
+      if (openedPanel.bad) await abort('control_not_supported');
+      guard();
+      let chips = pickerChips(panel);
+      if (chips === null) {
+        step('cascader_structure_unknown');
+        await abort('control_not_supported');
+      }
+      const singleSelect = () => footHidden(panel) || pickerCounter(panel)?.max === 1;
+      if (chips.length === 1 && chips[0].text === leaf && norm(input.value) === leaf) {
+        await clickPickerCancel(panel);
+        opened = false;
+        if (norm(input.value) !== leaf || shown(panel)) stop('readback_mismatch');
+        return { status: 'verified', reason: 'preexisting_same_value' };
+      }
+      const occupied = chips.length > 0 || norm(input.value) !== '';
+      if (occupied && replaceExisting !== true) await abort('existing_value');
+      if (occupied && replaceExisting === true && chips.some(entry => entry.text !== leaf) && !singleSelect()) {
+        while (chips.some(entry => entry.text !== leaf)) {
+          const entry = chips.find(row => row.text !== leaf);
+          if (!entry?.remove?.isConnected) await abort('control_not_supported');
+          const beforeCount = chips.length;
+          guard();
+          markWrite();
+          await guardedClick(entry.remove, boundAction);
+          const next = await waitUntil(() => {
+            const now = pickerChips(panel);
+            if (now === null) return { bad: true };
+            return now.length === beforeCount - 1 ? now : null;
+          });
+          if (!next || next.bad) await abort('control_not_supported');
+          chips = next;
+        }
+      }
+      step('picker_level1');
+      const menus = strictMenus(panel);
+      const level1 = menuBranches(menus?.[0]).filter(row => shown(row) && row.classList.contains('has-child'));
+      const matches = level1.filter(row => norm(branchSpan(row)?.textContent) === fact.l1);
+      if (matches.length !== 1) await abort(matches.length ? 'picker_level1_ambiguous' : 'picker_level1_missing');
+      const span = branchSpan(matches[0]);
+      if (!span || norm(span.textContent) !== fact.l1) await abort('picker_level1_missing');
+      guard();
+      await guardedClick(span, boundAction);
+      step('picker_level2');
+      let sawL2 = false;
+      const level2 = await waitUntil(() => {
+        guard();
+        const liveMenus = strictMenus(panel);
+        if (liveMenus.length > 2) return { bad: 'control_not_supported' };
+        if (liveMenus.length !== 2) return null;
+        sawL2 = true;
+        const rows = menuBranches(liveMenus[1]).filter(row => shown(row) && !row.classList.contains('has-child') && branchText(row) === fact.l2);
+        if (rows.length > 1) return { bad: 'picker_level2_ambiguous' };
+        return rows.length === 1 ? { row: rows[0] } : null;
+      });
+      if (level2?.bad) await abort(level2.bad === 'control_not_supported' ? 'control_not_supported' : level2.bad);
+      if (!level2?.row) await abort(sawL2 ? 'picker_level2_missing' : 'picker_level2_menu_missing');
+      const counter = pickerCounter(panel);
+      const single = singleSelect();
+      if (!counter && !single) await abort('control_not_supported');
+      if (!single && counter.current >= counter.max && !chips.some(entry => entry.text === leaf)) await abort('control_not_supported');
+      await commitPickerRow(panel, level2.row, leaf, input, item, single, markWrite, guard, abort);
+      opened = false;
+      guard();
+      if (norm(input.value) !== leaf || shown(panel) || !siteValid(item, input)) stop('readback_mismatch');
+      return { status: 'verified', reason: occupied ? 'readback_reapplied' : 'readback_matched' };
+    }
     async function trial(request) {
       try {
         const manifest = chrome.runtime.getManifest();
@@ -815,8 +965,8 @@
         await checkBinding();
         if (typeof request?.requestId !== 'string' || !/^[A-Za-z0-9-]{10,100}$/u.test(request.requestId)
           || (request.replaceExisting !== undefined && typeof request.replaceExisting !== 'boolean')) stop('request_invalid');
-        if (spec.fact === 'education' && (!Number.isInteger(request.profileIndex) || request.profileIndex < 0 || request.profileIndex > 29))
-          stop('education_profile_index_invalid');
+        if ((spec.fact === 'education' || spec.fact === 'experience') && (!Number.isInteger(request.profileIndex) || request.profileIndex < 0 || request.profileIndex > 29))
+          stop(spec.fact === 'education' ? 'education_profile_index_invalid' : 'experience_profile_index_invalid');
         const answers = Object.fromEntries(spec.fields.map(field => [field.question, factRow(spec, request, field)]));
         attempted = spec.fields.filter(field => !answers[field.question].skip);
         const unsettled = attempted.filter(field => answers[field.question].reason);
@@ -855,7 +1005,12 @@
             plans.push({ field, target, decision: { action: 'skip' } });
             continue;
           }
-          plans.push({ field, target, decision: decide(target, field, answer, request.replaceExisting) });
+          plans.push({
+            field, target,
+            decision: field.kind === 'cascader'
+              ? cascaderDecision(target, answer, request.replaceExisting)
+              : decide(target, field, answer, request.replaceExisting)
+          });
         }
         const blocked = plans.find(plan => plan.decision.action === 'fail');
         if (blocked) {
@@ -866,7 +1021,7 @@
             else record(plan.field, 'failed', 'blocked_by_unsettled_field');
           }
         } else {
-          const rank = kind => (kind === 'monthRange' || kind === 'picker' ? 0 : (kind === 'select' || kind === 'radio' ? 1 : 2));
+          const rank = kind => (kind === 'monthRange' || kind === 'picker' || kind === 'cascader' ? 0 : (kind === 'select' || kind === 'radio' ? 1 : 2));
           const ordered = [...plans].sort((left, right) => rank(left.field.kind) - rank(right.field.kind));
           for (const plan of ordered) {
             if (plan.decision.action === 'skip') continue;
@@ -888,6 +1043,11 @@
             }
             if (plan.field.kind === 'picker') {
               const outcome = await fillPicker(plan.target, answer, request.replaceExisting, markWrite, guard);
+              record(plan.field, outcome.status, outcome.reason);
+              continue;
+            }
+            if (plan.field.kind === 'cascader') {
+              const outcome = await fillCascader(plan.target, answer, request.replaceExisting, markWrite, guard);
               record(plan.field, outcome.status, outcome.reason);
               continue;
             }
@@ -1027,7 +1187,7 @@
       complete: false, supportedComplete: false, operableComplete: false, writeStarted: false, editorLeftOpen: false,
       savedOnSite: null, submitted: null, softwareClickedSave: false, softwareClickedSubmit: false, softwareClickedDelete: false,
       scope: spec.scope, liveSupportClaimed: false, section: spec.section,
-      ...(spec.fact === 'education' ? { profileIndex: request?.profileIndex ?? null } : {}),
+      ...(collectionName(spec) ? { profileIndex: request?.profileIndex ?? null } : {}),
       ...extra
     };
   }

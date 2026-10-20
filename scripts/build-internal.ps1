@@ -107,6 +107,7 @@ $files = @(
   'src/content/gth-skills.js',
   'src/content/gth-other.js',
   'src/content/gth-education-fill.js',
+  'src/content/gth-work-fill.js',
   'src/content/gth-other-section.js',
   'src/content/gth-section-discovery.js',
   'src/content/gth-simple-section.js',

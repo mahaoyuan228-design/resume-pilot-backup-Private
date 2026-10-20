@@ -3,7 +3,7 @@ import {captureProfileBinding,assertProfileBinding,withProfileBinding,dispatchBo
 import {isCmb,cmbBasicInjectFiles} from "../content/cmb-profile-map.mjs";
 import {cmbPopupOutcome} from "../background/cmb-basic-auto.mjs";
 import {assessGthIntentFill, GTH_INTENT_FILL_TYPE, intentFillPayload, intentValueShape} from "../background/gth-intent-auto.mjs";
-import {assessGthSkillsFill, assessGthOtherFill, assessGthEducationOpenFill} from "../background/gth-open-fills.mjs";
+import {assessGthSkillsFill, assessGthOtherFill, assessGthEducationOpenFill, assessGthWorkOpenFill} from "../background/gth-open-fills.mjs";
 import { clearAttachment, loadAttachment, saveAttachment, MAX_ATTACHMENT_BYTES } from "../import/attachment-store.js";
 import { MAX_CUSTOM_FACTS, collectScopedQuestionDrafts, loadProfile, normalizeQuestionKey, saveProfile, questionIdentity, normalizeScopedQuestion } from "../profile/store.js";
 import { beginRecentRequest, loadRecentResult, recentResultText, saveRecentResult } from "./recent-result.js";
@@ -39,6 +39,10 @@ const elements = {
   gthEducationTargetButton: document.getElementById("gth-education-target-button"),
   gthEducationNewButton: document.getElementById("gth-education-new-button"),
   gthEducationOpenButton: document.getElementById("gth-education-open-button"),
+  gthWorkTrial: document.getElementById("gth-work-trial"),
+  gthWorkSource: document.getElementById("gth-work-source"),
+  gthWorkReplace: document.getElementById("gth-work-replace"),
+  gthWorkOpenButton: document.getElementById("gth-work-open-button"),
   gthDraftInspect: document.getElementById("gth-education-draft-inspect"),
   gthDraftSave: document.getElementById("gth-education-draft-save"),
   gthDraftResume: document.getElementById("gth-education-draft-resume"),
@@ -163,6 +167,8 @@ let gthIntentEligible = false;
 let gthEducationEligible = false;
 let gthSimpleEligible = false;
 let gthOtherEligible = false;
+let gthWorkEligible = false;
+let gthWorkEditorOpen = false;
 let gthPendingReview = false;
 let gthIntentPendingReview = false;
 let gthEducationPendingReview = false;
@@ -290,6 +296,10 @@ function setBusy(value) {
     || gthEducationTargets.count >= 30;
   elements.gthEducationOpenButton.disabled = value || fillOutcomeUncertain || !gthEducationEligible
     || selectedGthEducationProfileIndex() === null || gthEducationTargets?.editorOpen !== true;
+  elements.gthWorkSource.disabled = value || fillOutcomeUncertain;
+  elements.gthWorkReplace.disabled = value || fillOutcomeUncertain;
+  elements.gthWorkOpenButton.disabled = value || fillOutcomeUncertain || !gthWorkEligible
+    || selectedGthWorkProfileIndex() === null || gthWorkEditorOpen !== true;
   const draftSource = gthDraftActions.source;
   const sourceVerified = draftSource?.state === "completed" && draftSource.outcome === "verified";
   elements.gthDraftInspect.disabled = value || fillOutcomeUncertain || !sourceVerified
@@ -427,6 +437,60 @@ function confirmedGthEducationFullCandidates(profile) {
 function selectedGthEducationProfileIndex() {
   const value = elements.gthEducationSource.value;
   return typeof value === "string" && /^(?:[0-9]|[12][0-9])$/.test(value) ? Number(value) : null;
+}
+
+const GTH_WORK_REQUIRED = ["position", "organization", "jobCategory", "industry", "startDate", "endDate", "description"];
+const GTH_WORK_MONTH = /^(19|20)\d{2}-(0[1-9]|1[0-2])$/u;
+function gthWorkPath(value) {
+  const parts = String(value || "").split("||");
+  return parts.length === 2 && parts[0] && parts[1] && parts[0] === parts[0].trim() && parts[1] === parts[1].trim()
+    && !parts[0].includes("|") && !parts[1].includes("|");
+}
+function confirmedGthWorkCandidates(profile) {
+  return (profile?.experience || []).slice(0, 30).map((row, index) => ({ row, index })).filter(({ row, index }) => {
+    const confirmed = new Set(profile.confirmedFields || []);
+    if (!GTH_WORK_REQUIRED.every((key) => typeof row?.[key] === "string" && row[key].trim() && confirmed.has(`experience.${index}.${key}`))) return false;
+    if (!GTH_WORK_MONTH.test(row.startDate) || !GTH_WORK_MONTH.test(row.endDate) || row.startDate > row.endDate) return false;
+    return gthWorkPath(row.jobCategory) && gthWorkPath(row.industry);
+  });
+}
+function selectedGthWorkProfileIndex() {
+  const value = elements.gthWorkSource.value;
+  return typeof value === "string" && /^(?:[0-9]|[12][0-9])$/.test(value) ? Number(value) : null;
+}
+function populateGthWorkSource(profile) {
+  const previous = elements.gthWorkSource.value;
+  elements.gthWorkSource.replaceChildren();
+  const empty = document.createElement("option");
+  empty.value = "";
+  empty.textContent = "请选择资料记录";
+  elements.gthWorkSource.append(empty);
+  const candidates = confirmedGthWorkCandidates(profile);
+  for (const candidate of candidates) {
+    const option = document.createElement("option");
+    option.value = String(candidate.index);
+    option.textContent = `资料第 ${candidate.index + 1} 段 · ${candidate.row.organization || "单位待补充"} · ${candidate.row.position || "职位待补充"}`;
+    elements.gthWorkSource.append(option);
+  }
+  elements.gthWorkSource.value = candidates.some((candidate) => String(candidate.index) === previous) ? previous : "";
+  gthWorkEligible = candidates.length > 0;
+}
+function readWorkEditorOpen() {
+  const PAGE = "https://hr.gtht.com/resume/edit/";
+  const titles = ["基本信息", "教育经历", "求职意向", "工作经验", "职业技能与特长", "附件简历", "其他信息"];
+  const norm = (value) => String(value || "").replace(/[\s\u00a0]+/gu, " ").trim();
+  if (location.href !== PAGE || document.readyState !== "complete" || document.visibilityState !== "visible") return { ok: false, editorOpen: false };
+  const sections = [...document.querySelectorAll(".r-section")];
+  const names = sections.map((section) => {
+    const title = section.querySelector(".title_")?.cloneNode(true);
+    title?.querySelectorAll("a,button").forEach((node) => node.remove());
+    return norm(title?.textContent);
+  });
+  if (JSON.stringify(names) !== JSON.stringify(titles) || !sections[3]) return { ok: false, editorOpen: false };
+  const forms = [...sections[3].querySelectorAll("form.el-form.sec-form")];
+  const any = [...sections[3].querySelectorAll("form")];
+  const others = sections.flatMap((section, index) => index === 3 ? [] : [...section.querySelectorAll("form")]);
+  return { ok: true, editorOpen: forms.length === 1 && any.length === 1 && any[0] === forms[0] && others.length === 0 };
 }
 
 function selectedGthEducationTargetIndex() {
@@ -679,6 +743,7 @@ async function getTab() {
   elements.gthSalaryTrial.hidden = tab.url !== GTH_RESUME_PAGE;
   elements.gthIntentTrial.hidden = tab.url !== GTH_RESUME_PAGE;
   elements.gthEducationTrial.hidden = tab.url !== GTH_RESUME_PAGE;
+  elements.gthWorkTrial.hidden = tab.url !== GTH_RESUME_PAGE;
   elements.gthSimpleTrial.hidden = tab.url !== GTH_RESUME_PAGE;
   elements.gthOtherTrial.hidden = tab.url !== GTH_RESUME_PAGE;
   elements.gthBasicTrial.hidden = tab.url !== GTH_RESUME_PAGE;
@@ -688,6 +753,8 @@ async function getTab() {
     gthEducationEligible = false;
     gthSimpleEligible = false;
     gthOtherEligible = false;
+    gthWorkEligible = false;
+    gthWorkEditorOpen = false;
   }
   const pending = await pendingReviewFor(tab);
   gthBasicPendingReview = pending?.kind === "gth_basic_trial";
@@ -2011,6 +2078,74 @@ async function performGthOtherTrial() {
   }
 }
 
+async function performGthWorkOpenFill() {
+  if (busy) return;
+  setBusy(true);
+  let tab = null;
+  let requestId = null;
+  try {
+    const profileBinding = await captureProfileBinding(chrome.storage.local);
+    const active = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (active.length !== 1) throw new Error("当前 Edge 窗口的活动页面不唯一，已停止。");
+    tab = await getTab();
+    if (tab.url !== GTH_RESUME_PAGE || active[0].id !== tab.id || active[0].url !== tab.url)
+      throw new Error("请进入国泰海通准确的简历编辑页，未试填。");
+    if (fillOutcomeUncertain || await pendingReviewFor(tab))
+      throw new Error("本页已有结果待核对的填写请求；工作经验填写保持锁定。");
+    const profile = await loadProfile();
+    populateGthWorkSource(profile);
+    const profileIndex = selectedGthWorkProfileIndex();
+    if (!Number.isInteger(profileIndex)) throw new Error("请先选择要使用的资料库工作记录，未试填。");
+    const probed = await chrome.scripting.executeScript({ target: { tabId: tab.id, frameIds: [0] }, func: readWorkEditorOpen });
+    gthWorkEditorOpen = probed?.length === 1 && probed[0].frameId === 0 && probed[0].result?.editorOpen === true;
+    if (!gthWorkEditorOpen) throw new Error("请先打开工作经验编辑器，未试填。");
+    const origin = authorizationScope(tab.url);
+    const { resumeTrustedOrigins } = await chrome.storage.local.get("resumeTrustedOrigins");
+    const trusted = Array.isArray(resumeTrustedOrigins) ? resumeTrustedOrigins : [];
+    if (!trusted.includes(origin)) {
+      if (!window.confirm(`即将把已核对的工作资料填入当前已打开的工作经验编辑器（${origin}）。不打开编辑器，不点击保存、提交、投递或删除。`))
+        throw new Error("已取消本次试填。");
+      await withProfileBinding(chrome.storage.local, profileBinding, () => chrome.storage.local.set({ resumeTrustedOrigins: [...trusted, origin].slice(-100) }));
+    }
+    await ownedGthResult(profileBinding, boundedChromeCall(() => dispatchBoundSource(chrome.storage.local, profileBinding, () => chrome.scripting.executeScript({
+      target: { tabId: tab.id }, files: ["src/content/gth-open-fill.js", "src/content/gth-work-fill.js"]
+    })), SCRIPT_TIMEOUT_MS, "script"));
+    const activeAgain = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (activeAgain.length !== 1 || activeAgain[0].id !== tab.id || activeAgain[0].url !== tab.url)
+      throw new Error("招聘网页已切换，本次没有发送试填指令。");
+    if (selectedGthWorkProfileIndex() !== profileIndex) throw new Error("选用的工作记录已变化，未发送试填指令。");
+    if (await pendingReviewFor(tab)) throw new Error("本页已有待核对请求，本次没有重复试填。");
+    requestId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    await withProfileBinding(chrome.storage.local, profileBinding, () => beginRecentRequest(tab, requestId));
+    await withProfileBinding(chrome.storage.local, profileBinding, () => chrome.storage.local.set({ [pendingFillReviewKey(tab.id)]: {
+      tabId: tab.id, origin, at: Date.now(), requestId, profileBinding, kind: "gth_work_open_fill"
+    } }));
+    const replaceExisting = elements.gthWorkReplace.checked === true;
+    const result = await ownedGthResult(profileBinding, boundedChromeCall(() => dispatchBoundSource(chrome.storage.local, profileBinding, () => chrome.tabs.sendMessage(tab.id, {
+      type: "GTH_WORK_FILL", requestId, profileBinding, profile, profileIndex, replaceExisting
+    })), FILL_TIMEOUT_MS, "fill_response"));
+    const assessed = assessGthWorkOpenFill(result);
+    if (!assessed.ok) {
+      if (result?.writeStarted === false) {
+        await withProfileBinding(chrome.storage.local, profileBinding, () => replacePendingReview(tab, requestId));
+        fillOutcomeUncertain = !!(await pendingReviewFor(tab));
+      }
+      throw new Error("已打开的工作经验编辑器没有形成完整读回。未保存、未提交、未删除。");
+    }
+    await withProfileBinding(chrome.storage.local, profileBinding, () => replacePendingReview(tab, requestId));
+    fillOutcomeUncertain = !!(await pendingReviewFor(tab));
+    setMessage(result.writeStarted
+      ? "已打开的工作经验编辑器已逐项读回。软件没有点击保存、提交、投递或删除。"
+      : "已打开的工作经验编辑器与资料一致，软件没有改写。没有保存或投递。");
+  } catch (error) {
+    if (error?.message === "profile_binding_unavailable") error.message = "暂时无法核对当前资料，已停止后续填写；已发出的操作请核对网站当前内容。";
+    else if (/^profile_/u.test(error?.message || "")) error.message = "客户资料已变化，已停止后续填写；已发出的操作请核对网站当前内容。";
+    setMessage(error?.message || "工作经验编辑器填写未完成，本页可能仍待核对。", true);
+  } finally {
+    setBusy(false);
+  }
+}
+
 async function performGthEducationOpenFill() {
   if (busy) return;
   setBusy(true);
@@ -2099,6 +2234,9 @@ elements.gthEducationTargetButton.addEventListener("click", () => {
 });
 elements.gthEducationNewButton.addEventListener("click", () => startGthEducationFullJob("new"));
 elements.gthEducationOpenButton.addEventListener("click", performGthEducationOpenFill);
+elements.gthWorkSource.addEventListener("change", () => setBusy(busy));
+elements.gthWorkReplace.addEventListener("change", () => setBusy(busy));
+elements.gthWorkOpenButton.addEventListener("click", performGthWorkOpenFill);
 elements.gthDraftInspect.addEventListener("click", () => performGthDraftAction("inspect"));
 elements.gthDraftSave.addEventListener("click", () => performGthDraftAction("save"));
 elements.gthDraftResume.addEventListener("click", () => performGthDraftAction("resume_refresh"));
@@ -2169,8 +2307,8 @@ attachmentReady = (async()=>{const token=await popupFileOwner.ensure(),file=awai
 chrome.storage.onChanged.addListener((changes,area)=>{
   if(area==='local'&&(changes.resumeProfile||changes.resumeProfileLifecycle)){
     gthEducationJobSnapshot=null;gthBasicPrepared=false;gthBasicActions.invalidate();
-    gthSalaryEligible=false;gthIntentEligible=false;gthEducationEligible=false;gthSimpleEligible=false;gthOtherEligible=false;
-    populateGthEducationSource({education:[],confirmedFields:[]});populateGthBasicSource([]);
+    gthSalaryEligible=false;gthIntentEligible=false;gthEducationEligible=false;gthSimpleEligible=false;gthOtherEligible=false;gthWorkEligible=false;gthWorkEditorOpen=false;
+    populateGthEducationSource({education:[],confirmedFields:[]});populateGthWorkSource({experience:[],confirmedFields:[]});populateGthBasicSource([]);
     lastInspection=null;previewQuestions=[];elements.list.replaceChildren();elements.summary.textContent='';elements.drafts.hidden=true;showRecentResult(null);setBusy(busy);
     setMessage('客户资料已变化，请重新识别当前客户；已发出的操作须核对网站当前内容。',true);
   }
@@ -2184,6 +2322,13 @@ getTab().then(async (tab) => {
     gthEducationEligible = tab.url === GTH_RESUME_PAGE
       && confirmedGthEducationFullCandidates(profile).length > 0;
     if (tab.url === GTH_RESUME_PAGE) populateGthEducationSource(profile);
+    if (tab.url === GTH_RESUME_PAGE) {
+      populateGthWorkSource(profile);
+      try {
+        const probed = await chrome.scripting.executeScript({ target: { tabId: tab.id, frameIds: [0] }, func: readWorkEditorOpen });
+        gthWorkEditorOpen = probed?.length === 1 && probed[0].frameId === 0 && probed[0].result?.editorOpen === true;
+      } catch { gthWorkEditorOpen = false; }
+    }
     if (tab.url === GTH_RESUME_PAGE) {
       const { resumeTrustedOrigins } = await chrome.storage.local.get("resumeTrustedOrigins");
       await assertProfileBinding(chrome.storage.local,profileBinding);

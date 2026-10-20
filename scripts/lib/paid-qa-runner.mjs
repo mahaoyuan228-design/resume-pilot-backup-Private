@@ -27,7 +27,7 @@ export const HINTS = {
   [REASON.AUTO_PAGE_NO_REPORT]: '自动页已打开，但在超时前没有回传报告',
   [REASON.BG_NO_RESPONSE]: '自动页已打开，但卡在请求后台 *_AUTO，超时前没有报告',
   [REASON.SAVE_CLICK_FORBIDDEN]: '检测到保存或提交点击，本段已失败（Never Save）',
-  [REASON.UNSETTLED_SUCCESS]: '回包声称成功，但填写未结算或在写入前停止（不得记为通过）',
+  [REASON.UNSETTLED_SUCCESS]: '填写未结算，或基本信息缺少已核对完成的结果或完成合约，本段未通过',
 };
 
 export const SITE_HOSTS = {
@@ -180,33 +180,6 @@ export function interpretBgProbe(result, timedOut = false) {
   return { reason: REASON.BG_NO_RESPONSE, result };
 }
 
-function claimNodes(body) {
-  const nodes = [body];
-  if (body.job && typeof body.job === 'object') nodes.push(body.job);
-  if (body.fill && typeof body.fill === 'object') nodes.push(body.fill);
-  return nodes;
-}
-
-/** A posted auto report must not pass when it claims Save/submit or an unsettled fill. */
-export function postedReportBreach(body) {
-  if (!body || typeof body !== 'object') return null;
-  for (const node of claimNodes(body)) {
-    if (
-      node.softwareClickedSave === true
-      || node.softwareClickedSubmit === true
-      || node.softwareClickedDelete === true
-      || node.savedOnSite === true
-      || node.submitted === true
-      || node.saveAttempted === true
-    ) return REASON.SAVE_CLICK_FORBIDDEN;
-  }
-  if (body.ok === true) {
-    const state = body.job?.state || body.state;
-    if (state === 'stopped_before_write' || state === 'unknown') return REASON.UNSETTLED_SUCCESS;
-  }
-  return null;
-}
-
 export function sectionStatus({ ok, reason }) {
   if (reason === REASON.SAVE_CLICK_FORBIDDEN || reason === REASON.UNSETTLED_SUCCESS) return 'fail';
   if (
@@ -216,6 +189,49 @@ export function sectionStatus({ ok, reason }) {
   ) return 'timeout';
   if (ok === true) return 'pass';
   return 'fail';
+}
+
+/** A posted report must not pass with a save-state claim at any nested level. */
+export function postedReportBreach(body) {
+  const pending = [body];
+  const seen = new Set();
+  while (pending.length) {
+    const value = pending.pop();
+    if (!value || typeof value !== 'object' || seen.has(value)) continue;
+    seen.add(value);
+    if (['softwareClickedSave', 'softwareClickedSubmit', 'softwareClickedDelete', 'saveAttempted', 'savedOnSite', 'submitted']
+      .some(key => value[key] === true)) return REASON.SAVE_CLICK_FORBIDDEN;
+    pending.push(...Object.values(value).filter(item => item && typeof item === 'object'));
+  }
+  if (body?.ok === true && ['stopped_before_write', 'unknown'].includes(body.job?.state || body.state)) {
+    return REASON.UNSETTLED_SUCCESS;
+  }
+  return null;
+}
+
+function basicFillVerified(section, body) {
+  if (!['cms-basic', 'gth-basic'].includes(section.id)) return true;
+  const job = body?.job;
+  const fields = job?.fields;
+  if (body?.mode !== 'fill' || job?.state !== 'completed'
+    || !['verified', 'verified_preexisting'].includes(job.outcome)
+    || typeof job.writeStarted !== 'boolean' || typeof job.supportedComplete !== 'boolean'
+    || job.operableComplete !== true || body.fill?.ok !== true
+    || job.outcome !== (job.writeStarted ? 'verified' : 'verified_preexisting')
+    || body.writeAttempted !== job.writeStarted
+    || !Array.isArray(fields) || !fields.length) return false;
+  const verified = row => row?.status === 'verified'
+    && ['readback_matched', 'readback_reapplied', 'preexisting_same_value'].includes(row.reason);
+  const allVerified = fields.every(verified);
+  if (job.supportedComplete !== allVerified) return false;
+  if (!job.writeStarted && fields.some(row => verified(row)
+    && ['readback_matched', 'readback_reapplied'].includes(row.reason))) return false;
+  // CMS has no read-only exception contract. GTH keeps its existing phone/email
+  // site_readonly result; the QA gate does not claim these fields were filled.
+  return fields.every(row => verified(row) || section.id === 'gth-basic'
+    && row?.status === 'skipped' && row.reason === 'site_readonly'
+    && ['phone', 'email'].includes(row.path)
+    && ['same', 'different', 'empty', 'source_unavailable'].includes(row.readOnlyState));
 }
 
 function asNumber(value) {
@@ -890,7 +906,8 @@ async function runSection({ section, driver, config, fetchJson, openReportServer
     clearTimeout(timer);
     const saveClicksAfter = await readClicks(driver, siteTargetId);
     const shot = await shotOf(driver, siteTargetId);
-    if (saveClicksAfter.length) {
+    const breach = postedReportBreach(outcome.body);
+    if (saveClicksAfter.length || breach === REASON.SAVE_CLICK_FORBIDDEN) {
       return finish({
         ok: false,
         reason: REASON.SAVE_CLICK_FORBIDDEN,
@@ -902,11 +919,12 @@ async function runSection({ section, driver, config, fetchJson, openReportServer
         screenshotError: shot.error,
       });
     }
-    const breach = postedReportBreach(outcome.body);
-    const ok = !breach && outcome.body?.ok === true;
+    const verified = basicFillVerified(section, outcome.body);
+    const ok = !breach && outcome.body?.ok === true && verified;
     return finish({
       ok,
-      reason: breach || (ok ? null : (outcome.body?.reason || outcome.body?.job?.reason || 'section_failed')),
+      reason: breach || (ok ? null : (outcome.body?.reason || outcome.body?.job?.reason
+        || (!verified ? REASON.UNSETTLED_SUCCESS : 'section_failed'))),
       saveClicksBefore,
       saveClicksAfter,
       body: outcome.body,

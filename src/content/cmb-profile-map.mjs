@@ -15,9 +15,10 @@
 // Id card type uses the full-dictmap IdCardType text+code table and the harvested
 // select id resume_basicInfo_idCardType. Live click evidence is on file. The key is
 // not added to emptyProfile. 证件号 is a separate text field and is not filled.
-// Birth date is hint-only: a present value is not filled.
+// A confirmed calendar birthDate is ready for the DatePicker fill.
 // Used by tests + harness. Content script mirrors the same rules.
 
+import { CMB_BIRTHDATE_FILL_FAIL_REASONS, parseCmbBirthDate } from './cmb-birthdate-picker.mjs';
 import {
   CMB_BIRTHDATE_HINT,
   CMB_EDUCATION_LEVEL_OPTIONS,
@@ -183,9 +184,11 @@ function normMeasure(value) {
  * The allowlist is the forty-four InterviewCity names. A shorter name does not match.
  * The select id is the harvested resume_basicInfo_expectedInterviewCity.
  * Live click evidence is on file. RankingMajor is not planned here.
- * Birth date is never filled here. A present birthDate is a blocker with
- * reason datepicker_hint_only (confirmed) and is not written.
- * The hint-only path cannot Save.
+ * A confirmed YYYY-MM-DD or YYYY/MM/DD birthDate is ready for the DatePicker
+ * fill. The content script clicks #resume_basicInfo_birthday only.
+ * An unparseable confirmed value is birthdate_unparseable and is not written.
+ * An unconfirmed value stays profile_fact_unconfirmed. This planner does not
+ * claim the site is supported and it cannot Save.
  * A present optional value that is unconfirmed, invalid, ambiguous, or
  * hint-only stays a blocker. It is not a skipped success.
  */
@@ -194,6 +197,7 @@ export const CMB_REQUESTED_FILL_FAIL_CLOSED_REASONS = Object.freeze([
   'radio_readback_ambiguous',
   'select_readback_ambiguous',
   'datepicker_hint_only',
+  ...CMB_BIRTHDATE_FILL_FAIL_REASONS,
   'profile_fact_unconfirmed',
   'invalid_profile_value'
 ]);
@@ -339,12 +343,16 @@ export function planCmbBasicFromProfile(profile) {
   const interviewCityFields = codedFields(interviewCityRaw, 'interviewCity', CMB_INTERVIEW_CITY_LABEL, CMB_INTERVIEW_CITY_OPTIONS);
   const birthFields = [];
   if (birthRaw) {
+    const parsedBirth = parseCmbBirthDate(birthRaw);
+    let reason = null;
+    if (!confirmed.has('birthDate')) reason = 'profile_fact_unconfirmed';
+    else if (!parsedBirth.ok) reason = 'birthdate_unparseable';
     birthFields.push({
       label: CMB_BIRTHDATE_HINT.label,
       path: 'birthDate',
-      value: '',
-      ready: false,
-      reason: confirmed.has('birthDate') ? 'datepicker_hint_only' : 'profile_fact_unconfirmed',
+      value: reason === null ? parsedBirth.iso : '',
+      ready: reason === null,
+      reason,
       kind: CMB_BIRTHDATE_HINT.kind,
       fillHint: CMB_BIRTHDATE_HINT.fillHint,
       saveAllowed: false,
@@ -435,7 +443,7 @@ export function planCmbBasicFromProfile(profile) {
   return {
     ok: true,
     reason: 'profile_ready',
-    values: { fullName, mobile, email, gender, height, weight, formalWork, maritalStatus, politics, ethnicity, idCardType, educationLevel, relationshipType, relationshipTypeRow1, awardLevel, englishLevel, channelType, interviewCity },
+    values: { fullName, mobile, email, gender, height, weight, formalWork, maritalStatus, politics, ethnicity, idCardType, educationLevel, relationshipType, relationshipTypeRow1, awardLevel, englishLevel, channelType, interviewCity, birthDate: birthFields.find((row) => row.ready)?.value || '' },
     fields,
     blockers: optionalBlockers,
     birthDateHint: CMB_BIRTHDATE_HINT

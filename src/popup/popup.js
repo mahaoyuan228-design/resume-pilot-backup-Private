@@ -138,7 +138,14 @@ const reasons = {
   control_not_found: "页面控件无法唯一确定",
   wrong_page: "当前不是招行简历编辑页",
   profile_fields_unavailable: "姓名、手机号或邮箱尚未核对完整",
-  datepicker_hint_only: "出生日期只记录填法，本次不填写"
+  datepicker_hint_only: "出生日期只记录填法，本次不填写",
+  birthdate_unparseable: "出生日期无法识别，本次没有填写",
+  birthdate_input_missing: "没有找到出生日期输入框，本次没有填写",
+  birthdate_panel_missing: "出生日期日历没有打开，本次没有填写",
+  birthdate_panel_multiple: "打开了多个日期面板，已关闭并且没有填写",
+  birthdate_cell_missing: "日历里没有这一天，本次没有改日期",
+  birthdate_cell_disabled: "这一天不能选择，本次没有改日期",
+  birthdate_readback_mismatch: "出生日期和资料不一致，已停止并且没有保存"
 };
 
 let activeTab = null;
@@ -755,6 +762,13 @@ function cmbRouteMessage(reason) {
     cmb_fill_empty_response: "招行页面没有返回填写结果。请刷新后再试。",
     cmb_fill_partial: "招行试填有字段未读回一致。请核对网页，本次不能当作完成。",
     datepicker_hint_only: "出生日期只能提示，没有写入。请核对网页后再决定。",
+    birthdate_unparseable: "出生日期无法识别，没有写入。请核对资料后再决定。",
+    birthdate_input_missing: "没有找到出生日期输入框，没有写入。请核对网页后再决定。",
+    birthdate_panel_missing: "出生日期日历没有打开，没有写入。请核对网页后再决定。",
+    birthdate_panel_multiple: "打开了多个日期面板，已关闭并且没有写入。请核对网页后再决定。",
+    birthdate_cell_missing: "日历里没有这一天，没有改日期。请核对网页后再决定。",
+    birthdate_cell_disabled: "这一天不能选择，没有改日期。请核对网页后再决定。",
+    birthdate_readback_mismatch: "出生日期和资料不一致，已停止。请核对网页后再决定。",
     profile_fact_unconfirmed: "有资料尚未核对，本次不能当作完成。",
     invalid_profile_value: "有资料对不上网页选项，本次不能当作完成。",
     item_ambiguous: "有字段对应到多处，没有猜选。请核对网页后再决定。",

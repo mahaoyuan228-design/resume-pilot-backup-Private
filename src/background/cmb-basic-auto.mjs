@@ -77,7 +77,8 @@ const CMB_LABEL_PATH = {
   邮箱: 'email',
   性别: 'gender',
   身高: 'height',
-  体重: 'weight'
+  体重: 'weight',
+  出生日期: 'birthDate'
 };
 
 function rowVerified(row) {

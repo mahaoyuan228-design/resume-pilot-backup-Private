@@ -203,10 +203,11 @@ test('unique 姓名 fills; duplicate labels scope to basicInfo or fail closed; n
       fullName: '测试甲',
       mobile: '13800138000',
       email: 'cmb.fixture@example.com',
-      birthDate: '1990-01-02'
+      birthDate: '不是日期'
     }, { synthetic: true })`);
     assert.equal(hint.ok, false);
-    assert.equal(hint.reason, 'datepicker_hint_only');
+    assert.equal(hint.reason, 'birthdate_unparseable');
+    assert.equal(hint.status, 'failed');
     assert.equal(hint.writeAttempted, false);
     assert.equal(hint.saved, false);
     assert.equal(hint.skippedSave, true);

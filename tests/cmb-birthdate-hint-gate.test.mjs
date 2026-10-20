@@ -210,15 +210,20 @@ test('partial packets and the earlier birthday hint file do not upgrade support'
 
 test('hint-only plans cannot Save and do not keep a birthDate value', () => {
   const probe = createCmbBirthDateSaveProbe();
-  const hinted = plan({ birthDate: '1990-01-02' }, ['birthDate']);
-  assert.equal(hinted.values.birthDate, undefined);
-  assert.equal(hinted.blockers.find((row) => row.path === 'birthDate')?.reason, 'datepicker_hint_only');
+  const ready = plan({ birthDate: '1990-01-02' }, ['birthDate']);
+  assert.equal(ready.values.birthDate, '1990-01-02');
+  assert.equal(ready.blockers.find((row) => row.path === 'birthDate'), undefined);
+  assert.equal(ready.birthDateHint.saveAllowed, false);
+  assert.equal(ready.birthDateHint.liveFillClaimed, false);
+  const hinted = plan({ birthDate: '不是日期' }, ['birthDate']);
+  assert.equal(hinted.values.birthDate, '');
+  assert.equal(hinted.blockers.find((row) => row.path === 'birthDate')?.reason, 'birthdate_unparseable');
   assert.equal(hinted.blockers.find((row) => row.path === 'birthDate')?.saveAllowed, false);
   assert.equal(hinted.birthDateHint.saveAllowed, false);
 
   const locked = attemptCmbBirthDateSave(hinted, probe);
-  assert.equal(locked.hintOnly, true);
-  assert.equal(locked.birthDateReason, 'datepicker_hint_only');
+  assert.equal(locked.hintOnly, false);
+  assert.equal(locked.birthDateReason, 'birthdate_unparseable');
   assert.equal(locked.saveAllowed, false);
   assert.equal(locked.saved, false);
   assert.equal(locked.skippedSave, true);
@@ -289,7 +294,8 @@ test('save probes stay at zero across hint fixtures and the fill path refuses Sa
 
   assert.doesNotMatch(moduleSource, /document|querySelector|click\(|ant-picker|ant-calendar|日历|保存|提交|投递/);
   assert.match(moduleSource, /Never Save/);
-  assert.doesNotMatch(engineSource, /cmb-birthdate-hint-gate|DOB_HINT_|DOB_CONTROL_|DOB_FORMAT_|fillBirthDate/);
+  assert.doesNotMatch(engineSource, /cmb-birthdate-hint-gate|DOB_HINT_|DOB_CONTROL_|DOB_FORMAT_/);
+  assert.match(engineSource, /function fillBirthDate\(/);
   assert.match(engineSource, /function refuseHintSave\(/);
   assert.match(engineSource, /saveAllowed:\s*false/);
   assert.match(engineSource, /saveRefused:\s*true/);
@@ -303,11 +309,11 @@ test('save probes stay at zero across hint fixtures and the fill path refuses Sa
   assert.match(hintFn, /refuseHintSave\(null\)/);
   assert.match(hintFn, /datepicker_hint_only/);
   const explicit = engineSource.slice(
-    engineSource.indexOf('if (norm(rawValues.birthDate'),
+    engineSource.indexOf('const birthRawExplicit'),
     engineSource.indexOf("reason: 'invalid_gender'")
   );
   assert.match(explicit, /refuseHintSave\(options\)/);
-  assert.match(explicit, /datepicker_hint_only/);
+  assert.match(explicit, /birthdate_unparseable/);
   assert.doesNotMatch(explicit, /\.save\(|\.submit\(|click\(/);
 
   for (const name of names) {
@@ -321,16 +327,16 @@ test('save probes stay at zero across hint fixtures and the fill path refuses Sa
     encoding: 'utf8',
     timeout: 20000
   });
-  assert.equal(run.status, 3, run.stderr || run.stdout);
+  assert.equal(run.status, 0, run.stderr || run.stdout);
   const payload = JSON.parse(run.stdout);
-  assert.equal(payload.reason, 'datepicker_hint_only');
+  assert.equal(payload.reason, 'synthetic_birthdate_picker_pass');
   assert.equal(payload.saveAllowed, false);
   assert.equal(payload.saveRefused, true);
   assert.equal(payload.saved, false);
   assert.equal(payload.skippedSave, true);
   assert.equal(payload.supported, false);
   assert.equal(payload.selector, null);
-  assert.equal(payload.writeAttempted, false);
   assert.equal(payload.formFillClaimed, false);
   assert.equal(payload.liveFillClaimed, false);
+  assert.equal(payload.saveClicks, 0);
 });

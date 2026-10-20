@@ -48,7 +48,7 @@ export function getJson(port, pathname, { timeoutMs, step = 'connect' } = {}) {
   });
 }
 
-export function connectCdp(wsUrl, { timeoutMs, step = 'connect' } = {}) {
+export function connectCdp(wsUrl, { timeoutMs, step = 'connect', onEvent } = {}) {
   if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
     return Promise.reject(new StepTimeoutError(step));
   }
@@ -90,6 +90,11 @@ export function connectCdp(wsUrl, { timeoutMs, step = 'connect' } = {}) {
     ws.on('message', (data) => {
       let msg;
       try { msg = JSON.parse(String(data)); } catch { return; }
+      // Events have a method and no id. Callers such as the GTH intent probe
+      // observe Network.requestWillBeSent without changing command replies.
+      if (msg.method && typeof onEvent === 'function') {
+        try { onEvent(msg); } catch { /* an observer must not break the session */ }
+      }
       if (msg.id == null || !pending.has(msg.id)) return;
       const entry = pending.get(msg.id);
       pending.delete(msg.id);

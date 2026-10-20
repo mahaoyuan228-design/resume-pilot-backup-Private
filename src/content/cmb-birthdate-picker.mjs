@@ -10,6 +10,7 @@ const CMB_BIRTHDATE_INPUT_ID = 'resume_basicInfo_birthday';
 const CMB_BIRTHDATE_FILL_FAIL_REASONS = Object.freeze([
   'birthdate_unparseable',
   'birthdate_input_missing',
+  'birthdate_target_ambiguous',
   'birthdate_panel_missing',
   'birthdate_panel_multiple',
   'birthdate_cell_missing',
@@ -322,16 +323,38 @@ async function driveBirthDatePanel(doc, parsed, wait) {
   return { ok: false, reason: 'birthdate_panel_missing' };
 }
 
+function classifyCmbBirthDatePickerTarget(snapshot) {
+  const count = Number(snapshot?.count);
+  const oneInput = count === 1 && snapshot?.input === true;
+  if (oneInput) return { count: 1, unique: true, reason: null };
+  if (Number.isFinite(count) && count > 1) {
+    return { count, unique: false, reason: 'birthdate_target_ambiguous' };
+  }
+  return { count: 0, unique: false, reason: 'birthdate_input_missing' };
+}
+
+function assessCmbBirthDatePickerTarget(doc) {
+  if (!doc || typeof doc.querySelectorAll !== 'function') {
+    return { ...classifyCmbBirthDatePickerTarget({ count: 0, input: false }), ok: false, node: null };
+  }
+  const nodes = [...doc.querySelectorAll(`[id="${CMB_BIRTHDATE_INPUT_ID}"]`)];
+  const input = nodes.length === 1 && nodes[0].tagName === 'INPUT';
+  const classified = classifyCmbBirthDatePickerTarget({ count: nodes.length, input });
+  return {
+    ...classified,
+    ok: classified.unique === true,
+    node: classified.unique === true ? nodes[0] : null
+  };
+}
+
 async function fillCmbBirthDatePicker(doc, rawDate, options = {}) {
   const parsed = parseCmbBirthDate(rawDate);
-  if (!doc || typeof doc.getElementById !== 'function') {
-    return closedPickerResult({ reason: 'birthdate_input_missing', expected: parsed.ok ? parsed.iso : '' });
-  }
   if (!parsed.ok) return closedPickerResult({ reason: 'birthdate_unparseable' });
-  const input = doc.getElementById(CMB_BIRTHDATE_INPUT_ID);
-  if (!input || input.tagName !== 'INPUT') {
-    return closedPickerResult({ reason: 'birthdate_input_missing', expected: parsed.iso });
+  const target = assessCmbBirthDatePickerTarget(doc);
+  if (!target.ok) {
+    return closedPickerResult({ reason: target.reason, expected: parsed.iso });
   }
+  const input = target.node;
   const before = normalizeCmbBirthDateValue(input.value);
   if (before === parsed.iso) {
     return {
@@ -422,5 +445,7 @@ export {
   CMB_BIRTHDATE_FILL_FAIL_REASONS,
   parseCmbBirthDate,
   normalizeCmbBirthDateValue,
+  classifyCmbBirthDatePickerTarget,
+  assessCmbBirthDatePickerTarget,
   fillCmbBirthDatePicker
 };

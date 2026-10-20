@@ -18,7 +18,11 @@
 // A confirmed calendar birthDate is ready for the DatePicker fill.
 // Used by tests + harness. Content script mirrors the same rules.
 
-import { CMB_BIRTHDATE_FILL_FAIL_REASONS, parseCmbBirthDate } from './cmb-birthdate-picker.mjs';
+import {
+  CMB_BIRTHDATE_FILL_FAIL_REASONS,
+  classifyCmbBirthDatePickerTarget,
+  parseCmbBirthDate
+} from './cmb-birthdate-picker.mjs';
 import {
   CMB_BIRTHDATE_HINT,
   CMB_EDUCATION_LEVEL_OPTIONS,
@@ -185,10 +189,13 @@ function normMeasure(value) {
  * The select id is the harvested resume_basicInfo_expectedInterviewCity.
  * Live click evidence is on file. RankingMajor is not planned here.
  * A confirmed YYYY-MM-DD or YYYY/MM/DD birthDate is ready for the DatePicker
- * fill. The content script clicks #resume_basicInfo_birthday only.
- * An unparseable confirmed value is birthdate_unparseable and is not written.
- * An unconfirmed value stays profile_fact_unconfirmed. This planner does not
- * claim the site is supported and it cannot Save.
+ * fill when #resume_basicInfo_birthday is the one input. The content script
+ * clicks that input only. A second element with that id is
+ * birthdate_target_ambiguous and is not written. No input is
+ * birthdate_input_missing. An unparseable confirmed value is
+ * birthdate_unparseable. An unconfirmed value stays profile_fact_unconfirmed.
+ * datepicker_hint_only is not the readiness result for that picker path.
+ * This planner does not claim the site is supported and it cannot Save.
  * A present optional value that is unconfirmed, invalid, ambiguous, or
  * hint-only stays a blocker. It is not a skipped success.
  */
@@ -207,7 +214,72 @@ export function cmbRequestedFillBlockers(plan) {
   return rows.filter((row) => row && CMB_REQUESTED_FILL_FAIL_CLOSED_REASONS.includes(row.reason));
 }
 
-export function planCmbBasicFromProfile(profile) {
+export function cmbBirthDateReadinessView(plan) {
+  const field = (plan?.fields || []).find((row) => row && row.path === 'birthDate') || null;
+  const blocker = (plan?.blockers || []).find((row) => row && row.path === 'birthDate') || null;
+  if (!field) {
+    return { path: 'birthDate', present: false, ready: false, fillVia: null, reason: null, blocker: false };
+  }
+  const ready = field.ready === true && !blocker;
+  return {
+    path: 'birthDate',
+    present: true,
+    ready,
+    fillVia: ready ? 'datepicker' : null,
+    reason: blocker?.reason || null,
+    blocker: Boolean(blocker)
+  };
+}
+
+/**
+ * A ready birthDate stays fillable via the DatePicker only when the census
+ * shows one input#resume_basicInfo_birthday. A missing census leaves the
+ * profile plan unchanged. Zero or many targets fail closed and drop the value.
+ */
+export function applyCmbBirthDatePickerCensus(plan, census) {
+  if (!plan || census == null) {
+    return plan ? { ...plan, birthDateReadiness: cmbBirthDateReadinessView(plan) } : plan;
+  }
+  const classified = classifyCmbBirthDatePickerTarget(census);
+  const fields = (plan.fields || []).map((row) => ({ ...row }));
+  const birth = fields.find((row) => row.path === 'birthDate');
+  if (!birth || birth.ready !== true) {
+    const next = { ...plan, fields };
+    return { ...next, birthDateReadiness: cmbBirthDateReadinessView(next) };
+  }
+  if (classified.unique === true) {
+    birth.fillVia = 'datepicker';
+    const next = { ...plan, fields };
+    return { ...next, birthDateReadiness: cmbBirthDateReadinessView(next) };
+  }
+  birth.ready = false;
+  birth.reason = classified.reason;
+  birth.value = '';
+  birth.fillVia = null;
+  const blockers = [
+    ...(plan.blockers || []).filter((row) => row.path !== 'birthDate'),
+    {
+      label: birth.label,
+      path: 'birthDate',
+      value: '',
+      ready: false,
+      reason: classified.reason,
+      kind: birth.kind,
+      fillHint: birth.fillHint,
+      fillVia: null,
+      saveAllowed: false,
+      saved: false,
+      skippedSave: true
+    }
+  ];
+  const values = plan.values && typeof plan.values === 'object' && !Array.isArray(plan.values)
+    ? { ...plan.values, birthDate: '' }
+    : plan.values;
+  const next = { ...plan, fields, blockers, values };
+  return { ...next, birthDateReadiness: cmbBirthDateReadinessView(next) };
+}
+
+export function planCmbBasicFromProfile(profile, pickerCensus = null) {
   if (!profile || typeof profile !== 'object' || Array.isArray(profile)) {
     return {
       ok: false,
@@ -355,6 +427,7 @@ export function planCmbBasicFromProfile(profile) {
       reason,
       kind: CMB_BIRTHDATE_HINT.kind,
       fillHint: CMB_BIRTHDATE_HINT.fillHint,
+      fillVia: reason === null ? 'datepicker' : null,
       saveAllowed: false,
       saved: false,
       skippedSave: true
@@ -416,13 +489,13 @@ export function planCmbBasicFromProfile(profile) {
     ...birthBlockers
   ];
   if (coreBlockers.length) {
-    return {
+    return applyCmbBirthDatePickerCensus({
       ok: false,
       reason: 'profile_fields_unavailable',
       values: null,
       fields,
       blockers: [...coreBlockers, ...optionalBlockers]
-    };
+    }, pickerCensus);
   }
 
   const gender = genderFields.find((row) => row.ready)?.value || '';
@@ -440,14 +513,14 @@ export function planCmbBasicFromProfile(profile) {
   const englishLevel = englishLevelFields.find((row) => row.ready)?.value || '';
   const channelType = channelTypeFields.find((row) => row.ready)?.value || '';
   const interviewCity = interviewCityFields.find((row) => row.ready)?.value || '';
-  return {
+  return applyCmbBirthDatePickerCensus({
     ok: true,
     reason: 'profile_ready',
     values: { fullName, mobile, email, gender, height, weight, formalWork, maritalStatus, politics, ethnicity, idCardType, educationLevel, relationshipType, relationshipTypeRow1, awardLevel, englishLevel, channelType, interviewCity, birthDate: birthFields.find((row) => row.ready)?.value || '' },
     fields,
     blockers: optionalBlockers,
     birthDateHint: CMB_BIRTHDATE_HINT
-  };
+  }, pickerCensus);
 }
 
 /** Normalize form-item label text (mirrors content script). */

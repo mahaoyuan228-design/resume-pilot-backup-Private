@@ -8,7 +8,7 @@
 // It is not omitted so the other rows can complete.
 import {captureProfileBinding,assertProfileBinding,canonicalProfileHash,
   dispatchBoundSource,withProfileBinding} from '../profile/profile-lifecycle.js';
-import {planCmbBasicFromProfile,cmbRequestedFillBlockers,CMB_REQUESTED_FILL_FAIL_CLOSED_REASONS,
+import {planCmbBasicFromProfile,cmbRequestedFillBlockers,cmbBirthDateReadinessView,CMB_REQUESTED_FILL_FAIL_CLOSED_REASONS,
   isCmbHost,isCmbResumeEditPath,isCmbResumeEditPage} from '../content/cmb-profile-map.mjs';
 
 const SITE_ID = 'cmb';
@@ -332,6 +332,7 @@ function probePageFunc() {
   const found = need.filter((name) => labels.includes(name));
   const html = document.documentElement?.innerHTML || '';
   const looksCmb = /career\.cmbchina\.com|\/static\/js\/main\./i.test(html) || !!document.getElementById('root');
+  const birthNodes = [...document.querySelectorAll('[id="resume_basicInfo_birthday"]')];
   return {
     ok: found.length >= 3,
     reason: found.length >= 3
@@ -344,7 +345,11 @@ function probePageFunc() {
     foundLabels: found,
     looksLogin,
     looksCmb,
-    title: document.title || ''
+    title: document.title || '',
+    birthDatePicker: {
+      count: birthNodes.length,
+      input: birthNodes.length === 1 && birthNodes[0].tagName === 'INPUT'
+    }
   };
 }
 
@@ -429,7 +434,7 @@ export function createCmbBasicAutoRunner({ api = globalThis.chrome, verifyBefore
 
   async function collectReadiness(tab, probeResult) {
     const raw = await get('resumeProfile');
-    const plan = planCmbBasicFromProfile(raw);
+    const plan = planCmbBasicFromProfile(raw, probeResult?.birthDatePicker);
     const binding = await captureProfileBinding(api.storage.local, lifecycleOptions);
     return {
       pageState: probeResult.reason,
@@ -445,7 +450,8 @@ export function createCmbBasicAutoRunner({ api = globalThis.chrome, verifyBefore
           label: row.label || null,
           path: row.path || null,
           reason: row.reason
-        }))
+        })),
+        birthDate: plan.birthDateReadiness || cmbBirthDateReadinessView(plan)
       },
       profileBinding: binding,
       profileHash: binding?.profileHash || null,
@@ -459,7 +465,7 @@ export function createCmbBasicAutoRunner({ api = globalThis.chrome, verifyBefore
     await assertProfileBinding(api.storage.local, binding, lifecycleOptions);
     const raw = await get('resumeProfile');
     if (await canonicalProfileHash(raw, lifecycleOptions.cryptoImpl) !== binding.profileHash) fail('profile_binding_changed');
-    const plan = planCmbBasicFromProfile(raw);
+    const plan = planCmbBasicFromProfile(raw, readiness.page?.birthDatePicker);
     if (!plan.ok) fail(plan.reason || 'profile_fields_unavailable');
     const requestId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
     const review = {

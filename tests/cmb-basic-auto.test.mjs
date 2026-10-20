@@ -90,7 +90,7 @@ test('resolveCmbTarget accepts the resume edit host and refuses aliases that are
   ]) assert.throws(() => resolveCmbTarget(bad), /cmb_page_invalid/, String(bad));
 });
 
-function harness({ hostPermissions = grantedManifest().host_permissions, probeOk = true, serviceWorker = 'src/background/worker.mjs', fillResult = null } = {}) {
+function harness({ hostPermissions = grantedManifest().host_permissions, probeOk = true, serviceWorker = 'src/background/worker.mjs', fillResult = null, birthDatePicker = undefined } = {}) {
   const data = {
     resumeProfile: {
       schemaVersion: 1,
@@ -183,7 +183,8 @@ function harness({ hostPermissions = grantedManifest().host_permissions, probeOk
               foundLabels: probeOk ? ['姓名', '手机号', '邮箱'] : [],
               looksLogin: false,
               looksCmb: true,
-              title: 'synthetic'
+              title: 'synthetic',
+              ...(birthDatePicker ? { birthDatePicker } : {})
             }
           }];
         }
@@ -448,11 +449,68 @@ test('CMB_BASIC_AUTO readiness names a blocked requested fill and does not write
   assert.equal(parseable.readiness.profilePlan.requestedFillBlocked, false);
   assert.equal(parseable.readiness.profilePlan.fillAllowed, true);
   assert.equal(parseable.readiness.profilePlan.complete, false);
+  assert.equal(parseable.readiness.profilePlan.birthDate.ready, true);
+  assert.equal(parseable.readiness.profilePlan.birthDate.fillVia, 'datepicker');
+  assert.equal(parseable.readiness.profilePlan.birthDate.blocker, false);
+  assert.equal(parseable.readiness.profilePlan.birthDate.reason, null);
+  assert.equal(parseable.readiness.profilePlan.blockers.some((row) => row.reason === 'datepicker_hint_only'), false);
   assert.equal(parseable.liveSupportClaimed, false);
   assert.equal(h.stats.fill, 0);
   assert.equal(h.data['resumePendingFillReview:42'], undefined);
   assert.match(await readFile(resolve(root, 'src/auto/cmb-basic-auto.js'), 'utf8'), /requestedFillBlocked/);
   assert.doesNotMatch(await readFile(resolve(root, 'src/auto/cmb-basic-auto.js'), 'utf8'), /已支持/);
+});
+
+test('CMB readiness matches the DatePicker target: unique is fillable, missing or duplicate is closed', async () => {
+  const profile = {
+    fullName: '测试甲',
+    phone: '13800138000',
+    email: 'cmb.user@example.com',
+    birthDate: '2002-01-25',
+    confirmedFields: ['fullName', 'phone', 'email', 'birthDate']
+  };
+  const unique = harness({ birthDatePicker: { count: 1, input: true } });
+  unique.data.resumeProfile = profile;
+  const ready = await unique.invoke({ type: 'CMB_BASIC_AUTO', mode: 'readiness', openIfMissing: false });
+  assert.equal(ready.ok, true);
+  assert.equal(ready.writeAttempted, false);
+  assert.equal(ready.saved, undefined);
+  assert.equal(ready.skippedSave, true);
+  assert.equal(ready.liveSupportClaimed, false);
+  assert.equal(ready.readiness.profilePlan.fillAllowed, true);
+  assert.equal(ready.readiness.profilePlan.requestedFillBlocked, false);
+  assert.equal(ready.readiness.profilePlan.birthDate.fillVia, 'datepicker');
+  assert.equal(ready.readiness.profilePlan.birthDate.ready, true);
+  assert.equal(ready.readiness.profilePlan.birthDate.blocker, false);
+  assert.equal(ready.readiness.profilePlan.blockers.some((row) => row.path === 'birthDate'), false);
+  assert.equal(ready.readiness.profilePlan.blockers.some((row) => row.reason === 'datepicker_hint_only'), false);
+  assert.equal(unique.stats.fill, 0);
+
+  const duplicate = harness({ birthDatePicker: { count: 2, input: false } });
+  duplicate.data.resumeProfile = profile;
+  const many = await duplicate.invoke({ type: 'CMB_BASIC_AUTO', mode: 'readiness', openIfMissing: false });
+  assert.equal(many.readiness.profilePlan.fillAllowed, false);
+  assert.equal(many.readiness.profilePlan.requestedFillBlocked, true);
+  assert.equal(many.readiness.profilePlan.birthDate.reason, 'birthdate_target_ambiguous');
+  assert.equal(many.readiness.profilePlan.birthDate.fillVia, null);
+  assert.equal(many.readiness.profilePlan.birthDate.blocker, true);
+  assert.equal(many.writeAttempted, false);
+  assert.equal(many.skippedSave, true);
+  assert.notEqual(many.saved, true);
+
+  const absent = harness({ birthDatePicker: { count: 0, input: false } });
+  absent.data.resumeProfile = profile;
+  const missing = await absent.invoke({ type: 'CMB_BASIC_AUTO', mode: 'readiness', openIfMissing: false });
+  assert.equal(missing.readiness.profilePlan.birthDate.reason, 'birthdate_input_missing');
+  assert.equal(missing.readiness.profilePlan.fillAllowed, false);
+
+  const invalid = harness({ birthDatePicker: { count: 1, input: true } });
+  invalid.data.resumeProfile = { ...profile, birthDate: '不是日期' };
+  const bad = await invalid.invoke({ type: 'CMB_BASIC_AUTO', mode: 'readiness', openIfMissing: false });
+  assert.equal(bad.readiness.profilePlan.birthDate.reason, 'birthdate_unparseable');
+  assert.equal(bad.readiness.profilePlan.birthDate.fillVia, null);
+  assert.equal(bad.readiness.profilePlan.blockers.some((row) => row.reason === 'datepicker_hint_only'), false);
+  assert.equal(bad.writeAttempted, false);
 });
 
 test('assessCmbFillReport rejects an ambiguous ok row and a hint attached to a green body', async () => {

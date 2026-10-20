@@ -379,7 +379,7 @@ test('synthetic birthDate attempt does not write, open a calendar, or clobber ne
     assert.equal(afterExplicit.saveDisabled, true);
     assert.equal(afterExplicit.saveClicks, 0);
 
-    const planned = await evaluate(send, `ResumeCmbBasic.planFromProfile({
+    const profileOnly = await evaluate(send, `ResumeCmbBasic.planFromProfile({
       fullName: '测试甲',
       phone: '13800138000',
       email: 'cmb.fixture@example.com',
@@ -390,11 +390,83 @@ test('synthetic birthDate attempt does not write, open a calendar, or clobber ne
       birthDate: '1990/01/02',
       confirmedFields: ['fullName', 'phone', 'email', 'gender', 'height', 'weight', 'formalWork', 'birthDate']
     })`);
+    assert.equal(profileOnly.ok, true);
+    assert.equal(profileOnly.values.birthDate, '1990-01-02');
+    assert.equal(profileOnly.values.gender, '女');
+    assert.equal(profileOnly.values.height, '175');
+    assert.equal(profileOnly.blockers.find((row) => row.path === 'birthDate'), undefined);
+    assert.equal(profileOnly.birthDateReadiness.ready, true);
+    assert.equal(profileOnly.birthDateReadiness.fillVia, 'datepicker');
+    assert.equal(profileOnly.birthDateReadiness.blocker, false);
+    assert.equal(profileOnly.blockers.some((row) => row.reason === 'datepicker_hint_only'), false);
+
+    const planned = await evaluate(send, `ResumeCmbBasic.planFromProfile({
+      fullName: '测试甲',
+      phone: '13800138000',
+      email: 'cmb.fixture@example.com',
+      gender: '女',
+      height: '175',
+      weight: '58',
+      formalWork: '是',
+      birthDate: '1990/01/02',
+      confirmedFields: ['fullName', 'phone', 'email', 'gender', 'height', 'weight', 'formalWork', 'birthDate']
+    }, ResumeCmbBasic.assessBirthDatePicker())`);
     assert.equal(planned.ok, true);
-    assert.equal(planned.values.birthDate, '1990-01-02');
+    assert.equal(planned.values.birthDate, '');
     assert.equal(planned.values.gender, '女');
     assert.equal(planned.values.height, '175');
-    assert.equal(planned.blockers.find((row) => row.path === 'birthDate'), undefined);
+    assert.equal(planned.blockers.find((row) => row.path === 'birthDate')?.reason, 'birthdate_input_missing');
+    assert.equal(planned.birthDateReadiness.fillVia, null);
+    assert.equal(planned.birthDateReadiness.blocker, true);
+    const missingFill = await evaluate(send, `ResumeCmbBasic.fillBirthDate('1990-01-02')`);
+    assert.equal(missingFill.ok, false);
+    assert.equal(missingFill.reason, planned.birthDateReadiness.reason);
+    assert.equal(missingFill.writeAttempted, false);
+    assert.equal(missingFill.saved, false);
+
+    await evaluate(send, `(() => {
+      const input = document.createElement('input');
+      input.id = 'resume_basicInfo_birthday';
+      input.readOnly = true;
+      document.body.appendChild(input);
+      return true;
+    })()`);
+    const unique = await evaluate(send, `ResumeCmbBasic.planFromProfile({
+      fullName: '测试甲',
+      phone: '13800138000',
+      email: 'cmb.fixture@example.com',
+      birthDate: '2002-01-25',
+      confirmedFields: ['fullName', 'phone', 'email', 'birthDate']
+    }, ResumeCmbBasic.assessBirthDatePicker())`);
+    assert.equal(unique.values.birthDate, '2002-01-25');
+    assert.equal(unique.blockers.find((row) => row.path === 'birthDate'), undefined);
+    assert.equal(unique.birthDateReadiness.ready, true);
+    assert.equal(unique.birthDateReadiness.fillVia, 'datepicker');
+    assert.equal(unique.birthDateReadiness.reason, null);
+
+    await evaluate(send, `(() => {
+      const input = document.createElement('input');
+      input.id = 'resume_basicInfo_birthday';
+      input.readOnly = true;
+      input.value = 'leave-me';
+      document.body.appendChild(input);
+      return true;
+    })()`);
+    const duplicate = await evaluate(send, `ResumeCmbBasic.planFromProfile({
+      fullName: '测试甲',
+      phone: '13800138000',
+      email: 'cmb.fixture@example.com',
+      birthDate: '2002-01-25',
+      confirmedFields: ['fullName', 'phone', 'email', 'birthDate']
+    }, ResumeCmbBasic.assessBirthDatePicker())`);
+    assert.equal(duplicate.values.birthDate, '');
+    assert.equal(duplicate.birthDateReadiness.reason, 'birthdate_target_ambiguous');
+    assert.equal(duplicate.birthDateReadiness.fillVia, null);
+    const refused = await evaluate(send, `ResumeCmbBasic.fillBirthDate('2002-01-25')`);
+    assert.equal(refused.ok, false);
+    assert.equal(refused.reason, 'birthdate_target_ambiguous');
+    assert.equal(refused.writeAttempted, false);
+    assert.equal(refused.saved, false);
 
     const profileFill = await evaluate(send, `ResumeCmbBasic.fillBasic({
       profile: {

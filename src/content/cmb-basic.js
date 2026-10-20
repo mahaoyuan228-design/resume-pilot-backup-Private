@@ -78,6 +78,7 @@
     'datepicker_hint_only',
     'birthdate_unparseable',
     'birthdate_input_missing',
+    'birthdate_target_ambiguous',
     'birthdate_panel_missing',
     'birthdate_panel_multiple',
     'birthdate_cell_missing',
@@ -811,11 +812,12 @@
     };
   }
 
-  /* CMB_BIRTHDATE_PICKER_START */
+    /* CMB_BIRTHDATE_PICKER_START */
   const CMB_BIRTHDATE_INPUT_ID = 'resume_basicInfo_birthday';
   const CMB_BIRTHDATE_FILL_FAIL_REASONS = Object.freeze([
     'birthdate_unparseable',
     'birthdate_input_missing',
+    'birthdate_target_ambiguous',
     'birthdate_panel_missing',
     'birthdate_panel_multiple',
     'birthdate_cell_missing',
@@ -1128,16 +1130,38 @@
     return { ok: false, reason: 'birthdate_panel_missing' };
   }
 
+  function classifyCmbBirthDatePickerTarget(snapshot) {
+    const count = Number(snapshot?.count);
+    const oneInput = count === 1 && snapshot?.input === true;
+    if (oneInput) return { count: 1, unique: true, reason: null };
+    if (Number.isFinite(count) && count > 1) {
+      return { count, unique: false, reason: 'birthdate_target_ambiguous' };
+    }
+    return { count: 0, unique: false, reason: 'birthdate_input_missing' };
+  }
+
+  function assessCmbBirthDatePickerTarget(doc) {
+    if (!doc || typeof doc.querySelectorAll !== 'function') {
+      return { ...classifyCmbBirthDatePickerTarget({ count: 0, input: false }), ok: false, node: null };
+    }
+    const nodes = [...doc.querySelectorAll(`[id="${CMB_BIRTHDATE_INPUT_ID}"]`)];
+    const input = nodes.length === 1 && nodes[0].tagName === 'INPUT';
+    const classified = classifyCmbBirthDatePickerTarget({ count: nodes.length, input });
+    return {
+      ...classified,
+      ok: classified.unique === true,
+      node: classified.unique === true ? nodes[0] : null
+    };
+  }
+
   async function fillCmbBirthDatePicker(doc, rawDate, options = {}) {
     const parsed = parseCmbBirthDate(rawDate);
-    if (!doc || typeof doc.getElementById !== 'function') {
-      return closedPickerResult({ reason: 'birthdate_input_missing', expected: parsed.ok ? parsed.iso : '' });
-    }
     if (!parsed.ok) return closedPickerResult({ reason: 'birthdate_unparseable' });
-    const input = doc.getElementById(CMB_BIRTHDATE_INPUT_ID);
-    if (!input || input.tagName !== 'INPUT') {
-      return closedPickerResult({ reason: 'birthdate_input_missing', expected: parsed.iso });
+    const target = assessCmbBirthDatePickerTarget(doc);
+    if (!target.ok) {
+      return closedPickerResult({ reason: target.reason, expected: parsed.iso });
     }
+    const input = target.node;
     const before = normalizeCmbBirthDateValue(input.value);
     if (before === parsed.iso) {
       return {
@@ -1295,7 +1319,7 @@
     };
   }
 
-  function planFromProfile(profile) {
+  function planFromProfile(profile, pickerCensus = null) {
     if (!profile || typeof profile !== 'object' || Array.isArray(profile)) {
       return { ok: false, reason: 'profile_missing', values: null, fields: [], blockers: [{ reason: 'profile_missing' }] };
     }
@@ -1430,6 +1454,7 @@
         reason,
         kind: BIRTHDATE_HINT.kind,
         fillHint: BIRTHDATE_HINT.fillHint,
+        fillVia: reason === null ? 'datepicker' : null,
         saveAllowed: false,
         saved: false,
         skippedSave: true
@@ -1490,15 +1515,15 @@
       ...birthBlockers
     ];
     if (coreBlockers.length) {
-      return {
+      return applyBirthDatePickerCensus({
         ok: false,
         reason: 'profile_fields_unavailable',
         values: null,
         fields,
         blockers: [...coreBlockers, ...optionalBlockers]
-      };
+      }, pickerCensus);
     }
-    return {
+    return applyBirthDatePickerCensus({
       ok: true,
       reason: 'profile_ready',
       values: {
@@ -1525,7 +1550,72 @@
       fields,
       blockers: optionalBlockers,
       birthDateHint: BIRTHDATE_HINT
+    }, pickerCensus);
+  }
+
+  function birthDateReadinessView(plan) {
+    const field = (plan?.fields || []).find((row) => row && row.path === 'birthDate') || null;
+    const blocker = (plan?.blockers || []).find((row) => row && row.path === 'birthDate') || null;
+    if (!field) {
+      return { path: 'birthDate', present: false, ready: false, fillVia: null, reason: null, blocker: false };
+    }
+    const ready = field.ready === true && !blocker;
+    return {
+      path: 'birthDate',
+      present: true,
+      ready,
+      fillVia: ready ? 'datepicker' : null,
+      reason: blocker?.reason || null,
+      blocker: Boolean(blocker)
     };
+  }
+
+  function applyBirthDatePickerCensus(plan, census) {
+    // No page census: keep the profile plan. A confirmed date stays fillable
+    // via the DatePicker and is not datepicker_hint_only. Zero or many
+    // #resume_basicInfo_birthday targets fail closed only when a census is passed.
+    if (census == null) {
+      return { ...plan, birthDateReadiness: birthDateReadinessView(plan) };
+    }
+    const classified = classifyCmbBirthDatePickerTarget({
+      count: census.count,
+      input: census.input === true || census.ok === true || census.unique === true
+    });
+    const fields = (plan.fields || []).map((row) => ({ ...row }));
+    const birth = fields.find((row) => row.path === 'birthDate');
+    if (!birth || birth.ready !== true) {
+      return { ...plan, fields, birthDateReadiness: birthDateReadinessView({ ...plan, fields }) };
+    }
+    if (classified.unique === true) {
+      birth.fillVia = 'datepicker';
+      const next = { ...plan, fields };
+      return { ...next, birthDateReadiness: birthDateReadinessView(next) };
+    }
+    birth.ready = false;
+    birth.reason = classified.reason;
+    birth.value = '';
+    birth.fillVia = null;
+    const blockers = [
+      ...(plan.blockers || []).filter((row) => row.path !== 'birthDate'),
+      {
+        label: birth.label,
+        path: 'birthDate',
+        value: '',
+        ready: false,
+        reason: classified.reason,
+        kind: birth.kind,
+        fillHint: birth.fillHint,
+        fillVia: null,
+        saveAllowed: false,
+        saved: false,
+        skippedSave: true
+      }
+    ];
+    const values = plan.values && typeof plan.values === 'object'
+      ? { ...plan.values, birthDate: '' }
+      : plan.values;
+    const next = { ...plan, fields, blockers, values };
+    return { ...next, birthDateReadiness: birthDateReadinessView(next) };
   }
 
   function probeFingerprint() {
@@ -1861,7 +1951,7 @@
         };
       }
     } else {
-      plan = planFromProfile(profile);
+      plan = planFromProfile(profile, assessCmbBirthDatePickerTarget(document));
       if (!plan.ok) {
         const birthBlocked = (plan.blockers || []).some((row) => row.path === 'birthDate');
         return {
@@ -2005,6 +2095,15 @@
     fillInterviewCity,
     fillBirthDate,
     parseCmbBirthDate,
+    assessBirthDatePicker() {
+      const assessed = assessCmbBirthDatePickerTarget(document);
+      return {
+        count: assessed.count,
+        unique: assessed.unique === true,
+        input: assessed.ok === true,
+        reason: assessed.reason
+      };
+    },
     birthDateHint,
     BIRTHDATE_HINT,
     GATED_DICTS,

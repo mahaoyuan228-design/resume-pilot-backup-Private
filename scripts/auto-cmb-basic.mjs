@@ -219,7 +219,7 @@ async function runSyntheticBirthDate() {
     email: 'cmb.user@example.com',
     birthDate: '1990/01/02',
     confirmedFields: ['fullName', 'phone', 'email', 'birthDate']
-  });
+  }, { count: 1, input: true });
   const ok = result.ok === true
     && result.status === 'verified'
     && result.reason === 'matched'
@@ -233,6 +233,10 @@ async function runSyntheticBirthDate() {
     && saveClicks === 0
     && plan.values.birthDate === '1990-01-02'
     && !plan.blockers.some((row) => row.path === 'birthDate')
+    && plan.birthDateReadiness?.ready === true
+    && plan.birthDateReadiness?.fillVia === 'datepicker'
+    && plan.birthDateReadiness?.blocker === false
+    && plan.birthDateReadiness?.reason !== 'datepicker_hint_only'
     && plan.birthDateHint.liveFillClaimed === false
     && plan.birthDateHint.saveAllowed === false;
   const payload = basePayload({
@@ -640,12 +644,27 @@ async function runSynthetic(mode) {
     await injectScript(send);
     const probe = await evaluate(send, `ResumeCmbBasic.probeLabels({ synthetic: true })`);
     if (mode === 'readiness') {
+      const birthDatePicker = await evaluate(send, `ResumeCmbBasic.assessBirthDatePicker()`);
+      const { planCmbBasicFromProfile: planBasic } = await import('../src/content/cmb-profile-map.mjs');
+      const birthPlan = planBasic({
+        fullName: '测试甲',
+        phone: '13800138000',
+        email: 'cmb.fixture@example.com',
+        birthDate: '2002-01-25',
+        confirmedFields: ['fullName', 'phone', 'email', 'birthDate']
+      }, birthDatePicker);
       const payload = basePayload({
         ok: probe?.foundCount >= 3,
         reason: probe?.reason || 'probe_empty',
         surface: 'synthetic-fixture',
         liveEdge: false,
-        probe
+        probe,
+        birthDatePicker,
+        birthDateReadiness: birthPlan.birthDateReadiness,
+        formFillClaimed: false,
+        liveFillClaimed: false,
+        supported: false,
+        writeAttempted: false
       });
       const written = writeEvidence('readiness', payload);
       socket.close();
@@ -1948,11 +1967,30 @@ async function main() {
   }
   if (kind === 'birthDate' && args.live && !args.synthetic) {
     const gate = CMB_BIRTHDATE_OFFLINE_GATE;
+    const cdpPort = Number.parseInt(process.env.CDP_PORT || '9237', 10);
+    let census = { count: 0, input: false };
+    let pageUrl = '';
+    try {
+      const { socket, send, page } = await attachOpenResumePage(cdpPort);
+      pageUrl = page?.url || '';
+      const snapshot = await evaluate(send, `(() => {
+        const nodes = [...document.querySelectorAll('[id="resume_basicInfo_birthday"]')];
+        return { count: nodes.length, input: nodes.length === 1 && nodes[0].tagName === 'INPUT' };
+      })()`);
+      if (snapshot && typeof snapshot.count === 'number') census = snapshot;
+      try { socket.close(); } catch { /* ignore */ }
+    } catch {
+      census = { count: 0, input: false };
+    }
+    const { classifyCmbBirthDatePickerTarget } = await import('../src/content/cmb-birthdate-picker.mjs');
+    const target = classifyCmbBirthDatePickerTarget(census);
+    const pickerReady = target.unique === true;
+    // Recorded harvest verdict stays datepicker_hint_only. A unique picker is not that blocker.
     const payload = basePayload({
       ok: false,
-      reason: 'datepicker_hint_only',
-      surface: 'hint-only',
-      liveEdge: false,
+      reason: pickerReady ? 'birthdate_picker_ready' : target.reason,
+      surface: pickerReady ? 'datepicker-ready' : 'picker-target-closed',
+      liveEdge: Boolean(pageUrl),
       formFillClaimed: false,
       liveFillClaimed: false,
       supported: false,
@@ -1960,18 +1998,29 @@ async function main() {
       saveRefused: gate.saveRefused,
       selector: null,
       writeAttempted: false,
+      blocker: pickerReady !== true,
+      fillAllowed: pickerReady,
+      fillVia: pickerReady ? 'datepicker' : null,
+      birthDatePicker: target,
+      pageUrl,
       label: '出生日期',
       kind: 'DatePicker',
       selectId: 'resume_basicInfo_birthday',
       placeholder: '请选择日期',
       readOnly: true,
-      fillHint: 'antd DatePicker readonly; format likely YYYY-MM-DD; Never Save'
+      recordedHint: 'datepicker_hint_only',
+      fillHint: 'antd DatePicker readonly; format likely YYYY-MM-DD; Never Save. Readiness does not open the calendar.'
     });
     const { file, latest } = birthEvidencePaths();
     fs.writeFileSync(file, JSON.stringify(payload, null, 2), 'utf8');
     fs.copyFileSync(file, latest);
-    console.log(JSON.stringify({ event: 'refused', file, latest, ...payload }, null, 2));
-    process.exit(3);
+    console.log(JSON.stringify({
+      event: pickerReady ? 'readiness' : 'refused',
+      file,
+      latest,
+      ...payload
+    }, null, 2));
+    process.exit(pickerReady ? 0 : 2);
   }
   if (kind === 'birthDate') {
     try {

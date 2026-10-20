@@ -8,9 +8,11 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { JSDOM } from 'jsdom';
 import {
+  assessCmbBirthDatePickerTarget,
   fillCmbBirthDatePicker,
   parseCmbBirthDate
 } from '../src/content/cmb-birthdate-picker.mjs';
+import { planCmbBasicFromProfile } from '../src/content/cmb-profile-map.mjs';
 
 const root = resolve('.');
 
@@ -243,4 +245,85 @@ test('multiple open dropdowns fail closed before a date cell is clicked', async 
   const countsAfter = counts();
   assert.equal(countsAfter.saveClicks, 0);
   assert.equal(countsAfter.escapes > 0, true);
+});
+
+function birthProfile(birthDate = '2002-01-25') {
+  return {
+    fullName: '测试甲',
+    phone: '13800138000',
+    email: 'cmb.user@example.com',
+    birthDate,
+    confirmedFields: ['fullName', 'phone', 'email', 'birthDate']
+  };
+}
+
+test('readiness and fill agree when the birthday picker target is unique', async () => {
+  const { document, input } = page();
+  installNavigatingPicker(document, input, { valueFromTitle: (title) => title.replace(/-/gu, '/') });
+  const census = assessCmbBirthDatePickerTarget(document);
+  const plan = planCmbBasicFromProfile(birthProfile('1990-01-02'), { count: census.count, input: census.ok === true });
+  const liveDate = planCmbBasicFromProfile(birthProfile('2002-01-25'), { count: 1, input: true });
+  assert.equal(census.unique, true);
+  assert.equal(plan.values.birthDate, '1990-01-02');
+  assert.equal(plan.birthDateReadiness.ready, true);
+  assert.equal(plan.birthDateReadiness.fillVia, 'datepicker');
+  assert.equal(plan.birthDateReadiness.blocker, false);
+  assert.equal(plan.birthDateReadiness.reason, null);
+  assert.equal(plan.blockers.some((row) => row.reason === 'datepicker_hint_only'), false);
+  assert.equal(liveDate.values.birthDate, '2002-01-25');
+  assert.equal(liveDate.birthDateReadiness.fillVia, 'datepicker');
+  assert.equal(liveDate.blockers.some((row) => row.reason === 'datepicker_hint_only'), false);
+  const result = await fillCmbBirthDatePicker(document, plan.values.birthDate);
+  assert.equal(result.ok, true);
+  assert.equal(result.reason, 'matched');
+  assert.equal(result.saved, false);
+  assert.equal(result.supported, false);
+  assert.equal(result.after, '1990-01-02');
+  assert.equal(input.value, '1990/01/02');
+});
+
+test('a duplicate birthday input is not fillable and is not written', async () => {
+  const { document, input, counts } = page();
+  const extra = document.createElement('input');
+  extra.id = 'resume_basicInfo_birthday';
+  extra.readOnly = true;
+  extra.value = 'leave-me';
+  document.body.appendChild(extra);
+  let opened = 0;
+  input.addEventListener('mousedown', () => { opened += 1; });
+  const census = assessCmbBirthDatePickerTarget(document);
+  const plan = planCmbBasicFromProfile(birthProfile(), { count: census.count, input: census.ok === true });
+  const result = await fillCmbBirthDatePicker(document, '2002-01-25');
+  assert.equal(census.reason, 'birthdate_target_ambiguous');
+  assert.equal(plan.values.birthDate, '');
+  assert.equal(plan.birthDateReadiness.reason, 'birthdate_target_ambiguous');
+  assert.equal(plan.birthDateReadiness.fillVia, null);
+  assert.equal(plan.birthDateReadiness.blocker, true);
+  assert.equal(result.reason, plan.birthDateReadiness.reason);
+  assert.equal(result.ok, false);
+  assert.equal(result.writeAttempted, false);
+  assert.equal(result.saved, false);
+  assert.equal(opened, 0);
+  assert.equal(input.value, '');
+  assert.equal(extra.value, 'leave-me');
+  assert.equal(counts().saveClicks, 0);
+});
+
+test('a missing birthday input fails readiness and fill the same way', async () => {
+  const dom = new JSDOM('<!DOCTYPE html><body><button type="button" id="save-btn">保存</button></body>');
+  const plan = planCmbBasicFromProfile(birthProfile(), { count: 0, input: false });
+  const result = await fillCmbBirthDatePicker(dom.window.document, '2002-01-25');
+  assert.equal(plan.birthDateReadiness.reason, 'birthdate_input_missing');
+  assert.equal(result.reason, 'birthdate_input_missing');
+  assert.equal(result.writeAttempted, false);
+  assert.equal(result.saved, false);
+  assert.equal(plan.values.birthDate, '');
+});
+
+test('an invalid birthday stays unparseable even when the picker target is unique', () => {
+  const plan = planCmbBasicFromProfile(birthProfile('不是日期'), { count: 1, input: true });
+  assert.equal(plan.values.birthDate, '');
+  assert.equal(plan.birthDateReadiness.reason, 'birthdate_unparseable');
+  assert.equal(plan.birthDateReadiness.fillVia, null);
+  assert.equal(plan.blockers.some((row) => row.reason === 'datepicker_hint_only'), false);
 });

@@ -1534,6 +1534,17 @@
     return entry.path ? `path:${entry.path}` : `field:${JSON.stringify([entry.id, entry.kind, entry.labels.map(M.normalize)])}`;
   }
 
+  // A pathless education 学历 can share the generated id `cms-ant-v3-学历`
+  // across rows. That is a row gate (ambiguous / explicit binding), not a
+  // confirmed profile-path collision. Keep the gate reason. Real duplicate DOM
+  // ids and shared ready paths still fail closed in the caller.
+  function pathlessEducationLevelYield(entry) {
+    return !!entry && !entry.path
+      && ["ambiguous_repeat_group", "cms_record_requires_explicit_binding",
+        "cms_record_field_not_supported", "section_requires_mapping"].includes(entry.reason)
+      && /^cms-ant-v3-学历(?:-\d+)?$/u.test(String(entry.id || ""));
+  }
+
   function entrySignature(entry) {
     // Frameworks can regenerate an input id while preserving the same
     // question. A confirmed profile path supplies the stable identity;
@@ -1680,8 +1691,13 @@
           continue;
         }
         if (counts.get(key) !== 1) {
-          result.status = "failed";
-          result.reason = "duplicate_target";
+          if (pathlessEducationLevelYield(entry)) {
+            result.status = "skipped";
+            result.reason = entry.reason;
+          } else {
+            result.status = "failed";
+            result.reason = "duplicate_target";
+          }
           continue;
         }
         if (!initialScopes.has(scope) || !scope?.isConnected

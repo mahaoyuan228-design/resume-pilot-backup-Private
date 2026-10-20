@@ -206,7 +206,7 @@ function selectPage({ rows = 1, dedicated = false, duplicateId = '' } = {}) {
   const disabled = () => false;
   const src = fs.readFileSync(path.join(root, 'src/content/engine.js'), 'utf8');
   const names = ['collect', 'formItemQuestion', 'labelTexts', 'fieldId', 'profileValue', 'cmsAntV3Answer', 'logicalEntryKey',
-    'entrySignature', 'entryScope', 'publicEntry', 'meaningfulCurrent', 'exactOptionText', 'fillOwnedContent'];
+    'pathlessEducationLevelYield', 'entrySignature', 'entryScope', 'publicEntry', 'meaningfulCurrent', 'exactOptionText', 'fillOwnedContent'];
   const deps = {
     M, cmsDecision, markDuplicateTargets,
     visible: () => true, cmsAntV3InnerSearch: disabled, cmsRegionControl: disabled,
@@ -271,6 +271,32 @@ for (const dedicated of [false, true]) {
       assert.equal(field.status, 'skipped');
     }
     assert.equal(result.fields.length, 3);
+  });
+}
+
+test('live id cms-ant-v3-学历 on one education row still binds education.0.degree', async () => {
+  const page = selectPage({ duplicateId: 'cms-ant-v3-学历' });
+  const result = await fillOffline(page);
+  assert.equal(result.fields[0].id, 'cms-academic-__cms_basic_education_level');
+  assert.equal(result.fields[0].path, 'customAnswers.__cms_basic_education_level');
+  assert.equal(result.fields[1].id, 'cms-ant-v3-学历');
+  assert.equal(result.fields[1].path, 'education.0.degree');
+  assert.equal(result.fields[1].status, 'skipped');
+  assert.equal(result.fields[1].reason, 'existing_value');
+  assert.equal(result.fields.some(field => field.reason === 'duplicate_target'), false);
+});
+
+for (const dedicated of [false, true]) {
+  test(`shared live id cms-ant-v3-学历 yields instead of duplicate_target (dedicated=${dedicated})`, async () => {
+    const page = selectPage({ rows: 2, dedicated, duplicateId: 'cms-ant-v3-学历' });
+    const result = await fillOffline(page);
+    const education = result.fields.filter(field => field.id === 'cms-ant-v3-学历');
+    assert.equal(education.length, 1);
+    assert.equal(education[0].path ?? null, null);
+    assert.equal(education[0].status, 'skipped');
+    assert.equal(education[0].reason, dedicated ? 'cms_record_requires_explicit_binding' : 'ambiguous_repeat_group');
+    assert.equal(result.fields.some(field => field.reason === 'duplicate_target'), false);
+    assert.equal(result.fields[0].path, 'customAnswers.__cms_basic_education_level');
   });
 }
 

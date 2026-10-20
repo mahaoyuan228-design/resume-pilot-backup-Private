@@ -163,7 +163,7 @@ async function harness({ fillResponse } = {}) {
     timeoutMs: 5000,
     lifecycleOptions: { locks: { request: async (_n, _o, work) => work() }, cryptoImpl: globalThis.crypto },
   });
-  return { invoke, stats, data, autoSender, badSender };
+  return { invoke, stats, data, autoSender, badSender, runner };
 }
 
 test('CMS_BASIC_AUTO rejects non-basic auto page sender', async () => {
@@ -455,6 +455,49 @@ test('CMS_BASIC_AUTO excludes path-null education 学历 duplicate_target from p
   assert.equal(response.job.summary.skipped, 1);
   assert.equal(response.job.summary.failed, 0);
   assert.equal(response.job.summary.totalReturned, 2);
+  assert.equal(response.saveAttempted, false);
+  assert.equal(response.job.softwareClickedSave, false);
+  assert.equal(response.job.softwareClickedSubmit, false);
+});
+
+test('CMS_BASIC_AUTO ignores pathless education 学历 even without a section scope', async () => {
+  const h = await harness({ fillResponse: { ok: true, data: {
+    fields: [
+      {
+        id: 'cms-academic-__cms_basic_education_level', labels: ['学历*'],
+        path: 'customAnswers.__cms_basic_education_level', status: 'skipped',
+        reason: 'existing_value', kind: 'cms_ant_v3_select',
+      },
+      {
+        id: 'cms-ant-v3-学历', labels: ['学历*'], path: null, status: 'failed',
+        reason: 'duplicate_target', kind: 'cms_ant_v3_select',
+      },
+      {
+        id: 'cms-ant-v3-学历-4', labels: ['学历*'], path: null, status: 'failed',
+        reason: 'duplicate_target', kind: 'cms_ant_v3_select',
+        scope: { sectionName: '个人基本信息必填', rowContext: 'single' },
+      },
+      {
+        id: 'name', labels: ['姓名'], path: 'fullName', status: 'verified',
+        scope: { sectionName: '个人基本信息必填' },
+      },
+    ], softwareClickedSave: false, softwareClickedSubmit: false,
+  } } });
+  assert.equal(h.runner.isPersonalField({
+    id: 'cms-ant-v3-学历', labels: ['学历*'], path: null, status: 'failed', reason: 'duplicate_target',
+  }), false);
+  assert.equal(h.runner.isPersonalField({ labels: ['学历*'] }), false);
+  assert.equal(h.runner.isPersonalField({
+    id: 'cms-ant-v3-学历-2', labels: ['学历*'], path: 'customAnswers.学历',
+    scope: { sectionName: '个人基本信息必填' },
+  }), true);
+  const response = await h.invoke({ type: 'CMS_BASIC_AUTO', mode: 'fill', originConfirmed: true });
+  assert.equal(response.ok, true);
+  assert.equal(response.job.summary.personalCount, 2);
+  assert.equal(response.job.summary.verified, 1);
+  assert.equal(response.job.summary.skipped, 1);
+  assert.equal(response.job.summary.failed, 0);
+  assert.equal(response.job.summary.totalReturned, 4);
   assert.equal(response.saveAttempted, false);
   assert.equal(response.job.softwareClickedSave, false);
   assert.equal(response.job.softwareClickedSubmit, false);

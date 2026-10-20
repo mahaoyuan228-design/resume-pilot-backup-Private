@@ -105,14 +105,22 @@ function isPersonalField(field){
   // their label aliases a basic question (专业名称, 学历, 学位, 毕业院校).
   if(section==='教育经历必填'||section==='实习经历')return false;
   if(/^education\.\d+\./u.test(path)||path.includes('__cms_education_'))return false;
+  // Education-row 学历 uses cms-ant-v3-学历 (optional position). The basic
+  // control is cms-academic-__cms_basic_education_level. A pathless ant id is
+  // not a personal failure, even if the label is 学历 or the section was lost.
+  const id=String(field.id||'');
+  if(/^cms-ant-v3-学历(?:-\d+)?$/u.test(id)&&!path.includes('__cms_basic_')&&!/^customAnswers\./u.test(path))return false;
   if(section===SECTION)return true;
   if(/^customAnswers\.(?:__cms_basic_|毕业院校|国籍\/地区|婚姻状况|期望面试地点|现居住地|籍贯)/u.test(path))return true;
   if(path.includes('__cms_basic_'))return true;
   const labels=Array.isArray(field.labels)?field.labels.map(norm):[];
   const questions=new Set(BASIC_TEMPLATES.map(row=>norm(row.question)));
+  if(id.startsWith('cms-photo-basic')||id.startsWith('cms-academic-__cms_basic')||id.startsWith('cms-scoped-input-__cms_basic'))return true;
+  // 学历 / 学位 / 专业名称 also appear on education rows. A label alone is not
+  // enough to call the field personal when section and path are both absent.
+  if(!section&&!path&&labels.length&&labels.every(label=>['学历','学位','专业名称'].includes(label)))return false;
   if(labels.some(label=>questions.has(label)||questions.has(label.replace(/［.*?］/gu,'').trim())))return true;
-  const id=String(field.id||'');
-  return id.startsWith('cms-photo-basic')||id.startsWith('cms-academic-__cms_basic')||id.startsWith('cms-scoped-input-__cms_basic');
+  return false;
 }
 
 function summarizeFields(fields){

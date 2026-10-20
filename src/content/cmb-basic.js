@@ -3,6 +3,11 @@
 //
 // First slice fields (labels from CDP bodyText 2026-10-18 /center/resume):
 //   姓名 (text) · 手机号 (text) · 邮箱 (text)
+// 姓名 is the basicInfo control when the label is unique.
+// Live /center/resume has three 姓名 labels (basicInfo + family rows 0 and 1).
+// Several hits scope to the harvested id resume_basicInfo_name only.
+// Family ids resume_familyList_0_name and resume_familyList_1_name are never written.
+// Zero or several basicInfo hits fail closed (no write). Never Save.
 // Gender (性别) is offline/synthetic only: 男 / 女 inside one label-scoped form item.
 // Live radio DOM was NOT harvested. Class names are public CSS candidates only.
 // Height (身高) is offline/synthetic text only. The label may include a CM suffix.
@@ -40,6 +45,14 @@
 
   const SITE_ID = 'cmb';
   const TEXT_LABELS = ['姓名', '手机号', '邮箱'];
+  const BASIC_NAME_LABEL = '姓名';
+  // Harvested ids. cmb-remaining-dom-ids-20261019.json labelText is 姓名 on each.
+  // Not a new selector. Family name controls stay out of the basic fill.
+  const BASIC_NAME_INPUT_ID = 'resume_basicInfo_name';
+  const FAMILY_NAME_INPUT_IDS = Object.freeze([
+    'resume_familyList_0_name',
+    'resume_familyList_1_name'
+  ]);
   const GENDER_LABEL = '性别';
   const GENDER_VALUES = ['男', '女'];
   const HEIGHT_LABEL = '身高';
@@ -107,13 +120,62 @@
     return [...document.querySelectorAll(ITEM_SEL)];
   }
 
-  function findItem(wanted) {
+  function matchingItems(wanted) {
     const want = cleanLabel(wanted);
-    const hits = formItems().filter((item) => {
+    return formItems().filter((item) => {
       const label = item.querySelector(LABEL_SEL);
       return label && labelText(label) === want;
     });
-    return hits.length === 1 ? hits[0] : null;
+  }
+
+  function associatedIds(item) {
+    const ids = new Set();
+    if (item?.id) ids.add(item.id);
+    item?.querySelectorAll?.('[id]').forEach((node) => {
+      if (node.id) ids.add(node.id);
+    });
+    item?.querySelectorAll?.('label').forEach((node) => {
+      const forId = node.getAttribute('for');
+      if (forId) ids.add(forId);
+    });
+    return ids;
+  }
+
+  function isFamilyNameItem(item) {
+    const ids = associatedIds(item);
+    return FAMILY_NAME_INPUT_IDS.some((id) => ids.has(id));
+  }
+
+  function isBasicNameItem(item) {
+    return associatedIds(item).has(BASIC_NAME_INPUT_ID);
+  }
+
+  /**
+   * One 姓名 label is the basic field unless that item is a harvested family name.
+   * Several 姓名 labels scope to the single harvested basicInfo id.
+   * Still zero or many after that scope → no item. Never write a family 姓名.
+   */
+  function resolveBasicName(hits) {
+    if (hits.length === 0) return { item: null, reason: 'item_not_found', scoped: false };
+    const notFamily = hits.filter((item) => !isFamilyNameItem(item));
+    if (hits.length === 1) {
+      if (notFamily.length === 1) return { item: notFamily[0], reason: null, scoped: false };
+      return { item: null, reason: 'item_not_found', scoped: false };
+    }
+    const scoped = notFamily.filter((item) => isBasicNameItem(item));
+    if (scoped.length === 1) return { item: scoped[0], reason: null, scoped: true };
+    return { item: null, reason: 'item_ambiguous', scoped: true };
+  }
+
+  function locateItem(wanted) {
+    const hits = matchingItems(wanted);
+    if (cleanLabel(wanted) === BASIC_NAME_LABEL) return resolveBasicName(hits);
+    if (hits.length === 1) return { item: hits[0], reason: null, scoped: false };
+    return { item: null, reason: 'item_not_found', scoped: false };
+  }
+
+  function findItem(wanted) {
+    return locateItem(wanted).item;
   }
 
   function isHeightLabel(text) {
@@ -385,7 +447,8 @@
   const EDUCATION_LEVEL_LIST_ID = 'resume_educationHistoryList_0_educationLevelCode_list';
   const RELATIONSHIP_TYPE_LABEL = '关系类型';
   // Harvested family rows 0 and 1. Each select id is filled only by its own key.
-  // Eight RelationshipType rows. No placeholder. Name and phone are not filled.
+  // Eight RelationshipType rows. No placeholder. Family name and phone are not filled.
+  // Basic 姓名 never writes resume_familyList_0_name or resume_familyList_1_name.
   // Live click confirms resume_familyList_0_relationship and resume_familyList_1_relationship.
   const RELATIONSHIP_TYPE_SELECT_ID = 'resume_familyList_0_relationship';
   const RELATIONSHIP_TYPE_LIST_ID = 'resume_familyList_0_relationship_list';
@@ -739,11 +802,32 @@
     };
   }
 
+  function closedText(label, value, reason) {
+    return {
+      label,
+      ok: false,
+      reason,
+      before: '',
+      after: '',
+      expected: value,
+      saved: false,
+      skippedSave: true,
+      writeAttempted: false
+    };
+  }
+
   async function fillText(label, value) {
-    const item = findItem(label);
-    if (!item) return { label, ok: false, reason: 'item_not_found', before: '', after: '', expected: value };
+    const located = locateItem(label);
+    const item = located.item;
+    if (!item) return closedText(label, value, located.reason || 'item_not_found');
     const control = textControl(item);
     if (!control) return { label, ok: false, reason: 'control_not_found', before: '', after: '', expected: value };
+    if (cleanLabel(label) === BASIC_NAME_LABEL && FAMILY_NAME_INPUT_IDS.includes(control.id)) {
+      return closedText(label, value, 'item_not_found');
+    }
+    if (cleanLabel(label) === BASIC_NAME_LABEL && located.scoped === true && control.id !== BASIC_NAME_INPUT_ID) {
+      return closedText(label, value, 'item_ambiguous');
+    }
     const before = norm(control.value);
     control.focus();
     setNativeValue(control, String(value ?? ''));
@@ -1397,6 +1481,9 @@
   const api = {
     siteId: SITE_ID,
     TEXT_LABELS,
+    BASIC_NAME_LABEL,
+    BASIC_NAME_INPUT_ID,
+    FAMILY_NAME_INPUT_IDS,
     GENDER_LABEL,
     GENDER_VALUES,
     HEIGHT_LABEL,

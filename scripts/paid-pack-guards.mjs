@@ -2,6 +2,8 @@
 // A 20261018 hotpatched dist is not a rebuild. build-paid.ps1 / build-paid-smoke.mjs
 // must copy cms-basic-seed-from-education.mjs and static-import generated paid-config.
 // Edge 155 MV3 does not register a service worker that top-level await-imports paid-config.
+// The packed tree must also carry tip CMS 学历 duplicate_target ids, region fail-closed
+// markers, and the CMS auto inject files. This gate does not claim a live site is supported.
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -10,6 +12,138 @@ import { pathToFileURL } from 'node:url';
 export const CMS_BASIC_SEED = 'src/profile/cms-basic-seed-from-education.mjs';
 export const GUARD_WORKER = 'src/license/guard-worker.mjs';
 export const PAID_CONFIG = 'src/license/paid-config.mjs';
+
+// Byte-compared into the paid output. An Oct-18 pack predates the 学历 id suffix and region fail-closed.
+export const CMS_TIP_SOURCE_FILES = [
+  'src/content/engine.js',
+  'src/content/cms-region.js',
+  'src/content/cms-education-multi-select.js',
+  'src/content/cms-record-controller.js',
+  'src/content/cms-education-serialization.mjs',
+  'src/profile/site-question-templates.js',
+  'src/background/cms-basic-auto.mjs',
+  'src/background/cms-education-task-runner.mjs',
+  'src/license/guard-worker.mjs',
+];
+
+export const CMS_RUNNER_FILES = [
+  'src/background/cms-basic-auto.mjs',
+  'src/background/cms-education-task-runner.mjs',
+];
+
+// executeScript / auto-page paths the runners name as strings. Import walk does not see them.
+export const CMS_REQUIRED_INJECT = [
+  'src/content/engine.js',
+  'src/content/cms-region.js',
+  'src/content/cms-education-multi-select.js',
+  'src/auto/cms-basic-auto.html',
+  'src/auto/cms-education-auto.html',
+];
+
+const DEGREE_SYNONYM_NEEDLES = [
+  'DEGREE_LEVELS',
+  "['硕士','硕士研究生']",
+  "['本科','大学本科']",
+  "['博士','博士研究生']",
+];
+
+export const CMS_TIP_MARKERS = [
+  {
+    rel: 'src/content/engine.js',
+    group: 'cms-degree',
+    needles: [
+      'education 学历',
+      'cms-ant-v3-${M.normalize(labels[0])}-${position}',
+      'cms_record_requires_explicit_binding',
+    ],
+  },
+  {
+    rel: 'src/content/cms-education-multi-select.js',
+    group: 'cms-degree',
+    needles: DEGREE_SYNONYM_NEEDLES,
+  },
+  {
+    rel: 'src/content/cms-record-controller.js',
+    group: 'cms-degree',
+    needles: DEGREE_SYNONYM_NEEDLES,
+  },
+  {
+    rel: 'src/content/cms-education-serialization.mjs',
+    group: 'cms-degree',
+    needles: DEGREE_SYNONYM_NEEDLES,
+  },
+  {
+    rel: 'src/profile/site-question-templates.js',
+    group: 'region-fail-closed',
+    needles: [
+      'export function planCmsRegionFact',
+      'export const CMS_REGION_FACT_FAIL_CLOSED_REASONS',
+      'region_fact_not_unique',
+      'region_fact_unconfirmed',
+    ],
+  },
+  {
+    rel: 'src/content/engine.js',
+    group: 'region-fail-closed',
+    needles: [
+      'function settleUnresolvedEntry',
+      'if (reason === "duplicate_target") return "failed"',
+      'region_fact_not_unique',
+    ],
+  },
+  {
+    rel: 'src/content/cms-region.js',
+    group: 'region-fail-closed',
+    needles: [
+      'implementationRevision:3',
+      "status:'failed',reason:'unconfirmed_or_incomplete_region_pair'",
+      "reason:'region_fact_not_unique'",
+    ],
+  },
+  {
+    rel: 'src/background/cms-basic-auto.mjs',
+    group: 'region-fail-closed',
+    needles: [
+      'function coerceRegionFailClosed',
+      'planCmsRegionFact',
+      'CMS_REGION_FACT_FAIL_CLOSED_REASONS',
+    ],
+  },
+  {
+    rel: 'src/license/guard-worker.mjs',
+    group: 'paid-cms-auto',
+    needles: [
+      "bootPaidAuto('cms-basic-auto', installCmsBasicAutoRunner)",
+      'installCmsEducationTaskRunner({ verifyBeforeFill })',
+      "installCmsEducationTaskRunner({ recordKind: 'internship', verifyBeforeFill })",
+    ],
+  },
+  {
+    rel: 'src/background/cms-basic-auto.mjs',
+    group: 'paid-cms-auto',
+    needles: [
+      "'src/content/engine.js'",
+      "'src/content/cms-region.js'",
+      'Never Save/submit',
+    ],
+  },
+  {
+    rel: 'src/background/cms-education-task-runner.mjs',
+    group: 'paid-cms-auto',
+    needles: [
+      "'src/content/cms-education-multi-select.js'",
+      'CMS_EDUCATION_AUTO_FILL',
+      'export function installCmsEducationTaskRunner',
+    ],
+  },
+];
+
+const NEVER_SAVE_FILES = new Set([
+  'src/license/guard-worker.mjs',
+  'src/background/cms-basic-auto.mjs',
+  'src/background/cms-education-task-runner.mjs',
+  'src/content/engine.js',
+]);
 
 const AWAIT_PAID_CONFIG = /await\s+import\s*\(\s*['"]\.\/paid-config\.mjs['"]\s*\)/;
 const STATIC_PAID_CONFIG = /import\s+\{\s*paidConfig\s+as\s+paidConfigImported\s*\}\s+from\s+['"]\.\/paid-config\.mjs['"]/;
@@ -130,12 +264,111 @@ function dispatch(listeners, message, sender) {
   return { response, held };
 }
 
+export function cmsInjectedRels(source) {
+  if (typeof source !== 'string') return [];
+  return [...source.matchAll(/'(src\/[^']+\.(?:js|mjs|html))'/g)].map((item) => item[1]);
+}
+
+export function assertCmsTipMarkers(readText) {
+  const missing = [];
+  const seen = new Set();
+  for (const item of CMS_TIP_MARKERS) {
+    let text;
+    try {
+      text = readText(item.rel);
+    } catch (error) {
+      missing.push(`missing ${item.rel}: ${error.message}`);
+      continue;
+    }
+    if (typeof text !== 'string') {
+      missing.push(`missing ${item.rel}`);
+      continue;
+    }
+    for (const needle of item.needles) {
+      if (!text.includes(needle)) missing.push(`${item.group}: ${item.rel} missing ${needle}`);
+    }
+    if (!seen.has(item.rel) && NEVER_SAVE_FILES.has(item.rel) && /softwareClickedSave\s*=\s*true/.test(text)) {
+      missing.push(`${item.rel} attempts Save`);
+    }
+    seen.add(item.rel);
+  }
+  if (missing.length) {
+    throw new Error(`paid pack missing tip CMS content:\n${missing.join('\n')}`);
+  }
+}
+
+export function assertCmsInjectedFilesPacked(runnerTexts, packedFiles, exists) {
+  const allowed = new Set(packedFiles);
+  const problems = [];
+  const seen = new Set();
+  for (const rel of CMS_RUNNER_FILES) {
+    const text = runnerTexts[rel];
+    if (typeof text !== 'string') {
+      problems.push(`missing runner ${rel}`);
+      continue;
+    }
+    const paths = cmsInjectedRels(text);
+    if (!paths.length) problems.push(`${rel} listed no CMS inject paths`);
+    for (const injected of paths) {
+      seen.add(injected);
+      if (!allowed.has(injected)) problems.push(`${rel} -> ${injected} not on paid pack list`);
+      else if (typeof exists === 'function' && !exists(injected)) {
+        problems.push(`${rel} -> ${injected} missing from packed tree`);
+      }
+    }
+  }
+  for (const rel of CMS_REQUIRED_INJECT) {
+    if (!seen.has(rel)) problems.push(`CMS auto inject set dropped ${rel}`);
+  }
+  if (problems.length) {
+    throw new Error(`paid pack CMS auto files missing:\n${problems.join('\n')}`);
+  }
+  return [...seen];
+}
+
+export function assertPackedCmsTip(extensionRoot, packedFiles) {
+  const readText = (rel) => {
+    const abs = path.join(extensionRoot, rel);
+    if (!fs.existsSync(abs)) throw new Error(`missing ${rel}`);
+    return fs.readFileSync(abs, 'utf8');
+  };
+  assertCmsTipMarkers(readText);
+  const runnerTexts = {};
+  for (const rel of CMS_RUNNER_FILES) runnerTexts[rel] = readText(rel);
+  const injected = assertCmsInjectedFilesPacked(
+    runnerTexts,
+    packedFiles,
+    (rel) => fs.existsSync(path.join(extensionRoot, rel)),
+  );
+  return {
+    cmsDegreePacked: true,
+    regionFailClosedPacked: true,
+    paidCmsAutoPacked: true,
+    cmsInjectedFilesPacked: true,
+    injectedCount: injected.length,
+  };
+}
+
+export function assertPackedBytesMatchSource(repoRoot, extensionRoot, rels = CMS_TIP_SOURCE_FILES) {
+  for (const rel of rels) {
+    const sourcePath = path.join(repoRoot, rel);
+    const packedPath = path.join(extensionRoot, rel);
+    if (!fs.existsSync(sourcePath) || !fs.existsSync(packedPath)) {
+      throw new Error(`packed ${rel} differs from tip source`);
+    }
+    const source = fs.readFileSync(sourcePath);
+    const packed = fs.readFileSync(packedPath);
+    if (!source.equals(packed)) throw new Error(`packed ${rel} differs from tip source`);
+  }
+}
+
 /**
  * Import the freshly built extension (not the source tree) and prove:
  * - cms-basic seed module evaluates and exports seedCmsBasicFromEducation
  * - guard-worker evaluates with the generated paid-config static import
  * - BG_PING is registered (service worker module ran)
- * - CMS/GTH basic auto listeners are installed (sync deny, no page DOM)
+ * - CMS/GTH basic auto and CMS education auto listeners are installed (sync deny, no page DOM)
+ * - packed CMS files carry tip 学历 / region fail-closed / auto inject pieces
  */
 export async function assertBuiltPaidExtension(extensionRoot, packedFiles) {
   const guardPath = path.join(extensionRoot, GUARD_WORKER);
@@ -161,6 +394,7 @@ export async function assertBuiltPaidExtension(extensionRoot, packedFiles) {
     throw new Error(`built manifest service_worker is ${manifest.background?.service_worker}`);
   }
   assertPackImportsResolve(extensionRoot, packedFiles);
+  const tip = assertPackedCmsTip(extensionRoot, packedFiles);
 
   let seedMod;
   try {
@@ -189,7 +423,7 @@ export async function assertBuiltPaidExtension(extensionRoot, packedFiles) {
   }
 
   const stranger = { id: 'paid-rebuild-smoke', url: 'https://rebuild-smoke.invalid/not-a-form' };
-  for (const type of ['CMS_BASIC_AUTO', 'GTH_BASIC_AUTO']) {
+  for (const type of ['CMS_BASIC_AUTO', 'GTH_BASIC_AUTO', 'CMS_EDUCATION_AUTO_FILL', 'CMS_EDUCATION_MULTI_INSPECT_JOB']) {
     const result = dispatch(listeners, { type, mode: 'readiness' }, stranger);
     if (result.held) throw new Error(`${type} held the channel on the built service worker`);
     if (result.response?.ok !== false) throw new Error(`${type} had no listener on the built service worker`);
@@ -204,5 +438,7 @@ export async function assertBuiltPaidExtension(extensionRoot, packedFiles) {
     bgPingRegistered: true,
     cmsBasicAutoInstalled: true,
     gthBasicAutoInstalled: true,
+    cmsEducationAutoInstalled: true,
+    ...tip,
   };
 }

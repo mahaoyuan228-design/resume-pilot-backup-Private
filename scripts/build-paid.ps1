@@ -9,6 +9,8 @@
 # The script copies cms-basic-seed-from-education.mjs, writes paid-config.mjs, points
 # the service worker at guard-worker.mjs (static import of that config), and fails if
 # the seed is off the list or guard-worker still top-level await-imports paid-config.
+# It also fails unless the packed tree matches tip CMS 学历 duplicate_target content,
+# region fail-closed markers, and CMS auto inject files. Never Save. No live-site claim.
 # Node proof without Edge: node scripts/build-paid-smoke.mjs
 # Optional Ed25519 public key embed (documentation / real operator key — NEVER private key):
 #   -PublicKeyPemPath 'tests/fixtures/license/EXAMPLE_ed25519_public.pem'   # EXAMPLE only
@@ -363,6 +365,100 @@ foreach ($relative in $packedList) {
   }
 }
 
+# CMS tip content gate (degree duplicate_target, region fail-closed, paid CMS auto).
+# executeScript paths are strings, so the import walk above does not see them.
+# Hashes must match this checkout. Do not hotpatch an older dist, including 20261018.
+$cmsTipFiles = @(
+  'src/content/engine.js',
+  'src/content/cms-region.js',
+  'src/content/cms-education-multi-select.js',
+  'src/content/cms-record-controller.js',
+  'src/content/cms-education-serialization.mjs',
+  'src/profile/site-question-templates.js',
+  'src/background/cms-basic-auto.mjs',
+  'src/background/cms-education-task-runner.mjs',
+  'src/license/guard-worker.mjs'
+)
+$cmsRunnerFiles = @(
+  'src/background/cms-basic-auto.mjs',
+  'src/background/cms-education-task-runner.mjs'
+)
+$cmsRequiredInject = @(
+  'src/content/engine.js',
+  'src/content/cms-region.js',
+  'src/content/cms-education-multi-select.js',
+  'src/auto/cms-basic-auto.html',
+  'src/auto/cms-education-auto.html'
+)
+foreach ($relative in $cmsTipFiles) {
+  $source = Join-Path $repoRoot ($relative -replace '/', '\')
+  $target = Join-Path $extensionRoot ($relative -replace '/', '\')
+  if (-not (Test-Path -LiteralPath $target -PathType Leaf)) { throw "付费包缺少 tip CMS 文件：$relative" }
+  $sourceHash = (Get-FileHash -LiteralPath $source -Algorithm SHA256).Hash
+  $targetHash = (Get-FileHash -LiteralPath $target -Algorithm SHA256).Hash
+  if ($sourceHash -ne $targetHash) { throw "付费包与 tip 源码不一致：$relative。不要热补 dist，包括 20261018 旧包。" }
+  $text = [IO.File]::ReadAllText($target)
+  if ($text -match 'softwareClickedSave\s*=\s*true') { throw "付费包试图 Save：$relative。Never Save。" }
+}
+function Require-PackedNeedle([string]$Relative, [string]$Needle) {
+  $target = Join-Path $extensionRoot ($Relative -replace '/', '\')
+  $text = [IO.File]::ReadAllText($target)
+  if (-not $text.Contains($Needle)) { throw "付费包缺少 tip CMS 内容：${Relative} :: ${Needle}" }
+}
+Require-PackedNeedle 'src/content/engine.js' 'education 学历'
+Require-PackedNeedle 'src/content/engine.js' 'cms-ant-v3-${M.normalize(labels[0])}-${position}'
+Require-PackedNeedle 'src/content/engine.js' 'cms_record_requires_explicit_binding'
+Require-PackedNeedle 'src/content/engine.js' 'function settleUnresolvedEntry'
+Require-PackedNeedle 'src/content/engine.js' 'if (reason === "duplicate_target") return "failed"'
+Require-PackedNeedle 'src/content/engine.js' 'region_fact_not_unique'
+Require-PackedNeedle 'src/content/cms-education-multi-select.js' 'DEGREE_LEVELS'
+Require-PackedNeedle 'src/content/cms-education-multi-select.js' "['硕士','硕士研究生']"
+Require-PackedNeedle 'src/content/cms-education-multi-select.js' "['本科','大学本科']"
+Require-PackedNeedle 'src/content/cms-education-multi-select.js' "['博士','博士研究生']"
+Require-PackedNeedle 'src/content/cms-record-controller.js' 'DEGREE_LEVELS'
+Require-PackedNeedle 'src/content/cms-record-controller.js' "['硕士','硕士研究生']"
+Require-PackedNeedle 'src/content/cms-record-controller.js' "['本科','大学本科']"
+Require-PackedNeedle 'src/content/cms-record-controller.js' "['博士','博士研究生']"
+Require-PackedNeedle 'src/content/cms-education-serialization.mjs' 'DEGREE_LEVELS'
+Require-PackedNeedle 'src/content/cms-education-serialization.mjs' "['硕士','硕士研究生']"
+Require-PackedNeedle 'src/content/cms-education-serialization.mjs' "['本科','大学本科']"
+Require-PackedNeedle 'src/content/cms-education-serialization.mjs' "['博士','博士研究生']"
+Require-PackedNeedle 'src/profile/site-question-templates.js' 'export function planCmsRegionFact'
+Require-PackedNeedle 'src/profile/site-question-templates.js' 'export const CMS_REGION_FACT_FAIL_CLOSED_REASONS'
+Require-PackedNeedle 'src/profile/site-question-templates.js' 'region_fact_not_unique'
+Require-PackedNeedle 'src/profile/site-question-templates.js' 'region_fact_unconfirmed'
+Require-PackedNeedle 'src/content/cms-region.js' 'implementationRevision:3'
+Require-PackedNeedle 'src/content/cms-region.js' "status:'failed',reason:'unconfirmed_or_incomplete_region_pair'"
+Require-PackedNeedle 'src/content/cms-region.js' "reason:'region_fact_not_unique'"
+Require-PackedNeedle 'src/background/cms-basic-auto.mjs' 'function coerceRegionFailClosed'
+Require-PackedNeedle 'src/background/cms-basic-auto.mjs' 'planCmsRegionFact'
+Require-PackedNeedle 'src/background/cms-basic-auto.mjs' 'CMS_REGION_FACT_FAIL_CLOSED_REASONS'
+Require-PackedNeedle 'src/background/cms-basic-auto.mjs' "'src/content/engine.js'"
+Require-PackedNeedle 'src/background/cms-basic-auto.mjs' "'src/content/cms-region.js'"
+Require-PackedNeedle 'src/background/cms-basic-auto.mjs' 'Never Save/submit'
+Require-PackedNeedle 'src/license/guard-worker.mjs' "bootPaidAuto('cms-basic-auto', installCmsBasicAutoRunner)"
+Require-PackedNeedle 'src/license/guard-worker.mjs' 'installCmsEducationTaskRunner({ verifyBeforeFill })'
+Require-PackedNeedle 'src/license/guard-worker.mjs' "installCmsEducationTaskRunner({ recordKind: 'internship', verifyBeforeFill })"
+Require-PackedNeedle 'src/background/cms-education-task-runner.mjs' "'src/content/cms-education-multi-select.js'"
+Require-PackedNeedle 'src/background/cms-education-task-runner.mjs' 'CMS_EDUCATION_AUTO_FILL'
+Require-PackedNeedle 'src/background/cms-education-task-runner.mjs' 'export function installCmsEducationTaskRunner'
+$seenInject = New-Object 'System.Collections.Generic.HashSet[string]'
+foreach ($relative in $cmsRunnerFiles) {
+  $runnerPath = Join-Path $extensionRoot ($relative -replace '/', '\')
+  $runnerText = [IO.File]::ReadAllText($runnerPath)
+  $found = @([regex]::Matches($runnerText, "'(src/[^']+\.(?:js|mjs|html))'") | ForEach-Object { $_.Groups[1].Value })
+  if ($found.Count -eq 0) { throw "付费包 CMS 注入文件未纳入清单：$relative 没有注入路径" }
+  foreach ($local in $found) {
+    [void]$seenInject.Add($local)
+    if (-not $packed.Contains($local)) { throw "付费包 CMS 注入文件未纳入清单：$relative -> $local" }
+    $out = Join-Path $extensionRoot ($local -replace '/', '\')
+    if (-not (Test-Path -LiteralPath $out -PathType Leaf)) { throw "付费包 CMS 注入文件未纳入清单：$relative -> $local 不在输出树" }
+  }
+}
+foreach ($local in $cmsRequiredInject) {
+  if (-not $seenInject.Contains($local)) { throw "付费包 CMS 注入文件未纳入清单：自动注入集合缺少 $local" }
+}
+
 $readme = @"
 # Paid flavor package (candidate)
 
@@ -377,7 +473,9 @@ $readme = @"
 - Rebuild from source with this script. Do not hand-patch dist (including a 20261018 hotpatch).
 - guard-worker.mjs static-imports the generated paid-config.mjs. Top-level await import fails Edge 155 SW registration.
 - src/profile/cms-basic-seed-from-education.mjs is on the product list and is copied. cms-basic-auto imports it.
+- Packed CMS tip files match this checkout (学历 generated-id suffix, region fail-closed, CMS auto inject list). A 20261018 tree fails this gate.
 - Source src/license/paid-config.mjs stays the fail-closed internal placeholder. This folder's copy is generated.
+- Never Save. This package does not claim a live recruiting site is supported.
 - Node proof without launching Edge: node scripts/build-paid-smoke.mjs
 "@
 [IO.File]::WriteAllText((Join-Path $buildRoot 'PAID_BUILD_README.txt'), $readme, (New-Object Text.UTF8Encoding($false)))

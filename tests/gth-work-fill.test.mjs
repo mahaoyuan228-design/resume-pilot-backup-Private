@@ -478,6 +478,202 @@ test('dispatch injects the work scripts and sends GTH_WORK_FILL', async () => {
   assert.equal(sent[1].profileIndex, 0);
 });
 
+const RACE_ANIM = ['el-zoom-in-top-enter', 'el-zoom-in-top-enter-active'];
+
+function raceMonthItem() {
+  const cells = MONTH_NAMES.map((name) => `<td><div><a class="cell">${name}</a></div></td>`).join('');
+  const editor = (id) => `<div class="el-date-editor date-hl el-input el-input--prefix el-input--suffix el-date-editor--month" id="${id}-editor">
+    <span class="el-input__prefix"><i class="el-input__icon el-icon-date" id="${id}-icon"></i></span>
+    <input class="el-input__inner" id="${id}" readonly type="text" value="">
+    <div class="el-picker-panel el-date-picker el-popper" id="${id}-panel" style="display:none">
+      <div class="el-date-picker__header">
+        <i class="el-icon-d-arrow-left"></i>
+        <span class="el-date-picker__header-label">2026 年</span>
+        <i class="el-icon-d-arrow-right"></i>
+      </div>
+      <table class="el-month-table"><tbody><tr>${cells}</tr></tbody></table>
+    </div>
+  </div>`;
+  return `<div class="el-form-item" id="dates-item"><label class="el-form-item__label">任职时间</label><div class="el-form-item__content">${editor('start-date')}${editor('end-date')}</div></div>`;
+}
+
+function wireRaceMonth(document, options = {}) {
+  const stats = { open: 0, earlyClicks: 0, drift: 0, commits: 0, dualClicks: 0, escapes: 0 };
+  const editors = Object.fromEntries(['start-date', 'end-date'].map((id) => {
+    const panel = document.getElementById(`${id}-panel`);
+    return [id, {
+      input: document.getElementById(id),
+      panel,
+      year: panel.querySelector('.el-date-picker__header-label'),
+      closed: true,
+      ready: false,
+    }];
+  }));
+  const hide = (editor) => {
+    editor.ready = false;
+    editor.panel.style.display = 'none';
+    editor.panel.style.visibility = '';
+    for (const name of RACE_ANIM) editor.panel.classList.remove(name);
+  };
+  const paint = (editor) => {
+    const year = Number(editor.year.textContent.match(/\d{4}/u)[0]);
+    [...editor.panel.querySelectorAll('td')].forEach((cell, index) => {
+      const month = index + 1;
+      cell.classList.toggle('disabled', year > 2026 || (year === 2026 && month >= 11));
+      cell.classList.toggle('today', year === 2026 && month === 10);
+    });
+  };
+  for (const editor of Object.values(editors)) paint(editor);
+  const show = (id) => {
+    const own = editors[id];
+    const other = editors[id === 'start-date' ? 'end-date' : 'start-date'];
+    const resurrect = (id === 'end-date' && options.forceDualOnEnd)
+      || (!other.closed && other.panel.style.display === 'none');
+    if (resurrect) {
+      other.panel.style.display = 'block';
+      other.panel.style.visibility = 'visible';
+      for (const name of RACE_ANIM) other.panel.classList.remove(name);
+    }
+    own.closed = false;
+    own.ready = false;
+    own.panel.style.display = 'block';
+    own.panel.style.visibility = 'hidden';
+    for (const name of RACE_ANIM) own.panel.classList.add(name);
+    stats.open += 1;
+    const view = document.defaultView;
+    view.setTimeout(() => { own.panel.style.visibility = 'visible'; }, 80);
+    view.setTimeout(() => {
+      for (const name of RACE_ANIM) own.panel.classList.remove(name);
+      own.ready = true;
+    }, 280);
+  };
+  document.getElementById('start-date-icon').addEventListener('click', () => show('start-date'));
+  document.getElementById('end-date-icon').addEventListener('click', () => show('end-date'));
+  document.addEventListener('keydown', (event) => {
+    if (event.key !== 'Escape') return;
+    stats.escapes += 1;
+    for (const editor of Object.values(editors)) {
+      editor.closed = true;
+      hide(editor);
+    }
+  });
+  for (const editor of Object.values(editors)) {
+    const shift = (delta) => {
+      const early = !editor.ready || editor.panel.classList.contains('el-zoom-in-top-enter-active');
+      let step = delta;
+      if (early || options.decade) {
+        step = delta < 0 ? -10 : 10;
+        stats.drift += 1;
+        if (early) stats.earlyClicks += 1;
+      }
+      const current = Number(editor.year.textContent.match(/\d{4}/u)[0]);
+      editor.year.textContent = `${current + step} 年`;
+      paint(editor);
+    };
+    editor.panel.querySelector('.el-icon-d-arrow-left').addEventListener('click', () => shift(-1));
+    editor.panel.querySelector('.el-icon-d-arrow-right').addEventListener('click', () => shift(1));
+    for (const cell of editor.panel.querySelectorAll('td')) {
+      cell.querySelector('a.cell').addEventListener('click', () => {
+        const early = !editor.ready || editor.panel.classList.contains('el-zoom-in-top-enter-active');
+        if (early) {
+          stats.earlyClicks += 1;
+          return;
+        }
+        if (cell.classList.contains('disabled')) return;
+        const open = [...document.querySelectorAll('.el-picker-panel')].filter((panel) => panel.style.display !== 'none');
+        if (open.length > 1) {
+          stats.dualClicks += 1;
+          editors['start-date'].input.value = '1946-06';
+          return;
+        }
+        if (options.badCommit) {
+          editor.input.value = '1946-06';
+          hide(editor);
+          stats.commits += 1;
+          return;
+        }
+        const month = MONTH_NAMES.indexOf(cell.textContent.replace(/\s+/gu, '')) + 1;
+        const current = Number(editor.year.textContent.match(/\d{4}/u)[0]);
+        editor.input.value = `${current}-${String(month).padStart(2, '0')}`;
+        hide(editor);
+        editor.closed = false;
+        stats.commits += 1;
+      });
+    }
+  }
+  return stats;
+}
+
+function bootRace(options = {}) {
+  const html = shell(formWrap(workFields({
+    dates: raceMonthItem(), industrySingle: true, industryCounter: '(0/1)',
+  })));
+  const booted = boot(html);
+  const doc = booted.dom.window.document;
+  wireCascader(doc, 'job', { leaves: JOB_LEAVES, reveal: true });
+  wireCascader(doc, 'industry', { leaves: INDUSTRY_LEAVES, reveal: true, single: true });
+  return { ...booted, doc, months: wireRaceMonth(doc, options) };
+}
+
+test('任职时间 waits out enter animation and reads back both months', async () => {
+  for (const [startDate, endDate] of [['2023-01', '2024-06'], ['2022-03', '2023-12']]) {
+    const { doc, clicks, context, months } = bootRace();
+    const result = await context.ResumeGthWorkOpen.trial(request(workProfile({ ...ROW, startDate, endDate })));
+    assert.equal(result.ok, true, JSON.stringify({ startDate, endDate, reason: result.reason, step: result.selectorStep }));
+    assert.equal(`${doc.getElementById('start-date').value} | ${doc.getElementById('end-date').value}`, `${startDate} | ${endDate}`);
+    assert.equal(result.fields.find((field) => field.question === '任职时间').reason, 'readback_matched');
+    assert.equal(result.liveSupportClaimed, false);
+    assert.equal(result.coverage.find((field) => field.question === '薪资').reason, 'control_not_supported');
+    assert.equal(months.earlyClicks, 0);
+    assert.equal(months.drift, 0);
+    assert.equal(months.dualClicks, 0);
+    assert.equal(months.commits, 2);
+    assert.ok(months.escapes >= 2);
+    assert.equal(doc.getElementById('start-date-panel').style.display, 'none');
+    assert.equal(doc.getElementById('end-date-panel').style.display, 'none');
+    assert.equal(doc.getElementById('salary').value, '');
+    flags(result);
+    assert.equal(forbidden(clicks).length, 0);
+  }
+});
+
+test('a leftover start panel or a decade year step fails closed without an empty end success', async () => {
+  const dual = bootRace({ forceDualOnEnd: true });
+  const dualResult = await dual.context.ResumeGthWorkOpen.trial(request(workProfile({ ...ROW, startDate: '2023-01', endDate: '2024-06' })));
+  assert.equal(dualResult.ok, false);
+  assert.equal(dualResult.reason, 'control_not_supported');
+  assert.equal(dualResult.selectorStep, 'month_panel_structure_unknown');
+  assert.equal(dualResult.fields.find((field) => field.question === '任职时间').reason, 'control_not_supported');
+  assert.equal(dual.doc.getElementById('start-date').value, '2023-01');
+  assert.equal(dual.doc.getElementById('end-date').value, '');
+  assert.notEqual(`${dual.doc.getElementById('start-date').value} | ${dual.doc.getElementById('end-date').value}`, '2023-01 | 2024-06');
+  assert.equal(dual.months.dualClicks, 0);
+  assert.equal(dual.doc.getElementById('salary').value, '');
+  assert.equal(forbidden(dual.clicks).length, 0);
+
+  const drift = bootRace({ decade: true });
+  const driftResult = await drift.context.ResumeGthWorkOpen.trial(request(workProfile({ ...ROW, startDate: '2023-01', endDate: '2024-06' })));
+  assert.equal(driftResult.ok, false);
+  assert.equal(driftResult.reason, 'control_not_supported');
+  assert.equal(driftResult.selectorStep, 'month_panel_structure_unknown');
+  assert.equal(drift.doc.getElementById('start-date').value, '');
+  assert.equal(drift.doc.getElementById('end-date').value, '');
+  assert.equal(drift.months.commits, 0);
+  assert.equal(forbidden(drift.clicks).length, 0);
+
+  const lied = bootRace({ badCommit: true });
+  const liedResult = await lied.context.ResumeGthWorkOpen.trial(request(workProfile({ ...ROW, startDate: '2023-01', endDate: '2024-06' })));
+  assert.equal(liedResult.ok, false);
+  assert.equal(liedResult.reason, 'readback_mismatch');
+  assert.equal(liedResult.selectorStep, 'month_option');
+  assert.equal(liedResult.fields.find((field) => field.question === '任职时间').status, 'failed');
+  assert.equal(liedResult.fields.find((field) => field.question === '任职时间').reason, 'readback_mismatch');
+  assert.equal(lied.doc.getElementById('end-date').value, '');
+  assert.notEqual(lied.doc.getElementById('start-date').value, '2023-01');
+  assert.equal(liedResult.fields.find((field) => field.question === '公司名称').reason, 'not_run');
+  assert.equal(forbidden(lied.clicks).length, 0);
+});
+
 test('empty work extras do not change an internship source hash', async () => {
   const base = { type: 'internship', organization: '甲', position: '乙', startDate: '2020-01-02', endDate: '2020-06-01', description: '实习' };
   const left = await sourceSnapshot({ experience: [base], confirmedFields: [] }, 0);

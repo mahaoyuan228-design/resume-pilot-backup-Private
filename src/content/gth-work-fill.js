@@ -3,6 +3,9 @@
 // The caller opens the editor. This script never opens one and never clicks
 // 保存 / 提交 / 投递 / 删除.
 // 任职时间 reuses the education dual el-date-editor--month writer (YYYY-MM | YYYY-MM).
+// The shared writer closes the sibling panel, waits out el-zoom-in-top enter
+// animation, and commits only that editor's panel. End readback must be the
+// requested YYYY-MM. A second panel or a year step other than ±1 fails closed.
 // 职位类别 and 公司所属行业 use the intent cascader: exact 一级||二级, L1 click, then L2.
 // 薪资 is an el-input/select-l hybrid with no option list in the census, so it stays
 // 'control_not_supported'. liveSupportClaimed stays false.

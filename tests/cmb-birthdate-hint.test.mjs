@@ -407,10 +407,16 @@ test('synthetic birthDate attempt does not write, open a calendar, or clobber ne
     }, { synthetic: true })`);
     const hintOnly = await evaluate(send, `ResumeCmbBasic.birthDateHint()`);
     const afterProfile = await evaluate(send, SNAPSHOT);
-    assert.equal(profileFill.ok, true);
+    assert.equal(profileFill.ok, false);
+    assert.equal(profileFill.reason, 'datepicker_hint_only');
     assert.equal(profileFill.saved, false);
     assert.equal(profileFill.skippedSave, true);
-    assert.equal(profileFill.results.some((row) => row.label === '出生日期'), false);
+    assert.equal(profileFill.writeAttempted, true);
+    const birthResult = profileFill.results.find((row) => row.label === '出生日期');
+    assert.equal(birthResult?.ok, false);
+    assert.equal(birthResult?.reason, 'datepicker_hint_only');
+    assert.equal(birthResult?.writeAttempted, false);
+    assert.equal(birthResult?.saved, false);
     assert.equal(hintOnly.ok, false);
     assert.equal(hintOnly.reason, 'datepicker_hint_only');
     assert.equal(hintOnly.writeAttempted, false);

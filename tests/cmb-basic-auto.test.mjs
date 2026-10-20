@@ -11,11 +11,15 @@ import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import {
   CMB_HOST_MATCH,
+  assessCmbFillReport,
   cmbHostPermissionGranted,
+  cmbOutcomeKeepsPendingReview,
   createCmbBasicAutoRunner,
   resolveCmbTarget,
-  isCmbTabUrl
+  isCmbTabUrl,
+  sealCmbRequestedFill
 } from '../src/background/cmb-basic-auto.mjs';
+import { CMB_REQUESTED_FILL_FAIL_CLOSED_REASONS } from '../src/content/cmb-profile-map.mjs';
 
 const root = resolve(import.meta.dirname, '..');
 const epoch = '00000000-0000-4000-8000-000000000001';
@@ -251,6 +255,10 @@ test('CMB_BASIC_AUTO fill injects cmb-basic.js once and never Save', async () =>
   assert.equal(filled.job.softwareClickedSave, false);
   assert.equal(filled.job.saved, false);
   assert.equal(filled.liveSupportClaimed, false);
+  assert.equal(filled.complete, false);
+  assert.equal(filled.pendingReviewRequired, false);
+  assert.equal(filled.job.state, 'completed');
+  assert.equal(h.data['resumePendingFillReview:42'], undefined);
   assert.equal(h.stats.inject, 1);
   assert.equal(h.stats.fill, 1);
   assert.deepEqual(h.stats.files, [['src/content/cmb-basic.js']]);
@@ -321,6 +329,161 @@ test('CMB_BASIC_AUTO fails closed when ok is true without verified rows or siteI
   assert.equal(isolated.ok, false);
   assert.equal(isolated.reason, 'cmb_site_isolation');
   assert.equal(isolated.liveSupportClaimed, false);
+});
+
+test('CMB_BASIC_AUTO does not complete when a requested field is unsupported or unsettled', async () => {
+  const pageOk = {
+    ok: true,
+    siteId: 'cmb',
+    saved: false,
+    skippedSave: true,
+    writeAttempted: true,
+    softwareClickedSave: false,
+    softwareClickedSubmit: false,
+    results: [
+      { label: '姓名', ok: true, reason: 'matched', path: 'fullName' },
+      { label: '手机号', ok: true, reason: 'matched', path: 'phone' },
+      { label: '邮箱', ok: true, reason: 'matched', path: 'email' }
+    ],
+    href: TAB
+  };
+  const hinted = harness({ fillResult: pageOk });
+  hinted.data.resumeProfile = {
+    ...hinted.data.resumeProfile,
+    birthDate: '1990-01-02',
+    confirmedFields: ['fullName', 'phone', 'email', 'birthDate']
+  };
+  const birth = await hinted.invoke({ type: 'CMB_BASIC_AUTO', mode: 'fill', openIfMissing: false });
+  assert.equal(birth.ok, false);
+  assert.equal(birth.reason, 'datepicker_hint_only');
+  assert.equal(birth.job.state, 'failed');
+  assert.notEqual(birth.job.state, 'completed');
+  assert.equal(birth.pendingReviewRequired, true);
+  assert.equal(birth.complete, false);
+  assert.equal(birth.softwareClickedSave, false);
+  assert.equal(birth.saved, false);
+  assert.equal(birth.liveSupportClaimed, false);
+  assert.equal(birth.job.results.some((row) => row.path === 'birthDate' && row.ok === false && row.reason === 'datepicker_hint_only'), true);
+  assert.equal(hinted.data['resumePendingFillReview:42']?.pendingReviewRequired, true);
+  assert.equal(hinted.data['resumePendingFillReview:42']?.reason, 'datepicker_hint_only');
+  assert.equal(JSON.stringify(birth).includes('已支持'), false);
+
+  const unsettled = harness({ fillResult: pageOk });
+  unsettled.data.resumeProfile = {
+    ...unsettled.data.resumeProfile,
+    gender: '男'
+  };
+  const gender = await unsettled.invoke({ type: 'CMB_BASIC_AUTO', mode: 'fill', openIfMissing: false });
+  assert.equal(gender.ok, false);
+  assert.equal(gender.reason, 'profile_fact_unconfirmed');
+  assert.equal(gender.job.state, 'failed');
+  assert.equal(gender.pendingReviewRequired, true);
+  assert.equal(gender.job.results.some((row) => row.label === '性别' && row.reason === 'profile_fact_unconfirmed'), true);
+  assert.equal(unsettled.data['resumePendingFillReview:42']?.pendingReviewRequired, true);
+
+  const invalid = harness({ fillResult: pageOk });
+  invalid.data.resumeProfile = {
+    ...invalid.data.resumeProfile,
+    gender: '未知',
+    confirmedFields: ['fullName', 'phone', 'email', 'gender']
+  };
+  const badGender = await invalid.invoke({ type: 'CMB_BASIC_AUTO', mode: 'fill', openIfMissing: false });
+  assert.equal(badGender.ok, false);
+  assert.equal(badGender.reason, 'invalid_profile_value');
+  assert.equal(badGender.job.state, 'failed');
+  assert.equal(badGender.softwareClickedSave, false);
+  assert.equal(invalid.data['resumePendingFillReview:42']?.reason, 'invalid_profile_value');
+});
+
+test('CMB_BASIC_AUTO keeps a save claim when a requested field is also unsettled', async () => {
+  const h = harness({
+    fillResult: {
+      ok: true,
+      siteId: 'cmb',
+      saved: false,
+      skippedSave: true,
+      writeAttempted: true,
+      softwareClickedSave: true,
+      results: [{ label: '姓名', ok: true, reason: 'matched' }],
+      href: TAB
+    }
+  });
+  h.data.resumeProfile = {
+    ...h.data.resumeProfile,
+    birthDate: '1990-01-02',
+    confirmedFields: ['fullName', 'phone', 'email', 'birthDate']
+  };
+  const filled = await h.invoke({ type: 'CMB_BASIC_AUTO', mode: 'fill', openIfMissing: false });
+  assert.equal(filled.ok, false);
+  assert.equal(filled.reason, 'cmb_save_policy_violation');
+  assert.equal(filled.job.state, 'failed');
+  assert.equal(filled.softwareClickedSave, true);
+  assert.equal(filled.job.softwareClickedSave, true);
+  assert.equal(filled.pendingReviewRequired, true);
+  assert.equal(h.data['resumePendingFillReview:42']?.pendingReviewRequired, true);
+  assert.equal(h.data.resumeCmbBasicAutoRun?.softwareClickedSave, true);
+});
+
+test('CMB_BASIC_AUTO readiness names a blocked requested fill and does not write', async () => {
+  const h = harness();
+  h.data.resumeProfile = {
+    ...h.data.resumeProfile,
+    birthDate: '1990-01-02',
+    confirmedFields: ['fullName', 'phone', 'email', 'birthDate']
+  };
+  const ready = await h.invoke({ type: 'CMB_BASIC_AUTO', mode: 'readiness', openIfMissing: false });
+  assert.equal(ready.ok, true);
+  assert.equal(ready.complete, false);
+  assert.equal(ready.pendingReviewRequired, false);
+  assert.equal(ready.writeAttempted, false);
+  assert.equal(ready.readiness.profilePlan.requestedFillBlocked, true);
+  assert.equal(ready.readiness.profilePlan.fillAllowed, false);
+  assert.equal(ready.readiness.profilePlan.complete, false);
+  assert.equal(ready.readiness.profilePlan.blockers.some((row) => row.reason === 'datepicker_hint_only'), true);
+  assert.equal(h.stats.fill, 0);
+  assert.equal(h.data['resumePendingFillReview:42'], undefined);
+  assert.match(await readFile(resolve(root, 'src/auto/cmb-basic-auto.js'), 'utf8'), /requestedFillBlocked/);
+  assert.doesNotMatch(await readFile(resolve(root, 'src/auto/cmb-basic-auto.js'), 'utf8'), /已支持/);
+});
+
+test('assessCmbFillReport rejects an ambiguous ok row and a hint attached to a green body', async () => {
+  const green = {
+    ok: true,
+    siteId: 'cmb',
+    skippedSave: true,
+    saved: false,
+    writeAttempted: true,
+    results: [{ label: '姓名', ok: true, reason: 'matched' }]
+  };
+  assert.equal(assessCmbFillReport(green).state, 'completed');
+  const ambiguous = assessCmbFillReport({
+    ...green,
+    results: [{ label: '姓名', ok: true, reason: 'item_ambiguous' }]
+  });
+  assert.equal(ambiguous.state, 'failed');
+  assert.equal(ambiguous.reason, 'item_ambiguous');
+  assert.equal(cmbOutcomeKeepsPendingReview(ambiguous.reason), true);
+  const hinted = assessCmbFillReport({
+    ...green,
+    birthDateHint: { reason: 'datepicker_hint_only', saved: false, skippedSave: true }
+  });
+  assert.equal(hinted.state, 'failed');
+  assert.equal(hinted.reason, 'datepicker_hint_only');
+  const sealed = sealCmbRequestedFill(green, {
+    blockers: [{ label: '性别', path: 'gender', reason: 'profile_fact_unconfirmed', value: '男' }]
+  });
+  assert.equal(sealed.ok, false);
+  assert.equal(assessCmbFillReport(sealed).state, 'failed');
+  assert.equal(assessCmbFillReport(sealed).reason, 'profile_fact_unconfirmed');
+  const source = CMB_REQUESTED_FILL_FAIL_CLOSED_REASONS.join('\n');
+  assert.match(source, /item_ambiguous/);
+  assert.match(source, /datepicker_hint_only/);
+  assert.equal(cmbOutcomeKeepsPendingReview('profile_fields_unavailable'), false);
+  assert.equal(cmbOutcomeKeepsPendingReview('invalid_gender'), true);
+  const engine = await readFile(resolve(root, 'src/content/cmb-basic.js'), 'utf8');
+  assert.match(engine, /REQUESTED_FILL_FAIL_CLOSED/);
+  for (const reason of CMB_REQUESTED_FILL_FAIL_CLOSED_REASONS) assert.match(engine, new RegExp(reason));
+  assert.doesNotMatch(engine, /已支持/);
 });
 
 test('trial worker install registers CMB_BASIC_AUTO', async () => {

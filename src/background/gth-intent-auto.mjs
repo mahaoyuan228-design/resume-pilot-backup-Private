@@ -1,7 +1,8 @@
 // GTH 求职意向 auto (mirror GTH_SIMPLE_AUTO). Default: readiness.
-// Fill-without-save uses product GTH_INTENT_TEST (engine.js). Never clicks Save/Cancel/submit.
-// Fill ok is true only after a settled verified readback. A Save/submit/delete
-// or savedOnSite/submitted claim is kept and fails closed.
+// The experimental intent-test write is not in the shipped pack. Fill without an
+// injected test-only transport fails closed before any page script.
+// Never clicks Save/Cancel/submit. Fill ok is true only after a settled verified
+// readback. A Save/submit/delete or savedOnSite/submitted claim is kept and fails closed.
 import {captureProfileBinding,assertProfileBinding,canonicalProfileHash,
   dispatchBoundSource,withProfileBinding} from '../profile/profile-lifecycle.js';
 import {evaluateGthSavePolicy,assertAutoNeverAttemptedSave,gthAutoSiteClaims,gthAutoSiteClaimed} from './gth-save-policy.mjs';
@@ -90,7 +91,7 @@ export function intentSource(profile){
   };
 }
 
-export function createGthIntentAutoRunner({api=globalThis.chrome,verifyBeforeFill=null,timeoutMs=90000,lifecycleOptions={}}={}){
+export function createGthIntentAutoRunner({api=globalThis.chrome,verifyBeforeFill=null,timeoutMs=90000,lifecycleOptions={},fillIntent=null}={}){
   const get=async key=>(await api.storage.local.get(key))[key];
   const autoPageUrl=()=>api.runtime.getURL('src/auto/gth-intent-auto.html');
   const trustedUi=sender=>{
@@ -175,7 +176,7 @@ export function createGthIntentAutoRunner({api=globalThis.chrome,verifyBeforeFil
       intent:source,profileBinding:binding,profileBindingError:bindingError,
       saveAllowedByPolicy:evaluateGthSavePolicy({fromAutoPath:true}).saveAllowedByPolicy,
       savePolicy:evaluateGthSavePolicy({fromAutoPath:true}),
-      note:'Auto path does not Save/submit; five intent fields only via GTH_INTENT_TEST; existing different values fail-closed'
+      note:'Auto path does not Save/submit; the shipped pack does not run the experimental intent write; existing different values fail-closed'
     };
   }
 
@@ -196,13 +197,11 @@ export function createGthIntentAutoRunner({api=globalThis.chrome,verifyBeforeFil
       if(message.originConfirmed!==true)fail('intent_job_origin_unconfirmed');
       await withProfileBinding(api.storage.local,binding,()=>api.storage.local.set({resumeTrustedOrigins:[...(Array.isArray(trusted)?trusted:[]),ORIGIN].slice(-100)}),lifecycleOptions);
     }
-    await bounded(()=>dispatchBoundSource(api.storage.local,binding,()=>api.scripting.executeScript({
-      target:{tabId:tab.id},files:['src/core/matcher.js','src/content/engine.js']
-    }),lifecycleOptions),15000);
+    if(typeof fillIntent!=='function')fail('gth_intent_fill_not_shipped');
     const requestId=typeof message.requestId==='string'&&/^[A-Za-z0-9-]{10,100}$/u.test(message.requestId)
       ?message.requestId:newRequestId();
-    const response=await bounded(()=>dispatchBoundSource(api.storage.local,binding,()=>api.tabs.sendMessage(tab.id,{
-      type:'GTH_INTENT_TEST',requestId,profileBinding:binding,answers
+    const response=await bounded(()=>dispatchBoundSource(api.storage.local,binding,()=>fillIntent({
+      api,tab,requestId,binding,answers
     }),lifecycleOptions));
     await assertProfileBinding(api.storage.local,binding,lifecycleOptions);
     if(!response||typeof response!=='object')fail('gth_intent_fill_no_response');

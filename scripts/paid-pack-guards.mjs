@@ -18,6 +18,26 @@ export const CMS_BASIC_SEED = 'src/profile/cms-basic-seed-from-education.mjs';
 export const GUARD_WORKER = 'src/license/guard-worker.mjs';
 export const PAID_CONFIG = 'src/license/paid-config.mjs';
 
+// Experimental page write. Tests keep it in tests/gth-intent-test-hook.mjs.
+// That file is off the product allowlist. A packed copy fails the build.
+export const GTH_INTENT_TEST_HOOK = 'GTH_INTENT_TEST';
+
+export function assertPackOmitsGthIntentTest(rels, readText) {
+  if (!Array.isArray(rels) || typeof readText !== 'function') {
+    throw new Error('assertPackOmitsGthIntentTest needs a pack list and a reader');
+  }
+  const hits = [];
+  for (const rel of rels) {
+    const text = readText(rel);
+    if (typeof text !== 'string') throw new Error(`pack guard could not read ${rel}`);
+    if (text.includes(GTH_INTENT_TEST_HOOK)) hits.push(rel);
+  }
+  if (hits.length) {
+    throw new Error(`pack contains GTH_INTENT_TEST:\n${hits.join('\n')}`);
+  }
+  return { gthIntentTestOmitted: true };
+}
+
 // Byte-compared into the paid output. An Oct-18 pack predates the 学历 id suffix and region fail-closed.
 export const CMS_TIP_SOURCE_FILES = [
   'src/content/engine.js',
@@ -644,6 +664,7 @@ export async function assertBuiltPaidExtension(extensionRoot, packedFiles) {
     throw new Error(`built manifest service_worker is ${manifest.background?.service_worker}`);
   }
   assertPackImportsResolve(extensionRoot, packedFiles);
+  const intentHook = assertPackOmitsGthIntentTest(packedFiles, (rel) => fs.readFileSync(path.join(extensionRoot, rel), 'utf8'));
   const tip = assertPackedCmsTip(extensionRoot, packedFiles);
   const gth = assertPackedGthTip(extensionRoot, packedFiles);
   const cmb = assertPackedCmbTip(extensionRoot, packedFiles);
@@ -694,5 +715,6 @@ export async function assertBuiltPaidExtension(extensionRoot, packedFiles) {
     ...tip,
     ...gth,
     ...cmb,
+    ...intentHook,
   };
 }

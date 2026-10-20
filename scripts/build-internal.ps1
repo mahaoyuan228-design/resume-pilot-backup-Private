@@ -235,6 +235,17 @@ foreach ($relative in ($files | Sort-Object)) {
   $hashLines.Add("$hash  extension/$relative")
 }
 
+function Assert-PackedOmitsGthIntentTest([string]$Root) {
+  $needle = 'GTH_INTENT_TEST'
+  foreach ($file in (Get-ChildItem -LiteralPath $Root -Recurse -File)) {
+    $packedText = [IO.File]::ReadAllText($file.FullName)
+    if ($packedText.Contains($needle)) {
+      throw "交付包含有 GTH_INTENT_TEST（$($file.FullName)）。实验写入钩子不得进入内部或付费包。"
+    }
+  }
+}
+Assert-PackedOmitsGthIntentTest $extensionRoot
+
 Add-Type -AssemblyName System.IO.Compression
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 $zipName = "resume-autofill-edge-v$version.zip"
@@ -285,7 +296,3 @@ Write-Output "内部试用包：$buildRoot"
 Write-Output "ZIP：$zipPath"
 Write-Output "文件数：$($files.Count)"
 Write-Output "ZIP SHA256：$zipHash"
-$engineSource = Get-Content -LiteralPath (Join-Path $repoRoot 'src/content/engine.js') -Raw -Encoding UTF8
-if ($engineSource.Contains('"GTH_INTENT_TEST"')) {
-  Write-Output '仅内部实验：GTH_INTENT_TEST 写入消息仍在试用引擎中；此包不得作为付费或最终交付。'
-}

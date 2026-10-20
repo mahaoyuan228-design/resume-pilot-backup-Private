@@ -8,7 +8,7 @@
   if(nativeMessages.hasListeners?.()===false)globalThis.__resumeNativeListenersResetObserved=true;
   if(globalThis.__resumeQuickFillInstalled){
     existingListenerAlive=!!ownedListener&&nativeMessages.hasListener?.(ownedListener)===true;
-    if(existingListenerAlive&&globalThis.__resumeQuickFillEngineRevision===5&&typeof globalThis.ResumeQuickFillGthInspect==='function')return;
+    if(existingListenerAlive&&globalThis.__resumeQuickFillEngineRevision===6&&typeof globalThis.ResumeQuickFillGthInspect==='function')return;
     if(existingListenerAlive){if(fillState.pending)throw Error('profile_write_context_busy');nativeMessages.removeListener(ownedListener);existingListenerAlive=false;}
     else if(!ownedListener&&nativeMessages.hasListeners?.()===true&&!globalThis.__resumeNativeListenersResetObserved)throw Error('extension_reload_required');
   }
@@ -2117,303 +2117,13 @@
     }
   }
 
-  // Internal five-field method trial for the one GTH section. Answers are
-  // explicitly experimental and never copied into the applicant's profile.
-  // This route leaves the editor open and never clicks Save or Submit.
-  async function gthIntentTest(answers, requestId) {
-    const page = "https://hr.gtht.com/resume/edit/";
-    const titles = ["基本信息", "教育经历", "求职意向", "工作经验",
-      "职业技能与特长", "附件简历", "其他信息"];
-    const questions = ["期望从事职位类别", "期望薪资", "现从事行业",
-      "现从事职位类别", "现薪资"];
-    const selectQuestions = new Set([questions[0], questions[2], questions[3]]);
-    const confirmQuestions = new Set([questions[0]]);
-    const fail = (reason) => { throw new Error(reason); };
-    const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-    const heading = (section) => {
-      const copy = section.querySelector(".title_")?.cloneNode(true);
-      copy?.querySelectorAll("a,button").forEach((node) => node.remove());
-      return M.normalize(copy?.textContent);
-    };
-    const sectionsNow = () => {
-      if (location.href !== page) fail("wrong_page");
-      requireVisibleFillPage();
-      const sections = [...document.querySelectorAll(".r-section")];
-      if (sections.length !== titles.length
-        || sections.some((section, index) => heading(section) !== titles[index]))
-        fail("section_structure_changed");
-      return sections;
-    };
-    const ownLabel = (item) => {
-      const labels = [...item.querySelectorAll(".el-form-item__label")]
-        .filter((node) => node.closest(".el-form-item") === item);
-      return labels.length === 1 ? M.normalize(labels[0].textContent) : "";
-    };
-    const stateOf = (node) => [node.tagName, node.type || "", node.value || "",
-      !!node.checked, node.selectedIndex ?? null,
-      [...(node.files || [])].map((file) => [file.name, file.size, file.type])];
-    const otherFormValues = (form) => JSON.stringify(
-      [...form.querySelectorAll("input,select,textarea")]
-        .filter((node) => !questions.includes(ownLabel(node.closest(".el-form-item") || form)))
-        .map(stateOf));
-    const otherSections = (sections) => JSON.stringify(sections
-      .filter((_, index) => index !== 2)
-      .map((section) => [section.textContent,
-        [...section.querySelectorAll("input,select,textarea")].map(stateOf)]));
-    const visiblePopups = () => [...document.querySelectorAll(".popover.plugin-dialog-wrap")]
-      .filter((node) => visible(node) && getComputedStyle(node).display !== "none");
-    let writeStarted = false;
-    try {
-      if (location.href !== page || document.readyState !== "complete") fail("wrong_page_or_not_ready");
-      requireVisibleFillPage();
-      if (!answers || typeof answers !== "object" || Array.isArray(answers)
-        || Object.keys(answers).length !== questions.length
-        || questions.some((question) => typeof answers[question] !== "string"
-          || !answers[question] || answers[question].length > 80
-          || /[\r\n\u0000-\u001f]/u.test(answers[question])))
-        fail("test_answers_invalid");
-      if (![questions[1], questions[4]].every((question) => /^\d{1,10}$/.test(answers[question])))
-        fail("test_salary_format_invalid");
-      let sections = sectionsNow();
-      let forms = sections.flatMap((section) => [...section.querySelectorAll("form")]);
-      if (forms.length > 1 || (forms.length === 1 && !sections[2].contains(forms[0])))
-        fail("editor_structure_changed");
-      const outsideBefore = otherSections(sections);
-      if (!forms.length) {
-        const links = [...sections[2].querySelectorAll(".title_ a.h-e-btn")]
-          .filter((node) => M.normalize(node.textContent) === "编辑" && visible(node));
-        if (links.length !== 1) fail("edit_link_not_unique");
-        await checkProfileWrite(); links[0].click();
-        const deadline = Date.now() + 4000;
-        do {
-          await pause(60);
-          sections = sectionsNow();
-          forms = sections.flatMap((section) => [...section.querySelectorAll("form")]);
-          if (forms.length > 1 || (forms.length === 1 && !sections[2].contains(forms[0])))
-            fail("editor_structure_changed");
-          if (forms.length === 1 && forms[0].querySelector(".el-form-item")) break;
-        } while (Date.now() < deadline);
-      }
-      if (forms.length !== 1 || !sections[2].contains(forms[0])
-        || otherSections(sections) !== outsideBefore) fail("editor_structure_changed");
-      const form = forms[0];
-      const field = (question) => {
-        const items = [...form.querySelectorAll(".el-form-item")]
-          .filter((item) => ownLabel(item) === question);
-        if (items.length !== 1 || !items[0].classList.contains("is-required"))
-          fail("target_not_unique_or_required");
-        const item = items[0];
-        // The popup creates temporary search-result checkboxes. Exclude those
-        // menu controls when validating the persistent applicant field.
-        const controls = [...item.querySelectorAll("input,select,textarea")]
-          .filter((node) => node.closest(".el-form-item") === item
-            && !node.closest(".popover.plugin-dialog-wrap"));
-        const exposed = controls.filter((node) => visible(node));
-        let input, widget = null;
-        if (selectQuestions.has(question)) {
-          const widgets = [...item.querySelectorAll(".cascader-wrap")];
-          if (widgets.length !== 1 || item.querySelector(".el-select,.el-cascader,.el-date-editor")
-            || exposed.length !== 1 || controls.length !== 1
-            || !(exposed[0] instanceof HTMLInputElement)
-            || exposed[0].type !== "text" || !exposed[0].readOnly
-            || exposed[0].disabled || !widgets[0].contains(exposed[0])
-            || !widgets[0].querySelector(":scope > .input-l.pointer")?.contains(exposed[0])
-            || widgets[0].querySelectorAll(":scope > .popover.plugin-dialog-wrap").length !== 1
-            || widgets[0].querySelectorAll(":scope > .popover.plugin-dialog-wrap .search-input").length !== 1)
-            fail("target_select_structure_changed");
-          widget = widgets[0];
-          input = exposed[0];
-        } else {
-          if (controls.length !== 1 || exposed.length !== 1
-            || !(exposed[0] instanceof HTMLInputElement)
-            || exposed[0].type !== "text" || exposed[0].readOnly
-            || exposed[0].disabled || exposed[0].closest(".el-select,.el-cascader,.el-date-editor"))
-            fail("target_not_plain_text");
-          input = exposed[0];
-        }
-        if (input.maxLength >= 0 && answers[question].length > input.maxLength)
-          fail("value_too_long");
-        return { item, input, widget };
-      };
-      // Validate every target before the first write. A single new or changed
-      // widget shape stops the whole trial without changing any applicant value.
-      const initial = questions.map((question) => [question, field(question)]);
-      if (initial.some(([question, target]) => target.input.value !== ""
-        && target.input.value !== answers[question])) fail("target_has_existing_value");
-      const beforeOther = otherFormValues(form);
-      await pause(80);
-      if (sectionsNow()[2] !== sections[2] || !form.isConnected
-        || otherSections(sectionsNow()) !== outsideBefore
-        || otherFormValues(form) !== beforeOther
-        || initial.some(([question, target]) => field(question).input !== target.input
-          || target.input.value !== "" && target.input.value !== answers[question]))
-        fail("original_value_changed");
-      const originalValues = new Map(initial.map(([question, target]) => [question, target.input.value]));
-      for (const question of questions) {
-        requireVisibleFillPage();
-        const target = field(question);
-        if (target.input.value === answers[question]) continue;
-        if (target.input.value !== "" || otherFormValues(form) !== beforeOther
-          || otherSections(sectionsNow()) !== outsideBefore)
-          fail("original_value_changed");
-        if (!target.widget) {
-          writeStarted = true;
-          await setBoundNativeValue(target.input, answers[question]);
-        } else {
-          if (visiblePopups().length) fail("other_menu_open");
-          writeStarted = true;
-          const trigger = target.widget.querySelector(":scope > .input-l.pointer");
-          const popup = target.widget.querySelector(":scope > .popover.plugin-dialog-wrap");
-          const search = popup?.querySelector(".search-input");
-          if (!trigger || !visible(trigger) || !popup || visible(popup) || !search)
-            fail("selector_structure_changed");
-          await checkProfileWrite(); trigger.click();
-          let confirmed = false;
-          try {
-          for (let attempt = 0; attempt < 30; attempt += 1) {
-            requireVisibleFillPage();
-            if (visiblePopups().length > 1) fail("menu_not_unique");
-            if (visible(popup)) break;
-            await pause(40);
-          }
-          if (!visible(popup) || visiblePopups().length !== 1 || !visible(search))
-            fail("menu_not_rendered");
-          if (search.value !== "") fail("search_has_existing_value");
-          // This GTH widget searches terminal nodes into dialog-search-wrap.
-          // The first category is multi-select with a visible Confirm footer;
-          // the other two selectors are single-choice and commit immediately.
-          const searchWrap = popup.querySelector(":scope > .dialog-search-wrap");
-          const footer = popup.querySelector(":scope > .plugin-dialog-pop-foot");
-          const requiresConfirm = confirmQuestions.has(question);
-          if (!searchWrap || !footer || visible(footer) !== requiresConfirm)
-            fail("selector_mode_changed");
-          if (requiresConfirm && popup.querySelectorAll(".selected-view-data > li").length)
-            fail("selector_has_existing_selection");
-          const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
-          if (!setter) fail("search_input_unsupported");
-          await checkProfileWrite(); setter.call(search, answers[question]);
-          await checkProfileWrite(); search.dispatchEvent(new Event("input", { bubbles: true }));
-          let candidates = [];
-          for (let attempt = 0; attempt < 30; attempt += 1) {
-            requireVisibleFillPage();
-            candidates = [...searchWrap.querySelectorAll(
-              ":scope > .eo-cascader-menu.simple-tree-outer > .simple-tree-wrapper > li.branch")]
-              .filter((node) => {
-                const checkbox = node.querySelector(":scope > label > input[type=checkbox][uid]");
-                const label = node.querySelector(":scope > label > span[uid]");
-                return visible(searchWrap) && visible(node)
-                  && !node.classList.contains("has-child")
-                  && !node.classList.contains("is-disabled")
-                  && node.getAttribute("aria-disabled") !== "true"
-                  && checkbox && label && !checkbox.disabled && !checkbox.checked
-                  && checkbox.getAttribute("uid") === label.getAttribute("uid")
-                  && M.normalize(label.textContent) === M.normalize(answers[question]);
-              });
-            if (candidates.length) break;
-            await pause(40);
-          }
-          if (candidates.length !== 1) fail(candidates.length ? "ambiguous_option" : "option_not_found");
-          const checkbox = candidates[0].querySelector(":scope > label > input[type=checkbox][uid]");
-          await checkProfileWrite(); checkbox.click();
-          if (requiresConfirm) {
-            let selected = [];
-            for (let attempt = 0; attempt < 30; attempt += 1) {
-              requireVisibleFillPage();
-              selected = [...popup.querySelectorAll(".selected-view-data > li")];
-              if (selected.length) break;
-              await pause(40);
-            }
-            if (!visible(popup) || selected.length !== 1
-              || M.normalize(selected[0].textContent) !== M.normalize(answers[question]))
-              fail("selector_selection_mismatch");
-            const confirm = [...footer.querySelectorAll("a.pop-btn.confirm")].filter(visible);
-            if (confirm.length !== 1) fail("confirm_not_unique");
-            await checkProfileWrite(); confirm[0].click();
-          }
-          for (let attempt = 0; attempt < 30; attempt += 1) {
-            requireVisibleFillPage();
-            if (field(question).input.value === answers[question] && !visiblePopups().length) break;
-            await pause(40);
-          }
-          confirmed = field(question).input.value === answers[question]
-            && !visiblePopups().length;
-          if (!confirmed) fail("selector_readback_mismatch");
-          } finally {
-            // A failed search must not strand a menu over the next field. Only
-            // close this exact widget if this trial opened it and the page is
-            // still visible; never close a different user's open menu.
-            if (location.href === page && document.visibilityState === "visible"
-              && trigger.isConnected && visible(popup)
-              && visiblePopups().length === 1 && visiblePopups()[0] === popup) {
-              if (!confirmed && search.isConnected && search.value === answers[question]) {
-                const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
-                await checkProfileWrite(); setter?.call(search, "");
-                await checkProfileWrite(); search.dispatchEvent(new Event("input", { bubbles: true }));
-              }
-              const cancel = [...popup.querySelectorAll("a.pop-btn.cancel")].filter(visible);
-              await checkProfileWrite();
-              if (cancel.length === 1) cancel[0].click();
-              else trigger.click();
-            }
-          }
-        }
-        await pause(250);
-        if (!form.isConnected || sectionsNow()[2] !== sections[2]
-          || otherFormValues(form) !== beforeOther
-          || otherSections(sectionsNow()) !== outsideBefore)
-          fail("other_values_changed");
-        if (field(question).input.value !== answers[question]) fail("readback_mismatch");
-      }
-      const check = () => {
-        try {
-          if (location.href !== page || document.visibilityState !== "visible"
-            || !form.isConnected || sectionsNow()[2] !== sections[2]
-            || otherFormValues(form) !== beforeOther
-            || otherSections(sectionsNow()) !== outsideBefore
-            || visiblePopups().length) return false;
-          return questions.every((question) => {
-            const { item, input } = field(question);
-            return input.value === answers[question]
-              && !item.classList.contains("is-error")
-              && !item.classList.contains("is-validating")
-              && input.getAttribute("aria-invalid") !== "true"
-              && ![...item.querySelectorAll(".el-form-item__error")]
-                .some((node) => visible(node) && M.normalize(node.textContent))
-              && (!input.validity || input.validity.valid);
-          });
-        } catch { return false; }
-      };
-      await pause(250);
-      if (!check()) fail("site_validation_or_readback_failed");
-      if (fillState.gthIntent?.requestId === requestId)
-        fillState.gthIntent.currentCheck = check;
-      return { url: page, title: document.title,
-        fields: questions.map((question) => ({ id: `gth:求职意向:${question}`,
-          labels: [question], status: "verified",
-          reason: originalValues.get(question) === answers[question]
-            ? "preexisting_same_value" : "readback_matched" })),
-        experimental: true, editorLeftOpen: true, savedOnSite: null,
-        submitted: null, softwareClickedSave: false, softwareClickedSubmit: false };
-    } catch (error) { if(/^profile_[a-z_]+$/u.test(error?.message||''))throw error;
-      if (error && typeof error === "object") {
-        error.writeStarted = writeStarted;
-        throw error;
-      }
-      const wrapped = new Error(String(error));
-      wrapped.writeStarted = writeStarted;
-      throw wrapped;
-    }
-  }
-
   if (!existingListenerAlive) { const engineListener=(message, _sender, sendResponse) => {
-    if(["RESUME_FILL","GTH_SALARY_TRIAL","GTH_INTENT_TEST","GTH_SALARY_STATUS","GTH_INTENT_TEST_STATUS"].includes(message?.type)&&_sender?.id!==chrome.runtime.id){sendResponse({ok:false,error:"profile_wrong_sender",fillNotStarted:true,writeStarted:false});return false;}
-    if (!message || !["RESUME_INSPECT", "RESUME_FILL", "GTH_SALARY_TRIAL", "GTH_SALARY_STATUS",
-      "GTH_INTENT_TEST", "GTH_INTENT_TEST_STATUS"].includes(message.type)) return;
-    if(message.type==='GTH_INTENT_TEST_STATUS'||message.type==='GTH_SALARY_STATUS') {
-      const record=message.type==='GTH_INTENT_TEST_STATUS'?fillState.gthIntent:fillState.gthSalary;
-      boundGthStatus(message,record).then(sendResponse,()=>sendResponse({ok:false,error:'profile_binding_unavailable'}));return true;
+    if(["RESUME_FILL","GTH_SALARY_TRIAL","GTH_SALARY_STATUS"].includes(message?.type)&&_sender?.id!==chrome.runtime.id){sendResponse({ok:false,error:"profile_wrong_sender",fillNotStarted:true,writeStarted:false});return false;}
+    if (!message || !["RESUME_INSPECT", "RESUME_FILL", "GTH_SALARY_TRIAL", "GTH_SALARY_STATUS"].includes(message.type)) return;
+    if(message.type==='GTH_SALARY_STATUS') {
+      boundGthStatus(message,fillState.gthSalary).then(sendResponse,()=>sendResponse({ok:false,error:'profile_binding_unavailable'}));return true;
     }
-    if ((message.type === "GTH_SALARY_TRIAL" || message.type === "GTH_INTENT_TEST")
+    if (message.type === "GTH_SALARY_TRIAL"
       && (typeof message.requestId !== "string"
         || !/^[A-Za-z0-9-]{10,100}$/.test(message.requestId))) {
       sendResponse({ ok: false, error: "invalid_request_id", writeStarted: false });
@@ -2424,8 +2134,7 @@
       sendResponse({ ok: false, error: "gth_read_only" });
       return false;
     }
-    if (message.type === "RESUME_FILL" || message.type === "GTH_SALARY_TRIAL"
-      || message.type === "GTH_INTENT_TEST") {
+    if (message.type === "RESUME_FILL" || message.type === "GTH_SALARY_TRIAL") {
       if (document.visibilityState !== "visible") {
         sendResponse({ ok: false, error: "page_hidden",
           ...(message.type !== "RESUME_FILL" ? { writeStarted: false } : {}) });
@@ -2439,8 +2148,6 @@
       fillState.pending = true;
       if (message.type === "GTH_SALARY_TRIAL") {
         fillState.gthSalary = { requestId: message.requestId, state: "running", profileBinding:message.profileBinding };
-      } else if (message.type === "GTH_INTENT_TEST") {
-        fillState.gthIntent = { requestId: message.requestId, state: "running", profileBinding:message.profileBinding };
       }
     }
     Promise.resolve()
@@ -2448,19 +2155,16 @@
         ? fill(message.profile || {}, message.attachment || null, message.photoUploads || null, message.profileBinding)
         : message.type === "GTH_SALARY_TRIAL"
           ? runBoundGthTrial(message,()=>gthSalaryTrial(message.profile || {}, message.requestId))
-          : message.type === "GTH_INTENT_TEST"
-            ? runBoundGthTrial(message,()=>gthIntentTest(message.answers || {}, message.requestId))
           : inspect(message.profile || {}, message.attachment || null))
       .then((data) => ({ ok: true, data }),
         (error) => ({ ok: false, error: String(error?.message || error),
           ...(error?.fillNotStarted === true ? { fillNotStarted: true, writeStarted: false } : {}),
-          ...((message.type === "GTH_SALARY_TRIAL" || message.type === "GTH_INTENT_TEST")
+          ...(message.type === "GTH_SALARY_TRIAL"
             && typeof error?.writeStarted === "boolean"
             ? { writeStarted: error.writeStarted }
             : error?.writeStarted ? { writeStarted: true } : {}) }))
       .then((reply) => {
-        if (message.type === "RESUME_FILL" || message.type === "GTH_SALARY_TRIAL"
-          || message.type === "GTH_INTENT_TEST") fillState.pending = false;
+        if (message.type === "RESUME_FILL" || message.type === "GTH_SALARY_TRIAL") fillState.pending = false;
         if (message.type === "GTH_SALARY_TRIAL"
           && fillState.gthSalary?.requestId === message.requestId) {
           const record = fillState.gthSalary;
@@ -2469,18 +2173,10 @@
             ? "verified" : !reply.ok && reply.writeStarted === false
               ? "failed_before_write" : "write_started_unverified";
         }
-        if (message.type === "GTH_INTENT_TEST"
-          && fillState.gthIntent?.requestId === message.requestId) {
-          const record = fillState.gthIntent;
-          record.state = "settled";
-          record.outcome = reply.ok && typeof record.currentCheck === "function"
-            ? "verified" : !reply.ok && reply.writeStarted === false
-              ? "failed_before_write" : "write_started_unverified";
-        }
         sendResponse(reply);
       });
     return true;
-  };chrome.runtime.onMessage.addListener(engineListener);globalThis.__resumeQuickFillEngineListener=engineListener;globalThis.__resumeQuickFillEngineRevision=5;}
+  };chrome.runtime.onMessage.addListener(engineListener);globalThis.__resumeQuickFillEngineListener=engineListener;globalThis.__resumeQuickFillEngineRevision=6;}
   globalThis.ResumeQuickFillGthInspect = (profile) => {
     if (`${location.origin}${location.pathname}` !== "https://hr.gtht.com/resume/edit/")
       throw new Error("gth_inspect_wrong_page");

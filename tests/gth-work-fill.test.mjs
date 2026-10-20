@@ -506,8 +506,9 @@ function raceMonthItem() {
 function wireRaceMonth(document, options = {}) {
   const stats = {
     open: 0, earlyClicks: 0, drift: 0, commits: 0, dualClicks: 0, escapes: 0, huskBlocks: 0,
-    huskRemainedAfterStart: false, quietAtEndClick: null, quietAtEndOpen: [], endOpenClicks: 0,
-    endCellClicks: 0, opensBesideHusk: 0, panels: {},
+    huskRemainedAfterStart: false, quietAtEndClick: null, quietAtEndOpen: [], monthPanelNodesAtEndClick: [],
+    quietAfterEndShow: [], endOpenClicks: 0, endCellClicks: 0, opensBesideHusk: 0, didReattachQuiet: false,
+    panels: {},
   };
   const editors = Object.fromEntries(['start-date', 'end-date'].map((id) => {
     const panel = document.getElementById(`${id}-panel`);
@@ -537,6 +538,7 @@ function wireRaceMonth(document, options = {}) {
     observer.observe(document.body, { childList: true });
   }
   const hide = (editor) => {
+    editor.generation = (editor.generation || 0) + 1;
     editor.ready = false;
     editor.panel.style.display = 'none';
     editor.panel.style.visibility = '';
@@ -554,6 +556,8 @@ function wireRaceMonth(document, options = {}) {
   const show = (id) => {
     const own = editors[id];
     const other = editors[id === 'start-date' ? 'end-date' : 'start-date'];
+    own.generation = (own.generation || 0) + 1;
+    const generation = own.generation;
     const husks = [...document.querySelectorAll('.el-picker-panel')].filter((node) => node !== own.panel && node.isConnected);
     own.openedBesideHusk = husks.length > 0;
     if (own.openedBesideHusk) stats.opensBesideHusk += 1;
@@ -566,20 +570,43 @@ function wireRaceMonth(document, options = {}) {
       other.panel.style.visibility = 'visible';
       for (const name of RACE_ANIM) other.panel.classList.remove(name);
     }
+    // Removing the start husk, then opening end, puts that quiet sibling back.
+    // Once is the live recreate. Every open is a husk that will not stay gone.
+    // a.cell on an open that saw the sibling does not commit.
+    if (id === 'end-date' && !options.forceDualOnEnd) {
+      const startPanel = editors['start-date'].panel;
+      const every = options.reattachQuietEveryEndShow === true;
+      const once = options.reattachQuietOnce !== false && !stats.didReattachQuiet;
+      if (!startPanel.isConnected && (every || once)) {
+        document.body.appendChild(startPanel);
+        startPanel.style.display = 'none';
+        startPanel.style.visibility = 'hidden';
+        for (const name of RACE_ANIM) startPanel.classList.remove(name);
+        own.openedBesideHusk = true;
+        stats.opensBesideHusk += 1;
+        if (!every) stats.didReattachQuiet = true;
+      }
+    }
     own.closed = false;
     own.ready = false;
     own.panel.style.display = 'block';
     own.panel.style.visibility = 'hidden';
     for (const name of RACE_ANIM) own.panel.classList.add(name);
     stats.open += 1;
+    if (id === 'end-date') stats.quietAfterEndShow.push(quietHuskCount());
     const view = document.defaultView;
-    view.setTimeout(() => { own.panel.style.visibility = 'visible'; }, 80);
+    view.setTimeout(() => {
+      if (own.generation !== generation) return;
+      own.panel.style.visibility = 'visible';
+    }, 80);
     // Live keeps el-zoom-in-top-enter-to after enter-active drops. A click in that
     // window must not count as a commit.
     view.setTimeout(() => {
+      if (own.generation !== generation) return;
       own.panel.classList.remove('el-zoom-in-top-enter', 'el-zoom-in-top-enter-active');
     }, 160);
     view.setTimeout(() => {
+      if (own.generation !== generation) return;
       own.panel.classList.remove('el-zoom-in-top-enter-to');
       own.ready = true;
     }, 280);
@@ -590,8 +617,10 @@ function wireRaceMonth(document, options = {}) {
     return node.style.display === 'none' || node.style.visibility === 'hidden' || node.hasAttribute('hidden');
   }).length;
   document.getElementById('start-date-icon').addEventListener('click', () => show('start-date'));
+  const connectedMonthPanels = () => [...document.querySelectorAll('.el-picker-panel')].filter((node) => node.isConnected);
   document.getElementById('end-date-icon').addEventListener('click', () => {
     stats.endOpenClicks += 1;
+    stats.monthPanelNodesAtEndClick.push(connectedMonthPanels().length);
     stats.quietAtEndOpen.push(quietHuskCount());
     show('end-date');
   });
@@ -681,11 +710,11 @@ function bootRace(options = {}) {
   return { ...booted, doc, months: wireRaceMonth(doc, options) };
 }
 
-test('任职时间 detaches the quiet start husk before the end open and then commits', async () => {
+test('任职时间 clears every panel before the end click and commits after a reattached husk', async () => {
   for (const [startDate, endDate] of [['2023-01', '2024-06'], ['2022-03', '2023-12']]) {
     const { doc, clicks, context, months } = bootRace();
     const result = await context.ResumeGthWorkOpen.trial(request(workProfile({ ...ROW, startDate, endDate })));
-    assert.equal(result.ok, true, JSON.stringify({ startDate, endDate, reason: result.reason, step: result.selectorStep }));
+    assert.equal(result.ok, true, JSON.stringify({ startDate, endDate, reason: result.reason, step: result.selectorStep, opens: months.endOpenClicks, quietAfter: months.quietAfterEndShow, panels: months.monthPanelNodesAtEndClick }));
     assert.equal(`${doc.getElementById('start-date').value} | ${doc.getElementById('end-date').value}`, `${startDate} | ${endDate}`);
     assert.equal(result.fields.find((field) => field.question === '任职时间').reason, 'readback_matched');
     assert.equal(result.liveSupportClaimed, false);
@@ -695,10 +724,12 @@ test('任职时间 detaches the quiet start husk before the end open and then co
     assert.equal(months.dualClicks, 0);
     assert.equal(months.huskBlocks, 0);
     assert.equal(months.huskRemainedAfterStart, true);
-    assert.equal(months.endOpenClicks, 1);
-    assert.deepEqual(months.quietAtEndOpen, [0]);
+    assert.equal(months.endOpenClicks, 2);
+    assert.deepEqual(months.monthPanelNodesAtEndClick, [0, 0]);
+    assert.deepEqual(months.quietAtEndOpen, [0, 0]);
+    assert.deepEqual(months.quietAfterEndShow, [1, 0]);
     assert.equal(months.endCellClicks, 1);
-    assert.equal(months.opensBesideHusk, 0);
+    assert.equal(months.opensBesideHusk, 1);
     assert.equal(months.quietAtEndClick, 0);
     assert.equal(months.commits, 2);
     assert.ok(months.escapes >= 2);
@@ -764,8 +795,29 @@ test('a leftover start panel or a decade year step fails closed without an empty
   assert.equal(sticky.months.commits, 1);
   assert.equal(sticky.months.endCellClicks, 0);
   assert.equal(sticky.months.huskRemainedAfterStart, true);
+  assert.equal(sticky.months.endOpenClicks, 0);
+  assert.deepEqual(sticky.months.monthPanelNodesAtEndClick, []);
+  assert.equal(stickyResult.fields.find((field) => field.question === '公司名称').reason, 'not_run');
   assert.equal(sticky.doc.getElementById('salary').value, '');
   assert.equal(forbidden(sticky.clicks).length, 0);
+
+  const again = bootRace({ reattachQuietEveryEndShow: true });
+  const againResult = await again.context.ResumeGthWorkOpen.trial(request(workProfile({ ...ROW, startDate: '2023-01', endDate: '2024-06' })));
+  assert.equal(againResult.ok, false);
+  assert.equal(againResult.reason, 'control_not_supported');
+  assert.equal(againResult.selectorStep, 'month_panel_structure_unknown');
+  assert.equal(again.doc.getElementById('start-date').value, '2023-01');
+  assert.equal(again.doc.getElementById('end-date').value, '');
+  assert.notEqual(`${again.doc.getElementById('start-date').value} | ${again.doc.getElementById('end-date').value}`, '2023-01 | 2024-06');
+  assert.equal(again.months.commits, 1);
+  assert.equal(again.months.endCellClicks, 0);
+  assert.equal(again.months.huskBlocks, 0);
+  assert.equal(again.months.endOpenClicks, 4);
+  assert.deepEqual(again.months.monthPanelNodesAtEndClick, [0, 0, 0, 0]);
+  assert.ok(again.months.quietAfterEndShow.every((count) => count > 0));
+  assert.equal(againResult.fields.find((field) => field.question === '公司名称').reason, 'not_run');
+  assert.equal(again.doc.getElementById('salary').value, '');
+  assert.equal(forbidden(again.clicks).length, 0);
 });
 
 test('empty work extras do not change an internship source hash', async () => {

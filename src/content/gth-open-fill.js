@@ -513,15 +513,20 @@
     // teleports .el-picker-panel onto document.body, so the panel is not a child
     // of the .el-date-editor that opened it. Bind the panel that this click makes
     // pending or shown — never via closest(.el-date-editor).
-    // After the start month commits, one display:none husk stays on body. Opening
-    // the end editor beside that husk does not commit, and discarding the open
-    // afterwards is too late: the end a.cell still leaves the input empty (and a
-    // reopen can still see the husk). Detach every quiet husk after start settles
-    // and before the first end-editor click. Then bind only the panel that click
-    // shows. Education reuses one panel; a fresh end open may show that node again.
-    // If a quiet husk is still connected after the purge, or the end a.cell leaves
-    // the input empty, fail closed. A click while el-zoom-in-top-enter* is applied
-    // does not commit. Start-then-end stays the order.
+    // A quiet-only purge is not enough. Live still reached month_option and then
+    // readback_mismatch (the end input stayed empty), not control_not_supported:
+    // settle had left the one quiet husk it keeps for a shared panel, the purge
+    // detached that husk and believed the body was clear, and the end open put a
+    // panel back. a.cell does not commit once a second panel has coexisted during
+    // that open, even if the extra node is removed before the click.
+    // Two date editors are a dual-editor session from the start, so settle never
+    // keeps a husk. After start commits, dismiss and detach until zero
+    // .el-picker-panel nodes are connected; if any remain, fail closed and do not
+    // click end. If a quiet panel sits beside the pending end panel, do not click
+    // a.cell — dismiss, return to zero panels, and reopen (capped). Education
+    // reuses one panel; a fresh end open may show that node again after a full
+    // detach. Start-then-end stays the order. A click while el-zoom-in-top-enter*
+    // is applied does not commit.
     function monthPanelNodes() {
       return [...document.querySelectorAll('.el-picker-panel')].filter(node => node.isConnected);
     }
@@ -609,73 +614,94 @@
     async function closeMonthPanel(input) {
       await dismissMonthInput(input);
     }
-    function monthPanelSession() {
-      return { distinctPanels: false, seen: new Set() };
+    function monthPanelSession(target) {
+      const editors = target?.editors || [];
+      const distinctPanels = editors.length === 2 && !!editors[0] && editors[0] !== editors[1];
+      return { distinctPanels, seen: new Set() };
     }
-    // One quiet panel stays only while a single panel node is being reused.
-    // Once two panel nodes have been seen, every quiet husk is detached.
+    // Dismiss, then detach every non-pending panel. A husk removed in this turn
+    // can be put back on the next tick, so retry a few times with a short pause.
+    // Success is zero connected .el-picker-panel nodes, not merely zero quiet ones.
+    async function clearConnectedMonthPanels(inputs) {
+      for (let attempt = 0; attempt < 4; attempt += 1) {
+        if (monthPanelNodes().length === 0) return true;
+        await dismissMonthSurfaces(inputs);
+        detachQuietMonthHusks(null);
+        await pause(40);
+      }
+      return monthPanelNodes().length === 0;
+    }
+    // A reused single panel may stay while it is the only node. Two date editors
+    // set distinctPanels up front so this never intentionally keeps that husk.
     async function settleMonthPanels(inputs, session) {
-      const purgeQuiet = session?.distinctPanels === true;
+      if (session?.distinctPanels) {
+        const cleared = await clearConnectedMonthPanels(inputs);
+        if (!cleared) {
+          step('month_panel_structure_unknown');
+          stop('control_not_supported');
+        }
+        return;
+      }
       for (let attempt = 0; attempt < 4; attempt += 1) {
         if (openMonthPanels().length === 0 && monthPanelNodes().length === 0) return;
         await dismissMonthSurfaces(inputs);
         const quiet = quietMonthHusks();
-        if (openMonthPanels().length === 0 && (purgeQuiet ? quiet.length > 0 : quiet.length > 1)) detachQuietMonthHusks(null);
+        if (openMonthPanels().length === 0 && quiet.length > 1) detachQuietMonthHusks(null);
         await pause(0);
         if (openMonthPanels().length === 0 && monthPanelNodes().length === 0) return;
-        if (openMonthPanels().length === 0 && !purgeQuiet && monthPanelNodes().length <= 1) return;
+        if (openMonthPanels().length === 0 && monthPanelNodes().length <= 1) return;
         await pause(40);
       }
-      if (openMonthPanels().length || (purgeQuiet ? monthPanelNodes().length > 0 : monthPanelNodes().length > 1)) {
+      if (openMonthPanels().length || monthPanelNodes().length > 1) {
         step('month_panel_structure_unknown');
         stop('control_not_supported');
       }
     }
-    async function discardOpenedMonthPanel(company) {
-      await dismissMonthSurfaces(company);
-      detachQuietMonthHusks(null);
-      await pause(0);
-      if (monthPanelNodes().some(node => !monthPanelPending(node))) {
-        detachQuietMonthHusks(null);
-        await pause(0);
-      }
-    }
+    // One open attempt. A quiet sibling means this open is poisoned: the caller
+    // must clear to zero panels and open again, and must not click a.cell on it.
+    // A second pending panel is ambiguous and fails closed.
     async function bindOpenedMonthPanel(trigger, company, session) {
-      for (let attempt = 0; attempt < 4; attempt += 1) {
+      if (session?.distinctPanels) {
+        const cleared = await clearConnectedMonthPanels(company);
+        if (!cleared) {
+          step('month_panel_structure_unknown');
+          stop('control_not_supported');
+        }
+      } else {
         await settleMonthPanels(company, session);
-        const beforeOpen = monthPanelSnapshot();
-        await guardedClick(trigger, boundAction);
-        const opened = await waitUntil(() => panelOpenedByClick(beforeOpen), 1600);
-        if (!opened || opened.bad) {
-          step('month_panel_structure_unknown');
-          await settleMonthPanels(company, session);
-          stop('control_not_supported');
-        }
-        const panel = opened.panel;
-        session.seen.add(panel);
-        if (session.seen.size > 1) session.distinctPanels = true;
-        const siblings = () => monthPanelNodes().filter(node => node !== panel);
-        const otherAtOpen = beforeOpen.filter(row => row.panel !== panel);
-        if (siblings().some(monthPanelPending) || otherAtOpen.some(row => row.pending)) {
-          step('month_panel_structure_unknown');
-          await dismissMonthSurfaces(company);
-          stop('control_not_supported');
-        }
-        // This open ran beside another panel node. Element-UI will not commit
-        // a.cell on it even after the husk is removed. Close it, detach every
-        // quiet node, and open again with only the new pending panel present.
-        if (otherAtOpen.length || siblings().length) {
-          session.distinctPanels = true;
-          await discardOpenedMonthPanel(company);
-          continue;
-        }
-        if (siblings().length === 0 && monthPanelReady(panel) && panel.isConnected) return panel;
-        await discardOpenedMonthPanel(company);
       }
-      step('month_panel_structure_unknown');
-      await dismissMonthSurfaces(company);
-      if (session?.distinctPanels) detachQuietMonthHusks(null);
-      stop('control_not_supported');
+      const beforeOpen = monthPanelSnapshot();
+      await guardedClick(trigger, boundAction);
+      const opened = await waitUntil(() => {
+        const found = panelOpenedByClick(beforeOpen);
+        if (found?.bad) return found;
+        if (quietMonthHusks().length) return { quiet: true };
+        return found;
+      }, 1600);
+      if (opened?.quiet) return { quiet: true };
+      if (!opened || opened.bad) {
+        step('month_panel_structure_unknown');
+        await dismissMonthSurfaces(company);
+        stop('control_not_supported');
+      }
+      const panel = opened.panel;
+      session.seen.add(panel);
+      if (session.seen.size > 1) session.distinctPanels = true;
+      const siblings = monthPanelNodes().filter(node => node !== panel);
+      const otherAtOpen = beforeOpen.filter(row => row.panel !== panel);
+      if (siblings.some(monthPanelPending) || otherAtOpen.some(row => row.pending)) {
+        step('month_panel_structure_unknown');
+        await dismissMonthSurfaces(company);
+        stop('control_not_supported');
+      }
+      if (otherAtOpen.length || siblings.length || quietMonthHusks().length) return { quiet: true, panel };
+      if (!monthPanelReady(panel) || !panel.isConnected) {
+        step('month_panel_structure_unknown');
+        await dismissMonthSurfaces(company);
+        stop('control_not_supported');
+      }
+      if (session?.distinctPanels && monthPanelNodes().length !== 1) return { quiet: true, panel };
+      return { panel };
     }
     async function dispatchInputChange(input) {
       await boundAction(() => {
@@ -696,110 +722,147 @@
     }
     async function fillOneMonth(item, input, trigger, answer, markWrite, guard, peers = [], session = monthPanelSession()) {
       const company = [input, ...peers].filter(Boolean);
-      await settleMonthPanels(company, session);
-      if (norm(input.value) === answer) return;
+      if (norm(input.value) === answer) {
+        if (openMonthPanels().length) await settleMonthPanels(company, session);
+        return;
+      }
       const peerBefore = peers.map(peer => norm(peer.value));
       const drifted = () => peers.some((peer, index) => norm(peer.value) !== peerBefore[index]);
-      step('month_open');
-      guard();
-      const panel = await bindOpenedMonthPanel(trigger, company, session);
-      const failStructure = async () => {
-        step('month_panel_structure_unknown');
-        await dismissMonthSurfaces(company);
-        stop('control_not_supported');
+      const retryQuiet = async () => {
+        const cleared = await clearConnectedMonthPanels(company);
+        if (!cleared) {
+          step('month_panel_structure_unknown');
+          stop('control_not_supported');
+        }
       };
-      const siblingPanel = () => monthPanelNodes().some(node => node !== panel);
-      try {
-        await pause(40);
-        if (!monthPanelReady(panel) || siblingPanel()) await failStructure();
-        const year = Number(answer.slice(0, 4));
-        const month = Number(answer.slice(5));
-        const readYear = () => {
-          if (!panel.isConnected || siblingPanel()) return null;
-          const years = [...panel.querySelectorAll('.el-date-picker__header-label')].filter(shown)
-            .map(node => norm(node.textContent).match(/^(\d{4})\s*年$/u)).filter(Boolean);
-          if (years.length !== 1) return null;
-          return Number(years[0][1]);
-        };
-        if (readYear() == null || drifted()) await failStructure();
-        for (let count = 0; readYear() !== year; count += 1) {
-          if (count >= 100 || readYear() == null || drifted()) await failStructure();
-          guard();
-          const current = readYear();
-          const previous = current > year;
-          const buttons = [...panel.querySelectorAll(previous ? '.el-icon-d-arrow-left' : '.el-icon-d-arrow-right')].filter(node => panel.contains(node) && shown(node));
-          if (buttons.length !== 1) await failStructure();
-          await guardedClick(buttons[0], boundAction);
-          const moved = await waitUntil(() => {
-            if (drifted() || siblingPanel()) return { drift: true };
-            const next = readYear();
-            if (next == null) return null;
-            const delta = next - current;
-            const expect = previous ? -1 : 1;
-            if (delta === expect) return { ok: true };
-            if (delta !== 0) return { drift: true };
-            return null;
-          }, 1500);
-          if (!moved || moved.drift) await failStructure();
-        }
-        if (readYear() !== year || drifted()) await failStructure();
-        const tables = [...panel.querySelectorAll('.el-month-table')].filter(node => panel.contains(node) && shown(node));
-        if (tables.length !== 1) await failStructure();
-        const cells = [...tables[0].querySelectorAll('td')].filter(node => panel.contains(node) && shown(node));
-        const choices = cells.filter(node => {
-          const text = norm(node.textContent).replace(/\s/gu, '');
-          return text === MONTH_NAMES[month - 1] || text === `${month}月`;
-        });
-        if (cells.length !== 12 || choices.length !== 1 || monthCellDisabled(choices[0])) await failStructure();
-        const clickTarget = monthClickTarget(choices[0], panel);
-        if (!clickTarget || !panel.contains(clickTarget) || clickTarget.tagName !== 'A') await failStructure();
-        if (session.distinctPanels) {
-          detachQuietMonthHusks(panel);
-          await pause(0);
-          if (siblingPanel() || !panel.isConnected || !monthPanelReady(panel)) await failStructure();
-        }
-        step('month_option');
+      for (let openAttempt = 0; openAttempt < 4; openAttempt += 1) {
+        step('month_open');
         guard();
-        markWrite();
-        await guardedClick(clickTarget, boundAction);
-        const matched = await waitUntil(() => {
-          if (siblingPanel() || drifted()) return { bad: 'dual' };
-          const current = norm(input.value);
-          if (current && current !== answer) return { bad: 'mismatch' };
-          if (!current) return null;
-          if (current === answer && !monthPanelPending(panel)) return { ok: true };
-          return null;
-        });
-        if (!matched || matched.bad || norm(input.value) !== answer) {
+        const opened = await bindOpenedMonthPanel(trigger, company, session);
+        if (opened?.quiet) {
+          await retryQuiet();
+          continue;
+        }
+        const panel = opened.panel;
+        const failStructure = async () => {
+          step('month_panel_structure_unknown');
           await dismissMonthSurfaces(company);
-          stop(matched?.bad === 'dual' ? 'control_not_supported' : 'readback_mismatch');
+          stop('control_not_supported');
+        };
+        const siblingPanel = () => monthPanelNodes().some(node => node !== panel);
+        const quietBeside = () => quietMonthHusks().length > 0 || siblingPanel();
+        let poisoned = false;
+        const noteQuiet = () => { if (quietBeside()) poisoned = true; };
+        try {
+          await pause(40);
+          noteQuiet();
+          if (poisoned) {
+            await retryQuiet();
+            continue;
+          }
+          if (!monthPanelReady(panel)) await failStructure();
+          const year = Number(answer.slice(0, 4));
+          const month = Number(answer.slice(5));
+          const readYear = () => {
+            if (!panel.isConnected || siblingPanel()) return null;
+            const years = [...panel.querySelectorAll('.el-date-picker__header-label')].filter(shown)
+              .map(node => norm(node.textContent).match(/^(\d{4})\s*年$/u)).filter(Boolean);
+            if (years.length !== 1) return null;
+            return Number(years[0][1]);
+          };
+          if (quietBeside()) {
+            await retryQuiet();
+            continue;
+          }
+          if (readYear() == null || drifted()) await failStructure();
+          for (let count = 0; readYear() !== year; count += 1) {
+            noteQuiet();
+            if (poisoned) break;
+            if (count >= 100 || readYear() == null || drifted()) await failStructure();
+            guard();
+            const current = readYear();
+            const previous = current > year;
+            const buttons = [...panel.querySelectorAll(previous ? '.el-icon-d-arrow-left' : '.el-icon-d-arrow-right')].filter(node => panel.contains(node) && shown(node));
+            if (buttons.length !== 1) await failStructure();
+            await guardedClick(buttons[0], boundAction);
+            const moved = await waitUntil(() => {
+              if (quietBeside()) return { quiet: true };
+              if (drifted()) return { drift: true };
+              const next = readYear();
+              if (next == null) return null;
+              const delta = next - current;
+              const expect = previous ? -1 : 1;
+              if (delta === expect) return { ok: true };
+              if (delta !== 0) return { drift: true };
+              return null;
+            }, 1500);
+            if (moved?.quiet) {
+              poisoned = true;
+              break;
+            }
+            if (!moved || moved.drift) await failStructure();
+          }
+          if (poisoned || quietBeside()) {
+            await retryQuiet();
+            continue;
+          }
+          if (readYear() !== year || drifted()) await failStructure();
+          const tables = [...panel.querySelectorAll('.el-month-table')].filter(node => panel.contains(node) && shown(node));
+          if (tables.length !== 1) await failStructure();
+          const cells = [...tables[0].querySelectorAll('td')].filter(node => panel.contains(node) && shown(node));
+          const choices = cells.filter(node => {
+            const text = norm(node.textContent).replace(/\s/gu, '');
+            return text === MONTH_NAMES[month - 1] || text === `${month}月`;
+          });
+          if (cells.length !== 12 || choices.length !== 1 || monthCellDisabled(choices[0])) await failStructure();
+          const clickTarget = monthClickTarget(choices[0], panel);
+          if (!clickTarget || !panel.contains(clickTarget) || clickTarget.tagName !== 'A') await failStructure();
+          // A quiet sibling during this open poisons a.cell. Do not detach it
+          // and click anyway — dismiss, return to zero panels, and reopen.
+          if (quietBeside() || !panel.isConnected || !monthPanelReady(panel)) {
+            if (quietBeside()) {
+              await retryQuiet();
+              continue;
+            }
+            await failStructure();
+          }
+          step('month_option');
+          guard();
+          markWrite();
+          await guardedClick(clickTarget, boundAction);
+          const matched = await waitUntil(() => {
+            if (siblingPanel() || drifted()) return { bad: 'dual' };
+            const current = norm(input.value);
+            if (current && current !== answer) return { bad: 'mismatch' };
+            if (!current) return null;
+            if (current === answer && !monthPanelPending(panel)) return { ok: true };
+            return null;
+          });
+          if (!matched || matched.bad || norm(input.value) !== answer) {
+            await dismissMonthSurfaces(company);
+            stop(matched?.bad === 'dual' ? 'control_not_supported' : 'readback_mismatch');
+          }
+          await dispatchInputChange(input);
+          if (norm(input.value) !== answer || monthPanelPending(panel) || siblingPanel() || drifted() || !siteValid(item, input))
+            stop('readback_mismatch');
+          guard();
+          return;
+        } catch (error) {
+          if (monthPanelPending(panel)) await closeMonthPanel(input);
+          throw error;
         }
-        await dispatchInputChange(input);
-        if (norm(input.value) !== answer || monthPanelPending(panel) || siblingPanel() || drifted() || !siteValid(item, input))
-          stop('readback_mismatch');
-        guard();
-      } catch (error) {
-        if (monthPanelPending(panel)) await closeMonthPanel(input);
-        throw error;
       }
+      step('month_panel_structure_unknown');
+      await dismissMonthSurfaces(company);
+      stop('control_not_supported');
     }
-    // Start has committed. Drop every quiet picker husk before the end editor's
-    // first open click. A husk that is still connected after that purge means the
-    // end panel would open beside it, so fail closed and do not click end.
+    // Start has committed. Require zero connected picker panels before the first
+    // end-editor click. Quiet-only was the live miss: the purge reported no quiet
+    // husk, then end a.cell still left the input empty (readback_mismatch).
     async function purgeQuietMonthHusksBeforeEnd(inputs, session) {
-      await settleMonthPanels(inputs, session);
-      if (openMonthPanels().length) {
-        step('month_panel_structure_unknown');
-        stop('control_not_supported');
-      }
-      if (!quietMonthHusks().length) return;
-      detachQuietMonthHusks(null);
-      await pause(0);
-      if (quietMonthHusks().length || openMonthPanels().length) {
-        detachQuietMonthHusks(null);
-        await pause(0);
-      }
-      if (quietMonthHusks().length || openMonthPanels().length) {
+      if (session) session.distinctPanels = true;
+      const cleared = await clearConnectedMonthPanels(inputs);
+      if (!cleared || monthPanelNodes().length !== 0) {
         step('month_panel_structure_unknown');
         await dismissMonthSurfaces(inputs);
         stop('control_not_supported');
@@ -807,12 +870,13 @@
     }
     async function fillMonthRange(target, fact, markWrite, guard) {
       const before = target.inputs.map(node => norm(node.value));
-      const session = monthPanelSession();
+      const session = monthPanelSession(target);
       const inputs = [target.inputs[0], target.inputs[1]];
       await fillOneMonth(target.item, target.inputs[0], target.triggers[0], fact.start, markWrite, guard, [target.inputs[1]], session);
       if (norm(target.inputs[0].value) !== fact.start || norm(target.inputs[1].value) !== before[1])
         stop('readback_mismatch');
-      await purgeQuietMonthHusksBeforeEnd(inputs, session);
+      if (norm(target.inputs[1].value) !== fact.end)
+        await purgeQuietMonthHusksBeforeEnd(inputs, session);
       await fillOneMonth(target.item, target.inputs[1], target.triggers[1], fact.end, markWrite, guard, [target.inputs[0]], session);
       const read = `${norm(target.inputs[0].value)} | ${norm(target.inputs[1].value)}`;
       if (read !== `${fact.start} | ${fact.end}`) stop('readback_mismatch');

@@ -6,6 +6,7 @@ import fs from 'node:fs';
 import http from 'node:http';
 import net from 'node:net';
 import path from 'node:path';
+import os from 'node:os';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import {
@@ -533,7 +534,7 @@ function chromePath() {
 }
 
 async function launchChrome(port) {
-  const userData = fs.mkdtempSync(path.join('/tmp', 'cmb-'));
+  const userData = fs.mkdtempSync(path.join(os.tmpdir(), 'cmb-'));
   const child = spawn(chromePath(), [
     '--headless=new',
     '--disable-gpu',

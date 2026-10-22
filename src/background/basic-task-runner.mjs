@@ -1,8 +1,9 @@
 // GTH basic candidates. Account-owned contacts may be site-read-only.
-// Preparation and writing belong to the worker. 现居住地 / 照片
-// stay unsupported: a requested fill records them failed, never as a completed skip.
-// Region facts that are missing a unique confirmed pair fail closed offline.
-// This planner does not look up DOM, invent selectors, fill, Save, or submit.
+// Preparation and writing belong to the worker. The content trial can attempt
+// 现居住地 through its eo-cascader path. This planner still fail-closes
+// completion for 现居住地 / 照片 and for a region fact that is not a unique
+// confirmed pair. It does not look up DOM, invent selectors, fill, Save, or
+// submit, and it does not claim site support.
 import {normalizeProfile} from '../profile/store.js';
 import {assertProfileBinding,canonicalProfileHash,commitBoundJob,reserveBoundJob,dispatchBoundSource,withProfileBinding,invalidateBoundJob} from '../profile/profile-lifecycle.js';
 import {beginRecentRequest,saveRecentResult} from '../popup/recent-result.js';
@@ -34,20 +35,29 @@ export function basicCandidate(input,educationIndex) {
   if(!Number.isInteger(educationIndex)||educationIndex<0||educationIndex>29||!row)fail('basic_education_source_required');
   const confirmed=new Set(profile.confirmedFields),degreePath=`education.${educationIndex}.degree`;
   if(!row.degree||!confirmed.has(degreePath))fail('basic_education_source_unconfirmed');
-  const facts={fullName:'',gender:'',phone:'',birthDate:'',email:'',workStart:'',education:Array.from({length:educationIndex+1},()=>({})),confirmedFields:[]};
-  for(const key of ['fullName','gender','phone','birthDate','email','workStart'])if(profile[key]&&confirmed.has(key)){
+  const facts={fullName:'',gender:'',phone:'',birthDate:'',email:'',workStart:'',currentCity:'',education:Array.from({length:educationIndex+1},()=>({})),confirmedFields:[]};
+  for(const key of ['fullName','gender','phone','birthDate','email','workStart','currentCity'])if(profile[key]&&confirmed.has(key)){
     facts[key]=profile[key];facts.confirmedFields.push(key);
   }
   facts.education[educationIndex].degree=row.degree;facts.confirmedFields.push(degreePath);
-  if([facts.fullName,facts.gender,facts.phone,facts.birthDate,facts.email,facts.workStart,row.degree].some(value=>/[\u0000-\u001f]/u.test(value)))fail('basic_source_invalid');
+  if([facts.fullName,facts.gender,facts.phone,facts.birthDate,facts.email,facts.workStart,facts.currentCity,row.degree].some(value=>/[\u0000-\u001f]/u.test(value)))fail('basic_source_invalid');
   return {educationIndex,profile:facts};
 }
+const residenceAccepted=row=>row&&(row.status==='verified'&&verified.includes(row.reason)
+  ||row.status==='skipped'&&skipped.includes(row.reason));
 export function basicCoverage(response,educationIndex) {
   return BASIC_COVERAGE.map(([question,key])=>{
     const supported=BASIC_FIELDS.some(([,fieldKey])=>fieldKey===key);
     const row=response?.coverage?.find(row=>row?.question===question&&row.key===key)
       ||response?.fields?.find(row=>row?.question===question&&row.path===pathFor(key,educationIndex))
       ||response?.completedFields?.find(row=>row?.key===key);
+    // A residence attempt may be echoed for the trial contract. The completion
+    // plan still seals it fail-closed until a live Never-Save acceptance.
+    if(key==='currentCity'){
+      const accepted=residenceAccepted(row);
+      return {key,question,path:pathFor(key,educationIndex),supported:accepted,
+        status:accepted?row.status:'failed',reason:accepted?row.reason:'control_not_supported'};
+    }
     const valid=validRow(row,key)||row?.status==='skipped'&&row.reason==='not_run';
     return {key,question,path:pathFor(key,educationIndex),supported,
       status:supported?(valid?row.status:'skipped'):'failed',
@@ -146,15 +156,22 @@ export function gthRequestedFillBlocksComplete(plan){
   return plan?.fillRequested===true&&plan.blocked===true&&Array.isArray(plan.fields)
     &&plan.fields.some(field=>field?.status==='failed'&&GTH_COVERAGE_FAIL_CLOSED_REASONS.includes(field.reason));
 }
-function validResponse(response,index) {
+function splitTrialRows(rows){
+  const list=Array.isArray(rows)?rows:[];
+  const city=list.filter(row=>row?.path==='currentCity'||row?.question==='现居住地');
+  return {city,core:list.filter(row=>!city.includes(row))};
+}
+export function validResponse(response,index) {
   const rows=response?.fields;
-  // Keep the established wire scope; BASIC_FIELDS defines the seven-field
-  // contract now that 参加工作时间 has an evidenced month adapter.
+  const {city,core}=splitTrialRows(rows);
+  // BASIC_FIELDS stays the seven-field contract. 现居住地 may ride along as one
+  // extra row; a missing or rejected residence row does not count as support.
   return response?.ok===true&&response.scope==='gth_basic_six'&&response.complete===false
     &&response.editorLeftOpen===true&&response.savedOnSite===null&&response.submitted===null
     &&response.softwareClickedSave===false&&response.softwareClickedSubmit===false&&response.softwareClickedDelete===false
-    &&Array.isArray(rows)&&rows.length===BASIC_FIELDS.length&&BASIC_FIELDS.every(([question,key])=>{
-      const matches=rows.filter(row=>row?.question===question&&row.path===pathFor(key,index));
+    &&city.length<=1&&(city.length===0||residenceAccepted(city[0]))
+    &&core.length===BASIC_FIELDS.length&&BASIC_FIELDS.every(([question,key])=>{
+      const matches=core.filter(row=>row?.question===question&&row.path===pathFor(key,index));
       return matches.length===1&&validRow(matches[0],key);
     })&&response.supportedComplete===rows.every(row=>row.status==='verified')
     &&response.operableComplete===rows.every(row=>row.status==='verified'
@@ -164,10 +181,10 @@ function validResponse(response,index) {
 }
 function diagnostics(response) {
   return {reason:response?.reason?safeCode(response.reason):null,
-    activeField:BASIC_FIELDS.some(([,key])=>key===response?.activeField)?response.activeField:null,
+    activeField:BASIC_FIELDS.some(([,key])=>key===response?.activeField)||response?.activeField==='currentCity'?response.activeField:null,
     selectorStep:typeof response?.selectorStep==='string'&&/^[a-z_]{2,80}$/u.test(response.selectorStep)?response.selectorStep:null,
     writeStarted:response?.writeStarted===true,
-    completedFields:(response?.completedFields||[]).filter(row=>BASIC_FIELDS.some(([,key])=>key===row?.key)
+    completedFields:(response?.completedFields||[]).filter(row=>(BASIC_FIELDS.some(([,key])=>key===row?.key)||row?.key==='currentCity')
       &&(row.status==='verified'?verified.includes(row.reason):row.status==='skipped'&&(skipped.includes(row.reason)
         ||['phone','email'].includes(row.key)&&row.reason==='site_readonly')))
       .map(({key,status,reason})=>({key,status,reason}))};

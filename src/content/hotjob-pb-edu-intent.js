@@ -1,15 +1,21 @@
 // Hotjob pb (Ant Design resumeOperation) Never-Save fill for basic-block
 // education/intent flat fields only. Probe 2026-10-23:
-// text 联系地址 and 专业名称 (input.ant-input);
+// text 联系地址, 毕业院校, and 专业名称 (input.ant-input);
 // textarea 评价内容 (textarea.ant-input);
-// flat ant-select allow-clear: 毕业院校, 学位, 学历, 期望工作性质, 期望年薪, 到岗时间.
+// flat ant-select allow-clear: 学位, 学历, 期望工作性质, 期望年薪, 到岗时间.
+// 毕业院校 was grouped with those selects only because the six rows were not opened
+// and the class list was copied from 国籍/地区. The same-page harvest placeholder is
+// 请填写毕业院校 on a text input. Live 2026-10-23 after the face fallback still
+// returned control_not_supported for 毕业院校 while 期望工作性质 located.
+// That harvest lists 毕业院校* four times and neighboring labels twice, so identical
+// captions on the row still name it. Disagreeing captions stay fail-closed.
 // 学位, 学历, and 专业名称 repeat after 毕业时间 in 教育经历. The basic row is the
 // single form item strictly between the one 毕业院校 row and the one 毕业时间 row
 // (probe order: 毕业院校, 学位, 学历, 专业名称, 毕业时间). Match that label row.
 // Do not match the current value. The education-history row repeats the label.
-// These six selects were not individually opened. Dropdown class and
-// ant-select-search__field are the same page's flat-select probes. Open/focused/enabled
-// matches the same page's ant-select contract in hotjob-pb-basic.js / hotjob-pb-region.js.
+// Dropdown class and ant-select-search__field are the same page's flat-select probes.
+// Open/focused/enabled matches the same page's ant-select contract in
+// hotjob-pb-basic.js / hotjob-pb-region.js.
 // Live 2026-10-23: a closed .ant-select-search__field can have no client rect while
 // .ant-select-selection / [role=combobox] is visible. Readback uses
 // .ant-select-selection-selected-value and strips a 请选择+label placeholder.
@@ -34,9 +40,9 @@
   const ORDER = Object.freeze([ADDRESS, SCHOOL, DEGREE, LEVEL, MAJOR, NOTE, NATURE, SALARY, ARRIVAL]);
   const KINDS = Object.freeze({
     [ADDRESS]: 'text',
+    [SCHOOL]: 'text',
     [MAJOR]: 'text',
     [NOTE]: 'textarea',
-    [SCHOOL]: 'select',
     [DEGREE]: 'select',
     [LEVEL]: 'select',
     [NATURE]: 'select',
@@ -112,7 +118,7 @@
   }
 
   function labelOf(item) {
-    const captions = ownedLabels(item).map(captionText).filter(Boolean);
+    const captions = [...new Set(ownedLabels(item).map(captionText).filter(Boolean))];
     if (captions.length !== 1) return '';
     return captions[0];
   }

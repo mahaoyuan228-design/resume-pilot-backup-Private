@@ -1,0 +1,95 @@
+/** Sequential, discard-only orchestration; transport-independent for jsdom tests. */
+import { SECTIONS, buildFieldRows } from './gth-full-sections.mjs';
+import { isAllowedRequest } from './gth-full-page.mjs';
+
+const failure = (reason, detail) => Object.assign(new Error(detail || reason), { reason });
+const errorReason = (error) => error?.reason || 'section_failed';
+const formsRemain = (state) => !state || state.formCount !== 0 || state.editorFormCount !== 0;
+
+export async function ensureVisible(driver) {
+  let state = await driver.state();
+  if (state?.visible !== true) {
+    try { await driver.bringToFront(); } catch { /* retry the visibility read once */ }
+    state = await driver.state();
+    if (state?.visible !== true) throw failure('page_hidden');
+  }
+  return state;
+}
+
+function failedFields(section, reason) {
+  return section.questions.map((q) => ({ q, status: 'failed', reason, value: null }));
+}
+
+/** A failed trial never skips recording a later section. A stuck editor blocks
+ * later writes until the DOM proves it is gone; it is never silently ignored. */
+export async function runSections(driver, { sections = SECTIONS } = {}) {
+  const runs = [];
+  for (const section of sections) {
+    const run = {
+      id: section.id, section: section.section, status: 'failed', reason: null,
+      fields: failedFields(section, 'not_run'), open: null, fills: [], read: null,
+      cancel: null, clicks: [], requests: []
+    };
+    runs.push(run);
+    let before = { clicks: [], requests: [] };
+    let attemptedOpen = false;
+    try {
+      before = await driver.evidence();
+      const state = await ensureVisible(driver);
+      if (formsRemain(state) && !(section.id === 'basic' && runs.length === 1 && state.basicInitialEditor === true)) {
+        throw failure('previous_editor_still_open');
+      }
+      attemptedOpen = true;
+      run.open = await driver.open(section);
+      if (run.open?.reason === 'page_hidden') {
+        await ensureVisible(driver);
+        run.open = await driver.open(section);
+      }
+      if (run.open?.ok !== true) throw failure(run.open?.reason || 'editor_not_opened');
+      run.fills = await driver.fill(section);
+      run.read = await driver.read(section);
+      run.fields = buildFieldRows(section, run.fills, run.read);
+      if (run.fills.some((entry) => {
+        const fill = entry?.fill || entry;
+        return fill?.liveSupportClaimed === true || fill?.softwareClickedSave === true
+          || fill?.softwareClickedSubmit === true || fill?.softwareClickedDelete === true;
+      })) run.reason = 'writer_policy_violation';
+    } catch (error) {
+      run.reason = errorReason(error);
+      run.detail = String(error?.message || error).slice(0, 300);
+      run.fields = failedFields(section, run.reason);
+    } finally {
+      // An open() timeout can leave a partial form behind. Always attempt its
+      // discard, even when open() did not return successfully.
+      if (attemptedOpen) {
+        try {
+          await ensureVisible(driver);
+          run.cancel = await driver.cancel(section);
+          const after = await driver.state();
+          if (run.cancel?.ok !== true || run.cancel?.closed !== true || formsRemain(after)) {
+            run.cancel = { ...run.cancel, ok: false, closed: false,
+              reason: run.cancel?.reason || 'editor_still_open' };
+            run.reason ||= run.cancel.reason;
+          }
+        } catch (error) {
+          run.cancel = { ok: false, closed: false, reason: errorReason(error) };
+          run.reason ||= run.cancel.reason;
+        }
+      } else {
+        run.cancel = { ok: false, closed: false, reason: 'editor_not_owned' };
+      }
+      try {
+        const after = await driver.evidence();
+        run.clicks = (after.clicks || []).slice((before.clicks || []).length);
+        run.requests = (after.requests || []).slice((before.requests || []).length);
+        if (run.clicks.some((row) => row.allowed !== true)) run.reason = 'refusing_forbidden_click';
+        if (run.requests.some((row) => row.allowed === false || !isAllowedRequest(row.method, row.url))) run.reason = 'non_get_request';
+      } catch (error) {
+        run.reason ||= errorReason(error);
+      }
+    }
+    if (!run.reason) run.reason = run.fields.find((row) => row.status !== 'verified')?.reason || null;
+    run.status = !run.reason && run.fields.length > 0 && run.cancel?.closed === true ? 'verified' : 'failed';
+  }
+  return runs;
+}

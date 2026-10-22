@@ -18,10 +18,13 @@
  * and refuses widgets the engine already refuses (.ant-select, calendar, cascader).
  *
  * The shipped fill refuses a different existing value (existing_value). The
- * live controls are already filled, so this runner blanks each input with the
- * prototype setter and no events, then calls RESUME_FILL. After readback it
- * restores a non-empty valid original the same way. It never clicks 保存 /
- * 提交 / 投递 or any other button.
+ * live controls are already filled. This runner blanks one input with the
+ * prototype setter and no events, then calls RESUME_FILL for that path only,
+ * waits, and reads that field back before the next path. One RESUME_FILL of
+ * all three confirmed paths lets the first Ant write restore phone and email
+ * before they are written. After the three readbacks it restores non-empty
+ * valid originals together. It never clicks 保存 / 提交 / 投递 or any other
+ * button.
  *
  * Windows PowerShell, from the repo root, with the resume tab already open:
  *
@@ -840,6 +843,13 @@ function installCmsBasicInfoLive(doc, options) {
         row.input.addEventListener('blur', row.onBlur, true);
       }
       blanked = true;
+      const readbacks = [];
+      const reactVia = {};
+      const boundFields = [];
+      const unexpected = [];
+      let blurred = true;
+      let fillReplyOk = true;
+      let fillError = null;
       for (const row of located.fields) {
         if (!writeDomOnly(row.input, '')) {
           restore = await restoreOriginal(located.fields);
@@ -851,18 +861,13 @@ function installCmsBasicInfoLive(doc, options) {
           stopped.pageLeftAsFound = restore.ok === true && located.fields.every((item) => readDom(item.input) === item.original);
           return stopped;
         }
-      }
-      const blurBefore = Object.fromEntries(located.fields.map((row) => [row.spec.path, row.blurCount]));
-      const reply = await productFill(options.fixtures);
-      await wait(waitMs);
-      const readbacks = [];
-      const reactVia = {};
-      let blurred = true;
-      for (const row of located.fields) {
+        const blurBefore = row.blurCount;
+        const reply = await productFill({ [row.spec.path]: options.fixtures[row.spec.path] });
+        await wait(waitMs);
         const dom = readDom(row.input);
         const signals = readReactSignals(row.input);
         const expected = options.fixtures[row.spec.path];
-        const fieldBlurred = row.blurCount > blurBefore[row.spec.path];
+        const fieldBlurred = row.blurCount > blurBefore;
         if (!fieldBlurred) blurred = false;
         const readback = assessReadback({
           dom,
@@ -878,9 +883,16 @@ function installCmsBasicInfoLive(doc, options) {
           reason: readback.reason,
           value: dom === expected ? expected : null
         });
+        const found = fieldOf(reply);
+        const slot = FIELD_SPECS.findIndex((spec) => spec.path === row.spec.path && spec.key === row.spec.key);
+        boundFields.push(slot >= 0 ? (found.fields[slot] || null) : null);
+        unexpected.push(...found.unexpected);
+        if (reply?.ok !== true) {
+          fillReplyOk = false;
+          if (!fillError) fillError = reply?.error || 'control_not_supported';
+        }
       }
-      const found = fieldOf(reply);
-      const product = decideProductFill(found.fields);
+      const product = decideProductFill(boundFields);
       const otherChanged = snapshotOthers(targets) !== othersBefore;
       restore = await restoreOriginal(located.fields);
       const othersAfter = snapshotOthers(targets) !== othersBefore;
@@ -892,9 +904,9 @@ function installCmsBasicInfoLive(doc, options) {
       const lateClick = clickFailure();
       if (lateClick) reason = lateClick;
       else if (posts.length) reason = 'non_get_request';
-      else if (found.unexpected.length) reason = 'unexpected_write';
+      else if (unexpected.length) reason = 'unexpected_write';
       else if (changed) reason = 'other_values_changed';
-      else if (!reply?.ok) reason = reply?.error || 'control_not_supported';
+      else if (!fillReplyOk) reason = fillError || 'control_not_supported';
       else if (!product.ok) reason = product.reason || 'readback_mismatch';
       else if (readbacks.some((row) => row.ok !== true)) reason = readbacks.find((row) => row.ok !== true)?.reason || 'readback_mismatch';
       else if (!restore.ok) reason = 'restore_failed';
@@ -902,18 +914,18 @@ function installCmsBasicInfoLive(doc, options) {
       return {
         ok: reason == null,
         reason,
-        detail: product.ok ? null : (found.fields.find((field) => field && field.reason !== 'readback_matched')?.reason || reply?.error || null),
+        detail: product.ok ? null : (boundFields.find((field) => field && field.reason !== 'readback_matched')?.reason || fillError || null),
         liveSupportClaimed: false,
         originalLengths: lengthsOf(located.fields),
         readbacks,
         restore,
         otherChanged: changed,
-        unexpectedWrites: found.unexpected,
+        unexpectedWrites: unexpected,
         clickCount: clicks.length,
         clicks: clicks.slice(),
         anchorSeen: located.anchorSeen === true,
         fillCalls: fillCalls.slice(),
-        productReason: product.ok ? product.reason : (found.fields.find((field) => field)?.reason || null),
+        productReason: product.ok ? product.reason : (boundFields.find((field) => field)?.reason || null),
         reactVia,
         blurred,
         waitedMs: waitMs,
@@ -1147,16 +1159,38 @@ export async function runCmsBasicInfoLive(options = {}) {
           reason = 'inject_failed';
           fatalDetail = 'chrome_shim';
         } else {
-          const installed = await evaluate(session, buildPageExpression(), {
+          // A page that already ran the extension (or an earlier inject) keeps
+          // revision 6 and a live listener. engine.js returns before the tip
+          // source replaces that install, so phone stays unbound. Drop the
+          // listener and the install flags before this trial's files load.
+          const cleared = await evaluate(session, `(() => {
+            const owned = globalThis.__resumeQuickFillEngineListener;
+            try {
+              if (owned && globalThis.chrome?.runtime?.onMessage?.removeListener) {
+                globalThis.chrome.runtime.onMessage.removeListener(owned);
+              }
+            } catch { /* prior listener may already be gone */ }
+            delete globalThis.__resumeQuickFillInstalled;
+            delete globalThis.__resumeQuickFillEngineListener;
+            delete globalThis.__resumeQuickFillEngineRevision;
+            delete globalThis.ResumeQuickFillGthInspect;
+            return { ok: true, clearedOwned: typeof owned === 'function' };
+          })()`, { timeoutMs: stepTimeoutMs, step: 'clear_engine_install' });
+          steps.push('clear_engine_install');
+          if (!cleared?.ok) {
+            reason = 'inject_failed';
+            fatalDetail = 'clear_engine_install';
+          }
+          const installed = reason ? null : await evaluate(session, buildPageExpression(), {
             timeoutMs: stepTimeoutMs,
             step: 'install_live',
             awaitPromise: true
           });
-          steps.push('install_live');
-          if (!installed?.ok) {
+          if (!reason) steps.push('install_live');
+          if (!reason && !installed?.ok) {
             reason = 'inject_failed';
             fatalDetail = 'install_live';
-          } else {
+          } else if (!reason) {
             for (const rel of LIVE_FILES) {
               const source = fs.readFileSync(path.join(root, rel), 'utf8');
               const step = `inject_${path.basename(rel).replace(/\.m?js$/u, '')}`;
@@ -1287,7 +1321,7 @@ export async function runCmsBasicInfoLive(options = {}) {
       limits: [
         'Only 姓名, 移动电话, and 电子邮箱 inside 个人基本信息必填 are written, and only by src/content/engine.js RESUME_FILL. cmsDecision leaves 姓名 and 移动电话 bound in that section. The matcher binds the long 电子邮箱 label to email. setBoundNativeValue does the write.',
         '现居住地 and 籍贯 are not targets. cms-region.js is not injected. 婚姻状况 is not a target because the shipped Ant v3 fill clicks a menu, and any click fails this run.',
-        'Each DOM value is blanked with the input prototype setter and no input event so the shipped existing_value guard sees an empty control. This runner does not type the fixture itself.',
+        'Each field is blanked with the input prototype setter and no input event, then written by its own RESUME_FILL for that path. One RESUME_FILL of all three paths lets the first Ant write restore the other inputs. This runner does not type the fixture itself.',
         'A non-empty original that the matcher accepts is restored by the same RESUME_FILL path. An empty or invalid original cannot be a confirmed value, so that restore uses the prototype setter plus input, change, and blur.',
         'Readback requires each input value, a React value tracker or fiber value, a blur event, and a 500ms wait.',
         'No button is clicked. HTMLElement.click, form submit, and requestSubmit are swallowed. Any click fails the run.',

@@ -1,6 +1,6 @@
 # GTH 教育经历复杂控件 · Never-Save 验收入口
 
-基线：`4280724`（`cursor/expand-night-ats-f861`，含 PR #74 plain runner）。
+本次 harness 修复基线：`947e318`（`cursor/expand-night-ats-f861`，含 PR #76 复杂控件 runner）。
 本次交付是可试填、回读、输出 DOM 诊断的 runner；`liveSupportClaimed=false`。
 开发验证只使用离线合成 DOM / fake CDP，没有连接真机 9239，没有新的 live PASS。
 当前基线没有 `handover/GTH_EDUCATION_LIVE_TRY_2026-10-22.md`，本次未引用其未获取内容。
@@ -56,6 +56,13 @@ node scripts/live/gth-education-live.mjs
 `dom.stage=before_cancel`；其值置空，不能把已关闭表单的旧值当作成功回读。
 合成测试中的 UID/选项/结构仅用于测试，不是采集的 live DOM。
 
+2026-10-22 验收方反馈：专业类别 writer 已 `verified/readback_reapplied`，但 harness
+在嵌套 `.cascader-wrap` / `.professional-category`（`categoryCount=2`）时误报
+`category_structure_changed`。回读现按同一祖先链上的唯一控件判断：最内层 wrapper
+须直接拥有唯一 trigger 和唯一 popup，且 trigger 内只有一个可见、只读、可用的显示 input。
+独立 wrapper、trigger/popup 分属不同层、重复 trigger/popup 仍拒绝，原始 `categoryCount`
+诊断保留。修复仅经合成夹具验证，没有新增 live PASS，也不提升支持声明。
+
 输出还包括实际 `tipSha`、所选 `fillQuestions`、参数、逐项 writer 结果、点击审计、请求审计、
 取消结果，以及 `fill.activeField` / `fill.selectorStep`。所有结果保持
 `neverSave=true`、`liveSupportClaimed=false`；这不等于宣称控件已获真机支持。
@@ -85,4 +92,5 @@ npm run test:live-harvest
 
 新增测试覆盖实际 shipped `fullTrial` 与 runner 守卫组合、四项复杂控件、日期单端失败/最终漂移、
 禁用学历、类别 UID/文字/链接攻击、重复选项、不支持结构、保存/提交/全局确定拒绝、字典 POST 拦截、
-取消前结构保留。测试不会打开真机浏览器。
+取消前结构保留，以及 `categoryCount=2` 嵌套 wrapper 的完整试填/回读/取消和歧义结构拒绝。
+测试不会打开真机浏览器。

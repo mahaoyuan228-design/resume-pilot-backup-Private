@@ -482,10 +482,17 @@ export function installGthEducationLive(doc, options) {
         value = String(textInputs[0].value);
       } else if (q === '专业类别') {
         const widgets = [...item.querySelectorAll('.cascader-wrap,.professional-category')];
-        if (widgets.length !== 1 || textInputs.length !== 1 || controls.length !== 1
+        // Nested wrapper aliases describe one widget. Its innermost owner must
+        // contain the trigger and popup directly; independent wrappers remain
+        // ambiguous. Keep the raw wrapper count in DOM diagnostics above.
+        const widget = widgets.find(node => widgets.every(other => other === node || other.contains(node)));
+        const triggers = [...item.querySelectorAll('.cascader-wrap > .input-l.pointer,.professional-category > .input-l.pointer')];
+        const panels = [...item.querySelectorAll('.popover.plugin-dialog-wrap')];
+        if (!widget || triggers.length !== 1 || panels.length !== 1
+          || triggers[0].parentElement !== widget || panels[0].parentElement !== widget
+          || textInputs.length !== 1 || controls.length !== 1
           || !textInputs[0].readOnly || textInputs[0].disabled
-          || !widgets[0].querySelector(':scope > .input-l.pointer')?.contains(textInputs[0])
-          || widgets[0].querySelectorAll(':scope > .popover.plugin-dialog-wrap').length !== 1)
+          || !triggers[0].contains(textInputs[0]))
           return unsupported('category_structure_changed');
         value = String(textInputs[0].value);
       } else {

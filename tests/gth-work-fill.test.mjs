@@ -2,7 +2,9 @@
  * Open-editor GTH 工作经验 fill. Caller opens the editor.
  * 任职时间 reuses the education month-range writer.
  * 职位类别 / 公司所属行业 use the intent cascader (exact 一级||二级, L2 after L1).
- * 薪资 stays control_not_supported. Never Save. liveSupportClaimed stays false.
+ * 薪资 writes digits on the 2026-10-22 probe control (div.el-input.select-l + 元/月).
+ * Any other 薪资 shape stays control_not_supported. Never Save.
+ * Pending live Never-Save. liveSupportClaimed stays false.
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -173,6 +175,17 @@ function cascaderItem(label, { id, l1, value = '', single = false, counter = '(0
 
 function salaryItem(value = '') {
   return `<div class="el-form-item"><label class="el-form-item__label">薪资</label><div class="el-form-item__content"><div class="el-input select-l"><input id="salary" type="text" value="${value}"></div></div></div>`;
+}
+
+// 2026-10-22 probe outerHTML: div.el-input.select-l > input.el-input__inner,
+// maxlength=10, sibling text 元/月. Not .el-select.select-l. id is for the test.
+function salaryProbeItem(value = '') {
+  const valueAttr = value ? ` value="${value}"` : '';
+  return `<div class="el-form-item"><label for="experience_salary_othername" class="el-form-item__label" style="width: 98px;">薪资</label><div class="el-form-item__content" style="margin-left: 98px;"><div class="el-input select-l"><input id="salary" type="text" autocomplete="off" placeholder="" maxlength="10" class="el-input__inner"${valueAttr}></div><span style="margin-left: 10px;">元/月</span></div></div>`;
+}
+
+function withProbeSalary(options = {}) {
+  return workFields(options).replace(salaryItem(options.salary || ''), salaryProbeItem(options.salary || ''));
 }
 
 function workFields(options = {}) {
@@ -498,7 +511,7 @@ test('a cascader that is not the intent shell is control_not_supported', async (
   assert.equal(forbidden(clicks).length, 0);
 });
 
-test('a present 薪资 fact fails closed before writing other fields', async () => {
+test('a present 薪资 fact on the incomplete hybrid fails closed before writing other fields', async () => {
   const html = shell(formWrap(workFields({ salary: '20000' })));
   const { dom, context } = boot(html);
   const result = await context.ResumeGthWorkOpen.trial(request(workProfile({ ...ROW, salary: '20000' })));
@@ -506,7 +519,9 @@ test('a present 薪资 fact fails closed before writing other fields', async () 
   assert.equal(result.writeStarted, false);
   assert.equal(result.reason, 'control_not_supported');
   assert.equal(result.fields.find((field) => field.question === '薪资').reason, 'control_not_supported');
-  assert.equal(result.fields.find((field) => field.question === '薪资').supported, false);
+  assert.equal(result.fields.find((field) => field.question === '薪资').supported, true);
+  assert.equal(result.liveSupportClaimed, false);
+  assert.equal(result.complete, false);
   assert.equal(dom.window.document.getElementById('position').value, '');
   assert.equal(dom.window.document.getElementById('salary').value, '20000');
   assert.equal(assessGthWorkOpenFill(result).ok, false);
@@ -2077,6 +2092,179 @@ test('任职时间 fails closed when the range error remains after both months',
   assert.equal(doc.getElementById('salary').value, '');
   flags(result);
   assert.equal(forbidden(clicks).length, 0);
+});
+
+test('薪资 source is the probe text path and does not claim live support', () => {
+  assert.match(workSource, /question: '薪资', key: 'salary', kind: 'salaryText'/);
+  assert.match(workSource, /Pending live Never-Save/);
+  assert.match(workSource, /liveSupportClaimed stays false/);
+  assert.doesNotMatch(workSource, /已支持/);
+  assert.doesNotMatch(workSource, /shape: 'salary'/);
+  assert.doesNotMatch(core, /field\.shape === 'salary'/);
+  assert.doesNotMatch(core, /已支持/);
+  assert.match(core, /kind === 'salaryText'/);
+  const { context } = boot(shell(formWrap(workFields())));
+  assert.equal(context.ResumeGthWorkOpen.spec.fields.find((field) => field.question === '薪资').kind, 'salaryText');
+  assert.equal(context.ResumeGthWorkOpen.spec.fields.find((field) => field.question === '薪资').max, 10);
+});
+
+test('probe 薪资 writes experience.0.salary digits without clicking the input or save', async () => {
+  const html = shell(formWrap(withProbeSalary({ industrySingle: true, industryCounter: '(0/1)' })));
+  const { dom, clicks, context } = boot(html);
+  const doc = dom.window.document;
+  wire(doc, { industrySingle: true });
+  const input = doc.getElementById('salary');
+  const events = [];
+  let salaryClicks = 0;
+  input.addEventListener('click', () => { salaryClicks += 1; });
+  input.addEventListener('input', () => events.push('input'));
+  input.addEventListener('change', () => events.push('change'));
+  input.addEventListener('blur', () => events.push('blur'));
+  const result = await context.ResumeGthWorkOpen.trial(request(workProfile({ ...ROW, salary: '12000' })));
+  assert.equal(result.ok, true, JSON.stringify({ reason: result.reason, step: result.selectorStep }));
+  flags(result);
+  assert.equal(input.value, '12000');
+  assert.equal(input.parentElement.nextElementSibling.textContent, '元/月');
+  const salary = result.fields.find((field) => field.question === '薪资');
+  assert.equal(salary.status, 'verified');
+  assert.equal(salary.reason, 'readback_matched');
+  assert.equal(salary.path, 'experience.0.salary');
+  assert.equal(salary.supported, true);
+  assert.deepEqual(events, ['input', 'change', 'blur']);
+  assert.equal(salaryClicks, 0);
+  assert.equal(doc.getElementById('position').value, '分析师');
+  assert.equal(doc.getElementById('leave').value, '个人发展');
+  assert.equal(forbidden(clicks).length, 0);
+  assert.equal(clicks.filter((node) => node.id === 'editor-save' || node.id === 'editor-delete').length, 0);
+  assert.equal(clicks.some((node) => /提交|投递/.test(node.textContent || '')), false);
+  assert.equal(assessGthWorkOpenFill(result).ok, true);
+  assert.equal(assessGthWorkOpenFill(result).outcome, 'verified');
+});
+
+test('a blank 薪资 fact does not invent digits on the probe input', async () => {
+  const html = shell(formWrap(withProbeSalary({ industrySingle: true, industryCounter: '(0/1)' })));
+  const { dom, clicks, context } = boot(html);
+  const doc = dom.window.document;
+  wire(doc, { industrySingle: true });
+  const result = await context.ResumeGthWorkOpen.trial(request(workProfile(ROW)));
+  assert.equal(result.ok, true, JSON.stringify({ reason: result.reason, step: result.selectorStep }));
+  flags(result);
+  assert.equal(doc.getElementById('salary').value, '');
+  assert.equal(result.fields.some((field) => field.question === '薪资'), false);
+  assert.equal(result.coverage.find((field) => field.question === '薪资').status, 'failed');
+  assert.equal(result.coverage.find((field) => field.question === '薪资').reason, 'not_run');
+  assert.equal(doc.getElementById('position').value, '分析师');
+  assert.equal(forbidden(clicks).length, 0);
+  assert.equal(result.liveSupportClaimed, false);
+  assert.equal(result.complete, false);
+});
+
+test('a non-digit or over-long 薪资 fact fails closed before any write', async () => {
+  for (const salary of ['12000元/月', '12,000', '12000.0', ' 12000', 'abc', '12345678901']) {
+    const html = shell(formWrap(withProbeSalary()));
+    const { dom, clicks, context } = boot(html);
+    const result = await context.ResumeGthWorkOpen.trial(request(workProfile({ ...ROW, salary })));
+    const reason = salary === '12345678901' ? 'value_too_long' : 'invalid_profile_value';
+    assert.equal(result.reason, reason, salary);
+    assert.equal(result.ok, false, salary);
+    assert.equal(result.writeStarted, false, salary);
+    assert.equal(result.liveSupportClaimed, false, salary);
+    assert.equal(result.complete, false, salary);
+    assert.equal(dom.window.document.getElementById('salary').value, '', salary);
+    assert.equal(dom.window.document.getElementById('position').value, '', salary);
+    assert.equal(forbidden(clicks).length, 0, salary);
+    dom.window.close();
+  }
+});
+
+test('an unconfirmed 薪资 fact fails closed before any write', async () => {
+  const html = shell(formWrap(withProbeSalary()));
+  const { dom, clicks, context } = boot(html);
+  const profile = workProfile({ ...ROW, salary: '12000' });
+  profile.confirmedFields = profile.confirmedFields.filter((path) => path !== 'experience.0.salary');
+  const result = await context.ResumeGthWorkOpen.trial(request(profile));
+  assert.equal(result.ok, false);
+  assert.equal(result.writeStarted, false);
+  assert.equal(result.reason, 'profile_fact_unconfirmed');
+  assert.equal(dom.window.document.getElementById('salary').value, '');
+  assert.equal(dom.window.document.getElementById('position').value, '');
+  assert.equal(result.liveSupportClaimed, false);
+  assert.equal(forbidden(clicks).length, 0);
+});
+
+test('probe 薪资 keeps a matching value and rewrites only when replaceExisting is set', async () => {
+  const sameHtml = shell(formWrap(withProbeSalary({
+    salary: '12000', position: '分析师', organization: '示例证券', description: '负责研究',
+    job: '银行', industry: '证券/投资/基金/信托', start: '2020-03', end: '2024-08',
+    area: '上海', intro: '证券公司', department: '研究部', report: '总监', reports: '2', leave: '个人发展',
+    jobCounter: '(1/5)', industryCounter: '(1/1)', industrySingle: true,
+  })));
+  const same = boot(sameHtml);
+  const sameDoc = same.dom.window.document;
+  wire(sameDoc, { industrySingle: true });
+  let salaryClicks = 0;
+  sameDoc.getElementById('salary').addEventListener('click', () => { salaryClicks += 1; });
+  const kept = await same.context.ResumeGthWorkOpen.trial(request(workProfile({ ...ROW, salary: '12000' })));
+  assert.equal(kept.ok, true, JSON.stringify({ reason: kept.reason, step: kept.selectorStep }));
+  assert.equal(kept.writeStarted, false);
+  assert.equal(kept.fields.find((field) => field.question === '薪资').reason, 'preexisting_same_value');
+  assert.equal(sameDoc.getElementById('salary').value, '12000');
+  assert.equal(salaryClicks, 0);
+  assert.equal(kept.liveSupportClaimed, false);
+  assert.equal(kept.complete, false);
+  flags(kept);
+
+  const occupied = shell(formWrap(withProbeSalary({ salary: '8000', industrySingle: true, industryCounter: '(0/1)' })));
+  const blocked = boot(occupied);
+  const blockedResult = await blocked.context.ResumeGthWorkOpen.trial(request(workProfile({ ...ROW, salary: '12000' })));
+  assert.equal(blockedResult.ok, false);
+  assert.equal(blockedResult.writeStarted, false);
+  assert.equal(blockedResult.reason, 'existing_value');
+  assert.equal(blocked.dom.window.document.getElementById('salary').value, '8000');
+  assert.equal(blocked.dom.window.document.getElementById('position').value, '');
+  assert.equal(blockedResult.liveSupportClaimed, false);
+  assert.equal(forbidden(blocked.clicks).length, 0);
+
+  const replaced = boot(occupied);
+  wire(replaced.dom.window.document, { industrySingle: true });
+  const replacedResult = await replaced.context.ResumeGthWorkOpen.trial(request(workProfile({ ...ROW, salary: '12000' }), { replaceExisting: true }));
+  assert.equal(replacedResult.ok, true, JSON.stringify({ reason: replacedResult.reason, step: replacedResult.selectorStep }));
+  assert.equal(replaced.dom.window.document.getElementById('salary').value, '12000');
+  assert.equal(replacedResult.fields.find((field) => field.question === '薪资').reason, 'readback_reapplied');
+  assert.equal(replacedResult.liveSupportClaimed, false);
+  assert.equal(replacedResult.complete, false);
+  assert.equal(forbidden(replaced.clicks).length, 0);
+  assert.equal(replaced.clicks.filter((node) => node.id === 'editor-save' || node.id === 'editor-delete').length, 0);
+});
+
+test('薪资 fail-closes when the control is missing or not the probe hybrid', async () => {
+  const variants = [
+    ['missing input', '<div class="el-form-item"><label class="el-form-item__label">薪资</label><div class="el-form-item__content"></div></div>'],
+    ['el-select', '<div class="el-form-item"><label class="el-form-item__label">薪资</label><div class="el-form-item__content"><div class="el-select select-l"><input class="el-input__inner" readonly type="text" maxlength="10"></div><span>元/月</span></div></div>'],
+    ['no unit', '<div class="el-form-item"><label class="el-form-item__label">薪资</label><div class="el-form-item__content"><div class="el-input select-l"><input id="salary" class="el-input__inner" type="text" maxlength="10"></div></div></div>'],
+    ['yearly unit', '<div class="el-form-item"><label class="el-form-item__label">薪资</label><div class="el-form-item__content"><div class="el-input select-l"><input id="salary" class="el-input__inner" type="text" maxlength="10"></div><span>元/年</span></div></div>'],
+    ['no maxlength', '<div class="el-form-item"><label class="el-form-item__label">薪资</label><div class="el-form-item__content"><div class="el-input select-l"><input id="salary" class="el-input__inner" type="text"></div><span>元/月</span></div></div>'],
+    ['readonly', '<div class="el-form-item"><label class="el-form-item__label">薪资</label><div class="el-form-item__content"><div class="el-input select-l"><input id="salary" class="el-input__inner" readonly type="text" maxlength="10"></div><span>元/月</span></div></div>'],
+    ['disabled', '<div class="el-form-item"><label class="el-form-item__label">薪资</label><div class="el-form-item__content"><div class="el-input select-l"><input id="salary" class="el-input__inner" disabled type="text" maxlength="10"></div><span>元/月</span></div></div>'],
+    ['plain input', '<div class="el-form-item"><label class="el-form-item__label">薪资</label><div class="el-form-item__content"><div class="input-l el-input"><input id="salary" type="text"></div></div></div>'],
+  ];
+  for (const [name, item] of variants) {
+    const html = shell(formWrap(workFields().replace(salaryItem(''), item)));
+    const { dom, clicks, context } = boot(html);
+    const result = await context.ResumeGthWorkOpen.trial(request(workProfile({ ...ROW, salary: '12000' })));
+    assert.equal(result.ok, false, name);
+    assert.equal(result.writeStarted, false, name);
+    assert.equal(result.reason, 'control_not_supported', name);
+    assert.equal(result.fields.find((field) => field.question === '薪资').reason, 'control_not_supported', name);
+    assert.equal(result.liveSupportClaimed, false, name);
+    assert.equal(result.complete, false, name);
+    assert.equal(dom.window.document.getElementById('position').value, '', name);
+    const salary = dom.window.document.getElementById('salary');
+    if (salary) assert.equal(salary.value, '', name);
+    assert.equal(forbidden(clicks).length, 0, name);
+    assert.equal(clicks.filter((node) => node.id === 'editor-save' || node.id === 'editor-delete').length, 0, name);
+    dom.window.close();
+  }
 });
 
 test('empty work extras do not change an internship source hash', async () => {

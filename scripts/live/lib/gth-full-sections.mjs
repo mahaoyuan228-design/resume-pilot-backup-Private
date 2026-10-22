@@ -74,7 +74,9 @@ const EDUCATION_ENV = Object.freeze({
   START_DATE: '2020-09', END_DATE: '2024-06', MAJOR_CATEGORY: '金融学'
 });
 // Existing tests/gth-work-fill.test.mjs ROW, with the requested 下属人数=5.
-// Salary is deliberately absent: the shipped writer marks its shape unsupported.
+// Salary stays off this fixed profile. Digits fill only when experience.0.salary
+// is present and the probe el-input.select-l control matches. Pending live
+// Never-Save. This profile does not claim live support.
 const WORK_ROW = Object.freeze({
   position: '分析师', organization: '示例证券', description: '负责研究',
   jobCategory: '金融/保险||银行', industry: '金融||证券/投资/基金/信托',

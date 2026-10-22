@@ -42,11 +42,17 @@ function dates() {
       <table class="el-month-table"><tbody><tr>${MONTHS.map(name => `<td><div><a class="cell">${name}</a></div></td>`).join('')}</tr></tbody></table></div>
     </div></div>`;
 }
-function fields(single, industrySingle = false) {
+// 2026-10-22 probe: div.el-input.select-l > input.el-input__inner maxlength=10 + 元/月.
+// The plain 薪资 fixture below is not that hybrid and stays control_not_supported.
+function salaryProbe() {
+  return `<div class="el-form-item"><label for="experience_salary_othername" class="el-form-item__label" style="width: 98px;">薪资</label><div class="el-form-item__content" style="margin-left: 98px;"><div class="el-input select-l"><input id="salary" type="text" autocomplete="off" placeholder="" maxlength="10" class="el-input__inner"></div><span style="margin-left: 10px;">元/月</span></div></div>`;
+}
+function fields(single, industrySingle = false, salary = 'plain') {
+  const salaryControl = salary === 'probe' ? salaryProbe() : plain('薪资', 'salary');
   return [plain('职位名称', 'position'), cascader('职位类别', 'job', '金融/保险', single), plain('公司名称', 'organization'), dates(),
     plain('工作地区', 'area'), plain('职责与业绩', 'description', 'textarea'), cascader('公司所属行业', 'industry', '金融', industrySingle),
     plain('公司介绍', 'intro', 'textarea'), plain('所属部门', 'department'), plain('汇报对象', 'report'), plain('下属人数', 'reports'),
-    plain('薪资', 'salary'), plain('离职原因', 'leave', 'textarea')].join('');
+    salaryControl, plain('离职原因', 'leave', 'textarea')].join('');
 }
 function wireCascader(doc, id, leaf, { single = false, reveal = true } = {}) {
   const trigger = doc.getElementById(id + '-trigger');
@@ -262,7 +268,7 @@ function wireMonths(doc, options = {}) {
   doc.addEventListener('keydown', event => { if (event.key === 'Escape') panel.style.display = 'none'; });
   return stats;
 }
-async function boot({ single = false, reveal = true, industrySingle = false, months = {} } = {}) {
+async function boot({ single = false, reveal = true, industrySingle = false, months = {}, salary = 'plain' } = {}) {
   const dom = new JSDOM(`<!doctype html><head><style>input[type="checkbox"] { display:none }</style></head><body>${SECTION_TITLES.map(title =>
     `<section class="r-section"><div class="title_">${title}${title === '工作经验' ? '<a class="h-e-btn" href="javascript:;">添加</a>' : ''}</div><div class="sec-context"></div></section>`).join('')}</body>`,
   { url: 'https://hr.gtht.com/resume/edit/', pretendToBeVisual: true, runScripts: 'outside-only' });
@@ -279,7 +285,7 @@ async function boot({ single = false, reveal = true, industrySingle = false, mon
     add.remove();
     const form = doc.createElement('form');
     form.className = 'el-form sec-form';
-    form.innerHTML = fields(single, industrySingle) + '<button type="button" id="editor-cancel">取消</button><button type="button" id="editor-save">保存</button>';
+    form.innerHTML = fields(single, industrySingle, salary) + '<button type="button" id="editor-cancel">取消</button><button type="button" id="editor-save">保存</button>';
     section.append(form);
     stats.job = wireCascader(doc, 'job', '银行', { single, reveal });
     stats.industry = wireCascader(doc, 'industry', '证券/投资/基金/信托', { single: industrySingle });
@@ -857,4 +863,70 @@ test('full work model failures stop tenure and later writes while remaining disc
       assert.equal(typeof f.window.__gthFullResumeMonthModels, 'undefined', scenario.name);
     } finally { f.close(); }
   }
+});
+
+test('probe 薪资 writes experience.0.salary digits, leaves a blank salary empty, then 取消 closes', async () => {
+  const filled = await boot({ salary: 'probe' });
+  try {
+    const profile = structuredClone(request.profile);
+    profile.experience[0] = { ...profile.experience[0], salary: '12000' };
+    profile.confirmedFields = [...profile.confirmedFields, 'experience.0.salary'];
+    const salaryRequest = { ...request, requestId: 'live-full-work-salary-01', profile };
+    const input = filled.doc.getElementById('salary');
+    let salaryClicks = 0;
+    input.addEventListener('click', () => { salaryClicks += 1; });
+    const fill = await filled.window.ResumeGthWorkOpen.trial(salaryRequest);
+    assert.equal(fill.ok, true, JSON.stringify(fill));
+    assert.equal(fill.liveSupportClaimed, false);
+    assert.equal(fill.complete, false);
+    assert.equal(fill.softwareClickedSave, false);
+    assert.equal(fill.softwareClickedSubmit, false);
+    assert.equal(fill.softwareClickedDelete, false);
+    assert.equal(input.value, '12000');
+    assert.equal(input.parentElement.nextElementSibling.textContent, '元/月');
+    assert.equal(salaryClicks, 0);
+    const salary = fill.fields.find(row => row.question === '薪资');
+    assert.equal(salary.status, 'verified');
+    assert.equal(salary.reason, 'readback_matched');
+    assert.equal(salary.path, 'experience.0.salary');
+    const read = filled.api.read(3, work.questions);
+    assert.equal(read.readback.find(row => row.q === '薪资').value, '12000');
+    assert.equal(read.readback.find(row => row.q === '薪资').reason, null);
+    const rows = buildFieldRows(work, [{ fill }], read);
+    assert.equal(rows.find(row => row.q === '薪资').status, 'verified');
+    assert.equal(rows.find(row => row.q === '薪资').value, '12000');
+    assert.equal(rows.find(row => row.q === '职位名称').status, 'verified');
+    assert.equal(rows.find(row => row.q === '任职时间').value, '2020-03 | 2024-08');
+    assert.equal(rows.find(row => row.q === '离职原因').status, 'verified');
+    const cancel = await filled.api.cancel(3);
+    assert.equal(cancel.closed, true);
+    assert.equal(cancel.forced, false);
+    assert.equal(filled.api.state().editorFormCount, 0);
+    assert.equal(filled.section.querySelectorAll('.sec-context > .sec-detail').length, 0);
+    assert.equal(filled.api.clicks().every(row => row.allowed), true, JSON.stringify(filled.api.clicks()));
+    assert.deepEqual(filled.stats.dangerous, []);
+    assert.deepEqual(Array.from(filled.api.requests()), []);
+    assert.equal(filled.api.clicks().some(row => /保存|提交|投递|删除/.test(row.label || '')), false);
+  } finally { filled.close(); }
+
+  const blank = await boot({ salary: 'probe' });
+  try {
+    const fill = await blank.window.ResumeGthWorkOpen.trial(request);
+    assert.equal(fill.ok, true, JSON.stringify(fill));
+    assert.equal(fill.liveSupportClaimed, false);
+    assert.equal(fill.complete, false);
+    assert.equal(blank.doc.getElementById('salary').value, '');
+    assert.equal(fill.fields.some(row => row.question === '薪资'), false);
+    assert.equal(fill.coverage.find(row => row.question === '薪资').reason, 'not_run');
+    assert.equal(fill.softwareClickedSave, false);
+    assert.equal(fill.softwareClickedSubmit, false);
+    assert.equal(fill.softwareClickedDelete, false);
+    const cancel = await blank.api.cancel(3);
+    assert.equal(cancel.closed, true);
+    assert.equal(cancel.forced, false);
+    assert.equal(blank.api.state().editorFormCount, 0);
+    assert.deepEqual(blank.stats.dangerous, []);
+    assert.equal(blank.api.clicks().every(row => row.allowed), true, JSON.stringify(blank.api.clicks()));
+    assert.deepEqual(Array.from(blank.api.requests()), []);
+  } finally { blank.close(); }
 });

@@ -553,6 +553,7 @@ function wireRaceMonth(document, options = {}) {
     quietAfterEndShow: [], endOpenClicks: 0, endCellClicks: 0, endChangeCommits: 0, opensBesideHusk: 0, didReattachQuiet: false,
     typedChanges: 0, typedClears: 0, tableCommits: 0, anchorWalkMisses: 0, vuePicks: 0, vueEmits: 0,
     domPaints: 0, paintCloses: 0, panelRemoved: 0, emptyCloses: 0,
+    pendingHuskRevealed: false, huskDismissIgnored: 0,
     panels: {},
   };
   const editors = Object.fromEntries(['start-date', 'end-date'].map((id) => {
@@ -681,6 +682,10 @@ function wireRaceMonth(document, options = {}) {
     if (event.key !== 'Escape') return;
     stats.escapes += 1;
     for (const editor of Object.values(editors)) {
+      if (editor.huskSticky) {
+        stats.huskDismissIgnored += 1;
+        continue;
+      }
       editor.closed = true;
       revertTyped(editor);
       hide(editor);
@@ -726,6 +731,23 @@ function wireRaceMonth(document, options = {}) {
             if (options.removePanelOnEmpty) {
               editor.panel.remove();
               stats.panelRemoved += 1;
+            }
+            if (options.pendingStartHusk) {
+              const start = editors['start-date'];
+              start.panel.style.display = 'block';
+              start.panel.style.visibility = 'visible';
+              for (const name of RACE_ANIM) start.panel.classList.remove(name);
+              start.huskSticky = options.stickyPendingHusk !== false;
+              stats.pendingHuskRevealed = start.panel.isConnected && start.panel.style.display === 'block';
+            }
+            if (options.dualPendingOnEmpty) {
+              const extra = document.createElement('div');
+              extra.className = 'el-picker-panel el-date-picker el-popper';
+              extra.id = 'dual-month-panel';
+              extra.style.display = 'block';
+              extra.style.visibility = 'visible';
+              extra.innerHTML = '<div class="el-date-picker__header"><span class="el-date-picker__header-label">2024 年</span></div><table class="el-month-table"></table>';
+              document.body.appendChild(extra);
             }
             return;
           }
@@ -1086,9 +1108,15 @@ test('month accept runs in the page world without an inserted script', () => {
   shownOther.className = 'el-picker-panel';
   shownOther.style.display = 'block';
   goneDoc.body.appendChild(shownOther);
-  const goneDual = runMonthAccept(goneDoc, '2024-06');
-  assert.equal(goneDual.result, 'dual');
-  shownOther.style.display = 'none';
+  const huskShell = runMonthAccept(goneDoc, '2024-06');
+  assert.equal(huskShell.result, 'no-vue');
+  const monthHusk = goneDoc.createElement('div');
+  monthHusk.className = 'el-picker-panel el-date-picker';
+  monthHusk.style.display = 'block';
+  monthHusk.innerHTML = '<span class="el-date-picker__header-label">2023 年</span><table class="el-month-table"></table>';
+  goneDoc.body.appendChild(monthHusk);
+  const oneHusk = runMonthAccept(goneDoc, '2024-06');
+  assert.equal(oneHusk.result, 'no-vue');
   let editorPicks = 0;
   goneDoc.getElementById('editor').__vue__ = {
     picker: {
@@ -1105,6 +1133,15 @@ test('month accept runs in the page world without an inserted script', () => {
   assert.equal(editorPicked.result, 'picked');
   assert.equal(editorPicked.ok, true);
   assert.equal(editorPicks, 1);
+  const secondActive = goneDoc.createElement('div');
+  secondActive.className = 'el-picker-panel el-date-picker';
+  secondActive.style.display = 'block';
+  secondActive.innerHTML = '<span class="el-date-picker__header-label">2022 年</span><table class="el-month-table"></table>';
+  goneDoc.body.appendChild(secondActive);
+  const realDual = runMonthAccept(goneDoc, '2024-06');
+  assert.equal(realDual.result, 'dual');
+  assert.equal(editorPicks, 1);
+  secondActive.style.display = 'none';
   goneDoc.getElementById('editor').__vue__ = {
     userInput: 'stale',
     parseString(text) {
@@ -1121,6 +1158,12 @@ test('month accept runs in the page world without an inserted script', () => {
   assert.equal(editorEmitted.result, 'emitted');
   assert.equal(editorEmitted.ok, true);
   assert.equal(goneDoc.getElementById('editor').__vue__.userInput, null);
+  assert.equal(goneInput.value, '2024-06');
+  secondActive.style.display = 'block';
+  goneDoc.getElementById('editor').__vue__.userInput = 'stale';
+  const emitBlocked = runMonthAccept(goneDoc, '2024-06');
+  assert.equal(emitBlocked.result, 'dual');
+  assert.equal(goneDoc.getElementById('editor').__vue__.userInput, 'stale');
   assert.equal(goneInput.value, '2024-06');
 });
 
@@ -1538,6 +1581,131 @@ test('任职时间 calls the month bridge when the cell click removes the panel 
     assert.equal(stopped.months.vuePicks, 0, code);
     assert.equal(stopped.months.domPaints, 0, code);
     assert.equal(stopped.months.panelRemoved, 1, code);
+    assert.equal(stoppedResult.fields.find((field) => field.question === '公司名称').reason, 'not_run', code);
+    assert.equal(stopped.doc.getElementById('salary').value, '', code);
+    assert.equal(stoppedResult.liveSupportClaimed, false, code);
+    flags(stoppedResult);
+    assert.equal(forbidden(stopped.clicks).length, 0, code);
+  }
+});
+
+test('任职时间 calls the month bridge when a connected start husk stays pending after the end panel is removed', async () => {
+  const endSeen = (bridge, endDate) => bridge.seen.filter((row) => row.answer === endDate);
+  const huskOptions = { closeEmpty: true, removePanelOnEmpty: true, closeClearsTyped: true, pendingStartHusk: true };
+  for (const [startDate, endDate, mode] of [['2023-01', '2024-06', 'pick'], ['2022-03', '2023-12', 'emit']]) {
+    const { doc, clicks, context, months, bridge } = bootRace({
+      ...huskOptions,
+      acceptEditorPick: mode === 'pick',
+      acceptEmit: mode === 'emit',
+    });
+    const result = await context.ResumeGthWorkOpen.trial(request(workProfile({ ...ROW, startDate, endDate })));
+    const seen = endSeen(bridge, endDate);
+    assert.equal(result.ok, true, JSON.stringify({
+      startDate, endDate, mode, reason: result.reason, step: result.selectorStep,
+      picks: months.vuePicks, emits: months.vueEmits, seen, husk: months.pendingHuskRevealed,
+    }));
+    assert.equal(`${doc.getElementById('start-date').value} | ${doc.getElementById('end-date').value}`, `${startDate} | ${endDate}`);
+    assert.equal(result.fields.find((field) => field.question === '任职时间').reason, 'readback_matched');
+    assert.equal(result.liveSupportClaimed, false);
+    assert.equal(seen.length, 1);
+    assert.equal(seen[0].value, '');
+    assert.equal(seen[0].panelConnected, false);
+    assert.equal(seen[0].panelOpen, false);
+    assert.equal(months.pendingHuskRevealed, true);
+    assert.ok(months.huskDismissIgnored >= 1);
+    assert.equal(months.panels.start.isConnected, true);
+    assert.equal(months.panels.start.style.display, 'block');
+    assert.equal(months.panels.end.isConnected, false);
+    assert.equal(months.emptyCloses, 1);
+    assert.equal(months.panelRemoved, 1);
+    assert.equal(months.vuePicks, mode === 'pick' ? 1 : 0);
+    assert.equal(months.vueEmits, mode === 'emit' ? 1 : 0);
+    assert.equal(months.typedChanges, 0);
+    assert.equal(months.typedClears, 0);
+    assert.equal(doc.getElementById('salary').value, '');
+    flags(result);
+    assert.equal(forbidden(clicks).length, 0);
+  }
+
+  const bare = bootRace(huskOptions);
+  const bareResult = await bare.context.ResumeGthWorkOpen.trial(request(workProfile({ ...ROW, startDate: '2023-01', endDate: '2024-06' })));
+  const bareSeen = endSeen(bare.bridge, '2024-06');
+  assert.equal(bareResult.ok, false);
+  assert.equal(bareResult.reason, 'readback_mismatch');
+  assert.equal(bareResult.selectorStep, 'month_option');
+  assert.equal(bareResult.fields.find((field) => field.question === '任职时间').reason, 'readback_mismatch');
+  assert.equal(bare.doc.getElementById('start-date').value, '2023-01');
+  assert.equal(bare.doc.getElementById('end-date').value, '');
+  assert.equal(bareSeen.length, 1);
+  assert.equal(bareSeen[0].value, '');
+  assert.equal(bareSeen[0].panelConnected, false);
+  assert.equal(bare.months.vuePicks, 0);
+  assert.equal(bare.months.vueEmits, 0);
+  assert.equal(bare.months.pendingHuskRevealed, true);
+  assert.equal(bare.months.panels.start.isConnected, true);
+  assert.ok(bare.months.typedClears >= 1);
+  assert.equal(bareResult.fields.find((field) => field.question === '公司名称').reason, 'not_run');
+  assert.equal(bare.doc.getElementById('salary').value, '');
+  assert.equal(bareResult.liveSupportClaimed, false);
+  flags(bareResult);
+  assert.equal(forbidden(bare.clicks).length, 0);
+
+  const down = bootRace({ ...huskOptions, acceptEditorPick: true, monthBridge: false });
+  const downResult = await down.context.ResumeGthWorkOpen.trial(request(workProfile({ ...ROW, startDate: '2023-01', endDate: '2024-06' })));
+  const downSeen = endSeen(down.bridge, '2024-06');
+  assert.equal(downResult.ok, false);
+  assert.equal(downResult.reason, 'readback_mismatch');
+  assert.equal(downResult.selectorStep, 'month_option');
+  assert.equal(down.doc.getElementById('start-date').value, '2023-01');
+  assert.equal(down.doc.getElementById('end-date').value, '');
+  assert.equal(downSeen.length, 1);
+  assert.equal(downSeen[0].value, '');
+  assert.equal(downSeen[0].panelConnected, false);
+  assert.equal(down.months.vuePicks, 0);
+  assert.equal(down.months.pendingHuskRevealed, true);
+  assert.equal(down.months.panels.start.isConnected, true);
+  assert.ok(down.months.typedClears >= 1);
+  assert.equal(downResult.liveSupportClaimed, false);
+  assert.equal(down.doc.getElementById('salary').value, '');
+  flags(downResult);
+  assert.equal(forbidden(down.clicks).length, 0);
+
+  const realDual = bootRace({ ...huskOptions, acceptEditorPick: true, dualPendingOnEmpty: true });
+  const realDualResult = await realDual.context.ResumeGthWorkOpen.trial(request(workProfile({ ...ROW, startDate: '2023-01', endDate: '2024-06' })));
+  const realDualSeen = endSeen(realDual.bridge, '2024-06');
+  assert.equal(realDualResult.ok, false);
+  assert.equal(realDualResult.reason, 'control_not_supported');
+  assert.equal(realDualResult.selectorStep, 'month_option');
+  assert.equal(realDual.doc.getElementById('start-date').value, '2023-01');
+  assert.equal(realDual.doc.getElementById('end-date').value, '');
+  assert.equal(realDualSeen.length, 1);
+  assert.equal(realDualSeen[0].panelConnected, false);
+  assert.equal(realDual.months.vuePicks, 0);
+  assert.equal(realDual.months.vueEmits, 0);
+  assert.equal(realDual.months.pendingHuskRevealed, true);
+  assert.equal(realDual.months.panels.start.isConnected, true);
+  assert.equal(realDualResult.fields.find((field) => field.question === '公司名称').reason, 'not_run');
+  assert.equal(realDual.doc.getElementById('salary').value, '');
+  assert.equal(realDualResult.liveSupportClaimed, false);
+  flags(realDualResult);
+  assert.equal(forbidden(realDual.clicks).length, 0);
+
+  for (const code of ['dual', 'bad-year', 'mismatch']) {
+    const stopped = bootRace({ ...huskOptions, bridgeStop: { '2024-06': code } });
+    const stoppedResult = await stopped.context.ResumeGthWorkOpen.trial(request(workProfile({ ...ROW, startDate: '2023-01', endDate: '2024-06' })));
+    const stoppedSeen = endSeen(stopped.bridge, '2024-06');
+    assert.equal(stoppedResult.ok, false, code);
+    assert.equal(stoppedResult.reason, 'readback_mismatch', code);
+    assert.equal(stoppedResult.selectorStep, 'month_option', code);
+    assert.equal(stoppedResult.fields.find((field) => field.question === '任职时间').reason, 'readback_mismatch', code);
+    assert.equal(stopped.doc.getElementById('start-date').value, '2023-01', code);
+    assert.equal(stopped.doc.getElementById('end-date').value, '', code);
+    assert.equal(stoppedSeen.length, 1, code);
+    assert.equal(stoppedSeen[0].value, '', code);
+    assert.equal(stoppedSeen[0].panelConnected, false, code);
+    assert.equal(stopped.months.vuePicks, 0, code);
+    assert.equal(stopped.months.pendingHuskRevealed, true, code);
+    assert.equal(stopped.months.panels.start.isConnected, true, code);
     assert.equal(stoppedResult.fields.find((field) => field.question === '公司名称').reason, 'not_run', code);
     assert.equal(stopped.doc.getElementById('salary').value, '', code);
     assert.equal(stoppedResult.liveSupportClaimed, false, code);

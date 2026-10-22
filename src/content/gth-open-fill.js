@@ -523,8 +523,10 @@
     // runs, and the input may stay empty. After the click and any connected TD
     // retry, while the input is connected and this pass has not stopped for dual
     // or drift, always run acceptGthMonthInPage. Do not skip when the panel node
-    // is gone and the input is empty. A missing panel node is not marked; MAIN
-    // then uses the editor Vue.
+    // is gone and the input is empty, and do not skip because a leftover start
+    // husk is still pending. Dismiss that husk, then ask. A missing panel node
+    // is not marked; MAIN then uses the editor Vue. One leftover month panel is
+    // not a second editor. Two open month panels still fail closed.
     // picked and emitted accept the model. dual, bad-year, and mismatch stop.
     // If the panel node is gone and neither pick nor emit runs, stop. After
     // dismiss, a blank or different value stops readback_mismatch. If the
@@ -561,6 +563,21 @@
     }
     function otherPendingPanels(panel) {
       return openMonthPanels().filter(node => node !== panel);
+    }
+    function activeOpenMonthPanels() {
+      return openMonthPanels().filter(node => {
+        if (node.querySelectorAll('.el-month-table').length !== 1) return false;
+        const years = [...node.querySelectorAll('.el-date-picker__header-label')]
+          .map(label => norm(label.textContent).match(/^(\d{4})\s*年$/u)).filter(Boolean);
+        return years.length === 1;
+      });
+    }
+    // While the bound panel is connected, any other pending panel is ambiguous.
+    // After that node is gone, one leftover month husk is not a second editor.
+    // Two open month panels (a month table and one year) still conflict.
+    function pendingMonthConflict(panel) {
+      if (panel?.isConnected) return otherPendingPanels(panel).length > 0;
+      return activeOpenMonthPanels().length > 1;
     }
     function panelOpenedByClick(before) {
       const pending = openMonthPanels();
@@ -659,16 +676,22 @@
     // a page script, so script-src does not apply. A painted or typed value is still
     // not the model: picked and emitted are the only acceptances. The panel
     // marker is omitted when that node is already gone so MAIN can use the editor.
-    async function acceptMonthInPage(panel, input, answer) {
+    // A disconnected panel must not return before sendMessage just because a
+    // husk is still pending, and that husk is not profile_action_target_changed.
+    async function acceptMonthInPage(panel, input, answer, company = []) {
       if (!/^\d{4}-(0[1-9]|1[0-2])$/u.test(answer)) return 'no';
       if (!document.documentElement?.isConnected || !input?.isConnected) return 'no';
       const panelLive = () => !!panel?.isConnected;
-      if (panelLive() ? otherPendingPanels(panel).length : openMonthPanels().length) return 'no';
+      if (!panelLive() && openMonthPanels().length) {
+        await dismissMonthSurfaces(company);
+        if (openMonthPanels().length > 1) await waitUntil(() => openMonthPanels().length <= 1 ? true : null, 400);
+      }
+      if (panelLive() && otherPendingPanels(panel).length) return 'no';
       let result = 'pending';
       try {
         await boundAction(() => {
           if (!input.isConnected) stop('profile_action_target_changed');
-          if (panelLive() ? otherPendingPanels(panel).length : openMonthPanels().length) stop('profile_action_target_changed');
+          if (panelLive() && otherPendingPanels(panel).length) stop('profile_action_target_changed');
           input.setAttribute('data-gth-month-role', 'input');
           input.setAttribute('data-gth-month-answer', answer);
           input.setAttribute('data-gth-month-result', 'pending');
@@ -726,7 +749,7 @@
         stop('control_not_supported');
       };
       const readMonth = () => {
-        if (otherPendingPanels(panel).length) return { bad: 'dual' };
+        if (pendingMonthConflict(panel)) return { bad: 'dual' };
         if (drifted()) return { bad: 'drift' };
         const current = norm(input.value);
         if (current && current !== answer) return { bad: 'mismatch' };
@@ -792,7 +815,7 @@
           await guardedClick(monthCell, boundAction);
           matched = await waitUntil(readMonth, 320);
         }
-        if (matched?.bad === 'dual' || matched?.bad === 'drift' || drifted() || otherPendingPanels(panel).length) {
+        if (matched?.bad === 'drift' || drifted() || (panel?.isConnected && (matched?.bad === 'dual' || otherPendingPanels(panel).length))) {
           await dismissMonthSurfaces(company);
           stop('control_not_supported');
         }
@@ -800,9 +823,10 @@
         // not skip MAIN. After the cell click, while this input is connected
         // and this pass has not stopped for dual or drift, always ask the
         // page-world bridge. A removed panel and an empty input do not skip
-        // it; the panel marker is omitted when that node is gone so the editor
-        // Vue can pick or emit. picked/emitted continue; dual, bad-year, and
-        // mismatch stop. Neither pick nor emit on a missing panel stops. An
+        // it, including when a start husk is still pending. Dismiss that husk
+        // first. The panel marker is omitted when that node is gone so the
+        // editor Vue can pick or emit. picked/emitted continue; dual, bad-year,
+        // and mismatch stop. Neither pick nor emit on a missing panel stops. An
         // unavailable bridge does not type over a painted value.
         const currentValue = norm(input.value);
         const painted = currentValue !== '';
@@ -810,18 +834,18 @@
         const panelHere = !!panel?.isConnected;
         let accepted = 'no';
         if (input.isConnected) {
-          accepted = await acceptMonthInPage(panel, input, answer);
+          accepted = await acceptMonthInPage(panel, input, answer, company);
         }
         if (accepted === 'stop') {
           await dismissMonthSurfaces(company);
-          stop(otherPendingPanels(panel).length ? 'control_not_supported' : 'readback_mismatch');
+          stop(pendingMonthConflict(panel) ? 'control_not_supported' : 'readback_mismatch');
         }
         if (accepted === 'ok') {
           matched = await waitUntil(readMonth, 480);
         } else if (!panelHere && showsTarget) {
           await dismissMonthSurfaces(company);
           stop('readback_mismatch');
-        } else if (!matched && !painted && norm(input.value) === '' && !drifted() && !otherPendingPanels(panel).length) {
+        } else if (!matched && !painted && norm(input.value) === '' && !drifted() && !pendingMonthConflict(panel)) {
           await commitMonthThroughInput(input, answer);
           matched = await waitUntil(readMonth, 320);
         }
@@ -830,8 +854,8 @@
           stop(matched?.bad === 'dual' || matched?.bad === 'drift' ? 'control_not_supported' : 'readback_mismatch');
         }
         await dismissMonthSurfaces(company);
-        if (norm(input.value) !== answer || drifted() || otherPendingPanels(panel).length)
-          stop(drifted() || otherPendingPanels(panel).length ? 'control_not_supported' : 'readback_mismatch');
+        if (norm(input.value) !== answer || drifted() || pendingMonthConflict(panel))
+          stop(drifted() || pendingMonthConflict(panel) ? 'control_not_supported' : 'readback_mismatch');
         await dispatchInputChange(input);
         const valid = await waitUntil(() => siteValid(item, input) && norm(input.value) === answer && !drifted() ? true : null, 400);
         if (!valid || norm(input.value) !== answer || drifted()) stop('readback_mismatch');

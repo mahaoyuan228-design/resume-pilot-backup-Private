@@ -168,8 +168,10 @@ export function shippedGthWorkOpenFill({api,tab,requestId,binding,profile,profil
 // Page-world month accept. chrome.scripting serializes this function into MAIN,
 // so it cannot close over imports. It calls the marked picker's handleMonthPick
 // or the editor's emitInput. A painted input is not acceptance. If the panel
-// node is gone, only the editor Vue may pick or emit. It does not click,
-// navigate, or save. Neither path means no-vue.
+// node is gone, only the editor Vue may pick or emit. A leftover shown husk is
+// not a hard dual. Two active month panels (a month table and one year each)
+// are two editors and fail closed. It does not click, navigate, or save.
+// Neither path means no-vue.
 export const GTH_MONTH_MODEL_MESSAGE='GTH_MONTH_MODEL_ACCEPT';
 const MONTH_PAGE='https://hr.gtht.com/resume/edit/';
 export function acceptGthMonthInPage(payload){
@@ -228,10 +230,15 @@ export function acceptGthMonthInPage(payload){
     if(input.getAttribute('data-gth-month-answer')!==answer)return fail('bad-answer');
     if(!input.isConnected)return fail('bad-answer');
     if(panel&&!panel.isConnected)return fail('bad-answer');
-    const others=[...doc.querySelectorAll('.el-picker-panel')].filter(node=>node!==panel&&visuallyShown(node));
-    if(others.length)return fail('dual');
     const editor=input.closest?.('.el-date-editor');
     const editorVue=editor&&editor.__vue__;
+    const shownPanels=[...doc.querySelectorAll('.el-picker-panel')].filter(visuallyShown);
+    const activeMonth=node=>node.querySelectorAll('.el-month-table').length===1&&headerYear(node)!=null;
+    if(panel){
+      if(shownPanels.some(node=>node!==panel))return fail('dual');
+    }else if(shownPanels.filter(activeMonth).length>=2){
+      return fail('dual');
+    }
     const finish=kind=>{
       const shown=String(input.value||'').replace(/[\s\u00a0]+/g,' ').trim();
       if(shown&&shown!==answer)return fail('mismatch');

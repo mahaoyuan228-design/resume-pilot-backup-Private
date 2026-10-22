@@ -50,7 +50,10 @@ export const READBACK_WAIT_MS = 500;
 export const SECTION_NAME = '个人基本信息必填';
 export const ANCHOR_NAME = '个人基本信息';
 export const POWERSHELL = "$env:PORT='9239'; $env:OUTDIR='.'; node scripts/live/cms-basic-info-live.mjs";
-export const SIGNATURE = Object.freeze(['个人基本信息必填', '自我评价必填', '教育经历必填']);
+// This trial only writes 个人基本信息必填. Live headings include that title and
+// 自我评价必填. 附件信息选填 is not on that page and is not required. 教育经历必填
+// is not required here; the shipped engine still has its own section check.
+export const SIGNATURE = Object.freeze(['个人基本信息必填', '自我评价必填']);
 export const LIVE_FILES = Object.freeze([
   'src/core/matcher.js',
   'src/content/cms-session.js',
@@ -1244,6 +1247,9 @@ export async function runCmsBasicInfoLive(options = {}) {
   if (!clickDecision.ok) reason = clickDecision.reason;
   else if (traffic.nonGet.length && !reason) reason = 'non_get_request';
   else if (!reason && fields.some((field) => field.status !== 'verified')) reason = fields.find((field) => field.status !== 'verified')?.reason || 'control_not_supported';
+  if (fatalDetail == null && outcome?.ok !== true && typeof outcome?.detail === 'string' && outcome.detail) {
+    fatalDetail = outcome.detail.slice(0, 300);
+  }
 
   const evidence = buildEvidence({
     tipSha,

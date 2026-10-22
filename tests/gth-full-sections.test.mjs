@@ -21,7 +21,8 @@ test('full trial adapters reuse six section definitions and confirmed work month
   assert.equal(request.profile.experience[0].subordinateCount, '5');
   assert.equal(request.profile.experience[0].startDate, '2020-03');
   assert.equal(request.profile.experience[0].endDate, '2024-08');
-  for (const key of ['startDate', 'endDate', 'subordinateCount']) {
+  assert.equal(request.profile.experience[0].salary, '12000');
+  for (const key of ['startDate', 'endDate', 'subordinateCount', 'salary']) {
     assert.ok(request.profile.confirmedFields.includes(`experience.0.${key}`));
   }
   assert.equal(request.profileIndex, 0);
@@ -32,7 +33,9 @@ test('basic full trial carries an explicitly confirmed work-start month and chec
   const current = section('basic');
   const [{ request }] = requestsFor(current);
   assert.equal(request.profile.workStart, '2022-01');
+  assert.equal(request.profile.currentCity, '北京');
   assert.ok(request.profile.confirmedFields.includes('workStart'));
+  assert.ok(request.profile.confirmedFields.includes('currentCity'));
   const fills = [{ fields: [verified('参加工作时间')] }];
   assert.equal(buildFieldRows(current, fills, read({ 参加工作时间: '2022-01' }))
     .find(row => row.q === '参加工作时间').status, 'verified');

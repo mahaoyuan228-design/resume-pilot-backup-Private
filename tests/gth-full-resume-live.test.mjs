@@ -292,7 +292,8 @@ test('combined work trial carries both confirmed months and the requested subord
   assert.equal(row.startDate, '2020-03');
   assert.equal(row.endDate, '2024-08');
   assert.equal(row.subordinateCount, '5');
-  for (const key of ['startDate', 'endDate', 'subordinateCount']) {
+  assert.equal(row.salary, '12000');
+  for (const key of ['startDate', 'endDate', 'subordinateCount', 'salary']) {
     assert.ok(request.profile.confirmedFields.includes(`experience.0.${key}`));
   }
 });

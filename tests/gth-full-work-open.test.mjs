@@ -97,7 +97,15 @@ test('full work trial opens the first existing record without a title 编辑 and
 
 test('the record opener reaches the shipped work writer, reads both months and written subordinate count, then cancels', async () => {
   const work = SECTIONS.find(section => section.id === 'work');
-  const request = requestsFor(work)[0].request;
+  const supplied = requestsFor(work)[0].request;
+  // This editor's 薪资 control is a plain input, not the probe hybrid. The
+  // harness digits stay off this request so a present salary fact does not
+  // fail-close the other fields.
+  assert.equal(supplied.profile.experience[0].salary, '12000');
+  const profile = structuredClone(supplied.profile);
+  delete profile.experience[0].salary;
+  profile.confirmedFields = profile.confirmedFields.filter((path) => path !== 'experience.0.salary');
+  const request = { ...supplied, profile };
   const row = request.profile.experience[0];
   const plain = (q, value = '', tag = 'input') => '<div class="el-form-item"><label class="el-form-item__label">'
     + q + '</label><div class="el-form-item__content">' + (tag === 'textarea'

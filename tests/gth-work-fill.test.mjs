@@ -507,7 +507,7 @@ function wireRaceMonth(document, options = {}) {
   const stats = {
     open: 0, earlyClicks: 0, drift: 0, commits: 0, dualClicks: 0, escapes: 0, huskBlocks: 0,
     huskRemainedAfterStart: false, quietAtEndClick: null, quietAtEndOpen: [], monthPanelNodesAtEndClick: [],
-    quietAfterEndShow: [], endOpenClicks: 0, endCellClicks: 0, opensBesideHusk: 0, didReattachQuiet: false,
+    quietAfterEndShow: [], endOpenClicks: 0, endCellClicks: 0, endChangeCommits: 0, opensBesideHusk: 0, didReattachQuiet: false,
     panels: {},
   };
   const editors = Object.fromEntries(['start-date', 'end-date'].map((id) => {
@@ -562,8 +562,9 @@ function wireRaceMonth(document, options = {}) {
     own.openedBesideHusk = husks.length > 0;
     if (own.openedBesideHusk) stats.opensBesideHusk += 1;
     if (!own.panel.isConnected) document.body.appendChild(own.panel);
-    const resurrect = (id === 'end-date' && options.forceDualOnEnd)
-      || (!other.closed && other.panel.style.display === 'none' && other.panel.isConnected);
+    // A committed start panel stays hidden. Only an explicit dual-open shows both.
+    // Real Element-UI does not paint the start panel again when the end editor opens.
+    const resurrect = id === 'end-date' && options.forceDualOnEnd === true;
     if (resurrect) {
       if (!other.panel.isConnected) document.body.appendChild(other.panel);
       other.panel.style.display = 'block';
@@ -655,18 +656,14 @@ function wireRaceMonth(document, options = {}) {
           return;
         }
         if (cell.classList.contains('disabled')) return;
-        // Live work add form: after start commit the panel stays on body, not pending.
-        // Opening the other editor while that husk is connected poisons the panel:
-        // a later a.cell does not commit even if the husk was detached after open.
-        // A quiet husk still connected at the click does not commit either.
+        // A quiet start husk stays on body and does not block this cell.
         const others = [...document.querySelectorAll('.el-picker-panel')].filter((panel) => panel !== editor.panel && panel.isConnected);
         if (editor.input.id === 'end-date') {
           stats.quietAtEndClick = others.length;
           stats.endCellClicks += 1;
-        }
-        if (editor.openedBesideHusk || others.length) {
-          stats.huskBlocks += 1;
-          return;
+          // Live end panel: the month cell click does not write. The mounted picker
+          // still commits yyyy-MM from input + change.
+          if (options.endCellNoop) return;
         }
         const open = [...document.querySelectorAll('.el-picker-panel')].filter((panel) => panel.style.display !== 'none');
         if (open.length > 1) {
@@ -696,6 +693,24 @@ function wireRaceMonth(document, options = {}) {
       });
     }
   }
+  const endEditor = editors['end-date'];
+  endEditor.input.addEventListener('input', () => { endEditor.changeArmed = true; });
+  endEditor.input.addEventListener('change', () => {
+    if (!options.endCellNoop || !endEditor.changeArmed) return;
+    endEditor.changeArmed = false;
+    const text = endEditor.input.value;
+    if (text && text === endEditor.committedValue) return;
+    if (!/^(19|20)\d{2}-(0[1-9]|1[0-2])$/u.test(text)) {
+      endEditor.input.value = '';
+      return;
+    }
+    endEditor.committedValue = text;
+    stats.endChangeCommits += 1;
+    endEditor.committed = true;
+    stats.commits += 1;
+    hide(endEditor);
+    endEditor.closed = true;
+  });
   return stats;
 }
 
@@ -710,7 +725,7 @@ function bootRace(options = {}) {
   return { ...booted, doc, months: wireRaceMonth(doc, options) };
 }
 
-test('任职时间 clears every panel before the end click and commits after a reattached husk', async () => {
+test('任职时间 commits the end month while the start panel husk stays connected', async () => {
   for (const [startDate, endDate] of [['2023-01', '2024-06'], ['2022-03', '2023-12']]) {
     const { doc, clicks, context, months } = bootRace();
     const result = await context.ResumeGthWorkOpen.trial(request(workProfile({ ...ROW, startDate, endDate })));
@@ -724,21 +739,46 @@ test('任职时间 clears every panel before the end click and commits after a r
     assert.equal(months.dualClicks, 0);
     assert.equal(months.huskBlocks, 0);
     assert.equal(months.huskRemainedAfterStart, true);
-    assert.equal(months.endOpenClicks, 2);
-    assert.deepEqual(months.monthPanelNodesAtEndClick, [0, 0]);
-    assert.deepEqual(months.quietAtEndOpen, [0, 0]);
-    assert.deepEqual(months.quietAfterEndShow, [1, 0]);
+    assert.equal(months.endOpenClicks, 1);
+    assert.deepEqual(months.monthPanelNodesAtEndClick, [1]);
+    assert.deepEqual(months.quietAtEndOpen, [1]);
+    assert.deepEqual(months.quietAfterEndShow, [1]);
     assert.equal(months.endCellClicks, 1);
+    assert.equal(months.endChangeCommits, 0);
     assert.equal(months.opensBesideHusk, 1);
-    assert.equal(months.quietAtEndClick, 0);
+    assert.equal(months.quietAtEndClick, 1);
     assert.equal(months.commits, 2);
     assert.ok(months.escapes >= 2);
-    assert.equal(doc.getElementById('start-date-panel'), null);
-    assert.equal(months.panels.start.isConnected, false);
+    assert.equal(months.panels.start.isConnected, true);
+    assert.equal(months.panels.start.parentElement, doc.body);
+    assert.equal(months.panels.start.style.display, 'none');
     assert.equal(doc.getElementById('end-date-panel').parentElement, doc.body);
     assert.equal(months.panels.start.closest('.el-date-editor'), null);
     assert.equal(doc.getElementById('end-date-panel').closest('.el-date-editor'), null);
     assert.equal(doc.getElementById('end-date-panel').style.display, 'none');
+    assert.equal(doc.getElementById('salary').value, '');
+    flags(result);
+    assert.equal(forbidden(clicks).length, 0);
+  }
+});
+
+test('任职时间 writes the end month through input change when the cell click does not', async () => {
+  for (const [startDate, endDate] of [['2023-01', '2024-06'], ['2022-03', '2023-12']]) {
+    const { doc, clicks, context, months } = bootRace({ endCellNoop: true });
+    const result = await context.ResumeGthWorkOpen.trial(request(workProfile({ ...ROW, startDate, endDate })));
+    assert.equal(result.ok, true, JSON.stringify({ startDate, endDate, reason: result.reason, step: result.selectorStep, commits: months.endChangeCommits, cells: months.endCellClicks }));
+    assert.equal(`${doc.getElementById('start-date').value} | ${doc.getElementById('end-date').value}`, `${startDate} | ${endDate}`);
+    assert.equal(doc.getElementById('start-date').value, startDate);
+    assert.equal(result.fields.find((field) => field.question === '任职时间').reason, 'readback_matched');
+    assert.equal(result.liveSupportClaimed, false);
+    assert.equal(months.endCellClicks, 1);
+    assert.equal(months.endChangeCommits, 1);
+    assert.equal(months.endOpenClicks, 1);
+    assert.equal(months.quietAtEndClick, 1);
+    assert.equal(months.commits, 2);
+    assert.equal(months.dualClicks, 0);
+    assert.equal(months.panels.start.isConnected, true);
+    assert.equal(months.panels.start.style.display, 'none');
     assert.equal(doc.getElementById('salary').value, '');
     flags(result);
     assert.equal(forbidden(clicks).length, 0);
@@ -786,36 +826,25 @@ test('a leftover start panel or a decade year step fails closed without an empty
 
   const sticky = bootRace({ stickyHusk: true });
   const stickyResult = await sticky.context.ResumeGthWorkOpen.trial(request(workProfile({ ...ROW, startDate: '2023-01', endDate: '2024-06' })));
-  assert.equal(stickyResult.ok, false);
-  assert.equal(stickyResult.reason, 'control_not_supported');
-  assert.equal(stickyResult.selectorStep, 'month_panel_structure_unknown');
-  assert.equal(sticky.doc.getElementById('start-date').value, '2023-01');
-  assert.equal(sticky.doc.getElementById('end-date').value, '');
-  assert.notEqual(`${sticky.doc.getElementById('start-date').value} | ${sticky.doc.getElementById('end-date').value}`, '2023-01 | 2024-06');
-  assert.equal(sticky.months.commits, 1);
-  assert.equal(sticky.months.endCellClicks, 0);
+  assert.equal(stickyResult.ok, true, JSON.stringify({ reason: stickyResult.reason, step: stickyResult.selectorStep }));
+  assert.equal(`${sticky.doc.getElementById('start-date').value} | ${sticky.doc.getElementById('end-date').value}`, '2023-01 | 2024-06');
+  assert.equal(sticky.months.commits, 2);
+  assert.equal(sticky.months.endCellClicks, 1);
   assert.equal(sticky.months.huskRemainedAfterStart, true);
-  assert.equal(sticky.months.endOpenClicks, 0);
-  assert.deepEqual(sticky.months.monthPanelNodesAtEndClick, []);
-  assert.equal(stickyResult.fields.find((field) => field.question === '公司名称').reason, 'not_run');
+  assert.equal(sticky.months.panels.start.isConnected, true);
+  assert.equal(sticky.months.endOpenClicks, 1);
   assert.equal(sticky.doc.getElementById('salary').value, '');
   assert.equal(forbidden(sticky.clicks).length, 0);
 
   const again = bootRace({ reattachQuietEveryEndShow: true });
   const againResult = await again.context.ResumeGthWorkOpen.trial(request(workProfile({ ...ROW, startDate: '2023-01', endDate: '2024-06' })));
-  assert.equal(againResult.ok, false);
-  assert.equal(againResult.reason, 'control_not_supported');
-  assert.equal(againResult.selectorStep, 'month_panel_structure_unknown');
-  assert.equal(again.doc.getElementById('start-date').value, '2023-01');
-  assert.equal(again.doc.getElementById('end-date').value, '');
-  assert.notEqual(`${again.doc.getElementById('start-date').value} | ${again.doc.getElementById('end-date').value}`, '2023-01 | 2024-06');
-  assert.equal(again.months.commits, 1);
-  assert.equal(again.months.endCellClicks, 0);
-  assert.equal(again.months.huskBlocks, 0);
-  assert.equal(again.months.endOpenClicks, 4);
-  assert.deepEqual(again.months.monthPanelNodesAtEndClick, [0, 0, 0, 0]);
-  assert.ok(again.months.quietAfterEndShow.every((count) => count > 0));
-  assert.equal(againResult.fields.find((field) => field.question === '公司名称').reason, 'not_run');
+  assert.equal(againResult.ok, true, JSON.stringify({ reason: againResult.reason, step: againResult.selectorStep }));
+  assert.equal(`${again.doc.getElementById('start-date').value} | ${again.doc.getElementById('end-date').value}`, '2023-01 | 2024-06');
+  assert.equal(again.months.commits, 2);
+  assert.equal(again.months.endCellClicks, 1);
+  assert.equal(again.months.endOpenClicks, 1);
+  assert.equal(again.months.quietAtEndClick, 1);
+  assert.equal(again.months.panels.start.isConnected, true);
   assert.equal(again.doc.getElementById('salary').value, '');
   assert.equal(forbidden(again.clicks).length, 0);
 });

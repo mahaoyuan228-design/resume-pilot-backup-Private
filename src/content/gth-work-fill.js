@@ -27,7 +27,7 @@
 // div.el-input.select-l > input.el-input__inner (type=text, maxlength=10),
 // sibling text 元/月. It is not .el-select.select-l. The probe click produced
 // options=[], so this path does not open a dropdown and does not POST.
-// A missing input or any other shape stays control_not_supported.
+// A missing input or any other shape stays 'control_not_supported'.
 // Pending live Never-Save. liveSupportClaimed stays false. This does not claim the site is supported.
 (() => {
   const engine = globalThis.ResumeGthOpenFill;

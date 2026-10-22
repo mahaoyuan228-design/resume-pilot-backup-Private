@@ -545,4 +545,3 @@ export function installGthEducationLive(doc, options) {
   view.__gthEducationLive = api;
   return { ok: true };
 }
-

@@ -204,4 +204,3 @@ for (const [name, options] of [
     assert.equal(page.saveCount(), 0);
   });
 }
-

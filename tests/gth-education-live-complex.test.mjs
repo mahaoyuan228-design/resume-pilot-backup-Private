@@ -26,13 +26,13 @@ function textItem(question, id, tag = 'input') {
   return `<div class="el-form-item"><label class="el-form-item__label">${question}</label><div class="el-form-item__content">${control}</div></div>`;
 }
 
-function editorHtml({ lockedDegree = false, categoryWrappers = ['cascader-wrap'] } = {}) {
+function editorHtml({ lockedDegree = false, categoryWrappers = ['cascader-wrap'], categoryPanelSibling = false } = {}) {
   const month = id => `<div class="el-date-editor el-date-editor--month el-input el-input--prefix">
     <span class="el-input__prefix"><i class="el-input__icon el-icon-date" id="${id}-icon"></i></span>
     <input type="text" readonly class="el-input__inner" id="${id}" aria-controls="month-panel">
   </div>`;
-  const categoryBody = `<div class="input-l pointer" id="category-trigger"><input type="text" readonly class="el-input__inner" id="category"></div>
-    <div class="dialog-wrap plugin-dialog-wrap popover blue" id="category-panel" style="display:none">
+  const categoryTrigger = '<div class="input-l pointer" id="category-trigger"><input type="text" readonly class="el-input__inner" id="category"></div>';
+  const categoryPanel = `<div class="dialog-wrap plugin-dialog-wrap popover blue" id="category-panel" style="display:none">
       <input type="text" class="search-input">
       <ul class="selected-view-data"></ul>
       <div class="dialog-search-wrap"><div class="eo-cascader-menu simple-tree-outer"><ul class="simple-tree-wrapper">
@@ -41,7 +41,8 @@ function editorHtml({ lockedDegree = false, categoryWrappers = ['cascader-wrap']
       <div class="pop-foot"><a class="pop-btn confirm" href="javascript:;">确定</a></div>
     </div>`;
   const category = categoryWrappers.reduceRight((content, classes, index) =>
-    `<div class="${index === 0 ? 'el-form-item__content ' : ''}${classes}">${content}</div>`, categoryBody);
+    `<div class="${index === 0 ? 'el-form-item__content ' : ''}${classes}">${content}${categoryPanelSibling && index === 0 ? categoryPanel : ''}</div>`,
+    categoryTrigger + (categoryPanelSibling ? '' : categoryPanel));
   return `<form class="el-form sec-form" id="education-form">
     ${textItem('毕业学校', 'school')}${textItem('专业名称', 'major')}
     ${textItem('在校活动/职务', 'activities', 'textarea')}${textItem('在校成绩排名', 'rank')}
@@ -159,14 +160,16 @@ async function trial(page, env = ENV) {
   return { result, read, rows };
 }
 
-// The nesting variants exercise synthetic contracts, not observed live layouts.
-for (const categoryWrappers of [
-  ['cascader-wrap'],
-  ['cascader-wrap', 'professional-category'],
-  ['professional-category', 'cascader-wrap']
+// Synthetic contracts include the reported sibling panel/nested owners layout;
+// reproducing its structure offline does not establish live support.
+for (const { categoryWrappers, categoryPanelSibling = false } of [
+  { categoryWrappers: ['cascader-wrap'] },
+  { categoryWrappers: ['cascader-wrap', 'professional-category'] },
+  { categoryWrappers: ['professional-category', 'cascader-wrap'] },
+  { categoryWrappers: ['cascader-wrap', 'professional-category'], categoryPanelSibling: true }
 ]) {
-  test(`synthetic fullTrial verifies all complex groups with ${categoryWrappers.length > 1 ? 'nested ' : ''}${categoryWrappers.join(' > ')} and cancels`, async () => {
-    const page = boot({ categoryWrappers });
+  test(`synthetic fullTrial verifies all complex groups with ${categoryWrappers.length > 1 ? 'nested ' : ''}${categoryWrappers.join(' > ')}${categoryPanelSibling ? ' and sibling panel' : ''} and cancels`, async () => {
+    const page = boot({ categoryWrappers, categoryPanelSibling });
     try {
       const { result, read, rows } = await trial(page);
       assert.equal(result.ok, true, `${result.reason}: ${JSON.stringify(result)}`);
@@ -178,6 +181,13 @@ for (const categoryWrappers of [
       const category = read.readback.find(row => row.q === '专业类别');
       assert.equal(category.value, '金融学');
       assert.equal(category.dom.items[0].categoryCount, categoryWrappers.length);
+      if (categoryPanelSibling) {
+        const triggerOwner = page.doc.querySelector('#category-trigger').parentElement;
+        const panelOwner = page.doc.querySelector('#category-panel').parentElement;
+        assert.notEqual(triggerOwner, panelOwner);
+        assert.equal(triggerOwner.parentElement, panelOwner);
+        assert.equal(panelOwner.classList.contains('el-form-item__content'), true);
+      }
       const writerCategory = result.fields.find(row => row.question === '专业类别');
       assert.equal(writerCategory.status, 'verified');
       assert.equal(writerCategory.reason, 'readback_matched');

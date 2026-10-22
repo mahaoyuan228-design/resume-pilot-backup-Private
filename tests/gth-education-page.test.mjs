@@ -61,11 +61,46 @@ for (const wrappers of [
   });
 }
 
+// Reproduce the reported sibling panel with nested owners, plus the reverse
+// containment contract. All markup and values here remain synthetic.
+for (const wrappers of [
+  ['cascader-wrap', 'professional-category'],
+  ['professional-category', 'cascader-wrap']
+]) {
+  for (const outerControl of ['panel', 'trigger']) {
+    test(`category readback accepts nested owners with outer ${outerControl} in ${wrappers.join(' > ')}`, () => {
+      const p = page('', category(wrappers));
+      try {
+        const inner = p.el('category-trigger').parentElement;
+        const outer = inner.parentElement;
+        outer.append(p.el(`category-${outerControl}`));
+        assert.equal(p.el('category-trigger').parentElement, outerControl === 'trigger' ? outer : inner);
+        assert.equal(p.el('category-panel').parentElement, outerControl === 'panel' ? outer : inner);
+        for (const display of ['none', 'block']) {
+          p.el('category-panel').style.display = display;
+          const row = p.api.read(['专业类别']).readback[0];
+          assert.equal(row.reason, null);
+          assert.equal(row.value, '金融学');
+          assert.equal(row.dom.items[0].categoryCount, 2);
+          assert.equal(row.dom.items[0].popupCount, 1);
+          assert.equal(JSON.stringify(row).includes('search is not a field'), false);
+        }
+      } finally { p.api.restore(); p.dom.window.close(); }
+    });
+  }
+}
+
 test('category readback rejects ambiguous ownership and changed display controls', () => {
   const scenarios = [
     ['independent widget', (p, owner, root) => root.after(owner.cloneNode(true))],
     ['empty sibling wrapper', (p, owner, root) => root.insertAdjacentHTML('afterend', '<div class="professional-category"></div>')],
-    ['split trigger and popup ownership', (p, owner, root) => root.append(p.el('category-panel'))],
+    ['independent sibling owners', (p, owner, root) => {
+      root.after(owner);
+      root.append(p.el('category-panel'));
+      assert.equal(root.contains(owner), false);
+      assert.equal(owner.contains(root), false);
+    }],
+    ['popup parent outside widget set', (p, owner, root) => root.parentElement.append(p.el('category-panel'))],
     ['duplicate trigger', (p, owner) => owner.insertAdjacentHTML('beforeend', '<div class="input-l pointer"></div>')],
     ['duplicate popup', (p, owner) => owner.append(p.el('category-panel').cloneNode(true))],
     ['ancestor duplicate trigger', (p, owner, root) => root.insertAdjacentHTML('beforeend', '<div class="input-l pointer"></div>')],

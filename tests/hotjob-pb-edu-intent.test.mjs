@@ -56,7 +56,12 @@ function row(key, label, inner, state, extra = {}) {
   const itemClass = extra.itemClass || (dropRow ? 'ant-form-item' : probe.page.itemClass);
   const hidden = extra.hidden ? ' hidden' : '';
   const caption = extra.rawLabel || star(label);
-  return `<div class="${esc(itemClass)}" data-field="${esc(key)}"${hidden}><label>${esc(caption)}</label><span class="${esc(probe.page.childrenClass)}">${inner}</span></div>`;
+  const extraLabel = extra.extraLabel ? `<label>${esc(extra.extraLabel)}</label>` : '';
+  const blankLabel = extra.blankLabel ? '<label></label>' : '';
+  if (extra.wrapControl) {
+    return `<div class="${esc(itemClass)}" data-field="${esc(key)}"${hidden}><label>${esc(caption)}${inner}</label>${extraLabel}${blankLabel}</div>`;
+  }
+  return `<div class="${esc(itemClass)}" data-field="${esc(key)}"${hidden}><label>${esc(caption)}</label>${extraLabel}${blankLabel}<span class="${esc(probe.page.childrenClass)}">${inner}</span></div>`;
 }
 
 function textControl(id, value, state, key) {
@@ -82,7 +87,24 @@ function areaControl(id, value, state) {
   return `<textarea id="${id}" class="${esc(probe.textarea.controlClass)}" placeholder="${esc(FIELD.note.placeholder)}"${readonly}>${esc(value)}</textarea>${extra}`;
 }
 
+function selectInner(id, label, value, state, key) {
+  const live = probe.select.liveReadback;
+  const valueId = id.replace(/-select$/u, '-value');
+  if (state.ambiguousValue && key === 'school') {
+    return `<span class="${esc(live.selectedValueClass)}">${esc(value || '甲')}</span><span class="${esc(live.selectedValueClass)}">乙</span>`;
+  }
+  if (state.placeholderMash === 'class' && FIELD[key]) {
+    return `<span class="${esc(live.placeholderClass)}">${esc(live.placeholderPrefix + label)}</span><span class="${esc(live.selectedValueClass)}" id="${valueId}">${esc(value)}</span>`;
+  }
+  const shown = state.placeholderMash === 'text' && FIELD[key]
+    ? `${live.placeholderPrefix}${label}${value}`
+    : value;
+  return `<span id="${valueId}">${esc(shown)}</span>`;
+}
+
 function selectControl(id, value, state, key) {
+  const live = probe.select.liveReadback;
+  const label = FIELD[key]?.label || '';
   const disabled = state.selectDisabled && key === 'school' ? ' ant-select-disabled' : '';
   const selectClass = state.dropAllowClear && key === 'school'
     ? 'ant-select ant-select-enabled'
@@ -90,7 +112,11 @@ function selectControl(id, value, state, key) {
   const trigger = state.dropSearch && key === 'school' ? '' : `<input class="${esc(probe.select.triggerClass)}" type="text" value="">`;
   const extra = state.extraSelect && key === 'school'
     ? `<div class="${esc(probe.select.controlClass)}"><span></span><input class="${esc(probe.select.triggerClass)}" type="text" value=""></div>` : '';
-  return `<div class="${esc(selectClass)}" id="${id}"><span id="${id.replace(/-select$/u, '-value')}">${esc(value)}</span>${trigger}</div>${extra}`;
+  const inner = selectInner(id, label, value, state, key);
+  const faced = FIELD[key] && (state.closedSearch || state.placeholderMash === 'class')
+    ? `<div class="${esc(live.faceClass)}" role="${esc(live.faceRole)}">${inner}</div>`
+    : inner;
+  return `<div class="${esc(selectClass)}" id="${id}">${faced}${trigger}</div>${extra}`;
 }
 
 function textRow(key, value, state, id = `${key}-input`) {
@@ -105,13 +131,18 @@ function noteRow(value, state) {
 function selectRow(key, value, state) {
   if (state.degreeIsText && key === 'degree') return textRow('degree', value, state, 'degree-input');
   return row(key, FIELD[key].label, selectControl(`${key}-select`, value, state, key), state, {
-    hidden: state.hiddenSchool && key === 'school'
+    hidden: state.hiddenSchool && key === 'school',
+    wrapControl: state.wrapSchool && key === 'school'
   });
 }
 
 function majorRow(value, state) {
   if (state.majorIsSelect) return row('major', MAJOR, selectControl('major-select', value, state, 'major'), state);
-  return textRow('major', value, state);
+  return row('major', MAJOR, textControl('major-input', value, state, 'major'), state, {
+    wrapControl: state.wrapMajor,
+    extraLabel: state.extraMajorCaption || '',
+    blankLabel: state.blankMajorLabel
+  });
 }
 
 function plainText(key, label, value, id, placeholder = '') {
@@ -119,9 +150,10 @@ function plainText(key, label, value, id, placeholder = '') {
   return row(key, label, `<input id="${id}" class="${esc(probe.text.controlClass)}" type="text"${holder} value="${esc(value)}">`, {});
 }
 
-function readonlyDate(key, label, value, id, controlClass) {
+function readonlyDate(key, label, value, id, controlClass, extra = {}) {
   return row(key, label, `<input id="${id}" class="${esc(controlClass)}" type="text" readonly value="${esc(value)}">`, {}, {
-    rawLabel: label
+    rawLabel: label,
+    ...extra
   });
 }
 
@@ -167,7 +199,8 @@ function html(state) {
   const duplicateMajor = state.duplicateMajorInside ? plainText('major-copy', MAJOR, '', 'major-copy-input', FIELD.major.placeholder) : '';
   const duplicateSchool = state.duplicateAnchorSchool ? flatNeighbor('school-copy', SCHOOL, '', 'school-copy-select') : '';
   const graduation = state.dropGraduation ? '' : readonlyDate(
-    'graduation', neighbor.graduation.label, neighbor.graduation.token, 'grad-input', neighbor.graduation.controlClass
+    'graduation', neighbor.graduation.label, neighbor.graduation.token, 'grad-input', neighbor.graduation.controlClass,
+    { wrapControl: state.wrapGraduation }
   );
   const duplicateGraduation = state.duplicateGraduation
     ? readonlyDate('graduation-copy', neighbor.graduation.label, neighbor.graduation.token, 'grad-copy', neighbor.graduation.controlClass)
@@ -239,7 +272,7 @@ function paintMenu(document, select, state) {
 function wire(document, state) {
   const stats = {
     open: 0, option: 0, escape: 0, forbidden: 0, file: 0, textInput: 0, focus: 0,
-    neighborFocus: 0, checkbox: 0, radio: 0, openClass: '', triggerClass: ''
+    neighborFocus: 0, checkbox: 0, radio: 0, openClass: '', triggerClass: '', faceClass: ''
   };
   document.addEventListener('click', (event) => {
     const button = event.target.closest('button');
@@ -260,6 +293,7 @@ function wire(document, state) {
       if (select.closest('.cascader-plugins-wrap')) return;
       stats.open += 1;
       if (event.target.classList?.contains(probe.select.triggerClass)) stats.triggerClass = probe.select.triggerClass;
+      if (event.target.closest?.(`.${probe.select.liveReadback.faceClass}`)) stats.faceClass = probe.select.liveReadback.faceClass;
       select.classList.add(...classes(probe.select.openClass));
       stats.openClass = select.className;
       paintMenu(document, select, state);
@@ -271,7 +305,7 @@ function wire(document, state) {
     const select = document.querySelector('.ant-select.ant-select-open');
     if (!select) return;
     stats.option += 1;
-    const value = select.querySelector('span');
+    const value = select.querySelector('.ant-select-selection-selected-value, [id$="-value"]') || select.querySelector('span');
     if (value) value.textContent = li.textContent.trim();
     closeWidgets(document);
   });
@@ -289,8 +323,9 @@ function wire(document, state) {
   return stats;
 }
 
-function patch(window) {
+function patch(window, state = {}) {
   window.Element.prototype.getClientRects = function () {
+    if ((state.closedSearch || state.closedSearchBare) && this.classList?.contains(probe.select.triggerClass)) return [];
     for (let node = this; node?.nodeType === 1; node = node.parentElement) {
       if (node.hidden || node.style.display === 'none') return [];
     }
@@ -302,7 +337,7 @@ async function boot(state = {}) {
   const dom = new JSDOM(html(state), { url: state.url || PAGE, pretendToBeVisual: true, runScripts: 'dangerously' });
   const { window } = dom;
   const { document } = window;
-  patch(window);
+  patch(window, state);
   const stats = wire(document, state);
   window.eval(source);
   return { dom, window, document, stats, api: window.ResumeHotjobPbEduIntent };
@@ -382,6 +417,12 @@ test('source stays on the probed pb classes and does not claim support', () => {
     'cascader-plugins-wrap',
     probe.anchors.before,
     probe.anchors.after,
+    probe.select.liveReadback.selectedValueClass,
+    probe.select.liveReadback.placeholderClass,
+    probe.select.liveReadback.placeholderPrefix,
+    '.ant-select-selection, .ant-select-selector',
+    '.ant-select-selection-item',
+    '[role="combobox"]',
     ...probe.fields.map((field) => field.label)
   ]) {
     assert.match(source, new RegExp(token.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&')));
@@ -747,6 +788,9 @@ test('missing, duplicate, and drifted controls fail closed', async () => {
     [{ duplicateAnchorSchool: true }, DEGREE, FIELD.degree.valueSample],
     [{ duplicateGraduation: true }, LEVEL, FIELD.level.valueSample],
     [{ majorIsSelect: true }, MAJOR, '合成专业名称'],
+    [{ closedSearchBare: true }, SCHOOL, FIELD.school.valueSample],
+    [{ ambiguousValue: true }, SCHOOL, FIELD.school.valueSample],
+    [{ extraMajorCaption: '学历' }, MAJOR, '合成专业名称'],
     [{ degreeIsText: true }, DEGREE, FIELD.degree.valueSample],
     [{ dropRoot: true }, ADDRESS, '合成联系地址'],
     [{ elForm: true }, ADDRESS, '合成联系地址'],
@@ -777,6 +821,149 @@ test('missing, duplicate, and drifted controls fail closed', async () => {
       }
     } finally { h.dom.window.close(); }
   }
+});
+
+test('closed flat selects with a placeholder mash match the selected value and do not open', async () => {
+  const selects = probe.fields.filter((field) => field.kind === 'select');
+  const samples = Object.fromEntries(selects.map((field) => [field.key, field.valueSample]));
+  const text = await boot({
+    closedSearch: true,
+    placeholderMash: 'text',
+    wrapSchool: true,
+    ...samples
+  });
+  try {
+    const view = text.api.inspect();
+    assert.equal(view.liveSupportClaimed, false);
+    assert.equal(view.supportClaimed, false);
+    assert.equal(view.neverSave, true);
+    assert.equal(view.saved, false);
+    for (const field of selects) {
+      const rowResult = view.fields.find((item) => item.label === field.label);
+      assert.equal(rowResult.reason, 'structure_matched', field.label);
+      assert.equal(rowResult.supported, false, field.label);
+      assert.equal(rowResult.value, field.valueSample, field.label);
+      const filled = await text.api.fillField(field.label, ` ${field.valueSample} `);
+      assert.equal(filled.reason, 'preexisting_same_value', JSON.stringify(filled));
+      assert.equal(filled.before, field.valueSample);
+      assert.equal(filled.opened, false);
+      assert.equal(filled.saved, false);
+      assert.equal(filled.liveSupportClaimed, false);
+      assert.equal(filled.supportClaimed, false);
+      assert.equal(filled.softwareClickedSave, false);
+    }
+    assert.equal(text.stats.open, 0);
+    assert.equal(text.stats.option, 0);
+    assert.equal(text.stats.faceClass, '');
+    assert.equal(text.stats.forbidden, 0);
+    const live = probe.select.liveReadback;
+    assert.equal(text.document.getElementById('school-value').textContent, `${live.placeholderPrefix}${SCHOOL}${FIELD.school.valueSample}`);
+    unchanged(text.document, text.stats);
+  } finally { text.dom.window.close(); }
+
+  const classes = await boot({
+    closedSearch: true,
+    placeholderMash: 'class',
+    ...samples
+  });
+  try {
+    for (const field of selects) {
+      const filled = await classes.api.fillField(field.label, field.valueSample);
+      assert.equal(filled.reason, 'preexisting_same_value', JSON.stringify(filled));
+      assert.equal(filled.before, field.valueSample);
+      assert.equal(filled.opened, false);
+      assert.equal(filled.liveSupportClaimed, false);
+      assert.equal(filled.supportClaimed, false);
+    }
+    assert.equal(classes.stats.open, 0);
+    assert.equal(classes.stats.forbidden, 0);
+    const nation = classes.document.querySelector('#school-select .ant-select-selection-selected-value');
+    const prompt = classes.document.querySelector('#school-select .ant-select-selection__placeholder');
+    assert.equal(nation.textContent, FIELD.school.valueSample);
+    assert.equal(prompt.textContent, `${probe.select.liveReadback.placeholderPrefix}${SCHOOL}`);
+    unchanged(classes.document, classes.stats);
+  } finally { classes.dom.window.close(); }
+});
+
+test('an empty closed flat select opens from the visible face and reads the selected value', async () => {
+  const h = await boot({ closedSearch: true, placeholderMash: 'class' });
+  try {
+    const selects = probe.fields.filter((field) => field.kind === 'select');
+    for (const field of selects) {
+      const filled = await h.api.fillField(field.label, field.valueSample);
+      assert.equal(filled.ok, true, JSON.stringify(filled));
+      assert.equal(filled.reason, 'readback_matched', field.label);
+      assert.equal(filled.after, field.valueSample, field.label);
+      assert.equal(filled.before, '', field.label);
+      assert.equal(filled.opened, true, field.label);
+      assert.equal(filled.stillOpen, 0, field.label);
+      assert.equal(filled.saved, false, field.label);
+      assert.equal(filled.liveSupportClaimed, false, field.label);
+      assert.equal(filled.supportClaimed, false, field.label);
+      assert.equal(filled.neverSave, true, field.label);
+      assert.equal(filled.softwareClickedSave, false, field.label);
+    }
+    assert.equal(h.stats.open, selects.length);
+    assert.equal(h.stats.option, selects.length);
+    assert.equal(h.stats.triggerClass, '');
+    assert.equal(h.stats.faceClass, probe.select.liveReadback.faceClass);
+    assert.equal(h.stats.forbidden, 0);
+    assert.equal(h.document.querySelector('#school-select .ant-select-selection-selected-value').textContent, FIELD.school.valueSample);
+    assert.equal(
+      h.document.querySelector('#arrival-select .ant-select-selection__placeholder').textContent,
+      `${probe.select.liveReadback.placeholderPrefix}${ARRIVAL}`
+    );
+    assert.equal(h.document.getElementById('select-menu').hidden, true);
+    assert.equal(h.document.querySelectorAll('.ant-select-open').length, 0);
+    unchanged(h.document, h.stats);
+  } finally { h.dom.window.close(); }
+});
+
+test('专业名称 stays the basic text row and does not use the education value', async () => {
+  const kept = await boot({
+    wrapMajor: true,
+    wrapGraduation: true,
+    blankMajorLabel: true,
+    major: '已有专业',
+    eduMajor: '合成专业名称'
+  });
+  try {
+    const major = await kept.api.fillField(MAJOR, '合成专业名称');
+    assert.equal(major.reason, 'existing_value', JSON.stringify(major));
+    assert.equal(major.ok, false);
+    assert.equal(major.before, '已有专业');
+    assert.equal(major.opened, false);
+    assert.equal(major.liveSupportClaimed, false);
+    assert.equal(major.supportClaimed, false);
+    assert.equal(major.saved, false);
+    assert.equal(valueOf(kept.document, 'major-input'), '已有专业');
+    assert.equal(valueOf(kept.document, 'edu-major-input'), '合成专业名称');
+    assert.equal(kept.stats.focus, 0);
+    assert.equal(kept.stats.textInput, 0);
+    assert.equal(kept.stats.forbidden, 0);
+    unchanged(kept.document, kept.stats);
+  } finally { kept.dom.window.close(); }
+
+  const empty = await boot({
+    wrapGraduation: true,
+    blankMajorLabel: true,
+    eduMajor: '合成专业名称'
+  });
+  try {
+    const major = await empty.api.fillField(MAJOR, '合成专业名称');
+    assert.equal(major.ok, true, JSON.stringify(major));
+    assert.equal(major.reason, 'readback_matched');
+    assert.equal(major.after, '合成专业名称');
+    assert.equal(major.opened, false);
+    assert.equal(major.liveSupportClaimed, false);
+    assert.equal(major.supportClaimed, false);
+    assert.equal(valueOf(empty.document, 'major-input'), '合成专业名称');
+    assert.equal(valueOf(empty.document, 'edu-major-input'), '合成专业名称');
+    assert.equal(valueOf(empty.document, 'grad-input'), probe.neighbors.graduation.token);
+    assert.equal(empty.stats.neighborFocus, 0);
+    assert.equal(empty.stats.forbidden, 0);
+    unchanged(empty.document, empty.stats);
+  } finally { empty.dom.window.close(); }
 });
 
 test('a hidden page fails closed before a click or write', async () => {

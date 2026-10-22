@@ -7,7 +7,7 @@ import { SECTION_TITLES } from '../scripts/live/gth-intent-live.mjs';
 const PAGE = 'https://hr.gtht.com/resume/edit/';
 const item = '<div class="el-form-item"><label class="el-form-item__label">标题</label><div class="el-form-item__content"><input value="自我介绍"></div></div>';
 
-function boot({ cancel = 'remove', delayedItems = false } = {}) {
+function boot({ cancel = 'remove', delayedItems = false, stubXhr = false } = {}) {
   // Shell and controls mirror gth-other-skills-live.test.mjs; picker structure
   // mirrors gth-intent-census-dom.mjs / gth-work-fill.test.mjs.
   const dom = new JSDOM(`<!doctype html><body>${SECTION_TITLES.map(title =>
@@ -19,6 +19,10 @@ function boot({ cancel = 'remove', delayedItems = false } = {}) {
   const sent = [];
   window.fetch = async (url, init) => { sent.push({ url, method: init?.method || 'GET' }); return { ok: true }; };
   window.navigator.sendBeacon = url => { sent.push({ url, method: 'POST' }); return true; };
+  if (stubXhr) {
+    window.XMLHttpRequest.prototype.open = function (method, url) { this.testRequest = { method, url }; };
+    window.XMLHttpRequest.prototype.send = function () { sent.push(this.testRequest); };
+  }
   const nativeClick = window.HTMLElement.prototype.click;
   const nativeFetch = window.fetch;
   const sections = [...window.document.querySelectorAll('.r-section')];
@@ -58,6 +62,12 @@ test('full runner request allowlist permits GET plus the exact salary-unit and p
     'https://hr.gtht.com/api/resume/save.json',
     'https://hr.gtht.com/interface/photo/type/savePhoto.json',
     'https://hr.gtht.com/interface/resume/submit.json',
+    'https://hr.gtht.com/interface/resume/delete.json',
+    'https://hr.gtht.com:444/interface/photo/type/getPhotoSize.json',
+    'https://hr.gtht.com/interface/photo/type/getphotosize.json',
+    'https://hr.gtht.com/interface/photo/type/%67etPhotoSize.json',
+    'https://hr.gtht.com/interface/photo/type/getPhotoSize.json/extra',
+    'https://hr.gtht.com/interface/photo/type/getPhotoSize.json;save',
     'https://evil.test/interface/photo/type/getPhotoSize.json',
     `${PHOTO_SIZE_LOOKUP}/`, 'https://user@hr.gtht.com/interface/photo/type/getPhotoSize.json',
     'http://hr.gtht.com/interface/photo/type/getPhotoSize.json']) {
@@ -181,7 +191,7 @@ test('click allowlist admits in-panel options, date controls and 确定, and sti
     form.insertAdjacentHTML('beforeend', [
       '<div class="el-select-dropdown el-popper"><ul><li class="el-select-dropdown__item"><span>一个月内</span></li></ul></div>',
       '<div class="dialog-wrap plugin-dialog-wrap popover blue"><div class="eo-cascader-panel"><div class="eo-cascader-menu simple-tree-outer"><ul class="simple-tree-wrapper"><li class="branch"><span>大兴区</span><input type="checkbox"></li></ul></div></div><div class="pop-foot plugin-dialog-pop-foot"><a class="confirm pop-btn">确定</a><button type="submit">确定</button></div></div>',
-      '<div class="el-picker-panel"><button type="button" class="el-picker-panel__icon-btn"><i class="el-icon-d-arrow-left"></i></button><table class="el-date-table"><tr><td class="available"><span>15</span></td></tr></table><div class="el-picker-panel__footer"><button type="button">确定</button></div></div>',
+      '<div class="el-picker-panel"><div class="el-date-picker__header"><button type="button" class="el-picker-panel__icon-btn"><i class="el-icon-d-arrow-left"></i></button></div><table class="el-date-table"><tr><td class="available"><span>15</span></td></tr></table><div class="el-picker-panel__footer"><button type="button">确定</button></div></div>',
       '<div class="el-date-editor el-date-editor--month"><span class="el-input__prefix"><i class="el-input__icon el-icon-date"></i></span></div>'
     ].join(''));
     form.querySelector('.el-select-dropdown__item span').click();
@@ -238,5 +248,123 @@ test('a foreign editor and a hidden page fail before any edit click', async () =
     sections[0].insertAdjacentHTML('beforeend', '<form class="el-form sec-form"></form>');
     assert.equal((await api.open(6)).reason, 'other_section_editor_open');
     assert.equal(api.clicks().length, 0);
+  } finally { api.restore(); dom.window.close(); }
+});
+
+
+test('the shipped month trigger, header year arrows, month links and TD retry stay Never-Save', async () => {
+  const { dom, api, sections, window } = boot();
+  try {
+    await api.open(0);
+    const form = sections[0].querySelector('form');
+    // Same month markup as gth-education-live-complex and shipped basic/open-fill.
+    form.insertAdjacentHTML('afterbegin', '<div class="el-form-item"><label class="el-form-item__label">出生年月</label><div class="el-date-editor el-date-editor--month"><input type="text" readonly><span class="el-input__prefix"><i class="el-input__icon el-icon-date"></i></span></div></div>');
+    window.document.body.insertAdjacentHTML('beforeend', `<div class="el-picker-panel el-date-picker" style="display:none">
+      <div class="el-date-picker__header"><button type="button" class="el-picker-panel__icon-btn el-icon-d-arrow-left"></button><span class="el-date-picker__header-label">2024 年</span><button type="button" class="el-picker-panel__icon-btn el-icon-d-arrow-right"></button></div>
+      <table class="el-month-table"><tbody><tr>${['一月','二月','三月','四月','五月','六月','七月','八月','九月','十月','十一月','十二月'].map(text => `<td><div><a class="cell">${text}</a></div></td>`).join('')}</tr></tbody></table>
+    </div>`);
+    const panel = window.document.querySelector('.el-picker-panel');
+    let year = 2024;
+    form.querySelector('.el-icon-date').addEventListener('click', () => { panel.style.display = ''; });
+    for (const [selector, delta] of [['.el-icon-d-arrow-left', -1], ['.el-icon-d-arrow-right', 1]]) {
+      panel.querySelector(selector).addEventListener('click', () => {
+        year += delta;
+        panel.querySelector('.el-date-picker__header-label').textContent = `${year} 年`;
+      });
+    }
+    form.querySelector('.el-icon-date').click();
+    panel.querySelector('.el-icon-d-arrow-left').click();
+    panel.querySelector('.el-icon-d-arrow-right').click();
+    panel.querySelector('a.cell').click();
+    panel.querySelector('td').click();
+    assert.equal(year, 2024);
+    assert.equal(api.clicks().filter(row => row.allowed && row.kind === 'date_panel').length, 4);
+    const link = panel.querySelector('a.cell');
+    link.href = '/resume/save/';
+    assert.throws(() => link.click(), /refusing_forbidden_click/);
+    link.removeAttribute('href');
+    panel.querySelector('td').classList.add('disabled');
+    assert.throws(() => panel.querySelector('td').click(), /refusing_forbidden_click/);
+    panel.style.display = 'none';
+    assert.throws(() => panel.querySelector('.el-icon-d-arrow-left').click(), /refusing_forbidden_click/);
+    await api.cancel(0);
+    assert.equal(api.state().formCount, 0);
+  } finally { api.restore(); dom.window.close(); }
+});
+
+test('writer-owned education open and in-form radios use the current section roles', async () => {
+  const { dom, api, sections, window } = boot();
+  try {
+    sections[1].querySelector('.title_ a').remove();
+    sections[1].insertAdjacentHTML('beforeend', '<div class="sec-context"><div class="sec-detail"><a href="javascript:;"><i class="el-icon-edit-outline"></i></a></div></div>');
+    const edit = sections[1].querySelector('.sec-detail a');
+    assert.throws(() => edit.click(), /refusing_forbidden_click/);
+    assert.equal(api.activate(1).ok, true);
+    let opened = false;
+    edit.addEventListener('click', () => { opened = true; });
+    edit.querySelector('i').click();
+    assert.equal(opened, true);
+    sections[1].insertAdjacentHTML('beforeend', '<form class="el-form sec-form"><div class="el-form-item"><label class="el-form-item__label">是否统招</label><div class="el-radio-group"><label class="el-radio"><input type="radio" style="display:none" name="admission"><span class="el-radio__label">是</span></label><label class="el-radio"><input type="radio" style="display:none" name="admission"><span class="el-radio__label">否</span></label></div></div><button type="button">取消</button></form>');
+    const form = sections[1].querySelector('form');
+    form.querySelector('label.el-radio').click();
+    assert.equal(form.querySelector('input').checked, true, 'label forwards its click to the hidden native radio');
+    form.querySelector('.el-radio__label').click();
+    assert.equal(api.clicks().some(row => row.allowed && row.kind === 'radio_option'), true);
+    assert.throws(() => edit.click(), /refusing_forbidden_click/, 'cannot open a second record');
+    assert.equal(api.activate(0).reason, 'other_section_editor_open');
+    await api.cancel(1);
+    await api.open(0);
+    const basic = sections[0].querySelector('form');
+    basic.insertAdjacentHTML('afterbegin', '<div class="el-form-item"><label class="el-form-item__label">性别</label><div class="el-radio-group"><label class="el-radio"><input type="radio" style="display:none" name="gender"><span class="el-radio__label">男</span></label><label class="el-radio"><input type="radio" style="display:none" name="gender"><span class="el-radio__label">女</span></label></div></div>');
+    const female = basic.querySelectorAll('label.el-radio')[1];
+    female.click();
+    assert.equal(female.querySelector('input').checked, true);
+    female.classList.add('is-disabled');
+    assert.throws(() => female.click(), /refusing_forbidden_click/);
+    await api.cancel(0);
+    assert.equal(api.activate(-1).ok, false);
+    Object.defineProperty(window.document, 'visibilityState', { configurable: true, value: 'hidden' });
+    assert.equal(api.activate(1).reason, 'page_hidden');
+  } finally { api.restore(); dom.window.close(); }
+});
+
+test('panel lookalikes never permit navigation, submit, disabled controls or actions without an editor', async () => {
+  const { dom, api, sections, window } = boot();
+  try {
+    await api.open(6);
+    const form = sections[6].querySelector('form');
+    form.insertAdjacentHTML('beforeend', '<div class="el-picker-panel"><a class="cell">unowned cell</a><button type="button" class="el-icon-d-arrow-left"></button><div class="el-date-picker__header"><button type="submit" class="el-icon-d-arrow-right"></button></div><div class="el-picker-panel__footer"><button type="button" formaction="/resume/save">确定</button></div><button type="button" class="el-select-dropdown__item">删除</button></div>');
+    for (const node of form.querySelectorAll('.el-picker-panel a,.el-picker-panel button')) {
+      assert.throws(() => node.click(), /refusing_forbidden_click/);
+    }
+    await api.cancel(6);
+    window.document.body.insertAdjacentHTML('beforeend', '<div class="el-select-dropdown"><li class="el-select-dropdown__item">unowned option</li></div>');
+    assert.throws(() => window.document.querySelector('.el-select-dropdown__item').click(), /refusing_forbidden_click/);
+  } finally { api.restore(); dom.window.close(); }
+});
+
+
+test('page fetch, XHR and beacon hooks only pass the two exact lookup POSTs', async () => {
+  const { dom, api, window, sent } = boot({ stubXhr: true });
+  try {
+    for (const lookup of [SALARY_UNIT_LOOKUP, PHOTO_SIZE_LOOKUP]) {
+      const url = `${lookup}?cache=1`;
+      await window.fetch(url, { method: 'POST' });
+      const xhr = new window.XMLHttpRequest();
+      xhr.open('POST', url);
+      xhr.send();
+      assert.equal(window.navigator.sendBeacon(url, 'dictionary'), true);
+      for (const rejected of [`${lookup}/`, lookup.replace('hr.gtht.com', 'other.test'), '/resume/save/']) {
+        await assert.rejects(window.fetch(rejected, { method: 'POST' }), /disallowed_non_get/);
+        const blockedXhr = new window.XMLHttpRequest();
+        blockedXhr.open('POST', rejected);
+        assert.throws(() => blockedXhr.send(), /disallowed_non_get/);
+        assert.equal(window.navigator.sendBeacon(rejected, 'x'), false);
+      }
+    }
+    assert.equal(sent.length, 6, 'forbidden requests never reach any original transport');
+    assert.equal(api.requests().filter(row => row.allowed).length, 6);
+    assert.equal(api.requests().filter(row => row.blocked).length, 18);
+    assert.equal(api.requests().some(row => row.url.includes('?')), false, 'evidence strips query values');
   } finally { api.restore(); dom.window.close(); }
 });

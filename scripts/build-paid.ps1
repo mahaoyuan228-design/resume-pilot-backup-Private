@@ -11,7 +11,7 @@
 # the seed is off the list or guard-worker still top-level await-imports paid-config.
 # It also fails unless the packed tree matches tip CMS 学历 duplicate_target content,
 # region fail-closed markers, and CMS auto inject files. It fails when packed GTH
-# basic still treats unsupported or unsettled 现居住地/照片/参加工作时间 as a completed
+# basic still treats unsupported or unsettled 现居住地/照片 as a completed
 # skip. It fails when packed CMB basic still treats an unsettled requested field
 # as skipped or leaves fillAllowed true. Never Save. No live-site claim.
 # Node proof without Edge: node scripts/build-paid-smoke.mjs
@@ -472,7 +472,7 @@ foreach ($local in $cmsRequiredInject) {
   if (-not $seenInject.Contains($local)) { throw "付费包 CMS 注入文件未纳入清单：自动注入集合缺少 $local" }
 }
 
-# GTH basic fail-closed gate. Unsupported or unsettled 现居住地/照片/参加工作时间
+# GTH basic fail-closed gate. Unsupported or unsettled 现居住地/照片
 # are failed, and a requested fill is not stored as completed. executeScript of
 # gth-basic.js is a string, so the import walk above does not see it.
 $gthTipFiles = @(
@@ -532,10 +532,10 @@ Require-PackedNeedle 'src/background/gth-basic-auto.mjs' 'planGthBasicCoverage' 
 Require-PackedNeedle 'src/background/gth-basic-auto.mjs' 'sealGthJobCoverage' 'GTH'
 Require-PackedNeedle 'src/background/gth-basic-auto.mjs' 'gthRequestedFillBlocksComplete' 'GTH'
 Require-PackedNeedle 'src/background/gth-basic-auto.mjs' 'if(gthRequestedFillBlocksComplete(coveragePlan)){' 'GTH'
-Require-PackedNeedle 'src/background/gth-basic-auto.mjs' 'Unsupported or unsettled 现居住地/照片/参加工作时间 fail closed and are not a completed fill.' 'GTH'
+Require-PackedNeedle 'src/background/gth-basic-auto.mjs' 'Unsupported or unsettled 现居住地/照片 fail closed and are not a completed fill.' 'GTH'
 Require-PackedNeedle 'src/background/gth-basic-auto.mjs' "'src/content/gth-basic.js'" 'GTH'
 Require-PackedNeedle 'src/popup/gth-basic-actions.js' 'GTH_COVERAGE_FAIL_CLOSED_REASONS' 'GTH'
-Require-PackedNeedle 'src/popup/gth-basic-actions.js' '现居住地、照片或参加工作时间未能填写（控件尚未支持，或地区资料未定）。本次不记为完成，未保存、未提交。' 'GTH'
+Require-PackedNeedle 'src/popup/gth-basic-actions.js' '现居住地或照片未能填写（控件尚未支持，或地区资料未定）。本次不记为完成，未保存、未提交。' 'GTH'
 Require-PackedNeedle 'src/content/gth-intent.js' "message?.type !== 'GTH_INTENT_FILL'" 'GTH'
 Require-PackedNeedle 'src/content/gth-intent.js' "kind:'unsupported'" 'GTH'
 Require-PackedNeedle 'src/content/gth-intent.js' "'control_not_supported'" 'GTH'
@@ -677,7 +677,7 @@ $readme = @"
 - guard-worker.mjs static-imports the generated paid-config.mjs. Top-level await import fails Edge 155 SW registration.
 - src/profile/cms-basic-seed-from-education.mjs is on the product list and is copied. cms-basic-auto imports it.
 - Packed CMS tip files match this checkout (学历 generated-id suffix, region fail-closed, CMS auto inject list). A 20261018 tree fails this gate.
-- Packed GTH basic files match this checkout. Unsupported or unsettled 现居住地/照片/参加工作时间 are failed, and that fill is not stored as completed. A tree that still marks those rows skipped fails this gate.
+- Packed GTH basic files match this checkout. Unsupported or unsettled 现居住地/照片 are failed, and that fill is not stored as completed. A tree that still marks those rows skipped fails this gate.
 - Packed CMB basic files match this checkout. An unsettled requested field stays failed, with requestedFillBlocked and fillAllowed false. A tree that still skips those fields or sets fillAllowed true fails this gate.
 - Source src/license/paid-config.mjs stays the fail-closed internal placeholder. This folder's copy is generated.
 - Never Save. This package does not claim a live recruiting site is supported.

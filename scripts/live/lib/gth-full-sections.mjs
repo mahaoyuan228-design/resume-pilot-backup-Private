@@ -13,6 +13,12 @@ import {
   liveFillRequestFor
 } from '../gth-intent-live.mjs';
 import { acceptGthMonthInPage } from '../../../src/background/gth-open-fills.mjs';
+import {
+  ALL_QUESTIONS as EDUCATION_QUESTIONS,
+  buildFieldRows as buildEducationFieldRows,
+  expectedReadback as expectedEducationReadback,
+  liveFillRequest as educationLiveFillRequest
+} from '../gth-education-live.mjs';
 
 const BASIC = Object.freeze([
   ['姓名', 'fullName'], ['性别', 'gender'], ['手机号码', 'phone'],
@@ -35,7 +41,7 @@ const WORK = Object.freeze([
 
 export const SECTIONS = Object.freeze([
   { id: 'basic', section: '基本信息', sectionIndex: 0, globalName: 'ResumeGthBasic', questions: BASIC.map(([q]) => q) },
-  { id: 'education', section: '教育经历', sectionIndex: 1, globalName: 'ResumeGthEducationOpen', questions: EDUCATION.map(([q]) => q) },
+  { id: 'education', section: '教育经历', sectionIndex: 1, globalName: 'ResumeGthEducationTextTrial', method: 'fullTrial', questions: EDUCATION_QUESTIONS },
   { id: 'work', section: '工作经验', sectionIndex: 3, globalName: 'ResumeGthWorkOpen', questions: WORK.map(([q]) => q) },
   ...OTHER_SKILLS_SECTIONS,
   ...INTENT_SECTIONS
@@ -44,7 +50,7 @@ export const SECTIONS = Object.freeze([
 export const LIVE_FILES = Object.freeze([
   'src/content/gth-open-fill.js',
   'src/content/gth-basic.js',
-  'src/content/gth-education-fill.js',
+  'src/content/gth-education.js',
   'src/content/gth-work-fill.js',
   'src/content/gth-skills.js',
   'src/content/gth-other.js',
@@ -53,18 +59,19 @@ export const LIVE_FILES = Object.freeze([
 
 // Values are the existing tests/gth-basic-auto.test.mjs fixture, with its
 // explicitly selected degree moved to index zero for this standalone trial.
+// workStart reuses the user's 2026-10-22 Never-Save probe input.
 const BASIC_PROFILE = Object.freeze({
   fullName: 'Synthetic Customer B', gender: '男', phone: '13800138000',
-  birthDate: '1998-06', email: 'synthetic@example.com', education: [{ degree: '硕士' }],
-  confirmedFields: ['fullName', 'gender', 'phone', 'birthDate', 'email', 'education.0.degree']
+  birthDate: '1998-06', workStart: '2022-01', email: 'synthetic@example.com', education: [{ degree: '硕士' }],
+  confirmedFields: ['fullName', 'gender', 'phone', 'birthDate', 'workStart', 'email', 'education.0.degree']
 });
-// Existing tests/gth-open-sections.test.mjs fixtures, including its month pair
-// and category answer. These fixtures do not claim any live option support.
-const EDUCATION_ROW = Object.freeze({
-  school: '示例大学', major: '计算机', campusActivities: '社团', gradeRank: '1/40',
-  majorDescription: '系统', gpa: '3.8', schoolLocation: '上海', degree: '本科',
-  unifiedAdmissions: '是', startDate: '2025-03', endDate: '2026-07',
-  majorCategory: '经济学||金融学'
+// Reuse the current standalone education runner's request schema and plain
+// facts, plus its existing complex-control fixture values. Synthetic trial
+// facts do not establish live option support and are always discarded.
+const EDUCATION_ENV = Object.freeze({
+  FIELDS: EDUCATION_QUESTIONS.join(','),
+  DEGREE: '本科', UNIFIED_ADMISSIONS: '是',
+  START_DATE: '2020-09', END_DATE: '2024-06', MAJOR_CATEGORY: '金融学'
 });
 // Existing tests/gth-work-fill.test.mjs ROW, with the requested 下属人数=5.
 // Salary is deliberately absent: the shipped writer marks its shape unsupported.
@@ -80,6 +87,11 @@ function rowProfile(name, row) {
 }
 
 export function requestsFor(section) {
+  if (section.id === 'education') {
+    return [{ questions: [...section.questions], request: {
+      ...educationLiveFillRequest(EDUCATION_ENV), requestId: 'live-full-education-0001'
+    } }];
+  }
   if (section.id === 'intent') {
     // Reuse the standalone runner's per-field trials: later intent answers run
     // even if a cascader aborts. The other product writers have no field filter.
@@ -93,8 +105,8 @@ export function requestsFor(section) {
   if (section.id === 'basic') {
     profile = { ...BASIC_PROFILE, education: [{ degree: '硕士' }], confirmedFields: [...BASIC_PROFILE.confirmedFields] };
     extra.educationIndex = 0;
-  } else if (section.id === 'education' || section.id === 'work') {
-    profile = rowProfile(section.id === 'education' ? 'education' : 'experience', section.id === 'education' ? EDUCATION_ROW : WORK_ROW);
+  } else if (section.id === 'work') {
+    profile = rowProfile('experience', WORK_ROW);
     extra.profileIndex = 0;
   }
   if (!profile) throw new Error('unknown_section');
@@ -140,10 +152,11 @@ export function chromeShimExpression() {
 }
 
 function expectedFor(section) {
+  if (section.id === 'education') return expectedEducationReadback(EDUCATION_ENV);
   if (section.id === 'intent') return expectedReadback();
   if (section.id === 'skills' || section.id === 'other') return expectedAnswers();
   const pairs = section.id === 'basic' ? BASIC : section.id === 'education' ? EDUCATION : WORK;
-  const values = section.id === 'basic' ? { ...BASIC_PROFILE, degree: '硕士' } : section.id === 'education' ? EDUCATION_ROW : WORK_ROW;
+  const values = section.id === 'basic' ? { ...BASIC_PROFILE, degree: '硕士' } : WORK_ROW;
   const expected = Object.fromEntries(pairs.filter(([, key]) => typeof values[key] === 'string')
     .map(([q, key]) => [q, values[key].includes('||') ? values[key].split('||').at(-1) : values[key]]));
   if (section.id !== 'basic') expected[section.id === 'work' ? '任职时间' : '在校时间'] = `${values.startDate} | ${values.endDate}`;
@@ -197,6 +210,25 @@ export function buildFieldRows(section, fills = [], read = {}) {
     }
   }
   const readback = Array.isArray(read) ? read : read?.readback || [];
+  if (section.id === 'education') {
+    const rows = buildEducationFieldRows({
+      questions: section.questions, fillQuestions: section.questions,
+      fillFields: results.flatMap(result => result.fields || []),
+      readback, expected: expectedFor(section),
+      trialReason: results.find(result => result.reason)?.reason
+    });
+    const dates = rows.find(row => row.q === '在校时间');
+    if (dates) {
+      const observed = readback.find(row => row?.q === dates.q);
+      const months = observed?.values || dates.value?.split(' 至 ') || [];
+      dates.startMonth = months[0] || null;
+      dates.endMonth = months[1] || null;
+    }
+    for (const q of read?.extraLabels || []) {
+      if (q && !rows.some(row => row.q === q)) rows.push({ q, status: 'failed', reason: 'control_not_supported', value: null });
+    }
+    return applyDiagnostics(section, rows, fills, read, readback);
+  }
   if (section.id === 'intent') {
     // Later per-field trials also include missing/not_run placeholders for other
     // questions. Pick the row belonging to that trial's one requested answer.

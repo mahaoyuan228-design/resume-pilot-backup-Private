@@ -23,10 +23,10 @@ function summary(job) {
     fields:job?.fields||[],counts,reason:job?.reason||null,activeField:job?.activeField||null,
     selectorStep:job?.selectorStep||null,completedFields:job?.completedFields||[],writeStarted:job?.writeStarted===true,
     pending:['queued','running','unknown'].includes(state),message:state==='completed'
-      ?`基本信息共9题：可填写 ${counts.operable??6} 题，账户只读 ${counts.siteReadOnly||0} 题，3题尚未实现。软件新填 ${counts.newlyFilled||0}，已执行重填 ${counts.reapplied||0}，原有同值 ${counts.originalSame||0}。保存和刷新尚未验收。`
+      ?`基本信息共9题：可填写 ${counts.operable??7} 题，账户只读 ${counts.siteReadOnly||0} 题，2题尚未实现。软件新填 ${counts.newlyFilled||0}，已执行重填 ${counts.reapplied||0}，原有同值 ${counts.originalSame||0}。保存和刷新尚未验收。`
       :state==='stopped_before_write'?'基本信息后台任务已在写入前停止。'
         :state==='unknown'&&GTH_COVERAGE_FAIL_CLOSED_REASONS.includes(job?.reason)
-          ?'现居住地、照片或参加工作时间未能填写（控件尚未支持，或地区资料未定）。本次不记为完成，未保存、未提交。'
+          ?'现居住地或照片未能填写（控件尚未支持，或地区资料未定）。本次不记为完成，未保存、未提交。'
           :state==='unknown'?'基本信息结果仍不明确，本页保留待核对状态，未重复填写。'
           :'基本信息已交给后台继续执行，关闭弹窗也不会中断；不保存、不投递。'};
 }

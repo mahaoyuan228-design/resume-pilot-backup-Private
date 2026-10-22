@@ -4,7 +4,7 @@
 // Fails if the seed path is missing from the paid pack list, if guard-worker
 // still top-level await-imports ./paid-config.mjs, if the packed tree lacks
 // tip CMS 学历 / region fail-closed / CMS auto inject files, if packed GTH
-// basic still treats unsupported or unsettled 现居住地/照片/参加工作时间 as a completed skip,
+// basic still treats unsupported or unsettled 现居住地/照片 as a completed skip,
 // or if packed CMB basic still treats an unsettled requested field as skipped
 // or leaves fillAllowed true.
 import fs from 'node:fs';

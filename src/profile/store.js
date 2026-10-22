@@ -51,6 +51,10 @@ export function normalizeProfile(input) {
   for (const key of ['fullName', 'identityNumber', 'gender', 'height', 'selfEvaluation', 'birthDate', 'email', 'phone', 'currentCity', 'expectedSalary', 'availableDate', 'availabilityNote']) {
     profile[key] = text(source[key], key === 'selfEvaluation' ? 4000 : key === 'availabilityNote' ? 500 : 200);
   }
+  // Optional confirmed month fact used by GTH 参加工作时间. Preserve imported
+  // explicit data without deriving it from any education or experience dates.
+  const workStart = text(source.workStart, 200);
+  if (workStart) profile.workStart = workStart;
   profile.desiredRoles = strings(source.desiredRoles);
   profile.desiredCities = strings(source.desiredCities);
   profile.education = records(source.education, [
@@ -108,7 +112,7 @@ export function normalizeProfile(input) {
 // Dotted paths for nonempty facts; array members use their current index.
 export function listFilledPaths(profile) {
   const result = [];
-  for (const key of ['fullName', 'identityNumber', 'gender', 'height', 'selfEvaluation', 'birthDate', 'email', 'phone', 'currentCity', 'expectedSalary', 'availableDate', 'availabilityNote']) {
+  for (const key of ['fullName', 'identityNumber', 'gender', 'height', 'selfEvaluation', 'birthDate', 'email', 'phone', 'currentCity', 'expectedSalary', 'availableDate', 'availabilityNote', 'workStart']) {
     if (profile[key]) result.push(key);
   }
   for (const key of ['desiredRoles', 'desiredCities']) {

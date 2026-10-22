@@ -5,7 +5,7 @@
  * checks fail closed when the seed drops off the paid list, when guard-worker
  * goes back to a top-level await import("./paid-config.mjs"), when the packed
  * tree is still an Oct-18-era CMS copy, when packed GTH basic still records
- * unsupported 现居住地/照片/参加工作时间 as skipped and can store that fill as
+ * unsupported 现居住地/照片 as skipped and can store that fill as
  * completed, or when packed CMB basic still treats an unsettled requested field
  * as skipped or leaves fillAllowed true. The smoke imports the built output.
  */

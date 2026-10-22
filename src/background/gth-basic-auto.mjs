@@ -2,7 +2,7 @@
 // Fill-without-save optional. Never clicks Save/Cancel/submit.
 // Fill ok is true only after a settled verified readback. A reported
 // Save/submit/delete click, a status that is not verified, or a requested
-// 现居住地/照片/参加工作时间 that is unsupported or region-unsettled fails closed.
+// 现居住地/照片 that is unsupported or region-unsettled fails closed.
 // Those rows are failed, not a skipped success, and the job is not completed.
 import {captureProfileBinding,assertProfileBinding,canonicalProfileHash,commitBoundJob,
   dispatchBoundSource,withProfileBinding,reserveBoundJob} from '../profile/profile-lifecycle.js';
@@ -33,7 +33,7 @@ const clickFlags=response=>({
 const anySiteClick=flags=>flags.softwareClickedSave||flags.softwareClickedSubmit||flags.softwareClickedDelete;
 const projectFields=rows=>Array.isArray(rows)?rows.map(({question,path,status,reason,readOnlyState})=>({question,path,status,reason,
   ...(reason==='site_readonly'?{readOnlyState}:{})})):undefined;
-const pathFor=(key,index)=>key==='degree'?`education.${index}.degree`:['photo','workStart'].includes(key)?null:key;
+const pathFor=(key,index)=>key==='degree'?`education.${index}.degree`:key==='photo'?null:key;
 
 function probePageFunc(expectedTitles){
   const PAGE='https://hr.gtht.com/resume/edit/';
@@ -74,10 +74,12 @@ function probePageFunc(expectedTitles){
 
 function validBasicResponse(response,educationIndex){
   const rows=response?.fields;
+  // The legacy scope name remains wire-compatible; BASIC_FIELDS now requires
+  // seven results, including explicit 参加工作时间 month evidence.
   return response?.ok===true&&response.scope==='gth_basic_six'&&response.complete===false
     &&response.editorLeftOpen===true&&response.savedOnSite===null&&response.submitted===null
     &&response.softwareClickedSave===false&&response.softwareClickedSubmit===false&&response.softwareClickedDelete===false
-    &&Array.isArray(rows)&&rows.length===6&&BASIC_FIELDS.every(([question,key])=>{
+    &&Array.isArray(rows)&&rows.length===BASIC_FIELDS.length&&BASIC_FIELDS.every(([question,key])=>{
       const matches=rows.filter(row=>row?.question===question&&row.path===pathFor(key,educationIndex));
       return matches.length===1&&validRow(matches[0],key);
     })&&response.supportedComplete===rows.every(row=>row.status==='verified')
@@ -186,7 +188,7 @@ export function createGthBasicAutoRunner({api=globalThis.chrome,verifyBeforeFill
         try{
           const candidate=basicCandidate(raw,educationIndex);
           return {educationIndex,hasDegree:!!candidate.profile?.education?.[educationIndex]?.degree,
-            confirmedBasics:['fullName','gender','phone','birthDate','email'].filter(key=>candidate.profile?.confirmedFields?.includes(key))};
+            confirmedBasics:['fullName','gender','phone','birthDate','email','workStart'].filter(key=>candidate.profile?.confirmedFields?.includes(key))};
         }catch(error){return {educationIndex,error:safe(error)};}
       });
       return {
@@ -200,7 +202,7 @@ export function createGthBasicAutoRunner({api=globalThis.chrome,verifyBeforeFill
         saveAllowedByPolicy:evaluateGthSavePolicy({fromAutoPath:true}).saveAllowedByPolicy,
         savePolicy:evaluateGthSavePolicy({fromAutoPath:true}),
         coverageReadiness,
-        note:'Auto path does not Save/submit. Unsupported or unsettled 现居住地/照片/参加工作时间 fail closed and are not a completed fill.'
+        note:'Auto path does not Save/submit. Unsupported or unsettled 现居住地/照片 fail closed and are not a completed fill.'
       };
     }catch(error){
       return {
@@ -312,7 +314,7 @@ export function createGthBasicAutoRunner({api=globalThis.chrome,verifyBeforeFill
         reapplied:fields.filter(row=>row.reason==='readback_reapplied').length,
         originalSame:fields.filter(row=>row.reason==='preexisting_same_value').length,
         siteReadOnly:fields.filter(row=>row.reason==='site_readonly').length,
-        operable:fields.filter(row=>row.reason!=='site_readonly').length,unsupported:3}};
+        operable:fields.filter(row=>row.reason!=='site_readonly').length,unsupported:coverage.filter(row=>row.supported===false).length}};
     await commitBoundJob(api.storage.local,key,job,binding,lifecycleOptions);
     await withProfileBinding(api.storage.local,binding,()=>api.storage.local.remove(pendingKey(tab.id)),lifecycleOptions);
     return {job,responseSummary:{ok:true,editorLeftOpen:true,fieldCount:fields.length,supportedComplete:job.supportedComplete,

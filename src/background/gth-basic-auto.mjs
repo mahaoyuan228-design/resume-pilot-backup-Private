@@ -6,8 +6,8 @@
 // Those rows are failed, not a skipped success, and the job is not completed.
 import {captureProfileBinding,assertProfileBinding,canonicalProfileHash,commitBoundJob,
   dispatchBoundSource,withProfileBinding,reserveBoundJob} from '../profile/profile-lifecycle.js';
-import {BASIC_PAGE,BASIC_KIND,BASIC_FIELDS,basicCandidate,basicCoverage,basicJobKey,
-  planGthBasicCoverage,sealGthJobCoverage,gthRequestedFillBlocksComplete} from './basic-task-runner.mjs';
+import {BASIC_PAGE,BASIC_KIND,basicCandidate,basicCoverage,basicJobKey,
+  planGthBasicCoverage,sealGthJobCoverage,gthRequestedFillBlocksComplete,validResponse} from './basic-task-runner.mjs';
 import {evaluateGthSavePolicy,assertAutoNeverAttemptedSave} from './gth-save-policy.mjs';
 
 const PAGE=BASIC_PAGE,ORIGIN='https://hr.gtht.com';
@@ -16,15 +16,6 @@ const pendingKey=tabId=>`resumePendingFillReview:${tabId}`;
 const fail=reason=>{throw Error(reason);};
 const safe=error=>{const value=typeof error==='string'?error:(error?.message||'');return typeof value==='string'&&/^[a-z0-9_]{2,100}$/u.test(value)?value:'gth_basic_auto_failed';};
 const sleep=ms=>new Promise(done=>setTimeout(done,ms));
-const stable=value=>JSON.stringify(value,(_key,item)=>item&&typeof item==='object'&&!Array.isArray(item)
-  ?Object.fromEntries(Object.keys(item).sort().map(key=>[key,item[key]])):item);
-const verified=['readback_matched','readback_reapplied','preexisting_same_value'];
-const skipped=['missing_profile_value','profile_fact_unconfirmed','invalid_profile_value','existing_value'];
-const readOnlyStates=['same','different','empty','source_unavailable'];
-const isReadOnly=(row,key)=>['phone','email'].includes(key)&&row?.status==='skipped'
-  &&row.reason==='site_readonly'&&readOnlyStates.includes(row.readOnlyState);
-const validRow=(row,key)=>row&&(row.status==='verified'?verified.includes(row.reason)
-  :row.status==='skipped'&&skipped.includes(row.reason)||isReadOnly(row,key));
 const clickFlags=response=>({
   softwareClickedSave:response?.softwareClickedSave===true,
   softwareClickedSubmit:response?.softwareClickedSubmit===true,
@@ -33,7 +24,6 @@ const clickFlags=response=>({
 const anySiteClick=flags=>flags.softwareClickedSave||flags.softwareClickedSubmit||flags.softwareClickedDelete;
 const projectFields=rows=>Array.isArray(rows)?rows.map(({question,path,status,reason,readOnlyState})=>({question,path,status,reason,
   ...(reason==='site_readonly'?{readOnlyState}:{})})):undefined;
-const pathFor=(key,index)=>key==='degree'?`education.${index}.degree`:key==='photo'?null:key;
 
 function probePageFunc(expectedTitles){
   const PAGE='https://hr.gtht.com/resume/edit/';
@@ -73,20 +63,8 @@ function probePageFunc(expectedTitles){
 }
 
 function validBasicResponse(response,educationIndex){
-  const rows=response?.fields;
-  // The legacy scope name remains wire-compatible; BASIC_FIELDS now requires
-  // seven results, including explicit 参加工作时间 month evidence.
-  return response?.ok===true&&response.scope==='gth_basic_six'&&response.complete===false
-    &&response.editorLeftOpen===true&&response.savedOnSite===null&&response.submitted===null
-    &&response.softwareClickedSave===false&&response.softwareClickedSubmit===false&&response.softwareClickedDelete===false
-    &&Array.isArray(rows)&&rows.length===BASIC_FIELDS.length&&BASIC_FIELDS.every(([question,key])=>{
-      const matches=rows.filter(row=>row?.question===question&&row.path===pathFor(key,educationIndex));
-      return matches.length===1&&validRow(matches[0],key);
-    })&&response.supportedComplete===rows.every(row=>row.status==='verified')
-    &&response.operableComplete===rows.every(row=>row.status==='verified'
-      ||isReadOnly(row,BASIC_FIELDS.find(([question])=>question===row.question)?.[1]))
-    &&response.writeStarted===rows.some(row=>['readback_matched','readback_reapplied'].includes(row.reason))
-    &&Array.isArray(response.coverage)&&stable(response.coverage)===stable(basicCoverage(response,educationIndex));
+  // Shared with the popup runner, including an optional 现居住地 row.
+  return validResponse(response,educationIndex);
 }
 
 export function createGthBasicAutoRunner({api=globalThis.chrome,verifyBeforeFill=null,timeoutMs=90000,lifecycleOptions={}}={}){

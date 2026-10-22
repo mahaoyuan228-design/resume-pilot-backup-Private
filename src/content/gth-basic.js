@@ -1,7 +1,8 @@
-// Seven understood GTH basic facts, with explicit coverage for all nine questions.
-// Account-owned phone/email are read-only; never follow their account links.
-// City and photo are unsupported. A requested fill records
-// them as failed, not as a skipped success. Never save or submit.
+// GTH basic facts. Account-owned phone/email are read-only; never follow their account links.
+// 现居住地 follows the 2026-10-23 probe: cascader-wrap, plugin-dialog, eo-cascader-menu.
+// Province branch click plus 确定 is pending live Never-Save acceptance.
+// liveSupportClaimed stays false. Photo stays unsupported and a requested
+// photo fill is failed, not a skipped success. Never save, submit, deliver, or delete.
 // Highest qualification uses an explicitly selected education.N.degree fact;
 // the profile has no top-level highest-qualification field to infer from.
 (() => {
@@ -14,12 +15,13 @@
     {key:'phone',question:'手机号码',kind:'text'},
     {key:'birthDate',question:'出生年月',kind:'month'},
     {key:'email',question:'电子邮件',kind:'text'},
+    {key:'currentCity',question:'现居住地',kind:'eoCascader'},
     {key:'degree',question:'最高学历',kind:'select'},
     {key:'workStart',question:'参加工作时间',kind:'month'}];
   const COVERAGE = [FIELDS[0],FIELDS[1],FIELDS[2],FIELDS[3],FIELDS[4],
-    {key:'currentCity',question:'现居住地',kind:'unsupported'},FIELDS[5],
+    FIELDS[5],FIELDS[6],
     {key:'photo',question:'照片',kind:'unsupported'},
-    FIELDS[6]];
+    FIELDS[7]];
   const norm = value => String(value ?? '').replace(/[\s\u00a0]+/gu,' ').trim();
   const pause = ms => new Promise(resolve => setTimeout(resolve,ms));
   const visible = node => !!node?.getClientRects().length
@@ -96,6 +98,40 @@
   }
   function ownLabel(item){const labels=[...item.querySelectorAll('.el-form-item__label')]
     .filter(node=>node.closest('.el-form-item')===item);return labels.length===1?norm(labels[0].textContent):'';}
+  // Probe DOM, not an Element cascader widget: content root is cascader-wrap,
+  // the trigger is .input-l.pointer, and the menu opens in plugin-dialog.
+  // A drifted shell fails closed. Province options are li.branch.has-child > span[uid].
+  function residenceTarget(item){
+    const wraps=[...item.querySelectorAll(':scope > .el-form-item__content.cascader-wrap')];
+    if(wraps.length!==1)stop('basic_residence_structure_changed');
+    const wrap=wraps[0];
+    const labels=[...item.querySelectorAll('.el-form-item__label')].filter(node=>node.closest('.el-form-item')===item);
+    const labelFor=labels.length===1?labels[0].getAttribute('for'):'';
+    if(labelFor&&labelFor!=='resume_residence_area')stop('basic_residence_structure_changed');
+    if(wrap.querySelector('.el-select,.el-date-editor'))stop('basic_residence_structure_changed');
+    const triggers=[...wrap.querySelectorAll(':scope > .input-l.pointer')].filter(visible);
+    const popovers=[...wrap.querySelectorAll(':scope > .dialog-wrap.plugin-dialog-wrap.popover')];
+    if(triggers.length!==1||popovers.length!==1||!popovers[0].classList.contains('blue'))
+      stop('basic_residence_structure_changed');
+    const trigger=triggers[0],popover=popovers[0];
+    const inputs=[...trigger.querySelectorAll('input.el-input__inner')]
+      .filter(node=>!popover.contains(node)&&visible(node));
+    const search=[...popover.querySelectorAll('input.search-input')];
+    const panels=[...popover.querySelectorAll(':scope > .eo-cascader-panel')];
+    const menus=[...popover.querySelectorAll(':scope > .eo-cascader-panel > .eo-cascader-menu.simple-tree-outer')];
+    const selectedLists=[...popover.querySelectorAll('.selected-view-data')];
+    const confirms=[...popover.querySelectorAll('a.confirm.pop-btn, a.pop-btn.confirm')]
+      .filter(node=>norm(node.textContent)==='确定');
+    const cancels=[...popover.querySelectorAll('a.cancel.pop-btn, a.pop-btn.cancel')]
+      .filter(node=>norm(node.textContent)==='取消');
+    if(inputs.length!==1||!(inputs[0] instanceof HTMLInputElement)||inputs[0].type!=='text'
+      ||!inputs[0].readOnly||inputs[0].disabled||!trigger.contains(inputs[0])
+      ||search.length!==1||search[0].getAttribute('placeholder')!=='请输入关键字'
+      ||panels.length!==1||menus.length<1||menus.length>2||selectedLists.length!==1
+      ||confirms.length!==1||cancels.length!==1)
+      stop('basic_residence_structure_changed');
+    return {item,controls:[inputs[0]],control:inputs[0],trigger,popover,read:()=>inputs[0].value};
+  }
   function target(form,field){
     const items=[...form.querySelectorAll('.el-form-item')].filter(item=>ownLabel(item)===field.question);
     if(items.length!==1)stop('basic_target_not_unique');
@@ -132,9 +168,10 @@
       const componentGroup=!!group&&item.contains(group)&&controls.every(node=>node.closest('.el-radio-group')===group);
       if(options.length!==2||new Set(options.map(option=>option.text)).size!==2||!nativeGroup&&!componentGroup)
         stop('basic_gender_structure_changed');
-      return {item,controls,options,read(){const checked=options.filter(option=>option.control.checked);
+        return {item,controls,options,read(){const checked=options.filter(option=>option.control.checked);
         if(checked.length>1)stop('basic_gender_structure_changed');return checked[0]?.text || '';}};
     }
+    if(field.kind==='eoCascader')return residenceTarget(item);
     const controls=[...item.querySelectorAll('input,textarea,select')]
       .filter(node=>node.closest('.el-form-item')===item&&visible(node));
     const control=controls[0];
@@ -193,6 +230,84 @@
         :!confirmed.has(path)?'profile_fact_unconfirmed':field.kind==='month'&&!value?'invalid_profile_value':field.key==='gender'&&!['男','女'].includes(value)
           ?'invalid_profile_value':null}];
     }));
+  }
+  const inertHref=node=>{const href=node?.getAttribute('href');
+    return !href||/^(#|javascript:(?:;|void\(0\)))$/iu.test(href);};
+  function residenceChips(popup){
+    const lists=[...popup.querySelectorAll('.selected-view-data')].filter(node=>popup.contains(node));
+    if(lists.length!==1)stop('basic_residence_structure_changed');
+    return [...lists[0].querySelectorAll(':scope > li')].map(li=>{
+      const textNode=[...li.children].find(node=>node.tagName==='P');
+      return {li,uid:li.getAttribute('uid')||'',text:norm(textNode?textNode.textContent:li.textContent)};
+    });
+  }
+  function residenceColumns(popup){
+    return [...popup.querySelectorAll(':scope > .eo-cascader-panel > .eo-cascader-menu.simple-tree-outer')]
+      .filter(node=>visible(node)&&!node.closest('.search-leaves-outer,.dialog-search-wrap'));
+  }
+  async function closeResidence(selected,popup){
+    if(!popup||!visible(popup)||location.href!==PAGE||document.visibilityState!=='visible')return;
+    const cancels=[...popup.querySelectorAll('a.cancel.pop-btn, a.pop-btn.cancel')]
+      .filter(node=>visible(node)&&popup.contains(node)&&norm(node.textContent)==='取消'&&inertHref(node)&&enabled(node));
+    if(cancels.length===1)await boundAction(()=>{if(!cancels[0].isConnected||!popup.contains(cancels[0]))stop('profile_action_target_changed');
+      return cancels[0].click();});
+    else{
+      await boundAction(()=>{if(!selected.control?.isConnected)stop('profile_action_target_changed');
+        return selected.control.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',code:'Escape',keyCode:27,which:27,bubbles:true}));});
+      await boundAction(()=>{if(!selected.control?.isConnected)stop('profile_action_target_changed');return selected.control.blur();});
+    }
+    await pause(80);
+  }
+  // Click one province branch (span[uid]), bind the selected-view uid, then 确定.
+  // A foreign or ambiguous chip never confirms. Dismissal is popover 取消 or Escape.
+  async function fillResidence(selected,answer,midGuard,markWrite){
+    let popup,chosen=false;
+    try{
+      step('residence_open');
+      if(menus().length)stop('basic_other_menu_open');
+      midGuard();
+      await boundAction(()=>{if(!selected.trigger?.isConnected)stop('profile_action_target_changed');return selected.trigger.click();});
+      popup=await waitFor(()=>{midGuard();const open=menus();if(open.length>1)stop('basic_menu_not_unique');
+        if(!open.length)return null;
+        if(open[0]!==selected.popover||!selected.item.contains(open[0]))stop('basic_residence_structure_changed');
+        return open[0];});
+      step('residence_option_lookup');midGuard();
+      const columns=residenceColumns(popup);
+      if(columns.length<1||columns.length>2)stop('basic_residence_structure_changed');
+      const wanted=norm(answer.value);
+      const rows=[...columns[0].querySelectorAll(':scope > .simple-tree-wrapper > li.branch.has-child')].filter(visible);
+      const matches=rows.filter(row=>{const span=row.querySelector(':scope > span[uid]');
+        return !!span&&norm(span.textContent)===wanted&&span.getAttribute('uid');});
+      if(matches.length!==1)stop(matches.length?'basic_residence_option_ambiguous':'basic_residence_option_missing');
+      const choice=matches[0],span=choice.querySelector(':scope > span[uid]');
+      const uid=span.getAttribute('uid'),text=norm(span.textContent);
+      if(!uid||!text||!enabled(choice)||!enabled(span))stop('basic_residence_option_disabled');
+      const matchedChip=()=>{const chips=residenceChips(popup);
+        if(chips.length>1)stop('basic_residence_selection_unknown');
+        return chips.length===1&&chips[0].uid===uid&&chips[0].text===text?chips[0]:null;};
+      if(!matchedChip()){
+        step('residence_option_click');midGuard();markWrite();
+        await boundAction(()=>{if(!span.isConnected||!popup.contains(span))stop('profile_action_target_changed');return span.click();});
+        await waitFor(()=>{midGuard();const chips=residenceChips(popup);
+          if(chips.length>1)stop('basic_residence_selection_unknown');
+          if(chips.length===1&&chips[0].text===text&&chips[0].uid&&chips[0].uid!==uid)
+            stop('basic_residence_selection_unknown');
+          return chips.length===1&&chips[0].uid===uid&&chips[0].text===text?chips[0]:null;});
+      }
+      step('residence_confirm');midGuard();
+      if(!matchedChip())stop('basic_residence_selection_unknown');
+      const confirms=[...popup.querySelectorAll('a.confirm.pop-btn, a.pop-btn.confirm')]
+        .filter(node=>visible(node)&&popup.contains(node)&&norm(node.textContent)==='确定'&&inertHref(node)&&enabled(node));
+      if(confirms.length!==1)stop('basic_residence_confirm_unknown');
+      markWrite();
+      await boundAction(()=>{if(!confirms[0].isConnected||!popup.contains(confirms[0])||!visible(popup))
+        stop('profile_action_target_changed');return confirms[0].click();});
+      step('residence_close');
+      await waitFor(()=>!visible(popup));
+      chosen=true;
+    }finally{
+      if(!chosen)await closeResidence(selected,popup);
+    }
   }
   async function trial(request){
     // This module is shared by the internal trial and the paid package. The
@@ -379,6 +494,8 @@
               &&menus().length===1&&menus()[0]===popup){await boundAction(()=>{if(!(selected.control)?.isConnected)stop('profile_action_target_changed');return selected.control.dispatchEvent(new KeyboardEvent('keydown',
                 {key:'Escape',code:'Escape',keyCode:27,which:27,bubbles:true}));});await boundAction(()=>{if(!(selected.control)?.isConnected)stop('profile_action_target_changed');return selected.control.blur();});await pause(650);}
           }
+        }else if(field.kind==='eoCascader'){
+          await fillResidence(selected,answer,midGuard,markWrite);
         }else{
           let popup,chosen=false;step('degree_open');await boundAction(()=>{if(!(selected.control)?.isConnected)stop('profile_action_target_changed');return selected.control.click();});
           try{

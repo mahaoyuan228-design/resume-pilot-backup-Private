@@ -13,6 +13,8 @@ const TITLES = ['基本信息', '教育经历', '求职意向', '工作经验', 
 const MONTHS = ['一月', '二月', '三月', '四月', '五月', '六月', '七月', '八月', '九月', '十月', '十一月', '十二月'];
 const binding = { version: 1, epoch: '00000000-0000-4000-8000-000000000001', profileHash: 'a'.repeat(64) };
 const item = (label, body) => `<div class="el-form-item"><label class="el-form-item__label">${label}</label><div class="el-form-item__content">${body}</div></div>`;
+// Closed probe shell so 现居住地 passes structure preflight without a fill.
+const residenceShell = () => `<div class="el-form-item"><label for="resume_residence_area" class="el-form-item__label">现居住地</label><div class="el-form-item__content cascader-wrap"><div class="input-l pointer"><div class="input-l pointer el-input"><input class="el-input__inner" type="text" readonly placeholder="请选择" value=""></div></div><div class="dialog-wrap plugin-dialog-wrap popover blue" style="display:none"><ul class="selected-view-data"></ul><div class="search-outer"><input class="search-input" type="text" placeholder="请输入关键字"></div><div class="eo-cascader-panel"><div class="eo-cascader-menu simple-tree-outer"><ul class="simple-tree-wrapper"><li class="branch has-child"><span uid="86030000">北京</span></li></ul></div></div><a class="confirm pop-btn" href="javascript:;">确定</a><a class="cancel pop-btn" href="javascript:;">取消</a></div></div></div>`;
 const radio = (text, checked) => `<label class="el-radio"><span class="el-radio__input"><input type="radio" name="gender" value="${text}"${checked ? ' checked' : ''}></span><span class="el-radio__label">${text}</span></label>`;
 function html(value) {
   const fields = [
@@ -21,9 +23,9 @@ function html(value) {
     item('手机号码', '<input type="text" value="13800138000">'),
     item('出生年月', `<div class="el-date-editor date-hl el-input el-input--prefix el-input--suffix el-date-editor--month"><span class="el-input__prefix"><i class="el-input__icon el-icon-date" id="month-icon"></i></span><input class="el-input__inner" type="text" readonly id="birth" value="${value}"></div>`),
     item('电子邮件', '<input type="text" value="synthetic@example.com">'),
-    // City/photo remain opaque. Work-start uses the 2026-10-22 probe's
-    // readonly month editor, which shares the existing birth-month path.
-    item('现居住地', ''),
+    // Residence uses the 2026-10-23 probe shell. This file does not fill it.
+    // Work-start uses the 2026-10-22 probe's readonly month editor.
+    residenceShell(),
     item('最高学历', '<div class="el-select"><input class="el-input__inner" type="text" readonly value="硕士"></div>'),
     item('照片', ''),
     item('参加工作时间', '<div class="el-date-editor el-date-editor--month input-l"><span class="el-input__prefix"><i class="el-input__icon el-icon-date" id="work-start-icon"></i></span><input class="el-input__inner" type="text" readonly id="work-start" value="2022-09"></div>'),
@@ -125,7 +127,7 @@ async function run(options, verify) {
   try {
     const result = await h.window.ResumeGthBasic.trial(h.request);
     await verify(h, result);
-    if (result.ok) assert.equal(result.fields.length, 7);
+    if (result.ok) assert.equal(result.fields.length, 8);
     assert.equal(h.window.__gthFullLive.clicks().some(row => row.allowed !== true), false);
     assert.equal(h.window.__gthFullLive.clicks().some(row => /保存|提交|投递|删除/u.test(row.label)), false);
     assert.equal(result.softwareClickedSave, false);
@@ -133,9 +135,11 @@ async function run(options, verify) {
     assert.equal(result.softwareClickedDelete, false);
     assert.equal(result.liveSupportClaimed, false);
     assert.equal(h.document.querySelector('[data-gth-month-role]'), null);
-    for (const question of ['现居住地', '照片']) {
-      assert.equal(result.coverage.find(row => row.question === question).reason, 'control_not_supported');
-    }
+    const city = result.coverage.find(row => row.question === '现居住地');
+    assert.equal(city.supported, true);
+    assert.equal(city.path, 'currentCity');
+    assert.ok(['missing_profile_value', 'not_run'].includes(city.reason), city.reason);
+    assert.equal(result.coverage.find(row => row.question === '照片').reason, 'control_not_supported');
     assert.equal(result.coverage.find(row => row.question === '参加工作时间').path, 'workStart');
     assert.equal(result.coverage.find(row => row.question === '参加工作时间').supported, true);
   } finally {

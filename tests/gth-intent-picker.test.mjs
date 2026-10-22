@@ -1006,3 +1006,83 @@ test('a stop after a verified field marks only the active field and leaves the r
   assert.equal(assessGthIntentFill(result).state, 'stopped_before_write');
   assert.equal(result.liveSupportClaimed, false);
 });
+
+const LIVE_PARTIAL = {
+  期望工作地区: '北京||大兴区',
+  期望薪资: '15000',
+  到岗日期: '一个月内',
+};
+const LIVE_UNTOUCHED = ['期望从事职位类别', '现从事行业', '现从事职位类别', '现薪资'];
+
+test('omitAbsent fills 到岗日期, 北京||大兴区, and 15000 without writing the other four', async () => {
+  const region = pickerModel('期望工作地区');
+  assert.equal(region.observedL1, '北京');
+  assert.equal(region.l1.some((row) => row.x === '北京' && String(row.c).includes('has-child')), true);
+  assert.ok(region.observedL2.includes('大兴区'));
+  assert.deepEqual(ARRIVAL_WITH_PLACEHOLDER, ['请选择', '一周内', '一个月内', '一个月以上', '即时', '面议']);
+  assert.equal(pickerModel('期望从事职位类别').trigger, '投资/证券/基金');
+  assert.equal(pickerModel('现从事行业').trigger, '证券/投资/基金/信托');
+  assert.equal(pickerModel('现从事职位类别').trigger, '投资/证券/基金');
+
+  const kept = mount({
+    salaries: { 期望薪资: '12000', 现薪资: '12000' },
+    arrival: '',
+  });
+  const before = Object.fromEntries(LIVE_UNTOUCHED.map((label) => [label, itemInput(kept.form, label).value]));
+  assert.equal(itemInput(kept.form, '期望工作地区').value, '北京');
+  assert.equal(itemInput(kept.form, '期望薪资').value, '12000');
+  assert.equal(itemInput(kept.form, '到岗日期').value, '');
+  const blocked = await kept.api.trial(request(LIVE_PARTIAL));
+  assert.equal(blocked.ok, false);
+  assert.equal(blocked.reason, 'missing_profile_value');
+  assert.equal(blocked.writeStarted, false);
+  assert.equal(blocked.liveSupportClaimed, false);
+  assert.equal(kept.stats.save, 0);
+  assert.equal(kept.stats.confirm, 0);
+  assert.equal(kept.stats.option, 0);
+  assert.equal(itemInput(kept.form, '期望薪资').value, '12000');
+  assert.equal(itemInput(kept.form, '期望工作地区').value, '北京');
+  assert.equal(itemInput(kept.form, '到岗日期').value, '');
+  for (const label of LIVE_UNTOUCHED) assert.equal(itemInput(kept.form, label).value, before[label]);
+
+  const typed = mount({
+    salaries: { 期望薪资: '12000', 现薪资: '12000' },
+    arrival: '',
+  });
+  const invalid = await typed.api.trial(request(LIVE_PARTIAL, Object.keys(LIVE_PARTIAL), { omitAbsent: 'true', replaceExisting: true }));
+  assert.equal(invalid.reason, 'intent_request_invalid');
+  assert.equal(invalid.writeStarted, false);
+  assert.equal(typed.stats.save, 0);
+  assert.equal(itemInput(typed.form, '期望薪资').value, '12000');
+
+  const filled = mount({
+    salaries: { 期望薪资: '12000', 现薪资: '12000' },
+    arrival: '',
+  });
+  const untouched = Object.fromEntries(LIVE_UNTOUCHED.map((label) => [label, itemInput(filled.form, label).value]));
+  const result = await filled.api.trial(request(LIVE_PARTIAL, Object.keys(LIVE_PARTIAL), { omitAbsent: true, replaceExisting: true }));
+  assert.equal(result.ok, true);
+  assert.equal(result.reason, null);
+  assert.equal(result.writeStarted, true);
+  assert.equal(result.complete, false);
+  assert.equal(result.liveSupportClaimed, false);
+  assert.equal(result.softwareClickedSave, false);
+  assert.equal(result.softwareClickedSubmit, false);
+  assert.equal(result.softwareClickedDelete, false);
+  assert.deepEqual(Array.from(result.fields, (row) => row.question), ['期望薪资', '期望工作地区', '到岗日期']);
+  assert.equal(result.fields.find((row) => row.question === '期望工作地区').reason, 'readback_reapplied');
+  assert.equal(result.fields.find((row) => row.question === '到岗日期').reason, 'readback_matched');
+  assert.equal(result.fields.find((row) => row.question === '期望薪资').reason, 'readback_reapplied');
+  assert.equal(itemInput(filled.form, '期望工作地区').value, '大兴区');
+  assert.equal(itemInput(filled.form, '到岗日期').value, '一个月内');
+  assert.equal(itemInput(filled.form, '期望薪资').value, '15000');
+  for (const label of LIVE_UNTOUCHED) assert.equal(itemInput(filled.form, label).value, untouched[label]);
+  assert.equal(filled.stats.save, 0);
+  assert.equal(filled.stats.formCancel, 0);
+  assert.equal(filled.stats.confirm, 1);
+  assert.equal(filled.stats.option, 1);
+  assert.equal(filled.stats.checkbox, 1);
+  assert.equal(filled.stats.remove, 1);
+  assert.equal(assessGthIntentFill(result).ok, false);
+  assert.equal(source.includes("status:'skipped'"), false);
+});

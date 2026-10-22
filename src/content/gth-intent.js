@@ -15,6 +15,10 @@
 // shapes still fail closed ('control_not_supported').
 // Picker answers are exact "一级||二级" text. No fuzzy match. Never clicks 保存 / 提交 / 投递.
 // liveSupportClaimed stays false: a writer is not a claim the live site is supported.
+// omitAbsent === true leaves a required question untouched when its answer is
+// blank, so a never-save trial can fill 到岗日期, 期望工作地区, and 期望薪资
+// without inventing the other four facts. Any other call still fail-closes:
+// a missing required answer is missing_profile_value and nothing is written.
 (() => {
   const previous = globalThis.ResumeGthIntent;
   if (previous?.listener) try { chrome.runtime.onMessage.removeListener(previous.listener); } catch { /* reload */ }
@@ -606,10 +610,13 @@
     try {
       await checkBinding();
       if (typeof request?.requestId !== 'string' || !/^[A-Za-z0-9-]{10,100}$/u.test(request.requestId)
-        || request.replaceExisting !== undefined && typeof request.replaceExisting !== 'boolean') stop('intent_request_invalid');
-      const requiredAnswers = Object.fromEntries(FIELDS.map(field => [field.question, factRow(request, field)]));
+        || request.replaceExisting !== undefined && typeof request.replaceExisting !== 'boolean'
+        || request.omitAbsent !== undefined && typeof request.omitAbsent !== 'boolean') stop('intent_request_invalid');
+      const requiredAnswers = Object.fromEntries(FIELDS.map(field => [field.question,
+        request.omitAbsent === true ? optionalFact(request, field) : {...factRow(request, field), skip:false}]));
       const optionalAnswers = Object.fromEntries(OPTIONAL.map(field => [field.question, optionalFact(request, field)]));
-      attempted = [...FIELDS, ...OPTIONAL.filter(field => !optionalAnswers[field.question].skip)];
+      attempted = [...FIELDS.filter(field => !requiredAnswers[field.question].skip), ...OPTIONAL.filter(field => !optionalAnswers[field.question].skip)];
+      if (!attempted.length) stop('missing_profile_value');
       const answerOf = field => (OPTIONAL.some(item => item.question === field.question) ? optionalAnswers : requiredAnswers)[field.question];
       const unsettled = attempted.filter(field => answerOf(field).reason);
       if (unsettled.length) {
@@ -811,7 +818,7 @@
     return true;
   };
   globalThis.ResumeGthIntent = Object.freeze({
-    implementationRevision:4, installed:true, trial, listener,
+    implementationRevision:5, installed:true, trial, listener,
     fields:FIELDS.map(field => ({question:field.question, kind:field.kind, evidence:field.evidence})),
     optional:OPTIONAL.map(field => ({question:field.question, kind:field.kind, evidence:field.evidence}))
   });

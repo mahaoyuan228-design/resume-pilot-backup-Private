@@ -1147,16 +1147,38 @@ export async function runCmsBasicInfoLive(options = {}) {
           reason = 'inject_failed';
           fatalDetail = 'chrome_shim';
         } else {
-          const installed = await evaluate(session, buildPageExpression(), {
+          // A page that already ran the extension (or an earlier inject) keeps
+          // revision 6 and a live listener. engine.js returns before the tip
+          // source replaces that install, so phone stays unbound. Drop the
+          // listener and the install flags before this trial's files load.
+          const cleared = await evaluate(session, `(() => {
+            const owned = globalThis.__resumeQuickFillEngineListener;
+            try {
+              if (owned && globalThis.chrome?.runtime?.onMessage?.removeListener) {
+                globalThis.chrome.runtime.onMessage.removeListener(owned);
+              }
+            } catch { /* prior listener may already be gone */ }
+            delete globalThis.__resumeQuickFillInstalled;
+            delete globalThis.__resumeQuickFillEngineListener;
+            delete globalThis.__resumeQuickFillEngineRevision;
+            delete globalThis.ResumeQuickFillGthInspect;
+            return { ok: true, clearedOwned: typeof owned === 'function' };
+          })()`, { timeoutMs: stepTimeoutMs, step: 'clear_engine_install' });
+          steps.push('clear_engine_install');
+          if (!cleared?.ok) {
+            reason = 'inject_failed';
+            fatalDetail = 'clear_engine_install';
+          }
+          const installed = reason ? null : await evaluate(session, buildPageExpression(), {
             timeoutMs: stepTimeoutMs,
             step: 'install_live',
             awaitPromise: true
           });
-          steps.push('install_live');
-          if (!installed?.ok) {
+          if (!reason) steps.push('install_live');
+          if (!reason && !installed?.ok) {
             reason = 'inject_failed';
             fatalDetail = 'install_live';
-          } else {
+          } else if (!reason) {
             for (const rel of LIVE_FILES) {
               const source = fs.readFileSync(path.join(root, rel), 'utf8');
               const step = `inject_${path.basename(rel).replace(/\.m?js$/u, '')}`;

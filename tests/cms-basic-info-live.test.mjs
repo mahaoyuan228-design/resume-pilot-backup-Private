@@ -8,6 +8,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
+import vm from 'node:vm';
 import { JSDOM } from 'jsdom';
 import {
   ANCHOR_NAME,
@@ -717,6 +718,7 @@ function happyAnswers(extra = {}) {
       password: false
     },
     chrome_shim: { ok: true, installed: true },
+    clear_engine_install: { ok: true, clearedOwned: false },
     install_live: { ok: true },
     inject_matcher: { ok: true },
     'inject_cms-session': { ok: true },
@@ -751,6 +753,15 @@ test('a fake CDP run injects the shipped engine and writes never-save evidence',
     'inject_engine',
     'inject_check'
   ]);
+  const shimAt = session.steps.indexOf('chrome_shim');
+  const clearAt = session.steps.indexOf('clear_engine_install');
+  const installAt = session.steps.indexOf('install_live');
+  const matcherAt = session.steps.indexOf('inject_matcher');
+  assert.ok(shimAt >= 0 && clearAt > shimAt && installAt > clearAt && matcherAt > installAt);
+  assert.deepEqual(
+    evidence.finalDetails.steps.filter((step) => ['chrome_shim', 'clear_engine_install', 'install_live', 'inject_matcher', 'inject_cms-session', 'inject_engine'].includes(step)),
+    ['chrome_shim', 'clear_engine_install', 'install_live', 'inject_matcher', 'inject_cms-session', 'inject_engine']
+  );
   assert.equal(session.steps.includes('basic_info_run'), true);
   assert.equal(JSON.stringify(evidence).includes('resumeId'), false);
   const file = JSON.parse(fs.readFileSync(evidence.finalDetails.path, 'utf8'));
@@ -758,6 +769,84 @@ test('a fake CDP run injects the shipped engine and writes never-save evidence',
   assert.equal(file.neverSave, true);
   assert.equal(file.finalDetails.fatalDetail, null);
   assert.equal(path.basename(evidence.finalDetails.path), EVIDENCE_NAME);
+});
+
+test('a stale engine install is cleared before inject and a clear failure skips the tip files', async () => {
+  const clearAt = source.indexOf("step: 'clear_engine_install'");
+  const installAt = source.indexOf("step: 'install_live'");
+  assert.ok(clearAt > 0 && installAt > clearAt);
+  assert.match(source, /chrome\.runtime\.onMessage\.removeListener\(owned\)/);
+  assert.match(source, /delete globalThis\.__resumeQuickFillInstalled/);
+  assert.match(source, /delete globalThis\.__resumeQuickFillEngineListener/);
+  assert.match(source, /delete globalThis\.__resumeQuickFillEngineRevision/);
+  assert.match(source, /delete globalThis\.ResumeQuickFillGthInspect/);
+  assert.match(source, /else if \(!reason\) \{\s*for \(const rel of LIVE_FILES\)/);
+
+  const failed = await runFake(happyAnswers({
+    clear_engine_install: { ok: false }
+  }));
+  assert.equal(failed.evidence.finalDetails.reason, 'inject_failed');
+  assert.equal(failed.evidence.finalDetails.fatalDetail, 'clear_engine_install');
+  assert.equal(failed.evidence.finalDetails.exitCode, 2);
+  assert.equal(failed.evidence.neverSave, true);
+  assert.equal(failed.evidence.liveSupportClaimed, false);
+  assert.equal(failed.session.steps.includes('clear_engine_install'), true);
+  assert.equal(failed.session.steps.includes('install_live'), false);
+  assert.equal(failed.session.steps.includes('inject_matcher'), false);
+  assert.equal(failed.session.steps.includes('inject_cms-session'), false);
+  assert.equal(failed.session.steps.includes('inject_engine'), false);
+  assert.equal(failed.session.steps.includes('basic_info_run'), false);
+  assert.equal(failed.evidence.finalDetails.steps.includes('clear_engine_install'), true);
+  assert.equal(failed.evidence.finalDetails.steps.includes('install_live'), false);
+  assert.equal(failed.evidence.fields.every((field) => field.status === 'failed' && field.reason === 'inject_failed'), true);
+
+  const expression = source.match(/step: 'clear_engine_install' \}\);\n {10}steps\.push\('clear_engine_install'\)/);
+  const body = source.slice(source.indexOf('const cleared = await evaluate'), source.indexOf("step: 'clear_engine_install'"));
+  const iife = body.match(/\(\(\) => \{[\s\S]*\}\)\(\)/u);
+  assert.ok(expression);
+  assert.ok(iife, 'clear expression iife');
+  const owned = function staleListener() {};
+  const removed = [];
+  const sandbox = {
+    __resumeQuickFillInstalled: true,
+    __resumeQuickFillEngineListener: owned,
+    __resumeQuickFillEngineRevision: 6,
+    ResumeQuickFillGthInspect() {},
+    chrome: {
+      runtime: {
+        onMessage: {
+          removeListener(fn) { removed.push(fn); }
+        }
+      }
+    }
+  };
+  const result = vm.runInNewContext(iife[0], sandbox);
+  assert.equal(result.ok, true);
+  assert.equal(result.clearedOwned, true);
+  assert.deepEqual(removed, [owned]);
+  assert.equal(Object.hasOwn(sandbox, '__resumeQuickFillInstalled'), false);
+  assert.equal(Object.hasOwn(sandbox, '__resumeQuickFillEngineListener'), false);
+  assert.equal(Object.hasOwn(sandbox, '__resumeQuickFillEngineRevision'), false);
+  assert.equal(Object.hasOwn(sandbox, 'ResumeQuickFillGthInspect'), false);
+
+  const thrown = {
+    __resumeQuickFillInstalled: true,
+    __resumeQuickFillEngineListener: owned,
+    __resumeQuickFillEngineRevision: 6,
+    ResumeQuickFillGthInspect() {},
+    chrome: {
+      runtime: {
+        onMessage: {
+          removeListener() { throw new Error('already gone'); }
+        }
+      }
+    }
+  };
+  const afterThrow = vm.runInNewContext(iife[0], thrown);
+  assert.equal(afterThrow.ok, true);
+  assert.equal(afterThrow.clearedOwned, true);
+  assert.equal(Object.hasOwn(thrown, '__resumeQuickFillInstalled'), false);
+  assert.equal(Object.hasOwn(thrown, '__resumeQuickFillEngineRevision'), false);
 });
 
 function stoppedOutcome(reason, detail) {

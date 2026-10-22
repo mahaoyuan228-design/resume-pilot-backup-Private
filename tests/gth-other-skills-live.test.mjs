@@ -216,6 +216,8 @@ test('the page expression only names shipped selectors and does not click save',
   assert.match(expression, /\.title_ a\.h-e-btn/);
   assert.match(expression, /form\.el-form\.sec-form/);
   assert.match(expression, /\.el-form-item__label/);
+  assert.match(expression, /editor_items_not_rendered/);
+  assert.match(expression, /querySelector\('\.el-form-item'\)/);
   assert.match(expression, /decideOpen/);
   assert.match(expression, /decideCancel/);
   assert.doesNotMatch(source, /perform\([^)]*['"]保存['"]/);
@@ -474,6 +476,148 @@ function boot(html) {
   vm.runInContext(otherSource, context);
   return { dom, clicks, context };
 }
+
+function resumeSections({ skillsEdit = false, otherEdit = false } = {}) {
+  return TITLES.map((title) => {
+    if (title === '职业技能与特长' && skillsEdit) {
+      return `<section class="r-section" id="skills-section"><div class="title_">${title}<a class="h-e-btn" id="skills-edit" href="javascript:;">编辑</a></div><div id="skills-slot"></div></section>`;
+    }
+    if (title === '其他信息' && otherEdit) {
+      return `<section class="r-section" id="other-section"><div class="title_">${title}<a class="h-e-btn" id="other-edit" href="javascript:;">编辑</a></div><div id="other-slot"></div></section>`;
+    }
+    return `<section class="r-section"><div class="title_">${title}</div></section>`;
+  }).join('');
+}
+
+function armShell(window, { editId, slotId, itemsHtml, delayMs }) {
+  let itemsMounted = false;
+  window.document.getElementById(editId).addEventListener('click', () => {
+    window.document.getElementById(editId).remove();
+    const slot = window.document.getElementById(slotId);
+    slot.innerHTML = formWrap('');
+    const form = slot.querySelector('form');
+    form.querySelector('button').addEventListener('click', () => form.remove());
+    if (delayMs == null) return;
+    window.setTimeout(() => {
+      form.insertAdjacentHTML('afterbegin', itemsHtml);
+      itemsMounted = true;
+    }, delayMs);
+  });
+  return () => itemsMounted;
+}
+
+function liveWindow(html) {
+  const dom = new JSDOM(`<!DOCTYPE html><body>${html}</body>`, {
+    url: PAGE,
+    pretendToBeVisual: true,
+    runScripts: 'dangerously'
+  });
+  const { window } = dom;
+  window.Element.prototype.getClientRects = () => [{ width: 8, height: 8, top: 0, left: 0, bottom: 8, right: 8 }];
+  Object.defineProperty(window.document, 'readyState', { configurable: true, get: () => 'complete' });
+  const clicks = [];
+  const original = window.HTMLElement.prototype.click;
+  window.HTMLElement.prototype.click = function clicked() {
+    clicks.push(String(this.textContent || '').replace(/\s+/gu, ' ').trim());
+    return original.call(this);
+  };
+  window.chrome = {
+    runtime: {
+      id: 'synthetic-extension',
+      getManifest: () => ({ background: { service_worker: 'src/background/worker.mjs' } }),
+      sendMessage: async (message) => (message?.type === 'RESUME_PROFILE_BINDING_CHECK' ? { allowed: true } : { allowed: false }),
+      onMessage: { addListener() {}, removeListener() {} }
+    }
+  };
+  const script = window.document.createElement('script');
+  script.textContent = `${core}\n${skillsSource}\n${otherSource}\n${buildPageExpression()}`;
+  window.document.body.appendChild(script);
+  return { dom, window, clicks, api: window.__gthOtherSkillsLive };
+}
+
+test('click_edit waits for late form items, then the shipped fill verifies', async () => {
+  const page = liveWindow(resumeSections({ skillsEdit: true, otherEdit: true }));
+  const skillsMounted = armShell(page.window, {
+    editId: 'skills-edit',
+    slotId: 'skills-slot',
+    delayMs: 120,
+    itemsHtml: textItem('职业技能与特长', { tag: 'textarea', id: 'skills' })
+  });
+  const otherMounted = armShell(page.window, {
+    editId: 'other-edit',
+    slotId: 'other-slot',
+    delayMs: 120,
+    itemsHtml: `${textItem('标题', { id: 'title' })}${textItem('描述', { tag: 'textarea', id: 'desc' })}`
+  });
+  const profiles = fixedLiveProfiles();
+
+  const skillsOpen = await page.api.open(4);
+  assert.equal(skillsMounted(), true);
+  assert.equal(skillsOpen.ok, true);
+  assert.equal(skillsOpen.action, 'click_edit');
+  assert.equal(page.window.document.querySelector('#skills-section .el-form-item') instanceof page.window.Element, true);
+  const skillsResult = await page.window.ResumeGthSkills.trial({
+    requestId: 'live-skills-0001',
+    profileBinding: LIVE_BINDING,
+    replaceExisting: true,
+    profile: profiles.skills
+  });
+  assert.equal(skillsResult.ok, true);
+  assert.equal(skillsResult.liveSupportClaimed, false);
+  assert.equal(skillsResult.fields[0].status, 'verified');
+  assert.equal(page.window.document.getElementById('skills').value, SKILLS_TEXT);
+  const skillsRead = page.api.read(4, ['职业技能与特长']);
+  assert.equal(skillsRead.readback[0].value, SKILLS_TEXT);
+  const skillsClosed = await page.api.cancel(4);
+  assert.equal(skillsClosed.closed, true);
+
+  const otherOpen = await page.api.open(6);
+  assert.equal(otherMounted(), true);
+  assert.equal(otherOpen.ok, true);
+  assert.equal(otherOpen.action, 'click_edit');
+  const otherResult = await page.window.ResumeGthOther.trial({
+    requestId: 'live-other-0001',
+    profileBinding: LIVE_BINDING,
+    replaceExisting: true,
+    profile: profiles.other
+  });
+  assert.equal(otherResult.ok, true);
+  assert.equal(otherResult.liveSupportClaimed, false);
+  assert.equal(otherResult.fields[0].status, 'verified');
+  assert.equal(otherResult.fields[1].status, 'verified');
+  assert.equal(page.window.document.getElementById('title').value, OTHER_TITLE);
+  assert.equal(page.window.document.getElementById('desc').value, OTHER_DESCRIPTION);
+  const otherRead = page.api.read(6, ['标题', '描述']);
+  assert.equal(otherRead.readback[0].value, OTHER_TITLE);
+  assert.equal(otherRead.readback[1].value, OTHER_DESCRIPTION);
+  const otherClosed = await page.api.cancel(6);
+  assert.equal(otherClosed.closed, true);
+  assert.deepEqual(page.clicks, ['编辑', '取消', '编辑', '取消']);
+  assert.equal(page.clicks.includes('保存'), false);
+});
+
+test('click_edit stops when the form shell never grows .el-form-item children', async () => {
+  const page = liveWindow(resumeSections({ skillsEdit: true }));
+  const skillsMounted = armShell(page.window, {
+    editId: 'skills-edit',
+    slotId: 'skills-slot',
+    delayMs: null,
+    itemsHtml: ''
+  });
+  const started = Date.now();
+  const opened = await page.api.open(4);
+  assert.ok(Date.now() - started >= 2500);
+  assert.equal(skillsMounted(), false);
+  assert.equal(opened.ok, false);
+  assert.equal(opened.action, 'stop');
+  assert.equal(opened.reason, 'control_not_supported');
+  assert.equal(opened.detail, 'editor_items_not_rendered');
+  assert.equal(opened.openedByUs, true);
+  assert.equal(opened.alreadyOpen, false);
+  assert.equal(page.window.document.querySelector('#skills-section form.el-form.sec-form') instanceof page.window.Element, true);
+  assert.equal(page.window.document.querySelector('#skills-section .el-form-item'), null);
+  assert.deepEqual(page.clicks, ['编辑']);
+});
 
 test('the page script opens with the shipped 编辑 link and discards with 取消', async () => {
   const html = TITLES.map((title) => {

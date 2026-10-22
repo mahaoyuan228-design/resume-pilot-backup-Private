@@ -507,6 +507,8 @@ function installGthLive(doc, options) {
       return { ok: false, action: 'stop', reason: 'control_not_supported', detail: 'editor_not_opened', openedByUs: true, alreadyOpen: false };
     }
     if (appeared.failed) return { ok: false, openedByUs: true, alreadyOpen: false, ...appeared.failed };
+    const itemsReady = await waitFor(() => (editorForm(sectionIndex).form?.querySelector('.el-form-item') ? true : null), 3000);
+    if (!itemsReady) return { ok: false, action: 'stop', reason: 'control_not_supported', detail: 'editor_items_not_rendered', openedByUs: true, alreadyOpen: false };
     return { ok: true, action: 'click_edit', openedByUs: true, alreadyOpen: false };
   }
 

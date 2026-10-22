@@ -442,6 +442,50 @@ function wireMonthRange(document) {
   return stats;
 }
 
+function armRangeRequiredError(document, { message, sticky = false } = {}) {
+  const item = document.getElementById('dates-item');
+  const start = document.getElementById('start-date');
+  const end = document.getElementById('end-date');
+  const content = item.querySelector('.el-form-item__content');
+  const phases = [];
+  const shownError = () => {
+    const node = content.querySelector('.el-form-item__error');
+    if (!node) return '';
+    const style = document.defaultView.getComputedStyle(node);
+    const shown = node.getClientRects().length > 0 && style.display !== 'none' && style.visibility !== 'hidden';
+    return shown ? node.textContent : '';
+  };
+  const apply = () => {
+    const startFilled = start.value.trim() !== '';
+    const endFilled = end.value.trim() !== '';
+    const show = startFilled && (sticky || !endFilled);
+    let error = content.querySelector('.el-form-item__error');
+    if (show) {
+      item.classList.add('is-required', 'is-error');
+      if (!error) {
+        error = document.createElement('div');
+        error.className = 'el-form-item__error';
+        content.appendChild(error);
+      }
+      error.textContent = message;
+    } else if (startFilled && endFilled) {
+      item.classList.remove('is-error');
+      error?.remove();
+    }
+    phases.push({ start: start.value, end: end.value, classes: item.className, text: shownError() });
+  };
+  start.addEventListener('input', apply);
+  start.addEventListener('change', apply);
+  end.addEventListener('input', apply);
+  end.addEventListener('change', apply);
+  return phases;
+}
+
+function sawHalfRangeError(phases, message) {
+  return phases.some((row) => row.start !== '' && row.end === ''
+    && row.classes.includes('is-required') && row.classes.includes('is-error') && row.text === message);
+}
+
 function categoryItem({ value = '', panel = 'path', confirm = true, trigger = 'input' } = {}) {
   const rows = panel === 'single'
     ? '<li class="branch"><span>金融学</span></li><li class="branch"><span>法学</span></li>'
@@ -554,6 +598,70 @@ test('在校时间 fills the live dual month editors and 专业类别 confirms a
   assert.equal(assessGthEducationOpenFill(result).ok, true);
   assertNeverSave(clicks);
   assert.equal(clicks.filter((node) => node.id === 'editor-save' || node.id === 'editor-delete').length, 0);
+});
+
+test('在校时间 continues through the required range error that appears before the end month', async () => {
+  const row = {
+    school: '示例大学', major: '计算机', degree: '本科', unifiedAdmissions: '是',
+    startDate: '2025-03', endDate: '2026-07', majorCategory: '经济学||金融学',
+  };
+  const html = shell('教育经历', formWrap(educationFields({ dates: monthRangeItem(), category: categoryItem() })));
+  const { dom, clicks, context } = boot(html);
+  const doc = dom.window.document;
+  wireDegree(doc);
+  wireRadio(doc);
+  const months = wireMonthRange(doc);
+  const picker = wireCategory(doc);
+  const phases = armRangeRequiredError(doc, { message: '请选择在校时间' });
+  const result = await context.ResumeGthEducationOpen.trial(request(educationProfile(row), { profileIndex: 0 }));
+  assert.equal(result.ok, true, JSON.stringify({ reason: result.reason, step: result.selectorStep }));
+  assert.equal(`${doc.getElementById('start-date').value} | ${doc.getElementById('end-date').value}`, '2025-03 | 2026-07');
+  assert.equal(result.fields.find((field) => field.question === '在校时间').reason, 'readback_matched');
+  assert.equal(sawHalfRangeError(phases, '请选择在校时间'), true);
+  assert.equal(doc.getElementById('dates-item').classList.contains('is-error'), false);
+  assert.equal(doc.querySelector('#dates-item .el-form-item__error'), null);
+  assert.equal(months.open, 2);
+  assert.equal(months.cells, 2);
+  assert.equal(doc.getElementById('school').value, '示例大学');
+  assert.equal(doc.getElementById('major-trigger').value, '金融学');
+  assert.equal(picker.confirm, 1);
+  assert.equal(result.liveSupportClaimed, false);
+  assert.equal(result.complete, false);
+  assert.equal(assessGthEducationOpenFill(result).ok, true);
+  assertNeverSave(clicks);
+});
+
+test('在校时间 fails closed when the range error remains after both months', async () => {
+  const row = {
+    school: '示例大学', major: '计算机', degree: '本科', unifiedAdmissions: '是',
+    startDate: '2025-03', endDate: '2026-07', majorCategory: '经济学||金融学',
+  };
+  const html = shell('教育经历', formWrap(educationFields({ dates: monthRangeItem(), category: categoryItem() })));
+  const { dom, clicks, context } = boot(html);
+  const doc = dom.window.document;
+  wireDegree(doc);
+  wireRadio(doc);
+  const months = wireMonthRange(doc);
+  wireCategory(doc);
+  const phases = armRangeRequiredError(doc, { message: '请选择在校时间', sticky: true });
+  const result = await context.ResumeGthEducationOpen.trial(request(educationProfile(row), { profileIndex: 0 }));
+  assert.equal(result.ok, false);
+  assert.equal(result.reason, 'readback_mismatch');
+  assert.equal(result.fields.find((field) => field.question === '在校时间').status, 'failed');
+  assert.equal(result.fields.find((field) => field.question === '在校时间').reason, 'readback_mismatch');
+  assert.equal(`${doc.getElementById('start-date').value} | ${doc.getElementById('end-date').value}`, '2025-03 | 2026-07');
+  assert.equal(sawHalfRangeError(phases, '请选择在校时间'), true);
+  assert.equal(doc.getElementById('dates-item').classList.contains('is-error'), true);
+  assert.equal(doc.getElementById('dates-item').classList.contains('is-required'), true);
+  assert.equal(doc.querySelector('#dates-item .el-form-item__error').textContent, '请选择在校时间');
+  assert.equal(months.open, 2);
+  assert.equal(months.cells, 2);
+  assert.equal(result.fields.find((field) => field.question === '毕业学校').reason, 'not_run');
+  assert.equal(doc.getElementById('school').value, '');
+  assert.equal(result.fields.find((field) => field.question === '专业类别').reason, 'not_run');
+  assert.equal(result.liveSupportClaimed, false);
+  assert.equal(result.complete, false);
+  assertNeverSave(clicks);
 });
 
 test('在校时间 and 专业类别 keep a matching value without opening', async () => {

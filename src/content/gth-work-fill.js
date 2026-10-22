@@ -19,7 +19,8 @@
 // Two active month panels fail closed.
 // picked and emitted stay. dual, bad-year, mismatch, neither pick nor
 // emit, and a blank readback after close fail closed. It waits out
-// el-zoom-in-top-enter*.
+// el-zoom-in-top-enter*. The range form-item is site-validated only after
+// both months match; a half-filled 请选择任职时间 error is not a start-month failure.
 // 职位类别 and 公司所属行业 use the intent cascader: exact 一级||二级, L1 click, then L2.
 // 薪资 is an el-input/select-l hybrid with no option list in the census, so it stays
 // 'control_not_supported'. liveSupportClaimed stays false.

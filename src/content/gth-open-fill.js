@@ -538,6 +538,10 @@
     // value is not typed over. A value that close clears still fails closed.
     // No <script> is inserted, so a strict script-src cannot skip the call.
     // input+change is kept only when the value is still there after close.
+    // The range form-item is site-validated only after both months match.
+    // A half-filled required item (任职时间: 请选择任职时间, 在校时间:
+    // 请选择在校时间) is not a start-month readback failure. A remaining
+    // error after both ends still stops readback_mismatch.
     // liveSupportClaimed stays false.
     function monthPanelNodes() {
       return [...document.querySelectorAll('.el-picker-panel')].filter(node => node.isConnected);
@@ -865,8 +869,12 @@
         if (norm(input.value) !== answer || drifted() || pendingMonthConflict(panel))
           stop(drifted() || pendingMonthConflict(panel) ? 'control_not_supported' : 'readback_mismatch');
         await dispatchInputChange(input);
-        const valid = await waitUntil(() => siteValid(item, input) && norm(input.value) === answer && !drifted() ? true : null, 400);
-        if (!valid || norm(input.value) !== answer || drifted()) stop('readback_mismatch');
+        // Do not siteValid(item) here. The required range stays is-error
+        // until the other month is set. This input is held when its value
+        // matches and the peer did not drift. Model acceptance already
+        // happened above. fillMonthRange checks the form-item once.
+        const held = await waitUntil(() => item.isConnected && norm(input.value) === answer && !drifted() ? true : null, 400);
+        if (!held || !item.isConnected || norm(input.value) !== answer || drifted()) stop('readback_mismatch');
         guard();
       } catch (error) {
         if (monthPanelPending(panel)) await closeMonthPanel(input);
@@ -882,6 +890,9 @@
       await fillOneMonth(target.item, inputs[1], target.triggers[1], fact.end, markWrite, guard, [inputs[0]]);
       const read = `${norm(inputs[0].value)} | ${norm(inputs[1].value)}`;
       if (read !== `${fact.start} | ${fact.end}`) stop('readback_mismatch');
+      const paired = () => `${norm(inputs[0].value)} | ${norm(inputs[1].value)}` === `${fact.start} | ${fact.end}`;
+      const valid = await waitUntil(() => paired() && siteValid(target.item, inputs[0]) && siteValid(target.item, inputs[1]) ? true : null, 400);
+      if (!valid || !paired()) stop('readback_mismatch');
       return { status: 'verified', reason: before.some(value => value !== '') ? 'readback_reapplied' : 'readback_matched' };
     }
     function pickerPanels(item) {

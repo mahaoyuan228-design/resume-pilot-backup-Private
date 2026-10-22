@@ -1208,3 +1208,131 @@ test('replace waits when a preselected level-1 panel closes on the level-2 click
   assert.equal(result.softwareClickedSave, false);
   assert.equal(result.liveSupportClaimed, false);
 });
+
+function regionChipAfterCheck(text) {
+  return {
+    onOpen({ panel }) {
+      panel.querySelector(':scope > .eo-cascader-panel').addEventListener('click', (event) => {
+        if (!event.target.closest('input[type="checkbox"]')) return;
+        for (const node of panel.querySelectorAll('.selected-view-data > li p')) {
+          if (node.textContent.replace(/\s+/gu, ' ').trim() === '大兴区') node.textContent = text;
+        }
+      });
+    }
+  };
+}
+
+function regionChips(form) {
+  return [...itemByLabel(form, '期望工作地区').querySelectorAll('.selected-view-data > li p')].map((node) => node.textContent.trim());
+}
+
+test('a multi-select panel verifies when the chip and input join level-1 and level-2', async () => {
+  const fresh = mount({
+    pickers: { 期望工作地区: EMPTY },
+    salaries: { 期望薪资: '12000', 现薪资: '12000' },
+    arrival: ''
+  }, { pickers: { 期望工作地区: regionChipAfterCheck('北京大兴区') } });
+  const result = await fresh.api.trial(request({ 期望工作地区: '北京||大兴区' }, ['期望工作地区'], { omitAbsent: true }));
+  assert.equal(result.ok, true);
+  assert.equal(result.reason, null);
+  assert.equal(result.pickerDiag, undefined);
+  flags(result);
+  assert.equal(itemInput(fresh.form, '期望工作地区').value, '北京大兴区');
+  assert.deepEqual(regionChips(fresh.form), ['北京大兴区']);
+  assert.ok([...itemByLabel(fresh.form, '期望工作地区').querySelectorAll('.eo-cascader-menu label')].some((node) => node.textContent.trim() === '大兴区'));
+  assert.equal(result.fields.find((row) => row.question === '期望工作地区').reason, 'readback_matched');
+  assert.equal(fresh.stats.checkbox, 1);
+  assert.equal(fresh.stats.confirm, 1);
+  assert.equal(fresh.stats.panelCancel, 0);
+  assert.equal(fresh.stats.save, 0);
+
+  const replaced = mount({
+    pickers: { 期望工作地区: { trigger: '北京', chips: ['北京'], counter: '(1/5)' } },
+    salaries: { 期望薪资: '12000', 现薪资: '12000' },
+    arrival: ''
+  }, { pickers: { 期望工作地区: regionChipAfterCheck('北京大兴区') } });
+  assert.equal(itemInput(replaced.form, '期望工作地区').value, '北京');
+  assert.deepEqual(regionChips(replaced.form), ['北京']);
+  const again = await replaced.api.trial(regionRequest());
+  assert.equal(again.ok, true);
+  assert.equal(again.pickerDiag, undefined);
+  flags(again);
+  assert.equal(itemInput(replaced.form, '期望工作地区').value, '北京大兴区');
+  assert.deepEqual(regionChips(replaced.form), ['北京大兴区']);
+  assert.equal(again.fields.find((row) => row.question === '期望工作地区').reason, 'readback_reapplied');
+  assert.equal(replaced.stats.remove, 1);
+  assert.equal(replaced.stats.level1, 0);
+  assert.equal(replaced.stats.checkbox, 1);
+  assert.equal(replaced.stats.confirm, 1);
+  assert.equal(replaced.stats.panelCancel, 0);
+  assert.equal(replaced.stats.save, 0);
+});
+
+test('a multi-select chip that is neither the level-2 text nor the joined text fails closed', async () => {
+  const other = mount({
+    pickers: { 期望工作地区: EMPTY },
+    salaries: { 期望薪资: '12000', 现薪资: '12000' },
+    arrival: ''
+  }, { pickers: { 期望工作地区: regionChipAfterCheck('朝阳区') } });
+  const result = await other.api.trial(request({ 期望工作地区: '北京||大兴区' }, ['期望工作地区'], { omitAbsent: true }));
+  assert.equal(result.ok, false);
+  assert.equal(result.reason, 'picker_selection_not_applied');
+  assert.equal(result.writeStarted, true);
+  flags(result);
+  assert.equal(itemInput(other.form, '期望工作地区').value, '');
+  assert.deepEqual(regionChips(other.form), ['朝阳区']);
+  assert.equal(other.stats.checkbox, 1);
+  assert.equal(other.stats.confirm, 0);
+  assert.equal(other.stats.panelCancel, 1);
+  assert.equal(other.stats.save, 0);
+  assert.equal(result.pickerDiag.reason, 'picker_selection_not_applied');
+  assert.equal(result.pickerDiag.confirmClicked, false);
+  const branch = result.pickerDiag.steps.find((step) => step.step === 'picker_branch');
+  assert.equal(branch.note, 'multi max=5 chips=[]');
+  const view = itemByLabel(other.form, '期望工作地区').querySelector('.selected-view-data, [class*=selected-view]');
+  const html = String(view.outerHTML).replace(/\s+/gu, ' ').slice(0, 260);
+  const dump = result.pickerDiag.steps.find((step) => step.step === 'picker_chips_dump');
+  assert.equal(dump.note, `checked=true chips=${JSON.stringify(['朝阳区'])} html=${html}`);
+  assert.ok(dump.note.length > 80);
+  assert.ok(dump.note.length <= 400);
+  assert.match(dump.note, /selected-view/);
+  assert.equal(result.pickerDiag.steps.at(-1).step, 'abort');
+  assert.equal(assessGthIntentFill(result).reason, 'picker_selection_not_applied');
+});
+
+test('a multi-select chip and input that stay the level-2 text still verify', async () => {
+  const kept = mount({
+    pickers: { 期望工作地区: { trigger: '大兴区', chips: ['大兴区'], counter: '(1/5)' } },
+    salaries: { 期望薪资: '12000', 现薪资: '12000' },
+    arrival: ''
+  });
+  const same = await kept.api.trial(request({ 期望工作地区: '北京||大兴区' }, ['期望工作地区'], { omitAbsent: true }));
+  assert.equal(same.ok, true);
+  assert.equal(same.writeStarted, false);
+  flags(same);
+  assert.equal(itemInput(kept.form, '期望工作地区').value, '大兴区');
+  assert.deepEqual(regionChips(kept.form), ['大兴区']);
+  assert.equal(same.fields.find((row) => row.question === '期望工作地区').reason, 'preexisting_same_value');
+  assert.equal(kept.stats.checkbox, 0);
+  assert.equal(kept.stats.confirm, 0);
+  assert.equal(kept.stats.panelCancel, 0);
+  assert.equal(kept.stats.remove, 0);
+  assert.equal(kept.stats.save, 0);
+
+  const filled = mount({
+    pickers: { 期望工作地区: EMPTY },
+    salaries: { 期望薪资: '12000', 现薪资: '12000' },
+    arrival: ''
+  });
+  const result = await filled.api.trial(request({ 期望工作地区: '北京||大兴区' }, ['期望工作地区'], { omitAbsent: true }));
+  assert.equal(result.ok, true);
+  flags(result);
+  assert.equal(itemInput(filled.form, '期望工作地区').value, '大兴区');
+  assert.deepEqual(regionChips(filled.form), ['大兴区']);
+  assert.equal(result.fields.find((row) => row.question === '期望工作地区').reason, 'readback_matched');
+  assert.equal(filled.stats.checkbox, 1);
+  assert.equal(filled.stats.confirm, 1);
+  assert.equal(filled.stats.panelCancel, 0);
+  assert.equal(filled.stats.save, 0);
+  assert.equal(result.liveSupportClaimed, false);
+});

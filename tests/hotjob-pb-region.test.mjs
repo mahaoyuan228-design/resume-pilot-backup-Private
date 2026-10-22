@@ -1,0 +1,409 @@
+// Offline Never-Save trials for hotjob pb 现居住地 / 籍贯 / 期望面试地点.
+// Markup is built from tests/fixtures/hotjob-pb-region-probe-dom.json (2026-10-23
+// probe classes and menu text only). A green run is not a live support claim.
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { JSDOM } from 'jsdom';
+
+const root = new URL('..', import.meta.url);
+const source = readFileSync(new URL('../src/content/hotjob-pb-region.js', import.meta.url), 'utf8');
+const probe = JSON.parse(readFileSync(new URL('../tests/fixtures/hotjob-pb-region-probe-dom.json', import.meta.url), 'utf8'));
+const PAGE = `https://${probe.page.hostname}${probe.page.samplePath}`;
+const RESIDENCE = probe.cascader.labels[0];
+const ORIGIN = probe.cascader.labels[1];
+const INTERVIEW = probe.select.label;
+const INTENT = probe.outOfScopeCascader.label;
+const FORBIDDEN = probe.page.forbiddenButtons;
+
+function esc(value) {
+  return String(value).replace(/[&<>"]/gu, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));
+}
+
+function classes(value) {
+  return String(value).split(/\s+/u).filter(Boolean);
+}
+
+function menu(options, duplicate) {
+  const rows = [...options];
+  if (duplicate) rows.push(duplicate);
+  return `<ul hidden>${rows.map((text) => `<li>${esc(text)}</li>`).join('')}</ul>`;
+}
+
+function cascaderField(label, value, options, state, id) {
+  const itemClass = state.dropAntRow && id === 'residence' ? 'ant-form-item' : probe.page.itemClass;
+  const wrapClass = state.dropWrap && id === 'residence' ? '' : probe.cascader.menuClass;
+  const selectClass = [
+    probe.cascader.controlClass,
+    state.allowClearOnCascader && id === 'residence' ? 'ant-select-allow-clear' : ''
+  ].filter(Boolean).join(' ');
+  const extra = state.extraSelect && id === 'residence'
+    ? `<div class="${esc(probe.cascader.controlClass)}"><span></span></div>` : '';
+  const labelHtml = `<label>${esc(label)}*</label>`;
+  return `<div class="${esc(itemClass)}" data-field="${id}">${labelHtml}<span class="${esc(probe.page.childrenClass)}"><span class="${esc(wrapClass)}"><div class="${esc(selectClass)}" id="${id}-select"><span id="${id}-value">${esc(value)}</span></div>${extra}${menu(options, id === 'residence' ? state.duplicateOption : '')}</span></span></div>`;
+}
+
+function interviewField(value, state) {
+  const selectClass = state.dropAllowClear
+    ? probe.cascader.controlClass
+    : probe.select.controlClass;
+  const trigger = state.dropSearch ? '' : `<input class="${esc(probe.select.triggerClass)}" type="text" value="">`;
+  const dropdownClass = state.badDropdown
+    ? 'ant-select-dropdown ant-select-dropdown-placement-bottomLeft'
+    : probe.select.dropdownClass;
+  return `<div class="${esc(probe.page.itemClass)}" data-field="interview"><label>${esc(INTERVIEW)}*</label><span class="${esc(probe.page.childrenClass)}"><div class="${esc(selectClass)}" id="interview-select"><span id="interview-value">${esc(value)}</span>${trigger}</div></span></div><div class="${esc(dropdownClass)}" id="interview-menu" hidden><ul>${probe.select.optionsSample.map((text) => `<li>${esc(text)}</li>`).join('')}</ul></div>`;
+}
+
+function html(state) {
+  const rootClass = state.dropRoot ? 'page-root' : probe.page.rootClass;
+  const shell = state.elForm ? '<div class="el-form"></div>' : '';
+  const duplicate = state.duplicateResidence
+    ? `<div class="${esc(probe.page.itemClass)}"><label>${esc(RESIDENCE)}*</label><span class="${esc(probe.cascader.menuClass)}"><div class="${esc(probe.cascader.controlClass)}"><span>北京市</span></div></span></div>`
+    : '';
+  const buttons = [...probe.page.buttonLabels, ...FORBIDDEN.filter((label) => !probe.page.buttonLabels.includes(label))]
+    .map((label) => `<button type="button">${esc(label)}</button>`).join('');
+  return `<!doctype html><body>${shell}<div class="${esc(rootClass)}"><div class="${esc(probe.page.contentClass)}">${
+    cascaderField(RESIDENCE, state.residence ?? '', probe.cascader.optionsSample, state, 'residence')
+  }${cascaderField(ORIGIN, state.origin ?? '', probe.cascader.optionsSample, state, 'origin')
+  }${interviewField(state.interview ?? '', state)
+  }${cascaderField(INTENT, state.intent ?? probe.outOfScopeCascader.valueSample, probe.cascader.optionsSample, state, 'intent')
+  }<div class="${esc(probe.page.itemClass)}"><label>${esc(probe.neighbor.label)}*</label><input id="address" class="${esc(probe.neighbor.controlClass)}" value="${esc(probe.neighbor.token)}"></div><div class="${esc(probe.page.itemClass)}"><label>照片*</label><input id="photo" type="file"></div>${duplicate}${buttons}</div></div></body>`;
+}
+
+function hide(node, hidden) {
+  node.hidden = hidden;
+  node.style.display = hidden ? 'none' : '';
+}
+
+function closeWidgets(document) {
+  for (const select of document.querySelectorAll('.ant-select')) {
+    select.classList.remove('ant-select-open', 'ant-select-focused');
+  }
+  for (const menu of document.querySelectorAll('.cascader-plugins-wrap ul, #interview-menu')) hide(menu, true);
+}
+
+function wire(document, state) {
+  const stats = { open: 0, option: 0, escape: 0, forbidden: 0, file: 0, openClass: '', triggerClass: '' };
+  document.addEventListener('click', (event) => {
+    const button = event.target.closest('button');
+    if (button && FORBIDDEN.includes(button.textContent.trim())) stats.forbidden += 1;
+    if (event.target.matches?.('input[type="file"]')) stats.file += 1;
+  }, true);
+  for (const select of document.querySelectorAll('.ant-select')) {
+    const wrap = select.closest('.cascader-plugins-wrap');
+    const menu = wrap?.querySelector('ul') || null;
+    select.addEventListener('click', (event) => {
+      if (menu && menu.contains(event.target)) return;
+      stats.open += 1;
+      if (event.target.classList?.contains(probe.select.triggerClass)) stats.triggerClass = probe.select.triggerClass;
+      select.classList.add(...classes(probe.cascader.openClass));
+      stats.openClass = select.className;
+      if (menu) hide(menu, false);
+      if (select.id === 'interview-select') hide(document.getElementById('interview-menu'), false);
+    });
+    menu?.addEventListener('click', (event) => {
+      const li = event.target.closest('li');
+      if (!li || !menu.contains(li)) return;
+      stats.option += 1;
+      select.querySelector('span').textContent = li.textContent.trim();
+      closeWidgets(document);
+    });
+  }
+  document.getElementById('interview-menu')?.addEventListener('click', (event) => {
+    const li = event.target.closest('li');
+    if (!li) return;
+    stats.option += 1;
+    document.getElementById('interview-value').textContent = li.textContent.trim();
+    closeWidgets(document);
+  });
+  document.addEventListener('keydown', (event) => {
+    if (event.key !== 'Escape') return;
+    stats.escape += 1;
+    if (state.ignoreEscape) return;
+    closeWidgets(document);
+  });
+  if (state.busy) {
+    document.getElementById('interview-select').classList.add('ant-select-open', 'ant-select-focused');
+    hide(document.getElementById('interview-menu'), false);
+  }
+  return stats;
+}
+
+function patch(window) {
+  window.Element.prototype.getClientRects = function () {
+    for (let node = this; node?.nodeType === 1; node = node.parentElement) {
+      if (node.hidden || node.style.display === 'none') return [];
+    }
+    return [{ width: 8, height: 8, top: 0, left: 0, right: 8, bottom: 8 }];
+  };
+}
+
+async function boot(state = {}) {
+  const dom = new JSDOM(html(state), { url: state.url || PAGE, pretendToBeVisual: true, runScripts: 'dangerously' });
+  const { window } = dom;
+  const { document } = window;
+  patch(window);
+  const stats = wire(document, state);
+  window.eval(source);
+  return { dom, window, document, stats, api: window.ResumeHotjobPbRegion };
+}
+
+function unchanged(document, stats) {
+  assert.equal(document.getElementById('address').value, probe.neighbor.token);
+  assert.equal(document.getElementById('intent-value').textContent, probe.outOfScopeCascader.valueSample);
+  assert.equal(document.getElementById('photo').files.length, 0);
+  assert.equal(stats.forbidden, 0);
+  assert.equal(stats.file, 0);
+}
+
+test('source stays on the probed pb classes and does not claim support', () => {
+  assert.match(source, /ResumeHotjobPbRegion/);
+  assert.match(source, /liveSupportClaimed:\s*false/);
+  assert.doesNotMatch(source, /liveSupportClaimed:\s*true/);
+  assert.doesNotMatch(source, /已支持/);
+  assert.doesNotMatch(source, /hotjob-mc-basic|ResumeHotjobMc|mc\/deliver/);
+  assert.doesNotMatch(source, /textContent\s*=/);
+  assert.doesNotMatch(source, /\.value\s*=/);
+  assert.doesNotMatch(source, /innerHTML/);
+  assert.doesNotMatch(source, /ant-cascader-menus|form-cell|ant-select-selection--single/);
+  for (const token of [
+    ...classes(probe.page.itemClass),
+    ...classes(probe.cascader.controlClass),
+    ...classes(probe.cascader.openClass),
+    probe.cascader.menuClass,
+    ...classes(probe.select.controlClass),
+    probe.select.triggerClass,
+    ...classes(probe.select.dropdownClass),
+    probe.page.rootClass
+  ]) {
+    assert.match(source, new RegExp(token.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&')));
+  }
+});
+
+test('fixture html uses only the probe class list and menu text', () => {
+  const built = html({});
+  for (const token of [
+    probe.page.rootClass, probe.page.contentClass, probe.page.childrenClass,
+    ...classes(probe.page.itemClass), ...classes(probe.cascader.controlClass),
+    probe.cascader.menuClass, ...classes(probe.select.controlClass),
+    probe.select.triggerClass, ...classes(probe.select.dropdownClass),
+    probe.neighbor.controlClass
+  ]) assert.match(built, new RegExp(token.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&')));
+  for (const option of probe.cascader.optionsSample) assert.match(built, new RegExp(`>${option}<`));
+  for (const option of probe.select.optionsSample) assert.match(built, new RegExp(`>${option}<`));
+  for (const label of probe.page.buttonLabels) assert.match(built, new RegExp(`>${label}<`));
+  assert.doesNotMatch(built, /ant-cascader-menus|ant-select-selection--single|form-cell/);
+});
+
+test('inspect matches the three probed fields and does not claim support', async () => {
+  const h = await boot({ residence: probe.cascader.valueSample, origin: probe.cascader.valueSample, interview: probe.select.valueSample });
+  try {
+    const view = h.api.inspect();
+    assert.equal(h.api.liveSupportClaimed, false);
+    assert.equal(view.liveSupportClaimed, false);
+    assert.equal(view.complete, false);
+    assert.equal(view.fields.length, 3);
+    assert.equal(view.fields.every((field) => field.supported === false), true);
+    assert.equal(view.fields.find((field) => field.label === RESIDENCE).reason, 'structure_matched');
+    assert.equal(view.fields.find((field) => field.label === RESIDENCE).value, '北京市');
+    assert.equal(view.fields.find((field) => field.label === ORIGIN).reason, 'structure_matched');
+    assert.equal(view.fields.find((field) => field.label === INTERVIEW).reason, 'structure_matched');
+    assert.equal(view.fields.find((field) => field.label === INTERVIEW).value, '北京');
+    unchanged(h.document, h.stats);
+  } finally { h.dom.window.close(); }
+});
+
+test('empty cascader and interview select read back the clicked probe option', async () => {
+  const h = await boot({});
+  try {
+    const residence = await h.api.fillField(RESIDENCE, '上海市');
+    const origin = await h.api.fillField(ORIGIN, '天津市');
+    const interview = await h.api.fillField(INTERVIEW, '北京');
+    assert.equal(residence.ok, true, JSON.stringify(residence));
+    assert.equal(residence.status, 'verified');
+    assert.equal(residence.reason, 'readback_matched');
+    assert.equal(residence.after, '上海市');
+    assert.equal(residence.opened, true);
+    assert.equal(residence.liveSupportClaimed, false);
+    assert.equal(residence.complete, false);
+    assert.equal(residence.saved, false);
+    assert.equal(residence.skippedSave, true);
+    assert.equal(origin.reason, 'readback_matched');
+    assert.equal(origin.after, '天津市');
+    assert.equal(interview.reason, 'readback_matched');
+    assert.equal(interview.after, '北京');
+    assert.equal(h.stats.triggerClass, probe.select.triggerClass);
+    assert.match(h.stats.openClass, /ant-select-open/);
+    assert.match(h.stats.openClass, /ant-select-focused/);
+    assert.match(h.stats.openClass, /ant-select-enabled/);
+    assert.equal(h.document.getElementById('residence-value').textContent, '上海市');
+    assert.equal(h.document.getElementById('origin-value').textContent, '天津市');
+    assert.equal(h.document.getElementById('interview-value').textContent, '北京');
+    assert.equal(h.document.querySelectorAll('.ant-select-open').length, 0);
+    assert.equal(h.document.getElementById('interview-menu').hidden, true);
+    assert.equal(h.stats.option, 3);
+    unchanged(h.document, h.stats);
+  } finally { h.dom.window.close(); }
+});
+
+test('fillFields reads back all three and leaves neighbors untouched', async () => {
+  const h = await boot({});
+  try {
+    const filled = await h.api.fillFields({ [RESIDENCE]: '上海市', [ORIGIN]: '天津市', [INTERVIEW]: '北京' });
+    assert.equal(filled.ok, true, JSON.stringify(filled.fields));
+    assert.equal(filled.liveSupportClaimed, false);
+    assert.equal(filled.complete, false);
+    assert.equal(filled.saved, false);
+    assert.equal(filled.fields.map((field) => field.reason).join(','), 'readback_matched,readback_matched,readback_matched');
+    unchanged(h.document, h.stats);
+  } finally { h.dom.window.close(); }
+});
+
+test('preexisting 北京市 / 北京 does not open a menu or paint', async () => {
+  const h = await boot({
+    residence: probe.cascader.valueSample,
+    origin: probe.cascader.valueSample,
+    interview: probe.select.valueSample
+  });
+  try {
+    const residence = await h.api.fillField(RESIDENCE, '北京市');
+    const interview = await h.api.fillField(INTERVIEW, '北京');
+    assert.equal(residence.reason, 'preexisting_same_value');
+    assert.equal(residence.status, 'verified');
+    assert.equal(residence.opened, false);
+    assert.equal(interview.reason, 'preexisting_same_value');
+    assert.equal(h.stats.open, 0);
+    assert.equal(h.stats.option, 0);
+    assert.equal(h.document.getElementById('residence-value').textContent, '北京市');
+    assert.equal(h.document.getElementById('interview-value').textContent, '北京');
+    unchanged(h.document, h.stats);
+  } finally { h.dom.window.close(); }
+});
+
+test('a different existing value is kept and the menu stays closed', async () => {
+  const h = await boot({ residence: '北京市' });
+  try {
+    const residence = await h.api.fillField(RESIDENCE, '上海市');
+    assert.equal(residence.reason, 'existing_value');
+    assert.equal(residence.status, 'skipped');
+    assert.equal(residence.ok, false);
+    assert.equal(h.stats.open, 0);
+    assert.equal(h.document.getElementById('residence-value').textContent, '北京市');
+    unchanged(h.document, h.stats);
+  } finally { h.dom.window.close(); }
+});
+
+test('empty values and out-of-scope labels fail closed without opening', async () => {
+  const h = await boot({});
+  try {
+    for (const value of ['', '   ', null]) {
+      const row = await h.api.fillField(RESIDENCE, value);
+      assert.equal(row.reason, 'missing_profile_value', String(value));
+      assert.equal(row.ok, false);
+    }
+    const intent = await h.api.fillField(INTENT, '上海市');
+    assert.equal(intent.reason, 'label_not_allowed');
+    assert.equal(h.stats.open, 0);
+    assert.equal(h.document.getElementById('intent-value').textContent, '北京');
+    unchanged(h.document, h.stats);
+  } finally { h.dom.window.close(); }
+});
+
+test('Escape closes the probed menu and does not change the value', async () => {
+  const h = await boot({ residence: '' });
+  try {
+    const canceled = await h.api.cancelField(RESIDENCE);
+    assert.equal(canceled.ok, true, JSON.stringify(canceled));
+    assert.equal(canceled.reason, 'menu_closed');
+    assert.equal(canceled.canceled, true);
+    assert.equal(canceled.stillOpen, 0);
+    assert.equal(canceled.before, '');
+    assert.equal(canceled.after, '');
+    assert.equal(canceled.liveSupportClaimed, false);
+    assert.equal(h.stats.open, 1);
+    assert.equal(h.stats.option, 0);
+    assert.ok(h.stats.escape >= 1);
+    assert.equal(h.document.querySelector('.cascader-plugins-wrap ul').hidden, true);
+    assert.equal(h.document.querySelectorAll('.ant-select-open').length, 0);
+    const interview = await h.api.cancelField(INTERVIEW);
+    assert.equal(interview.reason, 'menu_closed');
+    assert.equal(interview.after, '');
+    assert.equal(h.document.getElementById('interview-menu').hidden, true);
+    unchanged(h.document, h.stats);
+  } finally { h.dom.window.close(); }
+});
+
+test('a menu that ignores Escape fails closed and does not keep a painted value', async () => {
+  const h = await boot({ ignoreEscape: true });
+  try {
+    const canceled = await h.api.cancelField(ORIGIN);
+    assert.equal(canceled.ok, false);
+    assert.equal(canceled.reason, 'menu_cleanup_failed');
+    assert.equal(canceled.stillOpen, 1);
+    assert.equal(canceled.after, '');
+    assert.equal(h.stats.option, 0);
+    unchanged(h.document, h.stats);
+  } finally { h.dom.window.close(); }
+});
+
+test('missing, duplicate, and drifted menus fail closed', async () => {
+  const missing = await boot({});
+  try {
+    const row = await missing.api.fillField(RESIDENCE, '广东省');
+    assert.equal(row.reason, 'option_not_found', JSON.stringify(row));
+    assert.equal(row.after, '');
+    assert.equal(row.stillOpen, 0);
+    assert.ok(missing.stats.escape >= 1);
+    assert.equal(missing.stats.option, 0);
+    unchanged(missing.document, missing.stats);
+  } finally { missing.dom.window.close(); }
+
+  const ambiguous = await boot({ duplicateOption: '上海市' });
+  try {
+    const row = await ambiguous.api.fillField(RESIDENCE, '上海市');
+    assert.equal(row.reason, 'ambiguous_option');
+    assert.equal(row.after, '');
+    assert.equal(ambiguous.stats.option, 0);
+  } finally { ambiguous.dom.window.close(); }
+
+  const cases = [
+    [{ dropWrap: true }, RESIDENCE],
+    [{ extraSelect: true }, RESIDENCE],
+    [{ allowClearOnCascader: true }, RESIDENCE],
+    [{ dropAntRow: true }, RESIDENCE],
+    [{ duplicateResidence: true }, RESIDENCE],
+    [{ dropSearch: true }, INTERVIEW],
+    [{ dropAllowClear: true }, INTERVIEW],
+    [{ badDropdown: true }, INTERVIEW],
+    [{ busy: true }, INTERVIEW],
+    [{ dropRoot: true }, RESIDENCE],
+    [{ elForm: true }, RESIDENCE],
+    [{ url: 'https://wecruit.hotjob.cn/SU629dbc0c0dcad452299bc0f7/mc/deliver/operationResumer' }, RESIDENCE],
+    [{ url: 'https://gszq.hotjob.cn/SU629dbc0c0dcad452299bc0f7/pb/resumeOperation.html' }, RESIDENCE]
+  ];
+  for (const [state, label] of cases) {
+    const h = await boot(state);
+    try {
+      const row = await h.api.fillField(label, label === INTERVIEW ? '北京' : '上海市');
+      assert.notEqual(row.reason, 'readback_matched', JSON.stringify(state));
+      assert.equal(row.ok, false, JSON.stringify({ state, row }));
+      assert.ok(['control_not_supported', 'control_busy', 'wrong_page'].includes(row.reason), JSON.stringify({ state, row }));
+      assert.equal(h.stats.option, 0, JSON.stringify(state));
+      assert.equal(h.stats.forbidden, 0, JSON.stringify(state));
+      if (!state.dropRoot && !state.elForm && !state.url && !state.duplicateResidence && label === RESIDENCE) {
+        assert.equal(h.document.getElementById('residence-value')?.textContent ?? '', '');
+      }
+    } finally { h.dom.window.close(); }
+  }
+});
+
+test('a hidden page fails closed before a click', async () => {
+  const h = await boot({});
+  try {
+    Object.defineProperty(h.document, 'visibilityState', { configurable: true, get: () => 'hidden' });
+    const row = await h.api.fillField(RESIDENCE, '上海市');
+    assert.equal(row.reason, 'fill_interrupted_page_hidden');
+    assert.equal(h.stats.open, 0);
+    assert.equal(row.liveSupportClaimed, false);
+  } finally { h.dom.window.close(); }
+});

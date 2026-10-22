@@ -15,11 +15,20 @@ const SECTION = '其他信息';
 const QUESTIONS = ['描述', '标题'];
 const TITLES = ['基本信息', '教育经历', '求职意向', '工作经验', '职业技能与特长', '附件简历', '其他信息'];
 
+const ANSWERS = { '标题': 'Synthetic other title', '描述': 'Synthetic other desc' };
+
+function siteFacts(answers, section = SECTION) {
+  return Object.entries(answers).map(([question, answer]) => ({
+    question, answer, sitePageUrl: PAGE, sectionName: section, rowContext: 'none',
+  }));
+}
+
 const fixture = () => ({
   schemaVersion: 1,
   fullName: 'Synthetic Customer B',
-  customAnswers: { '描述': 'Synthetic other desc', '标题': 'Synthetic other title' },
-  confirmedFields: ['customAnswers.描述', 'customAnswers.标题'],
+  customAnswers: { ...ANSWERS },
+  confirmedFields: ['标题', '描述'].map((question) => `customAnswers.${question}`),
+  customFacts: siteFacts(ANSWERS),
 });
 
 async function harness({ fillResponse } = {}) {
@@ -28,7 +37,8 @@ async function harness({ fillResponse } = {}) {
     resumeProfileLifecycle: { version: 1, epoch, state: 'ready' },
   };
   const clone = (value) => (value === undefined ? undefined : structuredClone(value));
-  const stats = { inject: 0, fill: 0, probe: 0 };
+  const stats = { inject: 0, fill: 0, probe: 0, files: null };
+  const sent = [];
   const storage = {
     get: async (keys) =>
       keys === null
@@ -97,6 +107,7 @@ async function harness({ fillResponse } = {}) {
       sendMessage: async (_tabId, message) => {
         if (message?.type === 'GTH_OTHER_FILL') {
           stats.fill += 1;
+          sent.push(message);
           return defaultFill;
         }
         throw Error('unexpected_sendMessage');
@@ -106,6 +117,7 @@ async function harness({ fillResponse } = {}) {
       executeScript: async (request) => {
         if (request.files) {
           stats.inject += 1;
+          stats.files = request.files;
           return [];
         }
         if (typeof request.func === 'function' && (request.world === 'MAIN' || request.world === 'ISOLATED')) {
@@ -141,7 +153,7 @@ async function harness({ fillResponse } = {}) {
     timeoutMs: 5000,
     lifecycleOptions: { locks: { request: async (_n, _o, work) => work() }, cryptoImpl: globalThis.crypto },
   });
-  return { invoke, stats, data, autoSender, badSender };
+  return { invoke, stats, sent, data, autoSender, badSender };
 }
 
 test('GTH_OTHER_AUTO rejects non-other auto page sender', async () => {
@@ -166,6 +178,8 @@ test('GTH_OTHER_AUTO readiness probes without other fill', async () => {
   assert.equal(h.stats.inject, 0);
   assert.equal(response.readiness?.pageState, 'ready');
   assert.equal(response.readiness?.other?.ready, true);
+  assert.equal(response.liveSupportClaimed, false);
+  assert.equal(response.complete, false);
   assert.equal(h.data.resumeGthOtherAutoRun?.ok, true);
 });
 
@@ -193,12 +207,29 @@ test('GTH_OTHER_AUTO fill injects once and never Save', async () => {
   assert.equal(h.stats.fill, 1);
   assert.equal(response.job?.state, 'completed');
   assert.equal(response.job?.softwareClickedSave, false);
+  assert.equal(response.job?.liveSupportClaimed, false);
+  assert.equal(response.liveSupportClaimed, false);
+  assert.equal(response.complete, false);
   assert.equal(response.job?.fields?.length, 2);
+  assert.deepEqual(h.stats.files, ['src/content/gth-open-fill.js', 'src/content/gth-other.js']);
+  assert.equal(h.sent.length, 1);
+  assert.equal(h.sent[0].type, 'GTH_OTHER_FILL');
+  assert.equal(h.sent[0].answers, undefined);
+  assert.equal(h.sent[0].replaceExisting, false);
+  assert.deepEqual(h.sent[0].profile, {
+    customAnswers: { ...ANSWERS },
+    confirmedFields: ['customAnswers.标题', 'customAnswers.描述'],
+    customFacts: [
+      { question: '标题', answer: ANSWERS['标题'], sitePageUrl: PAGE, sectionName: SECTION, rowContext: 'none' },
+      { question: '描述', answer: ANSWERS['描述'], sitePageUrl: PAGE, sectionName: SECTION, rowContext: 'none' },
+    ],
+  });
+  assert.equal(h.sent[0].profile.fullName, undefined);
   assert.equal(h.data.resumeGthOtherAutoRun?.saveAttempted, false);
 });
 
 
-test('GTH_OTHER_AUTO otherSource ready only with confirmed 描述+标题', async () => {
+test('GTH_OTHER_AUTO otherSource ready only with confirmed site facts for 描述+标题', async () => {
   const h = await harness();
   const runner = createGthOtherAutoRunner({
     api: {
@@ -224,7 +255,23 @@ test('GTH_OTHER_AUTO otherSource ready only with confirmed 描述+标题', async
   assert.equal(runner.otherSource({
     customAnswers: { '描述': 'x', '标题': 'y' },
     confirmedFields: ['customAnswers.描述', 'customAnswers.标题'],
+  }).ready, false);
+  const facts = siteFacts({ '描述': 'x', '标题': 'y' });
+  assert.equal(runner.otherSource({
+    customAnswers: { '描述': 'x', '标题': 'y' },
+    confirmedFields: ['customAnswers.描述', 'customAnswers.标题'],
+    customFacts: facts,
   }).ready, true);
+  assert.equal(runner.otherSource({
+    customAnswers: { '描述': ' ', '标题': 'y' },
+    confirmedFields: ['customAnswers.描述', 'customAnswers.标题'],
+    customFacts: facts,
+  }).hasAllAnswers, false);
+  assert.equal(runner.otherSource({
+    customAnswers: { '描述': 'x', '标题': 'y' },
+    confirmedFields: ['customAnswers.描述', 'customAnswers.标题'],
+    customFacts: facts.map((fact) => ({ ...fact, sectionName: '别的分区' })),
+  }).ready, false);
 });
 
 test('GTH_OTHER_AUTO fill fail-closed missing_profile_value', async () => {
@@ -234,6 +281,7 @@ test('GTH_OTHER_AUTO fill fail-closed missing_profile_value', async () => {
   assert.equal(response.ok, false);
   assert.equal(response.reason, 'missing_profile_value');
   assert.equal(response.saveAttempted, false);
+  assert.equal(response.liveSupportClaimed, false);
   assert.equal(h.stats.fill, 0);
 });
 
@@ -249,7 +297,56 @@ test('GTH_OTHER_AUTO fill fail-closed profile_fact_unconfirmed', async () => {
   assert.equal(response.ok, false);
   assert.equal(response.reason, 'profile_fact_unconfirmed');
   assert.equal(response.saveAttempted, false);
+  assert.equal(response.liveSupportClaimed, false);
   assert.equal(h.stats.fill, 0);
+});
+
+test('GTH_OTHER_AUTO fill fail-closed when confirmed answers have no site fact', async () => {
+  const h = await harness();
+  h.data.resumeProfile = {
+    schemaVersion: 1,
+    fullName: 'Synthetic',
+    customAnswers: { '描述': 'TEST', '标题': 'TEST' },
+    confirmedFields: ['customAnswers.描述', 'customAnswers.标题'],
+  };
+  const response = await h.invoke({ type: 'GTH_OTHER_AUTO', mode: 'fill', originConfirmed: true });
+  assert.equal(response.ok, false);
+  assert.equal(response.reason, 'profile_fact_unconfirmed');
+  assert.equal(response.liveSupportClaimed, false);
+  assert.equal(response.saveAttempted, false);
+  assert.equal(h.stats.fill, 0);
+});
+
+test('GTH_OTHER_AUTO keeps liveSupportClaimed false when the page claims support', async () => {
+  const claimed = {
+    ok: true,
+    complete: false,
+    scope: 'gth_other_two',
+    section: SECTION,
+    supportedComplete: true,
+    operableComplete: true,
+    writeStarted: false,
+    editorLeftOpen: true,
+    savedOnSite: null,
+    submitted: null,
+    softwareClickedSave: false,
+    softwareClickedSubmit: false,
+    softwareClickedDelete: false,
+    liveSupportClaimed: true,
+    fields: ['标题', '描述'].map((question) => ({
+      question,
+      path: `customAnswers.${question}`,
+      labels: [question],
+      status: 'verified',
+      reason: 'preexisting_same_value',
+    })),
+  };
+  const h = await harness({ fillResponse: claimed });
+  const response = await h.invoke({ type: 'GTH_OTHER_AUTO', mode: 'fill', originConfirmed: true });
+  assert.equal(response.ok, false);
+  assert.equal(response.liveSupportClaimed, false);
+  assert.equal(response.job?.liveSupportClaimed, false);
+  assert.equal(response.saveAttempted, false);
 });
 
 test('GTH_OTHER_AUTO related GTH tab without edit → login helpNeeded', async () => {

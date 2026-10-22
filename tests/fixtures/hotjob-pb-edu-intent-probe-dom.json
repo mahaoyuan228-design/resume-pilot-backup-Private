@@ -1,0 +1,187 @@
+{
+  "source": "Structural excerpt of the 2026-10-23 hotjob pb resumeOperation probe for basic-block education text, 评价内容, and flat intent selects. Classes, labels, placeholders, and the one probed display token per unopened select. Applicant address and 评价内容 prose are omitted. This is not a live support claim.",
+  "page": {
+    "hostname": "wecruit.hotjob.cn",
+    "pathPattern": "/SU[0-9A-Za-z]{8,64}/pb/resumeOperation.html",
+    "samplePath": "/SU629dbc0c0dcad452299bc0f7/pb/resumeOperation.html",
+    "rootClass": "resume-operation-wrap",
+    "contentClass": "resume-content-wrap",
+    "childrenClass": "ant-form-item-children",
+    "itemClass": "ant-row ant-form-item",
+    "hasAntDesign": true,
+    "hasElForm": false,
+    "buttonLabels": ["保存", "返回"],
+    "forbiddenButtons": ["保存", "提交", "投递", "删除", "下一步", "返回", "确定"]
+  },
+  "anchors": {
+    "before": "毕业院校",
+    "after": "毕业时间",
+    "note": "个人基本信息 order in the 2026-10-23 probe is 毕业院校, then 学位, 学历, 专业名称, then 毕业时间. 教育经历 later repeats 学位, 学历, and 专业名称 after that 毕业时间 row. The basic row is the single form item strictly between the one 毕业院校 row and the one 毕业时间 row."
+  },
+  "text": {
+    "controlClass": "ant-input",
+    "inputType": "text"
+  },
+  "textarea": {
+    "controlClass": "ant-input",
+    "controlTag": "textarea"
+  },
+  "select": {
+    "controlClass": "ant-select ant-select-enabled ant-select-allow-clear",
+    "triggerClass": "ant-select-search__field",
+    "dropdownClass": "ant-select-dropdown ant-select-dropdown--single ant-select-dropdown-placement-bottomLeft",
+    "openClass": "ant-select ant-select-open ant-select-focused ant-select-enabled",
+    "openClassNote": "These six selects were not individually opened. Dropdown class and ant-select-search__field are the same page's 国籍/地区, 民族, 婚姻状况, and 政治面貌 probes. Open/focused/enabled is the same page's 现居住地 click, already required by hotjob-pb-region.js and hotjob-pb-basic.js.",
+    "cancel": "Escape"
+  },
+  "fields": [
+    {
+      "key": "address",
+      "label": "联系地址",
+      "kind": "text",
+      "placeholder": "请填写联系地址"
+    },
+    {
+      "key": "school",
+      "label": "毕业院校",
+      "kind": "select",
+      "valueSample": "悉尼大学",
+      "optionsSample": ["悉尼大学"],
+      "optionsNote": "Interactive probe did not open 毕业院校. The only probed token is the display valueSample. No other school text is included."
+    },
+    {
+      "key": "degree",
+      "label": "学位",
+      "kind": "select",
+      "valueSample": "学士",
+      "optionsSample": ["学士"],
+      "optionsNote": "Interactive probe did not open 学位. Inventory valueSample is 学士. Page text also showed 硕士 on the basic row and 学士 on the education row. No other option text is included."
+    },
+    {
+      "key": "level",
+      "label": "学历",
+      "kind": "select",
+      "valueSample": "本科",
+      "optionsSample": ["本科"],
+      "optionsNote": "Interactive probe did not open 学历. Inventory valueSample is 本科. Page text also showed 硕士研究生 on the basic row and 本科 on the education row. No other option text is included."
+    },
+    {
+      "key": "major",
+      "label": "专业名称",
+      "kind": "text",
+      "placeholder": "请填写专业名称",
+      "valueSample": "Economics Major, Financial Economics Minor",
+      "valueSampleNote": "Markdown value column and JSON displayValueEnriched for the 个人基本信息 row, which sits before 毕业时间. That JSON row's valueSample is 金融学. The 教育经历 row repeats 专业名称 and its valueSample is the Economics string. Match the unique basic label row, not the current value."
+    },
+    {
+      "key": "note",
+      "label": "评价内容",
+      "kind": "textarea",
+      "placeholder": "请填写评价内容"
+    },
+    {
+      "key": "nature",
+      "label": "期望工作性质",
+      "kind": "select",
+      "valueSample": "全职",
+      "optionsSample": ["全职"],
+      "optionsNote": "Interactive probe did not open 期望工作性质. The only probed token is the display valueSample."
+    },
+    {
+      "key": "salary",
+      "label": "期望年薪",
+      "kind": "select",
+      "valueSample": "11-20万",
+      "optionsSample": ["11-20万"],
+      "optionsNote": "Interactive probe did not open 期望年薪. The only probed token is the display valueSample."
+    },
+    {
+      "key": "arrival",
+      "label": "到岗时间",
+      "kind": "select",
+      "valueSample": "一个月",
+      "optionsSample": ["一个月"],
+      "optionsNote": "Interactive probe did not open 到岗时间. The only probed token is the display valueSample."
+    }
+  ],
+  "neighbors": {
+    "name": {
+      "label": "姓名",
+      "token": "NAME_KEEP"
+    },
+    "birth": {
+      "label": "出生日期",
+      "controlClass": "ant-calendar-picker-input ant-input",
+      "token": "READONLY_BIRTH"
+    },
+    "residence": {
+      "label": "现居住地",
+      "controlClass": "ant-select ant-select-enabled",
+      "menuClass": "cascader-plugins-wrap",
+      "token": "北京市"
+    },
+    "origin": {
+      "label": "籍贯",
+      "controlClass": "ant-select ant-select-enabled",
+      "menuClass": "cascader-plugins-wrap",
+      "token": "北京市"
+    },
+    "graduation": {
+      "label": "毕业时间*?",
+      "controlClass": "ant-calendar-picker-input ant-input",
+      "token": "READONLY_GRAD"
+    },
+    "phone": {
+      "label": "移动电话（请填写中国大陆移动电话，以便接收短信通知）",
+      "token": "PHONE_KEEP"
+    },
+    "interview": {
+      "label": "期望面试地点（供参考，实际安排将根据笔试通过名单确定）",
+      "token": "北京"
+    },
+    "photo": {
+      "label": "照片",
+      "itemClass": "ant-row ant-form-item formItem41"
+    },
+    "intent": {
+      "label": "意向一：期望工作地点",
+      "controlClass": "ant-select ant-select-enabled",
+      "menuClass": "cascader-plugins-wrap",
+      "token": "北京"
+    },
+    "obey": {
+      "label": "期望工作地是否服从分配",
+      "controlClass": "ant-radio-input",
+      "options": ["是", "否"]
+    },
+    "research": {
+      "label": "如应聘研究发展中心行业研究类岗位请勾选（建议仅勾选3~5项）",
+      "controlClass": "ant-checkbox-input"
+    },
+    "eduSchool": {
+      "label": "学校",
+      "token": "EDU_SCHOOL_KEEP"
+    },
+    "eduDegree": {
+      "label": "学位",
+      "token": "EDU_DEGREE_KEEP"
+    },
+    "eduLevel": {
+      "label": "学历",
+      "token": "EDU_LEVEL_KEEP"
+    },
+    "eduMajor": {
+      "label": "专业名称",
+      "placeholder": "请填写专业名称",
+      "token": "EDU_MAJOR_KEEP"
+    },
+    "eduDescription": {
+      "label": "专业描述",
+      "token": "EDU_DESC_KEEP"
+    },
+    "portrait": {
+      "label": "个人照片",
+      "itemClass": "ant-row ant-form-item formItem49170547"
+    }
+  }
+}

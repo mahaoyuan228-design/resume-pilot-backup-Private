@@ -1,17 +1,19 @@
 // Hotjob pb (Ant Design resumeOperation) Never-Save fill for basic-block
 // education/intent flat fields only. Probe 2026-10-23:
-// text 联系地址, 毕业院校, and 专业名称 (input.ant-input);
+// text 联系地址 and 专业名称 (input.ant-input);
 // textarea 评价内容 (textarea.ant-input);
 // flat ant-select allow-clear: 学位, 学历, 期望工作性质, 期望年薪, 到岗时间.
-// 毕业院校 was grouped with those selects only because the six rows were not opened
-// and the class list was copied from 国籍/地区. The same-page harvest placeholder is
-// 请填写毕业院校 on a text input. Live 2026-10-23 after the face fallback still
-// returned control_not_supported for 毕业院校 while 期望工作性质 located.
-// That harvest lists 毕业院校* four times and neighboring labels twice, so identical
-// captions on the row still name it. Disagreeing captions stay fail-closed.
+// A lone 毕业院校 row stays the harvested text input (placeholder 请填写毕业院校).
+// Live 2026-10-23 also has that text row beside a flat ant-select whose selected
+// value is already the school. Harvest labels list 毕业院校* four times because
+// each of those two rows carries the caption twice. Identical captions on one
+// row still name it. Disagreeing captions stay fail-closed. Any other pair of
+// 毕业院校 rows stays fail-closed. Never-Save prefers the preexisting ant-select
+// only when the pair is exactly one flat ant-select with a non-empty selected
+// value and one text input, and does not write the text input.
 // 学位, 学历, and 专业名称 repeat after 毕业时间 in 教育经历. The basic row is the
-// single form item strictly between the one 毕业院校 row and the one 毕业时间 row
-// (probe order: 毕业院校, 学位, 学历, 专业名称, 毕业时间). Match that label row.
+// single form item strictly after the preferred 毕业院校 row and before the one
+// 毕业时间 row. A unique 毕业院校 row is that preferred row. Match the label.
 // Do not match the current value. The education-history row repeats the label.
 // Dropdown class and ant-select-search__field are the same page's flat-select probes.
 // Open/focused/enabled matches the same page's ant-select contract in
@@ -128,10 +130,10 @@
     const all = formItems();
     const matches = all.filter((item) => labelOf(item) === want);
     if (!ANCHORED.has(label)) return matches;
-    const before = all.filter((item) => labelOf(item) === SCHOOL);
+    const school = schoolAnchorItem();
     const after = all.filter((item) => labelOf(item) === ANCHOR_AFTER);
-    if (before.length !== 1 || after.length !== 1) return [];
-    const start = all.indexOf(before[0]);
+    if (!school || after.length !== 1) return [];
+    const start = all.indexOf(school);
     const end = all.indexOf(after[0]);
     if (!(start < end)) return [];
     return matches.filter((item) => {
@@ -219,8 +221,49 @@
     return { ok: true, kind: 'select', item, select, trigger };
   }
 
+  function schoolRows() {
+    return formItems().filter((item) => labelOf(item) === SCHOOL);
+  }
+
+  // Two harvested 毕业院校 rows: keep the flat ant-select that already shows a
+  // school, and leave the text input alone. A unique row stays the text contract.
+  function resolveSchool(rows) {
+    if (rows.length === 1) return locateText(rows[0]);
+    if (rows.length !== 2) return { ok: false, reason: 'control_not_supported' };
+    let select = null;
+    let text = null;
+    for (const item of rows) {
+      const asSelect = locateSelect(item, SCHOOL);
+      const asText = locateText(item);
+      if (asSelect.ok && !asText.ok) {
+        if (select) return { ok: false, reason: 'control_not_supported' };
+        select = asSelect;
+      } else if (asText.ok && !asSelect.ok) {
+        if (text) return { ok: false, reason: 'control_not_supported' };
+        text = asText;
+      } else {
+        return { ok: false, reason: 'control_not_supported' };
+      }
+    }
+    const read = readSelectText(select.select, SCHOOL);
+    if (!read.ok || !read.value) return { ok: false, reason: 'control_not_supported' };
+    return select;
+  }
+
+  function schoolAnchorItem() {
+    const rows = schoolRows();
+    if (rows.length === 1) return rows[0];
+    const found = resolveSchool(rows);
+    return found.ok ? found.item : null;
+  }
+
   function locate(label) {
     if (!Object.hasOwn(KINDS, label)) return { ok: false, reason: 'label_not_allowed' };
+    if (label === SCHOOL) {
+      const found = resolveSchool(schoolRows());
+      if (found.ok) found.label = label;
+      return found;
+    }
     const items = itemsFor(label);
     if (items.length !== 1) return { ok: false, reason: 'control_not_supported' };
     const kind = KINDS[label];
@@ -475,7 +518,7 @@
       const read = found.ok ? readFound(found) : { ok: false, value: '' };
       return {
         label,
-        kind: KINDS[label],
+        kind: found.ok ? found.kind : KINDS[label],
         supported: false,
         reason: found.ok && read.ok ? 'structure_matched' : (found.ok ? read.reason : found.reason),
         value: found.ok && read.ok ? read.value : ''

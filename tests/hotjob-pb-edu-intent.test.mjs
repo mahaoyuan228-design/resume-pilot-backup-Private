@@ -149,6 +149,33 @@ function majorRow(value, state) {
   });
 }
 
+function dualSelectControl(id, value, state) {
+  const live = probe.select.liveReadback;
+  const allow = state.dualSchoolDropAllowClear ? 'ant-select ant-select-enabled' : probe.select.controlClass;
+  const inner = `<span class="${esc(live.selectedValueClass)}" id="${id}-value">${esc(value)}</span>`;
+  const face = `<div class="${esc(live.faceClass)}" role="${esc(live.faceRole)}">${inner}</div>`;
+  const trigger = `<input class="${esc(probe.select.triggerClass)}" type="text" value="">`;
+  return `<div class="${esc(allow)}" id="${id}">${face}${trigger}</div>`;
+}
+
+function dualSchoolMarkup(state) {
+  const dual = probe.dualSchool;
+  const selectValue = Object.hasOwn(state, 'dualSchoolValue') ? state.dualSchoolValue : dual.select.valueSample;
+  const textValue = Object.hasOwn(state, 'dualSchoolTextValue') ? state.dualSchoolTextValue : dual.text.valueSample;
+  const selectExtra = dual.select.duplicateCaption ? star(dual.select.label) : '';
+  const textExtra = dual.text.duplicateCaption ? star(dual.text.label) : '';
+  const textInner = `<input id="school-text-input" class="${esc(probe.text.controlClass)}" type="${esc(probe.text.inputType)}" placeholder="${esc(dual.text.placeholder)}" value="${esc(textValue)}">`;
+  return [
+    row('school-select', dual.select.label, dualSelectControl('school-face-select', selectValue, state), state, { extraLabel: selectExtra }),
+    row('school-text', dual.text.label, textInner, state, { extraLabel: textExtra })
+  ].join('');
+}
+
+function schoolBlock(state) {
+  if (!state.dualSchool) return textRow('school', state.school ?? '', state);
+  return dualSchoolMarkup(state);
+}
+
 function plainText(key, label, value, id, placeholder = '') {
   const holder = placeholder ? ` placeholder="${esc(placeholder)}"` : '';
   return row(key, label, `<input id="${id}" class="${esc(probe.text.controlClass)}" type="text"${holder} value="${esc(value)}">`, {});
@@ -218,7 +245,8 @@ function html(state) {
   const body = [
     textRow('address', state.address ?? '', state),
     duplicateAddress,
-    textRow('school', state.school ?? '', state),
+    schoolBlock(state),
+    state.secondSchoolText ? plainText('school-2', SCHOOL, state.secondSchoolTextValue ?? '', 'school-2-input', FIELD.school.placeholder) : '',
     selectRow('degree', state.degree ?? '', state),
     selectRow('level', state.level ?? '', state),
     basicMajor,
@@ -1031,6 +1059,172 @@ test('专业名称 stays the basic text row and does not use the education value
     assert.equal(empty.stats.forbidden, 0);
     unchanged(empty.document, empty.stats);
   } finally { empty.dom.window.close(); }
+});
+
+function schoolItems(document) {
+  return [...document.querySelectorAll('.ant-row.ant-form-item')].filter((item) => {
+    const labels = [...item.querySelectorAll('label')].filter((node) => node.closest('.ant-row.ant-form-item') === item);
+    return labels.some((node) => node.textContent.includes(SCHOOL));
+  });
+}
+
+test('two 毕业院校 rows prefer the preexisting ant-select and still locate 学位, 学历, and 专业名称', async () => {
+  const dual = probe.dualSchool;
+  assert.equal(dual.order[0], 'select');
+  assert.equal(dual.order[1], 'text');
+  assert.equal(dual.select.duplicateCaption, true);
+  assert.equal(dual.text.duplicateCaption, true);
+  assert.equal(dual.select.valueSample, FIELD.school.valueSample);
+  assert.equal(dual.text.placeholder, FIELD.school.placeholder);
+  assert.match(FIELD.degree.optionsNote, new RegExp(dual.anchored.degree));
+  assert.equal(FIELD.degree.optionsNote.includes(dual.anchored.level), false);
+  assert.match(FIELD.level.optionsNote, new RegExp(dual.anchored.level));
+  assert.match(FIELD.major.valueSampleNote, new RegExp(dual.anchored.major));
+  const h = await boot({
+    dualSchool: true,
+    closedSearch: true,
+    degree: dual.anchored.degree,
+    level: dual.anchored.level,
+    major: dual.anchored.major
+  });
+  try {
+    const items = schoolItems(h.document);
+    assert.equal(items.length, 2);
+    const captions = items.flatMap((item) => [...item.querySelectorAll('label')].filter((node) => node.closest('.ant-row.ant-form-item') === item));
+    assert.equal(captions.length, 4);
+    assert.equal(items[0].querySelector('.ant-select') !== null, true);
+    assert.equal(items[1].querySelector('input.ant-input') !== null, true);
+    assert.equal(items[0].querySelector('.ant-select-selection-selected-value').textContent, dual.select.valueSample);
+    assert.equal(items[1].querySelector('input.ant-input').getAttribute('placeholder'), dual.text.placeholder);
+    assert.equal(items[1].querySelector('input.ant-input').value, '');
+    const following = h.window.Node.DOCUMENT_POSITION_FOLLOWING;
+    const selectItem = h.document.querySelector('[data-field="school-select"]');
+    const textItem = h.document.querySelector('[data-field="school-text"]');
+    const degreeItem = h.document.querySelector('[data-field="degree"]');
+    const levelItem = h.document.querySelector('[data-field="level"]');
+    const majorItem = h.document.querySelector('[data-field="major"]');
+    const gradItem = h.document.querySelector('[data-field="graduation"]');
+    assert.ok(selectItem.compareDocumentPosition(textItem) & following);
+    assert.ok(textItem.compareDocumentPosition(degreeItem) & following);
+    assert.ok(degreeItem.compareDocumentPosition(levelItem) & following);
+    assert.ok(levelItem.compareDocumentPosition(majorItem) & following);
+    assert.ok(majorItem.compareDocumentPosition(gradItem) & following);
+    const view = h.api.inspect();
+    assert.equal(view.ok, true, JSON.stringify(view.fields));
+    assert.equal(view.liveSupportClaimed, false);
+    assert.equal(view.supportClaimed, false);
+    assert.equal(view.neverSave, true);
+    assert.equal(view.saved, false);
+    assert.equal(view.complete, false);
+    assert.equal(h.api.liveSupportClaimed, false);
+    assert.equal(h.api.supportClaimed, false);
+    const school = view.fields.find((field) => field.label === SCHOOL);
+    const degree = view.fields.find((field) => field.label === DEGREE);
+    const level = view.fields.find((field) => field.label === LEVEL);
+    const major = view.fields.find((field) => field.label === MAJOR);
+    assert.equal(school.reason, 'structure_matched');
+    assert.equal(school.supported, false);
+    assert.equal(school.kind, 'select');
+    assert.equal(school.value, dual.select.valueSample);
+    assert.equal(degree.reason, 'structure_matched');
+    assert.equal(degree.supported, false);
+    assert.equal(degree.kind, 'select');
+    assert.equal(degree.value, dual.anchored.degree);
+    assert.equal(level.reason, 'structure_matched');
+    assert.equal(level.supported, false);
+    assert.equal(level.kind, 'select');
+    assert.equal(level.value, dual.anchored.level);
+    assert.equal(major.reason, 'structure_matched');
+    assert.equal(major.supported, false);
+    assert.equal(major.kind, 'text');
+    assert.equal(major.value, dual.anchored.major);
+    const keptSchool = await h.api.fillField(SCHOOL, ` ${dual.select.valueSample} `);
+    const keptDegree = await h.api.fillField(DEGREE, dual.anchored.degree);
+    const keptLevel = await h.api.fillField(LEVEL, dual.anchored.level);
+    const keptMajor = await h.api.fillField(MAJOR, dual.anchored.major);
+    for (const rowResult of [keptSchool, keptDegree, keptLevel, keptMajor]) {
+      assert.equal(rowResult.reason, 'preexisting_same_value', JSON.stringify(rowResult));
+      assert.equal(rowResult.ok, true);
+      assert.equal(rowResult.status, 'verified');
+      assert.equal(rowResult.opened, false);
+      assert.equal(rowResult.saved, false);
+      assert.equal(rowResult.liveSupportClaimed, false);
+      assert.equal(rowResult.supportClaimed, false);
+      assert.equal(rowResult.neverSave, true);
+      assert.equal(rowResult.softwareClickedSave, false);
+    }
+    const otherSchool = await h.api.fillField(SCHOOL, '另一院校');
+    const otherDegree = await h.api.fillField(DEGREE, FIELD.degree.valueSample);
+    const otherLevel = await h.api.fillField(LEVEL, FIELD.level.valueSample);
+    const otherMajor = await h.api.fillField(MAJOR, '合成专业名称');
+    for (const rowResult of [otherSchool, otherDegree, otherLevel, otherMajor]) {
+      assert.equal(rowResult.reason, 'existing_value', JSON.stringify(rowResult));
+      assert.equal(rowResult.ok, false);
+      assert.equal(rowResult.opened, false);
+      assert.equal(rowResult.saved, false);
+      assert.equal(rowResult.liveSupportClaimed, false);
+      assert.equal(rowResult.supportClaimed, false);
+    }
+    assert.equal(h.document.querySelector('#school-face-select-value').textContent, dual.select.valueSample);
+    assert.equal(valueOf(h.document, 'school-text-input'), '');
+    assert.equal(h.document.querySelector('#degree-value').textContent, dual.anchored.degree);
+    assert.equal(h.document.querySelector('#level-value').textContent, dual.anchored.level);
+    assert.equal(valueOf(h.document, 'major-input'), dual.anchored.major);
+    assert.equal(valueOf(h.document, 'edu-major-input'), probe.neighbors.eduMajor.token);
+    assert.equal(textOf(h.document, 'edu-degree-value'), probe.neighbors.eduDegree.token);
+    assert.equal(textOf(h.document, 'edu-level-value'), probe.neighbors.eduLevel.token);
+    assert.equal(h.stats.open, 0);
+    assert.equal(h.stats.option, 0);
+    assert.equal(h.stats.focus, 0);
+    assert.equal(h.stats.textInput, 0);
+    assert.equal(h.stats.forbidden, 0);
+    assert.equal(h.document.getElementById('select-menu').hidden, true);
+    unchanged(h.document, h.stats);
+  } finally { h.dom.window.close(); }
+});
+
+test('毕业院校 pairs that are not a preexisting ant-select plus text stay fail-closed', async () => {
+  const dual = probe.dualSchool;
+  const cases = [
+    { secondSchoolText: true, school: FIELD.school.valueSample, degree: dual.anchored.degree },
+    { dualSchool: true, dualSchoolValue: '', degree: dual.anchored.degree, level: dual.anchored.level, major: dual.anchored.major },
+    { dualSchool: true, dualSchoolDropAllowClear: true, closedSearch: true, degree: dual.anchored.degree, level: dual.anchored.level, major: dual.anchored.major },
+    { dualSchool: true, secondSchoolText: true, closedSearch: true, degree: dual.anchored.degree, level: dual.anchored.level, major: dual.anchored.major }
+  ];
+  for (const state of cases) {
+    const h = await boot(state);
+    try {
+      const school = await h.api.fillField(SCHOOL, '另一院校');
+      const degree = await h.api.fillField(DEGREE, dual.anchored.degree);
+      const level = await h.api.fillField(LEVEL, dual.anchored.level);
+      const major = await h.api.fillField(MAJOR, dual.anchored.major);
+      for (const rowResult of [school, degree, level, major]) {
+        assert.equal(rowResult.ok, false, JSON.stringify({ state, row: rowResult }));
+        assert.equal(rowResult.reason, 'control_not_supported', JSON.stringify({ state, row: rowResult }));
+        assert.equal(rowResult.liveSupportClaimed, false);
+        assert.equal(rowResult.supportClaimed, false);
+        assert.equal(rowResult.saved, false);
+        assert.equal(rowResult.neverSave, true);
+      }
+      assert.equal(h.stats.open, 0, JSON.stringify(state));
+      assert.equal(h.stats.option, 0, JSON.stringify(state));
+      assert.equal(h.stats.focus, 0, JSON.stringify(state));
+      assert.equal(h.stats.textInput, 0, JSON.stringify(state));
+      assert.equal(h.stats.forbidden, 0, JSON.stringify(state));
+      if (state.secondSchoolText && !state.dualSchool) {
+        assert.equal(valueOf(h.document, 'school-input'), FIELD.school.valueSample);
+        assert.equal(valueOf(h.document, 'school-2-input'), '');
+      }
+      if (state.dualSchool) {
+        assert.equal(h.document.querySelector('#school-face-select-value').textContent, state.dualSchoolValue ?? dual.select.valueSample);
+        assert.equal(valueOf(h.document, 'school-text-input'), '');
+      }
+      if (state.degree) assert.equal(h.document.querySelector('#degree-value').textContent, dual.anchored.degree);
+      if (state.major) assert.equal(valueOf(h.document, 'major-input'), dual.anchored.major);
+      assert.equal(valueOf(h.document, 'edu-major-input'), probe.neighbors.eduMajor.token);
+      unchanged(h.document, h.stats);
+    } finally { h.dom.window.close(); }
+  }
 });
 
 test('a hidden page fails closed before a click or write', async () => {

@@ -60,10 +60,14 @@ export const LIVE_FILES = Object.freeze([
 // Values are the existing tests/gth-basic-auto.test.mjs fixture, with its
 // explicitly selected degree moved to index zero for this standalone trial.
 // workStart reuses the user's 2026-10-22 Never-Save probe input.
+// currentCity matches the site preexisting province from the 2026-10-23 probe
+// (uid 86030000). It enables the preexisting_same_value / fill path under
+// Never-Save. This does not claim live support.
 const BASIC_PROFILE = Object.freeze({
   fullName: 'Synthetic Customer B', gender: '男', phone: '13800138000',
-  birthDate: '1998-06', workStart: '2022-01', email: 'synthetic@example.com', education: [{ degree: '硕士' }],
-  confirmedFields: ['fullName', 'gender', 'phone', 'birthDate', 'workStart', 'email', 'education.0.degree']
+  birthDate: '1998-06', workStart: '2022-01', email: 'synthetic@example.com',
+  currentCity: '北京', education: [{ degree: '硕士' }],
+  confirmedFields: ['fullName', 'gender', 'phone', 'birthDate', 'workStart', 'email', 'education.0.degree', 'currentCity']
 });
 // Reuse the current standalone education runner's request schema and plain
 // facts, plus its existing complex-control fixture values. Synthetic trial
@@ -74,14 +78,16 @@ const EDUCATION_ENV = Object.freeze({
   START_DATE: '2020-09', END_DATE: '2024-06', MAJOR_CATEGORY: '金融学'
 });
 // Existing tests/gth-work-fill.test.mjs ROW, with the requested 下属人数=5.
-// Salary stays off this fixed profile. Digits fill only when experience.0.salary
-// is present and the probe el-input.select-l control matches. Pending live
-// Never-Save. This profile does not claim live support.
+// salary digits are present for the salaryText Never-Save trial. Digits fill
+// only when the probe el-input.select-l control matches. Pending live
+// Never-Save. Product liveSupportClaimed stays false. This profile does not
+// claim live support.
 const WORK_ROW = Object.freeze({
   position: '分析师', organization: '示例证券', description: '负责研究',
   jobCategory: '金融/保险||银行', industry: '金融||证券/投资/基金/信托',
   startDate: '2020-03', endDate: '2024-08', workArea: '上海', companyIntro: '证券公司',
-  department: '研究部', reportTo: '总监', subordinateCount: '5', leaveReason: '个人发展'
+  department: '研究部', reportTo: '总监', subordinateCount: '5', salary: '12000',
+  leaveReason: '个人发展'
 });
 
 function rowProfile(name, row) {

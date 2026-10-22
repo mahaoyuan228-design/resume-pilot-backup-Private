@@ -8,7 +8,18 @@ import { buildFieldRows, chromeShimExpression, requestsFor, SECTIONS } from '../
 import { evidenceExitCode } from '../scripts/live/gth-full-resume-live.mjs';
 
 const work = SECTIONS.find(section => section.id === 'work');
-const request = requestsFor(work)[0].request;
+const harnessRequest = requestsFor(work)[0].request;
+// The harness supplies salary digits for the live salaryText trial. These
+// regressions use the plain 薪资 control, which is not the probe hybrid. A
+// present salary fact on that shape fail-closes before other writes, so they
+// omit the digit. The probe trial below uses the harness request.
+function omitSalary(source) {
+  const profile = structuredClone(source.profile);
+  delete profile.experience[0].salary;
+  profile.confirmedFields = profile.confirmedFields.filter((path) => path !== 'experience.0.salary');
+  return { ...source, profile };
+}
+const request = omitSalary(harnessRequest);
 const MONTHS = ['一月', '二月', '三月', '四月', '五月', '六月', '七月', '八月', '九月', '十月', '十一月', '十二月'];
 const source = ['gth-open-fill.js', 'gth-work-fill.js'].map(file =>
   readFileSync(new URL('../src/content/' + file, import.meta.url), 'utf8'));
@@ -868,10 +879,9 @@ test('full work model failures stop tenure and later writes while remaining disc
 test('probe 薪资 writes experience.0.salary digits, leaves a blank salary empty, then 取消 closes', async () => {
   const filled = await boot({ salary: 'probe' });
   try {
-    const profile = structuredClone(request.profile);
-    profile.experience[0] = { ...profile.experience[0], salary: '12000' };
-    profile.confirmedFields = [...profile.confirmedFields, 'experience.0.salary'];
-    const salaryRequest = { ...request, requestId: 'live-full-work-salary-01', profile };
+    assert.equal(harnessRequest.profile.experience[0].salary, '12000');
+    assert.ok(harnessRequest.profile.confirmedFields.includes('experience.0.salary'));
+    const salaryRequest = { ...harnessRequest, requestId: 'live-full-work-salary-01' };
     const input = filled.doc.getElementById('salary');
     let salaryClicks = 0;
     input.addEventListener('click', () => { salaryClicks += 1; });

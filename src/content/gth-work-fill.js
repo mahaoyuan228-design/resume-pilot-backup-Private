@@ -8,9 +8,10 @@
 // A quiet start panel may stay connected while the end panel is the only pending
 // one. Two pending panels and a year step other than ±1 fail closed. A month click
 // may paint the input while the model stays empty, or leave the input empty, and
-// may close or remove the panel before the gate runs. Painted DOM is not
-// acceptance. After that click, while the input is connected, the extension
-// worker still accepts the month in the page world (handleMonthPick / emitInput,
+// may close or remove the panel, or replace the editor input, before the gate
+// runs. Painted DOM is not acceptance. After that click, while the editor's
+// current input is connected, the extension worker still accepts the month in
+// the page world (handleMonthPick / emitInput,
 // no inserted script), including when the panel stays connected, the input is
 // still empty, and a start husk is still pending. That husk is dismissed before
 // the ask whether or not this panel is connected, and it is not a reason to

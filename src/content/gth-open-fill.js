@@ -176,6 +176,15 @@
   function unknownControl(item, step) {
     return { item, controls: [], inputs: [], triggers: [], input: null, trigger: null, panel: null, unsupported: true, step };
   }
+  // A month click can replace the editor's input and drop the panel. The value
+  // then lives on the input that remains in that same editor. Follow it before
+  // the bridge so a detached reference does not skip the ask or the other month.
+  function editorInput(editor, fallback) {
+    if (fallback?.isConnected && (!editor || editor.contains(fallback))) return fallback;
+    if (!editor?.isConnected) return fallback;
+    const found = [...editor.querySelectorAll('input')].filter(node => node.isConnected && !node.closest('.el-picker-panel'));
+    return found.length === 1 ? found[0] : fallback;
+  }
   function monthRangeTarget(form, field) {
     const item = requireItem(form, field.question);
     const editors = [...item.querySelectorAll('.el-date-editor')].filter(node => node.closest('.el-form-item') === item && !node.closest('.el-picker-panel'));
@@ -520,10 +529,12 @@
     // empty; closing the panel then restores that empty model. Painted
     // input.value is not model acceptance, including when readMonth already sees
     // the target. The cell click may close or remove the panel before this gate
-    // runs, and the input may stay empty. After the click and any connected TD
-    // retry, while the input is connected and this pass has not stopped for dual
-    // or drift, always run acceptGthMonthInPage. Do not skip when the panel node
-    // is gone and the input is empty, and do not skip because a leftover start
+    // runs, and the input may stay empty or be replaced inside its editor.
+    // After the click and any connected TD retry, follow the input that remains
+    // in that editor. While that live input is connected and this pass has not
+    // stopped for dual or drift, always run acceptGthMonthInPage. Do not skip
+    // because the node opened at the start of the pass was replaced. Do not skip
+    // when the panel node is gone and the input is empty, and do not skip because a leftover start
     // husk is still pending. Dismiss that husk before sendMessage whether or not
     // this panel is still connected, then ask. Do not return without asking
     // because the panel is connected beside one husk. If the dismiss unmounts
@@ -752,7 +763,17 @@
     }
     async function fillOneMonth(item, input, trigger, answer, markWrite, guard, peers = []) {
       const company = [input, ...peers].filter(Boolean);
-      if (norm(input.value) === answer) {
+      const editor = input.closest('.el-date-editor');
+      let monthInput = input;
+      const followInput = () => {
+        const live = editorInput(editor, monthInput);
+        if (live && live !== monthInput) {
+          monthInput = live;
+          if (!company.includes(monthInput)) company.unshift(monthInput);
+        }
+        return monthInput;
+      };
+      if (norm(followInput().value) === answer) {
         if (openMonthPanels().length) await settleMonthPanels(company);
         return;
       }
@@ -770,7 +791,7 @@
       const readMonth = () => {
         if (pendingMonthConflict(panel)) return { bad: 'dual' };
         if (drifted()) return { bad: 'drift' };
-        const current = norm(input.value);
+        const current = norm(monthInput.value);
         if (current && current !== answer) return { bad: 'mismatch' };
         if (current === answer) return { ok: true };
         return null;
@@ -825,13 +846,15 @@
         guard();
         markWrite();
         await guardedClick(clickTarget, boundAction);
+        followInput();
         let matched = await waitUntil(readMonth, 320);
         const monthCell = clickTarget.closest('td');
-        if (!matched && norm(input.value) === '' && monthCell && monthCell !== clickTarget
+        if (!matched && norm(monthInput.value) === '' && monthCell && monthCell !== clickTarget
             && monthCell.isConnected && panel.isConnected && panel.contains(monthCell)
             && !monthCellDisabled(monthCell)
             && !drifted() && !otherPendingPanels(panel).length) {
           await guardedClick(monthCell, boundAction);
+          followInput();
           matched = await waitUntil(readMonth, 320);
         }
         if (matched?.bad === 'drift' || drifted()) {
@@ -839,21 +862,24 @@
           stop('control_not_supported');
         }
         // DOM paint is not model acceptance. readMonth seeing the target does
-        // not skip MAIN. After the cell click, while this input is connected
-        // and this pass has not stopped for drift, always ask the page-world
-        // bridge. A connected panel beside one pending start husk does not
-        // skip it: dismiss that husk, then ask. If the panel stays connected,
-        // mark it for handleMonthPick. If the dismiss unmounts it, omit the
-        // marker so the editor Vue can pick or emit. picked/emitted continue;
-        // dual, bad-year, and mismatch stop. Neither pick nor emit on a missing
+        // not skip MAIN. After the cell click, follow a replaced editor input,
+        // then while that live input is connected and this pass has not stopped
+        // for drift, always ask the page-world bridge. A detached node from
+        // the open must not skip the ask or abandon the other month. A
+        // connected panel beside one pending start husk does not skip it:
+        // dismiss that husk, then ask. If the panel stays connected, mark it
+        // for handleMonthPick. If the dismiss unmounts it, omit the marker so
+        // the editor Vue can pick or emit. picked/emitted continue; dual,
+        // bad-year, and mismatch stop. Neither pick nor emit on a missing
         // panel stops. An unavailable bridge does not type over a painted value.
-        const currentValue = norm(input.value);
+        followInput();
+        const currentValue = norm(monthInput.value);
         const painted = currentValue !== '';
         const showsTarget = currentValue === answer;
         const panelHere = !!panel?.isConnected;
         let accepted = 'no';
-        if (input.isConnected) {
-          accepted = await acceptMonthInPage(panel, input, answer, company);
+        if (monthInput.isConnected) {
+          accepted = await acceptMonthInPage(panel, monthInput, answer, company);
         }
         if (accepted === 'stop') {
           await dismissMonthSurfaces(company);
@@ -864,40 +890,50 @@
         } else if (!panelHere && showsTarget) {
           await dismissMonthSurfaces(company);
           stop('readback_mismatch');
-        } else if (!matched && !painted && norm(input.value) === '' && !drifted() && !pendingMonthConflict(panel)) {
-          await commitMonthThroughInput(input, answer);
+        } else if (!matched && !painted && norm(monthInput.value) === '' && !drifted() && !pendingMonthConflict(panel)) {
+          await commitMonthThroughInput(monthInput, answer);
           matched = await waitUntil(readMonth, 320);
         }
-        if (!matched || matched.bad || norm(input.value) !== answer) {
+        if (!matched || matched.bad || norm(monthInput.value) !== answer) {
           await dismissMonthSurfaces(company);
           stop(matched?.bad === 'dual' || matched?.bad === 'drift' ? 'control_not_supported' : 'readback_mismatch');
         }
         await dismissMonthSurfaces(company);
-        if (norm(input.value) !== answer || drifted() || pendingMonthConflict(panel))
+        if (norm(monthInput.value) !== answer || drifted() || pendingMonthConflict(panel))
           stop(drifted() || pendingMonthConflict(panel) ? 'control_not_supported' : 'readback_mismatch');
-        await dispatchInputChange(input);
+        await dispatchInputChange(monthInput);
         // Do not siteValid(item) here. The required range stays is-error
         // until the other month is set. This input is held when its value
         // matches and the peer did not drift. Model acceptance already
         // happened above. fillMonthRange checks the form-item once.
-        const held = await waitUntil(() => item.isConnected && norm(input.value) === answer && !drifted() ? true : null, 400);
-        if (!held || !item.isConnected || norm(input.value) !== answer || drifted()) stop('readback_mismatch');
+        const held = await waitUntil(() => item.isConnected && norm(monthInput.value) === answer && !drifted() ? true : null, 400);
+        if (!held || !item.isConnected || norm(monthInput.value) !== answer || drifted()) stop('readback_mismatch');
         guard();
       } catch (error) {
-        if (monthPanelPending(panel)) await closeMonthPanel(input);
+        if (monthPanelPending(panel)) await closeMonthPanel(monthInput);
         throw error;
       }
     }
     async function fillMonthRange(target, fact, markWrite, guard) {
       const before = target.inputs.map(node => norm(node.value));
-      const inputs = [target.inputs[0], target.inputs[1]];
+      const editors = target.editors || [];
+      let inputs = [target.inputs[0], target.inputs[1]];
+      const refresh = () => {
+        inputs = [0, 1].map(index => editorInput(editors[index], inputs[index]));
+      };
+      refresh();
       await fillOneMonth(target.item, inputs[0], target.triggers[0], fact.start, markWrite, guard, [inputs[1]]);
+      refresh();
       if (norm(inputs[0].value) !== fact.start || norm(inputs[1].value) !== before[1])
         stop('readback_mismatch');
       await fillOneMonth(target.item, inputs[1], target.triggers[1], fact.end, markWrite, guard, [inputs[0]]);
+      refresh();
       const read = `${norm(inputs[0].value)} | ${norm(inputs[1].value)}`;
       if (read !== `${fact.start} | ${fact.end}`) stop('readback_mismatch');
-      const paired = () => `${norm(inputs[0].value)} | ${norm(inputs[1].value)}` === `${fact.start} | ${fact.end}`;
+      const paired = () => {
+        refresh();
+        return `${norm(inputs[0].value)} | ${norm(inputs[1].value)}` === `${fact.start} | ${fact.end}`;
+      };
       const valid = await waitUntil(() => paired() && siteValid(target.item, inputs[0]) && siteValid(target.item, inputs[1]) ? true : null, 400);
       if (!valid || !paired()) stop('readback_mismatch');
       return { status: 'verified', reason: before.some(value => value !== '') ? 'readback_reapplied' : 'readback_matched' };

@@ -1,0 +1,183 @@
+{
+  "source": "Structural excerpt of the 2026-10-23 hotjob pb resumeOperation probe for the certificate, English-score, and major-rank flat selects. Classes, labels, placeholders, and captured display tokens only. Applicant prose is omitted. These eight selects were not individually opened.",
+  "page": {
+    "hostname": "wecruit.hotjob.cn",
+    "pathPattern": "/SU[0-9A-Za-z]{8,64}/pb/resumeOperation.html",
+    "samplePath": "/SU629dbc0c0dcad452299bc0f7/pb/resumeOperation.html",
+    "rootClass": "resume-operation-wrap",
+    "contentClass": "resume-content-wrap",
+    "childrenClass": "ant-form-item-children",
+    "itemClass": "ant-row ant-form-item",
+    "hasAntDesign": true,
+    "hasElForm": false,
+    "buttonLabels": ["保存", "返回"],
+    "forbiddenButtons": ["保存", "提交", "投递", "删除", "下一步", "返回", "确定"]
+  },
+  "select": {
+    "controlClass": "ant-select ant-select-enabled ant-select-allow-clear",
+    "triggerClass": "ant-select-search__field",
+    "dropdownClass": "ant-select-dropdown ant-select-dropdown--single ant-select-dropdown-placement-bottomLeft",
+    "openClass": "ant-select ant-select-open ant-select-focused ant-select-enabled",
+    "openClassNote": "These eight selects were not in the interactive open list. Selector classes are ant-select ant-select-enabled ant-select-allow-clear. Dropdown, ant-select-search__field, and open/focused/enabled are the same page's flat ant-select probes already used by the pb basic and region fillers.",
+    "cancel": "Escape",
+    "liveReadback": {
+      "note": "Same-page closed .ant-select-search__field can have getClientRects().length 0 while .ant-select-selection[role=combobox] is visible. Clone text can be 请选择 plus the label plus the value. Read .ant-select-selection-selected-value, or strip that placeholder prefix. 成绩's page text is 请选择成绩, so the inventory token 成绩 is that placeholder with 请选择 removed, not a captured score option.",
+      "selectedValueClass": "ant-select-selection-selected-value",
+      "placeholderClass": "ant-select-selection__placeholder",
+      "placeholderPrefix": "请选择",
+      "faceClass": "ant-select-selection",
+      "faceRole": "combobox"
+    },
+    "fields": [
+      {
+        "key": "rank",
+        "label": "专业排名",
+        "valueSample": "无排名",
+        "optionsSample": ["无排名"],
+        "optionsNote": "Interactive probe did not open 专业排名. The only captured token is the display valueSample. No other option text is included."
+      },
+      {
+        "key": "english",
+        "label": "英语证书名称",
+        "valueSample": "雅思",
+        "optionsSample": ["雅思"],
+        "optionsNote": "Interactive probe did not open 英语证书名称. The only captured token is the display valueSample. No other option text is included."
+      },
+      {
+        "key": "score",
+        "label": "成绩",
+        "placeholder": "请选择成绩",
+        "inventoryValueSample": "成绩",
+        "inventoryValueSampleNote": "Field inventory valueSample is 成绩. The same probe page text beside this control is 请选择成绩. That is the placeholder, not a selected score. Do not treat 成绩 as an option.",
+        "optionsSample": [],
+        "optionsNote": "Interactive probe did not open 成绩. No option text was captured."
+      },
+      {
+        "key": "securities",
+        "label": "证券从业资格考试",
+        "valueSample": "未通过",
+        "optionsSample": ["未通过"],
+        "optionsNote": "Interactive probe did not open 证券从业资格考试. The only captured token is the display valueSample. No other option text is included."
+      },
+      {
+        "key": "cpa",
+        "label": "注册会计师考试",
+        "valueSample": "未通过",
+        "optionsSample": ["未通过"],
+        "optionsNote": "Interactive probe did not open 注册会计师考试. The only captured token is the display valueSample. No other option text is included."
+      },
+      {
+        "key": "bar",
+        "label": "国家司法考试",
+        "valueSample": "未通过",
+        "optionsSample": ["未通过"],
+        "optionsNote": "Interactive probe did not open 国家司法考试. The only captured token is the display valueSample. No other option text is included."
+      },
+      {
+        "key": "frm",
+        "label": "FRM",
+        "valueSample": "未通过",
+        "optionsSample": ["未通过"],
+        "optionsNote": "Interactive probe did not open FRM. The only captured token is the display valueSample. No other option text is included."
+      },
+      {
+        "key": "cfa",
+        "label": "CFA",
+        "valueSample": "未通过",
+        "optionsSample": ["未通过"],
+        "optionsNote": "Interactive probe did not open CFA. The only captured token is the display valueSample. No other option text is included."
+      }
+    ]
+  },
+  "neighbors": {
+    "certNote": {
+      "label": "说明（通过科目）",
+      "controlClass": "ant-input",
+      "controlTag": "textarea",
+      "placeholder": "请填写说明（通过科目）",
+      "token": "CERT_NOTE"
+    },
+    "earned": {
+      "label": "获得时间",
+      "controlClass": "ant-calendar-picker-input ant-input",
+      "placeholder": "请选择获得时间",
+      "token": "READONLY_EARNED"
+    },
+    "eduStart": {
+      "label": "开始时间",
+      "controlClass": "ant-calendar-picker-input ant-input",
+      "placeholder": "请选择开始时间",
+      "token": "READONLY_START"
+    },
+    "school": {
+      "label": "学校",
+      "token": "SCHOOL_KEEP"
+    },
+    "major": {
+      "label": "专业名称",
+      "controlClass": "ant-input",
+      "placeholder": "请填写专业名称",
+      "token": "MAJOR_KEEP"
+    },
+    "majorNote": {
+      "label": "专业描述",
+      "controlClass": "ant-input",
+      "controlTag": "textarea",
+      "placeholder": "请填写专业描述",
+      "token": "MAJOR_NOTE"
+    },
+    "nature": {
+      "label": "工作性质",
+      "token": "NATURE_KEEP"
+    },
+    "name": {
+      "label": "姓名",
+      "controlClass": "ant-input",
+      "placeholder": "请填写姓名",
+      "token": "NAME_KEEP"
+    },
+    "note": {
+      "label": "评价内容",
+      "controlClass": "ant-input",
+      "controlTag": "textarea",
+      "placeholder": "请填写评价内容",
+      "token": "NOTE_KEEP"
+    },
+    "residence": {
+      "label": "现居住地",
+      "controlClass": "ant-select ant-select-enabled",
+      "menuClass": "cascader-plugins-wrap",
+      "token": "REGION_KEEP"
+    },
+    "intent": {
+      "label": "意向一：期望工作地点",
+      "controlClass": "ant-select ant-select-enabled",
+      "menuClass": "cascader-plugins-wrap",
+      "token": "INTENT_KEEP"
+    },
+    "interview": {
+      "label": "期望面试地点（供参考，实际安排将根据笔试通过名单确定）",
+      "token": "INTERVIEW_KEEP"
+    },
+    "obey": {
+      "label": "期望工作地是否服从分配",
+      "controlClass": "ant-radio-input",
+      "inputType": "radio",
+      "options": ["是", "否"]
+    },
+    "research": {
+      "label": "如应聘研究发展中心行业研究类岗位请勾选（建议仅勾选3~5项）",
+      "option": "非研究类岗位，不涉及",
+      "controlClass": "ant-checkbox-input",
+      "inputType": "checkbox"
+    },
+    "photo": {
+      "label": "照片",
+      "itemClass": "ant-row ant-form-item formItem41"
+    },
+    "portrait": {
+      "label": "个人照片",
+      "itemClass": "ant-row ant-form-item formItem49170547"
+    }
+  }
+}

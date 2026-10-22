@@ -90,9 +90,15 @@ function fieldHtml(spec, id, placeholder = spec.placeholder) {
 function probeHtml({
   heading = '<div class="tit"><p>个人基本信息</p>必填</div>',
   placeholders = {},
-  duplicateName = false
+  duplicateName = false,
+  educationHeading = '教育经历必填',
+  attachmentHeading = ''
 } = {}) {
   const duplicate = duplicateName ? fieldHtml(FIELD_SPECS[0], 'name-2') : '';
+  const education = educationHeading ? `<section class="form-cell"><div class="tit-wrap"><div class="tit">${educationHeading}</div></div>
+      <textarea id="major" class="ant-input" placeholder="请填写专业描述">keep-major</textarea>
+    </section>` : '';
+  const attachment = attachmentHeading ? `<section class="form-cell"><div class="tit-wrap"><div class="tit">${attachmentHeading}</div></div></section>` : '';
   return `<form id="resume-form">
     <section class="form-cell" id="basic-section">
       <div class="tit-wrap">${heading}</div>
@@ -130,9 +136,8 @@ function probeHtml({
         <textarea id="eval" class="ant-input" placeholder="请填写评价内容">keep-eval</textarea>
       </div>
     </section>
-    <section class="form-cell"><div class="tit-wrap"><div class="tit">教育经历必填</div></div>
-      <textarea id="major" class="ant-input" placeholder="请填写专业描述">keep-major</textarea>
-    </section>
+    ${education}
+    ${attachment}
     <button id="save" type="button">保存</button>
     <button id="submit" type="submit">提交</button>
     <button id="deliver" type="button">投递</button>
@@ -183,7 +188,10 @@ test('label normalization matches the shipped matcher and the basic fixtures are
   }
   assert.equal(SECTION_NAME, '个人基本信息必填');
   assert.equal(ANCHOR_NAME, '个人基本信息');
-  assert.deepEqual(SIGNATURE, ['个人基本信息必填', '自我评价必填', '教育经历必填']);
+  assert.deepEqual(SIGNATURE, ['个人基本信息必填', '自我评价必填']);
+  assert.equal(SIGNATURE.includes('个人基本信息必填'), true);
+  assert.equal(SIGNATURE.includes('附件信息选填'), false);
+  assert.equal(SIGNATURE.filter((name) => name === SECTION_NAME).length, 1);
   assert.deepEqual(FIELD_SPECS.map((spec) => spec.path), ['fullName', 'phone', 'email']);
   assert.equal(FIELD_SPECS[0].fixture, '试用甲');
   assert.equal(FIELD_SPECS[1].fixture, '13800138000');
@@ -225,6 +233,18 @@ test('locate accepts the probed heading and stops on a changed control', () => {
   const locked = domFor(probeHtml());
   locked.window.document.getElementById('phone').readOnly = true;
   assert.equal(locateBasicFields(locked.window.document).detail, 'not_editable');
+
+  const withoutAttachment = domFor(probeHtml({ educationHeading: '', attachmentHeading: '' }));
+  assert.equal(probeHtml({ educationHeading: '', attachmentHeading: '' }).includes('附件信息选填'), false);
+  assert.equal(probeHtml({ educationHeading: '', attachmentHeading: '' }).includes('教育经历必填'), false);
+  const open = locateBasicFields(withoutAttachment.window.document);
+  assert.equal(open.ok, true, JSON.stringify({ reason: open.reason, detail: open.detail }));
+  assert.deepEqual(open.fields.map((row) => row.spec.path), ['fullName', 'phone', 'email']);
+
+  const missingBasic = locateBasicFields(domFor(probeHtml({ heading: '<div class="tit">附件信息选填</div>' })).window.document);
+  assert.equal(missingBasic.ok, false);
+  assert.equal(missingBasic.reason, 'section_structure_changed');
+  assert.equal(missingBasic.detail, 'signature');
 });
 
 test('inspect, readback, and restore decisions follow the shipped binding', () => {
@@ -450,8 +470,26 @@ test('a changed section stops before any product write', async () => {
   installLive(dom.window);
   const stopped = await dom.window.__cmsBasicInfoLive.run();
   assert.equal(stopped.reason, 'section_structure_changed');
+  assert.equal(stopped.detail, 'signature');
   assert.equal(stopped.pageLeftAsFound, true);
   assert.equal(stopped.fillCalls.length, 0);
+  assert.equal(dom.window.document.getElementById('name').value, ORIGINALS.fullName);
+});
+
+test('a missing 个人基本信息必填 heading stops before any product write', async () => {
+  const html = probeHtml({ heading: '<div class="tit">附件信息选填</div>' });
+  assert.equal(html.includes('个人基本信息必填'), false);
+  const dom = domFor(html);
+  for (const spec of FIELD_SPECS) dom.window.document.getElementById(FIELD_IDS[spec.path]).value = ORIGINALS[spec.path];
+  installLive(dom.window);
+  const stopped = await dom.window.__cmsBasicInfoLive.run();
+  assert.equal(stopped.ok, false);
+  assert.equal(stopped.reason, 'section_structure_changed');
+  assert.equal(stopped.detail, 'signature');
+  assert.equal(stopped.liveSupportClaimed, false);
+  assert.equal(stopped.pageLeftAsFound, true);
+  assert.equal(stopped.fillCalls.length, 0);
+  assert.equal(dom.window.__cmsBasicInfoLive.clicks().length, 0);
   assert.equal(dom.window.document.getElementById('name').value, ORIGINALS.fullName);
 });
 
@@ -483,6 +521,7 @@ test('an unauthenticated CMS session fails closed before any write', async () =>
 });
 
 test('shipped engine fill writes the three basic fixtures and restores the originals without clicks', async () => {
+  assert.equal(probeHtml().includes('附件信息选填'), false);
   const dom = domFor(probeHtml());
   const { window } = dom;
   const inputs = Object.fromEntries(FIELD_SPECS.map((spec) => [spec.path, window.document.getElementById(FIELD_IDS[spec.path])]));
@@ -717,7 +756,58 @@ test('a fake CDP run injects the shipped engine and writes never-save evidence',
   const file = JSON.parse(fs.readFileSync(evidence.finalDetails.path, 'utf8'));
   assert.equal(file.liveSupportClaimed, false);
   assert.equal(file.neverSave, true);
+  assert.equal(file.finalDetails.fatalDetail, null);
   assert.equal(path.basename(evidence.finalDetails.path), EVIDENCE_NAME);
+});
+
+function stoppedOutcome(reason, detail) {
+  return {
+    ok: false,
+    reason,
+    detail,
+    liveSupportClaimed: false,
+    originalLengths: null,
+    readbacks: [],
+    restore: { ok: false, via: 'not_needed', reason: 'not_run' },
+    otherChanged: false,
+    unexpectedWrites: [],
+    clickCount: 0,
+    clicks: [],
+    anchorSeen: false,
+    fillCalls: [],
+    productReason: null,
+    reactVia: {},
+    blurred: false,
+    waitedMs: 0,
+    pageLeftAsFound: true
+  };
+}
+
+test('a locate failure copies signature or input_not_found into fatalDetail', async () => {
+  const signature = await runFake(happyAnswers({
+    basic_info_run: stoppedOutcome('section_structure_changed', 'signature')
+  }));
+  assert.equal(signature.evidence.finalDetails.reason, 'section_structure_changed');
+  assert.equal(signature.evidence.finalDetails.fatalDetail, 'signature');
+  assert.equal(signature.evidence.finalDetails.exitCode, 2);
+  assert.equal(signature.evidence.neverSave, true);
+  assert.equal(signature.evidence.liveSupportClaimed, false);
+  assert.deepEqual(signature.evidence.nonGet, []);
+  assert.deepEqual(signature.evidence.finalDetails.clicks, []);
+  assert.equal(signature.evidence.finalDetails.clickCount, 0);
+  assert.equal(signature.evidence.finalDetails.pageLeftAsFound, true);
+
+  const missing = await runFake(happyAnswers({
+    basic_info_run: stoppedOutcome('control_not_supported', 'input_not_found')
+  }));
+  assert.equal(missing.evidence.finalDetails.reason, 'control_not_supported');
+  assert.equal(missing.evidence.finalDetails.fatalDetail, 'input_not_found');
+  assert.equal(missing.evidence.finalDetails.exitCode, 2);
+  assert.equal(missing.evidence.neverSave, true);
+  assert.equal(missing.evidence.liveSupportClaimed, false);
+  assert.deepEqual(missing.evidence.nonGet, []);
+  assert.equal(missing.evidence.finalDetails.clickCount, 0);
+  assert.equal(missing.evidence.fields.every((field) => field.status === 'failed'), true);
 });
 
 test('a non-GET and a forbidden click fail the run', async () => {

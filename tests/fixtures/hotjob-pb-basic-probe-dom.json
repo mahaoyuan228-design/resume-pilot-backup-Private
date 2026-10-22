@@ -52,6 +52,14 @@
     "openClass": "ant-select ant-select-open ant-select-focused ant-select-enabled",
     "openClassNote": "Flat-select probes recorded the dropdown class and ant-select-search__field. The open/focused/enabled class string is the 现居住地 click on this same page, which hotjob-pb-region.js already requires for this ant-select widget.",
     "cancel": "Escape",
+    "liveReadback": {
+      "note": "2026-10-23 live closed .ant-select-search__field has getClientRects().length 0 while .ant-select-selection[role=combobox] is visible. Clone text was 请选择 plus the label plus the value (请选择国籍/地区中国). Read .ant-select-selection-selected-value, or strip that placeholder prefix.",
+      "selectedValueClass": "ant-select-selection-selected-value",
+      "placeholderClass": "ant-select-selection__placeholder",
+      "placeholderPrefix": "请选择",
+      "faceClass": "ant-select-selection",
+      "faceRole": "combobox"
+    },
     "fields": [
       {
         "key": "nation",

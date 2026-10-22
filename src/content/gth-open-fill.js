@@ -3,6 +3,8 @@
 // clicks 保存 / 提交 / 投递 / 删除 / 取消 / 编辑 or a.eduexp-opt-icon / .el-icon-delete.
 // Exact el-form-item labels. Writes dispatch input and change. Readback is per field.
 // liveSupportClaimed stays false: a writer is not a claim the live site is supported.
+// Work 薪资 uses the plain text setter only for the probed el-input.select-l
+// shape. Pending live Never-Save. This does not claim the site is supported.
 (() => {
   const previous = globalThis.ResumeGthOpenFill;
   const priorApis = previous?.registry instanceof Map
@@ -158,7 +160,7 @@
   }
   function unsupportedTarget(form, field) {
     const item = requireItem(form, field.question);
-    if (field.shape === 'salary') return unknownControl(item, 'control_not_supported');
+    // 薪资 is kind salaryText. A leftover unsupported shape still fail-closes below.
     if (field.shape === 'month') {
       const editors = [...item.querySelectorAll('.el-date-editor')].filter(node => node.closest('.el-form-item') === item);
       if (editors.length !== 2) stop('control_structure_changed');
@@ -175,6 +177,30 @@
   }
   function unknownControl(item, step) {
     return { item, controls: [], inputs: [], triggers: [], input: null, trigger: null, panel: null, unsupported: true, step };
+  }
+  // 2026-10-22 Never-Save probe: 薪资 is div.el-input.select-l > input.el-input__inner
+  // (type=text, maxlength=10) with sibling text 元/月. Not .el-select.select-l.
+  // The click produced no option list, so the plain text setter writes digits
+  // and this function does not click the input. Any other shape fail-closes.
+  // Pending live Never-Save. liveSupportClaimed stays false. This does not claim the site is supported.
+  function salaryTextTarget(form, field) {
+    const item = requireItem(form, field.question);
+    const fail = () => unknownControl(item, 'control_not_supported');
+    if (item.querySelector('.el-select, .el-select-dropdown, .el-cascader, .el-date-editor')) return fail();
+    const widgets = [...item.querySelectorAll('div.el-input.select-l')].filter(node =>
+      node.closest('.el-form-item') === item && !node.classList.contains('el-select'));
+    if (widgets.length !== 1) return fail();
+    const widget = widgets[0];
+    const inputs = [...widget.querySelectorAll(':scope > input.el-input__inner')];
+    if (inputs.length !== 1 || !(inputs[0] instanceof HTMLInputElement)) return fail();
+    const input = inputs[0];
+    const type = (input.getAttribute('type') || '').toLowerCase();
+    if (type !== 'text' || input.readOnly || input.disabled || input.getAttribute('maxlength') !== '10' || !shown(input))
+      return fail();
+    const unit = widget.nextElementSibling;
+    if (!unit || unit.tagName !== 'SPAN' || unit.closest('.el-form-item') !== item
+      || norm(unit.textContent) !== '元/月' || !shown(unit)) return fail();
+    return { item, input, controls: [input], unsupported: false };
   }
   // A month click can replace the editor's input and drop the panel. The value
   // then lives on the input that remains in that same editor. Follow it before
@@ -268,6 +294,7 @@
     if (field.kind === 'monthRange') return monthRangeTarget(form, field);
     if (field.kind === 'picker') return pickerTarget(form, field);
     if (field.kind === 'cascader') return cascaderTarget(form, field);
+    if (field.kind === 'salaryText') return salaryTextTarget(form, field);
     if (field.kind === 'unsupported') return unsupportedTarget(form, field);
     if (field.kind === 'select') return selectTarget(form, field);
     if (field.kind === 'radio') return radioTarget(form, field);
@@ -284,6 +311,7 @@
     if (controls.test(answer)) return false;
     if (field.kind === 'select') return field.answers.includes(answer);
     if (field.kind === 'radio') return field.answers.includes(answer);
+    if (field.kind === 'salaryText') return /^\d{1,10}$/u.test(answer);
     return true;
   }
   const MONTH_VALUE = /^(19|20)\d{2}-(0[1-9]|1[0-2])$/u;

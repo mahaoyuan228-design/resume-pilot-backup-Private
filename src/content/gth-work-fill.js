@@ -23,8 +23,12 @@
 // el-zoom-in-top-enter*. The range form-item is site-validated only after
 // both months match; a half-filled 请选择任职时间 error is not a start-month failure.
 // 职位类别 and 公司所属行业 use the intent cascader: exact 一级||二级, L1 click, then L2.
-// 薪资 is an el-input/select-l hybrid with no option list in the census, so it stays
-// 'control_not_supported'. liveSupportClaimed stays false.
+// 薪资 writes digits from experience.N.salary into the 2026-10-22 probe control:
+// div.el-input.select-l > input.el-input__inner (type=text, maxlength=10),
+// sibling text 元/月. It is not .el-select.select-l. The probe click produced
+// options=[], so this path does not open a dropdown and does not POST.
+// A missing input or any other shape stays control_not_supported.
+// Pending live Never-Save. liveSupportClaimed stays false. This does not claim the site is supported.
 (() => {
   const engine = globalThis.ResumeGthOpenFill;
   if (typeof engine?.install !== 'function') return;
@@ -48,7 +52,7 @@
       { question: '所属部门', key: 'department', kind: 'text', required: false, max: 200 },
       { question: '汇报对象', key: 'reportTo', kind: 'text', required: false, max: 200 },
       { question: '下属人数', key: 'subordinateCount', kind: 'text', required: false, max: 200 },
-      { question: '薪资', key: 'salary', kind: 'unsupported', required: false, max: 80, shape: 'salary', keys: ['salary'] },
+      { question: '薪资', key: 'salary', kind: 'salaryText', required: false, max: 10, shape: 'salaryText', keys: ['salary'] },
       { question: '离职原因', key: 'leaveReason', kind: 'textarea', required: false, max: 4000 }
     ]
   });

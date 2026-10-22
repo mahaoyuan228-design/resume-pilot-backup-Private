@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /** One Edge tab, six sequential product trials, one Never-Save evidence file.
  * PowerShell (repo root):
- * $env:PORT='9239'; $env:OUTDIR='C:/Users/admin/Desktop/ResumeQuickFill-Dev/_temp-scripts'; node scripts/live/gth-full-resume-live.mjs
+ * $env:PORT='9239'; $env:OUTDIR='.'; node scripts/live/gth-full-resume-live.mjs
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -37,7 +37,7 @@ export const RUNTIME_FILES = Object.freeze([
   ...LIVE_FILES
 ]);
 export const HELP = `Usage (PowerShell, repo root; Node.js 20+):
-  $env:PORT='9239'; $env:OUTDIR='C:/Users/admin/Desktop/ResumeQuickFill-Dev/_temp-scripts'; node scripts/live/gth-full-resume-live.mjs
+  $env:PORT='9239'; $env:OUTDIR='.'; node scripts/live/gth-full-resume-live.mjs
 
 Attaches once to the existing https://hr.gtht.com/resume/edit/ Edge tab.
 Runs 基本信息 / 教育经历 / 工作经验 / 职业技能与特长 / 其他信息 / 求职意向.

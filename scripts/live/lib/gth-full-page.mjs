@@ -84,11 +84,41 @@ function installGthFullLive(doc, options) {
     const href = node?.getAttribute('href')?.trim();
     return !!href && href !== '#' && !/^javascript:(?:;|void\(0\))$/iu.test(href);
   }
+  // The work writer only accepts an already-open form. Reuse the section
+  // probe's record-first opener, defaulting to its first record. A title 编辑
+  // is a fallback only for one record without an edit; an empty card may use
+  // its existing 添加/新增 affordance. Never treat a delete icon as an edit.
+  function workOpeningControls(section) {
+    const entries = [...section.querySelectorAll('.sec-context > .sec-detail')]
+      .filter(node => node.closest('.r-section') === section);
+    const titleLinks = [...section.querySelectorAll('.title_ a.h-e-btn')]
+      .filter(node => node.closest('.r-section') === section);
+    const name = node => norm(node.getAttribute('aria-label') || node.textContent);
+    const notDelete = node => !node.matches('.eduexp-opt-icon,.el-icon-delete')
+      && !node.querySelector('.eduexp-opt-icon,.el-icon-delete')
+      && !/delete\.json/iu.test((node.getAttribute('url') || '') + ' ' + (node.getAttribute('href') || ''));
+    const edits = nodes => nodes.filter(node => notDelete(node) && !node.closest(PANEL_SELECTOR)
+      && (name(node) === '编辑' || name(node) === '' && node.querySelector('.el-icon-edit-outline,.el-icon-edit')));
+    const titleEdits = edits(titleLinks).filter(node => name(node) === '编辑');
+    if (entries.length) {
+      const recordEdits = edits([...entries[0].querySelectorAll('a')]
+        .filter(node => node.closest('.sec-context > .sec-detail') === entries[0]));
+      if (recordEdits.length || entries.length > 1) {
+        return { links: recordEdits, kind: 'record_edit', entryIndex: 0, entryCount: entries.length };
+      }
+      return { links: titleEdits, kind: 'title_edit', entryIndex: 0, entryCount: 1 };
+    }
+    if (titleEdits.length) return { links: titleEdits, kind: 'title_edit', entryCount: 0 };
+    return { links: titleLinks.filter(node => notDelete(node) && ['添加', '新增'].includes(name(node))),
+      kind: 'title_add', entryCount: 0 };
+  }
   function snapshot(sectionIndex) {
     const list = sections();
     const section = list[sectionIndex];
-    const links = section ? [...section.querySelectorAll('.title_ a.h-e-btn')]
-      .filter(node => norm(node.textContent) === '编辑') : [];
+    const work = sectionIndex === 3 && section && !section.querySelector('form')
+      ? workOpeningControls(section) : null;
+    const links = work?.links || (section ? [...section.querySelectorAll('.title_ a.h-e-btn')]
+      .filter(node => norm(node.textContent) === '编辑') : []);
     const shownLinks = links.filter(visible);
     return {
       ...state(),
@@ -209,6 +239,38 @@ function installGthFullLive(doc, options) {
       && (node === label || node === radios[index]
         || node.matches('.el-radio__label,.el-radio__input,.el-radio__inner')));
   }
+  // The intent writer clicks the native level-2 checkbox, which may have no
+  // rendered box. Its visible label and row must match the census structure.
+  // This exception is only for 期望工作地区 inside the active intent form;
+  // body-level panels and arbitrary hidden inputs cannot borrow ownership.
+  function isWriterRegionCheckbox(node, form) {
+    if (activeSectionIndex !== 2 || !node.matches('input[type="checkbox"]')
+      || node.closest('form') !== form || node.form !== form || node.hasAttribute('form')) return false;
+    const items = [...form.querySelectorAll('.el-form-item')].filter(item => {
+      const labels = [...item.querySelectorAll('.el-form-item__label')]
+        .filter(label => label.closest('.el-form-item') === item);
+      return item.closest('form') === form && labels.length === 1 && norm(labels[0].textContent) === '期望工作地区';
+    });
+    if (items.length !== 1 || !items[0].contains(node)) return false;
+    const wraps = [...items[0].querySelectorAll(':scope > .el-form-item__content.cascader-wrap')];
+    if (wraps.length !== 1) return false;
+    const panels = [...wraps[0].querySelectorAll(':scope > div.dialog-wrap.plugin-dialog-wrap.popover.blue')];
+    const open = [...doc.querySelectorAll('div.dialog-wrap.plugin-dialog-wrap.popover.blue')].filter(visible);
+    if (panels.length !== 1 || open.length !== 1 || open[0] !== panels[0] || !panels[0].contains(node)) return false;
+    const panel = panels[0];
+    const menus = [...panel.querySelectorAll(':scope > div.eo-cascader-panel > div.eo-cascader-menu.simple-tree-outer')];
+    const label = node.parentElement;
+    const row = label?.parentElement;
+    if (menus.length !== 2 || !label?.matches('label') || !row?.matches('li.branch:not(.has-child)')
+      || !row.parentElement?.matches('ul.simple-tree-wrapper') || row.parentElement.parentElement !== menus[1]
+      || !visible(label) || !visible(row) || !enabled(label) || !enabled(row)) return false;
+    const labels = [...row.children].filter(child => child.tagName === 'LABEL');
+    const inputs = [...label.querySelectorAll('input')];
+    const text = norm(label.textContent);
+    return labels.length === 1 && labels[0] === label && inputs.length === 1 && inputs[0] === node
+      && !label.querySelector('a,button,select,textarea') && !!text
+      && !['保存', '提交', '投递', '删除', '确定', '取消'].some(word => text.includes(word));
+  }
   function classifyClick(target) {
     const node = target?.nodeType === 1 ? target : target?.parentElement;
     const denied = { allowed: false, kind: 'forbidden', reason: 'refusing_forbidden_click' };
@@ -224,11 +286,20 @@ function installGthFullLive(doc, options) {
     if (['保存', '提交', '投递', '删除'].some(word => hostText.includes(word) || norm(node.textContent).includes(word))) return denied;
     const form = activeForm();
     if (form && isWriterRadio(node, form)) return { allowed: true, kind: 'radio_option', reason: null };
+    if (form && isWriterRegionCheckbox(node, form)) return { allowed: true, kind: 'picker_option', reason: null };
     if (!visible(node)) return denied;
     const edit = node.closest('.title_ a.h-e-btn');
-    if (edit && norm(edit.textContent) === '编辑' && !wouldNavigate(edit)
+    if (activeSectionIndex !== 3 && edit && norm(edit.textContent) === '编辑' && !wouldNavigate(edit)
         && edit.closest('.r-section') === sections()[activeSectionIndex] && forms().length === 0) {
       return { allowed: true, kind: 'edit', reason: null };
+    }
+    if (activeSectionIndex === 3 && forms().length === 0) {
+      const work = workOpeningControls(sections()[3]);
+      const candidates = work.links.filter(visible);
+      const anchor = node.closest('a');
+      if (candidates.length === 1 && anchor === candidates[0] && !anchor.closest('form')) {
+        return { allowed: true, kind: work.kind === 'title_add' ? 'add' : 'edit', reason: null };
+      }
     }
     // Education's current writer opens an existing record through its icon,
     // or starts a new one through 添加/新增. These are the existing page roles.
@@ -376,9 +447,14 @@ function installGthFullLive(doc, options) {
     if (decision.action === 'stop') return { ok: false, openedByUs: false, ...decision };
     activeSectionIndex = sectionIndex;
     const openedByUs = decision.action === 'click_edit';
+    const work = sectionIndex === 3 && openedByUs ? workOpeningControls(sections()[3]) : null;
     if (openedByUs) {
-      const link = [...sections()[sectionIndex].querySelectorAll('.title_ a.h-e-btn')]
-        .find(node => norm(node.textContent) === '编辑' && visible(node));
+      const link = work ? work.links.find(visible)
+        : [...sections()[sectionIndex].querySelectorAll('.title_ a.h-e-btn')]
+          .find(node => norm(node.textContent) === '编辑' && visible(node));
+      if (work && !classifyClick(link).allowed) {
+        return { ok: false, openedByUs: false, action: 'stop', reason: 'control_not_supported', detail: 'edit_not_safe' };
+      }
       link.click();
     }
     const ready = await waitFor(() => {
@@ -386,7 +462,10 @@ function installGthFullLive(doc, options) {
       return decideOpen(shot).action === 'already_open' && !!activeForm()?.querySelector('.el-form-item');
     });
     return ready
-      ? { ok: true, openedByUs, alreadyOpen: !openedByUs, action: decision.action }
+      ? { ok: true, openedByUs, alreadyOpen: !openedByUs,
+        action: work?.kind === 'title_add' ? 'click_add' : decision.action,
+        ...(work ? { opener: work.kind, entryCount: work.entryCount,
+          ...(work.entryIndex == null ? {} : { entryIndex: work.entryIndex }) } : {}) }
       : { ok: false, openedByUs, reason: state().visible ? 'editor_items_not_rendered' : 'page_hidden' };
   }
   // Click 取消 first. If the form only hides, or a picker panel stays

@@ -72,7 +72,8 @@ export const RUNTIME_FILES = Object.freeze([
   'src/content/gth-intent.js'
 ]);
 export const REGION_PATH = '北京||大兴区';
-export const REGION_READBACK = '大兴区';
+// 2026-10-22 ~18:50 UTC+8: the chip and the input are L1+L2 joined.
+export const REGION_READBACK = '北京大兴区';
 export const SALARY_ANSWER = '15000';
 export const ARRIVAL_ANSWER = '一个月内';
 export const PLANNED = Object.freeze([
@@ -1162,7 +1163,7 @@ export async function runGthIntentLive(options = {}) {
       fillQuestions,
       pickerDiags: sectionRuns.flatMap((run) => (Array.isArray(run.fill?.pickerDiags) ? run.fill.pickerDiags : [])),
       limits: [
-        'Fills only 到岗日期 (el-select, exact option 一个月内), 期望工作地区 (cascader answer 北京||大兴区, input readback is the level-2 text 大兴区), and 期望薪资 (plain text 15000). FIELDS is a comma list restricted to those three. Each name is its own ResumeGthIntent.trial with omitAbsent and that one answer. trial() itself stops on the first thrown picker_* and would leave later answers not_run; one answer per call is how 期望薪资 and 到岗日期 still run after the cascader aborts. The shipped writer clicks inside the cascader, including its panel 确定. This runner does not.',
+        'Fills only 到岗日期 (el-select, exact option 一个月内), 期望工作地区 (cascader answer 北京||大兴区, input readback is L1+L2 joined 北京大兴区), and 期望薪资 (plain text 15000). FIELDS is a comma list restricted to those three. Each name is its own ResumeGthIntent.trial with omitAbsent and that one answer. trial() itself stops on the first thrown picker_* and would leave later answers not_run; one answer per call is how 期望薪资 and 到岗日期 still run after the cascader aborts. The shipped writer clicks inside the cascader, including its panel 确定. This runner does not.',
         'A picker_* abort returns pickerDiag (per-step panel found/shown, level option texts and classes, the option clicked, input before/after, whether 确定 was present or clicked, siteValid). This runner copies that object onto finalDetails.pickerDiags. The diag read does not click outside the cascader panel and never clicks 保存.',
         '期望从事职位类别, 现从事行业, 现从事职位类别, and 现薪资 are read back only. omitAbsent:true leaves a required question untouched when this profile has no answer. The product popup still requires all five before it sends GTH_INTENT_FILL.',
         '编辑 is only the one visible .title_ a.h-e-btn whose text is 编辑. After that click the 编辑 link must be gone, then the runner waits until form.el-form.sec-form contains .el-form-item.',

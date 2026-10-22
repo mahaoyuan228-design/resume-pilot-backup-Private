@@ -515,14 +515,16 @@
     // removing it detaches the picker's own node and is not what makes the end month
     // commit. Two pending panels are ambiguous — do not click. A year step other than
     // ±1 fails closed. A month click that leaves the input empty is retried on the
-    // cell (the table handler reads a TD target). A click can paint input.value
-    // while the Element-UI model stays empty; closing the panel then restores that
-    // empty model. Painted input.value is not model acceptance, including when
-    // readMonth already sees the target. The cell click may close or remove the
-    // panel before this gate runs. The extension worker still runs
-    // acceptGthMonthInPage in the page world when the input shows the target
-    // YYYY-MM, when the panel is pending, or when the input is still empty.
-    // A missing panel node is not marked; MAIN then uses the editor Vue.
+    // cell (the table handler reads a TD target) only while that cell is still
+    // connected. A click can paint input.value while the Element-UI model stays
+    // empty; closing the panel then restores that empty model. Painted
+    // input.value is not model acceptance, including when readMonth already sees
+    // the target. The cell click may close or remove the panel before this gate
+    // runs, and the input may stay empty. After the click and any connected TD
+    // retry, while the input is connected and this pass has not stopped for dual
+    // or drift, always run acceptGthMonthInPage. Do not skip when the panel node
+    // is gone and the input is empty. A missing panel node is not marked; MAIN
+    // then uses the editor Vue.
     // picked and emitted accept the model. dual, bad-year, and mismatch stop.
     // If the panel node is gone and neither pick nor emit runs, stop. After
     // dismiss, a blank or different value stops readback_mismatch. If the
@@ -784,7 +786,8 @@
         let matched = await waitUntil(readMonth, 320);
         const monthCell = clickTarget.closest('td');
         if (!matched && norm(input.value) === '' && monthCell && monthCell !== clickTarget
-            && panel.contains(monthCell) && !monthCellDisabled(monthCell)
+            && monthCell.isConnected && panel.isConnected && panel.contains(monthCell)
+            && !monthCellDisabled(monthCell)
             && !drifted() && !otherPendingPanels(panel).length) {
           await guardedClick(monthCell, boundAction);
           matched = await waitUntil(readMonth, 320);
@@ -794,18 +797,19 @@
           stop('control_not_supported');
         }
         // DOM paint is not model acceptance. readMonth seeing the target does
-        // not skip MAIN. Ask even when this panel is no longer pending, and
-        // still ask when the click removed the panel node so the editor Vue
-        // can pick or emit. An empty input still asks while the panel node
-        // remains. picked/emitted continue; dual, bad-year, and mismatch stop.
-        // Neither pick nor emit on a missing panel stops. An unavailable
-        // bridge does not type over a painted value.
+        // not skip MAIN. After the cell click, while this input is connected
+        // and this pass has not stopped for dual or drift, always ask the
+        // page-world bridge. A removed panel and an empty input do not skip
+        // it; the panel marker is omitted when that node is gone so the editor
+        // Vue can pick or emit. picked/emitted continue; dual, bad-year, and
+        // mismatch stop. Neither pick nor emit on a missing panel stops. An
+        // unavailable bridge does not type over a painted value.
         const currentValue = norm(input.value);
         const painted = currentValue !== '';
         const showsTarget = currentValue === answer;
         const panelHere = !!panel?.isConnected;
         let accepted = 'no';
-        if ((monthPanelPending(panel) || !painted || showsTarget) && input.isConnected && (panelHere || showsTarget)) {
+        if (input.isConnected) {
           accepted = await acceptMonthInPage(panel, input, answer);
         }
         if (accepted === 'stop') {

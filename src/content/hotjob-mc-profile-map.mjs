@@ -1,6 +1,7 @@
 // Pure hotjob mc (antd-mobile H5) basic field planning from resumeProfile.
 // First slice: 姓名 / 移动电话 / 电子邮箱 + select 性别/证件类型 — live labels from 中联
 // SU661f… /mc/deliver/operationResumer probe 2026-10-18.
+// 待真机 Never-Save，未宣称已支持。liveSupportClaimed stays false.
 // Used by tests + harness. Content script mirrors the same rules.
 
 export const HOTJOB_MC_SITE_ID = 'hotjob-mc';
@@ -27,6 +28,26 @@ export const HOTJOB_MC_SELECT_SPECS = Object.freeze({
   })
 });
 export const HOTJOB_MC_SELECT_LABELS = Object.freeze(Object.keys(HOTJOB_MC_SELECT_SPECS));
+
+/** Same out-of-scope labels the content script refuses. 国籍/地区 stays refused. */
+export const HOTJOB_MC_SELECT_OUT_OF_SCOPE = Object.freeze(['国籍/地区', '国籍', '籍贯', '出生日期', '英语等级']);
+
+/** 待真机 Never-Save，未宣称已支持. */
+export const HOTJOB_MC_NEVER_SAVE_NOTE = '待真机 Never-Save，未宣称已支持';
+export const HOTJOB_MC_LIVE_SUPPORT_CLAIMED = false;
+export const HOTJOB_MC_FORBIDDEN_ACTIONS = Object.freeze(['下一步', '保存', '提交', '投递', '删除']);
+
+const OUT_OF_SCOPE_KEYS = new Set([
+  'nationality', '国籍', '国籍/地区',
+  'nativePlace', '籍贯',
+  'birthDate', '出生日期',
+  'englishLevel', '英语等级'
+]);
+const NEVER_SAVE_KEYS = new Set([
+  'profile', 'profileBinding', 'allowExplicitValues',
+  'fullName', 'mobile', 'phone', 'email',
+  'gender', 'idType', '性别', '证件类型'
+]);
 
 const norm = (value) => String(value ?? '').replace(/[\s\u00a0]+/gu, ' ').trim();
 
@@ -105,4 +126,132 @@ export function isHotjobMcHost(hostname) {
 /** Path must be /SU{id}/mc/deliver/operationResumer */
 export function isHotjobMcPath(pathname) {
   return /^\/SU[0-9A-Za-z]{8,64}\/mc\/deliver\/operationResumer$/u.test(String(pathname || ''));
+}
+
+function neverSaveStamp(partial) {
+  return {
+    ...partial,
+    liveSupportClaimed: HOTJOB_MC_LIVE_SUPPORT_CLAIMED,
+    neverSave: true,
+    saved: false,
+    skippedSave: true,
+    supportClaimed: false,
+    note: HOTJOB_MC_NEVER_SAVE_NOTE
+  };
+}
+
+/**
+ * Plan an offline Never-Save fill. Does not authorize 下一步/保存/提交/投递/删除.
+ * 国籍/地区 and other uncollected controls refuse. Empty allowed values fail closed.
+ * 待真机 Never-Save，未宣称已支持.
+ */
+export function planHotjobMcNeverSave(input) {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) {
+    return neverSaveStamp({
+      ok: false,
+      reason: 'profile_missing',
+      values: null,
+      fields: [],
+      blockers: [{ reason: 'profile_missing' }]
+    });
+  }
+  const keys = Object.keys(input);
+  const scoped = keys.filter((key) => OUT_OF_SCOPE_KEYS.has(key) || HOTJOB_MC_SELECT_OUT_OF_SCOPE.includes(normalizeHotjobMcLabelText(key)));
+  if (scoped.length) {
+    return neverSaveStamp({
+      ok: false,
+      reason: 'select_out_of_scope_search_or_cascader',
+      denied: scoped,
+      values: null,
+      fields: [],
+      blockers: scoped.map((key) => ({ key, reason: 'select_out_of_scope_search_or_cascader' }))
+    });
+  }
+  const unknown = keys.filter((key) => !NEVER_SAVE_KEYS.has(key));
+  if (unknown.length) {
+    return neverSaveStamp({
+      ok: false,
+      reason: 'field_not_allowed',
+      denied: unknown,
+      values: null,
+      fields: [],
+      blockers: unknown.map((key) => ({ key, reason: 'field_not_allowed' }))
+    });
+  }
+
+  let textPlan;
+  if (input.allowExplicitValues === true) {
+    const fullName = norm(input.fullName || '');
+    const mobile = norm(input.mobile || input.phone || '');
+    const email = norm(input.email || '');
+    const fields = [
+      { label: '姓名', path: 'fullName', value: fullName },
+      { label: '移动电话', path: 'phone', value: mobile },
+      { label: '电子邮箱', path: 'email', value: email }
+    ].map((row) => ({ ...row, ready: Boolean(row.value), reason: row.value ? null : 'empty_value' }));
+    if (fields.some((row) => !row.ready)) {
+      return neverSaveStamp({
+        ok: false,
+        reason: 'empty_value',
+        values: null,
+        fields,
+        blockers: fields.filter((row) => !row.ready)
+      });
+    }
+    textPlan = {
+      ok: true,
+      reason: 'explicit_ready',
+      values: { fullName, mobile, email },
+      fields,
+      blockers: []
+    };
+  } else {
+    textPlan = planHotjobMcBasicFromProfile(input.profile);
+    if (!textPlan.ok) return neverSaveStamp(textPlan);
+  }
+
+  const selectFields = [];
+  const selectRequests = [
+    { keys: ['gender', '性别'], label: '性别', path: 'gender' },
+    { keys: ['idType', '证件类型'], label: '证件类型', path: 'idType' }
+  ];
+  for (const spec of selectRequests) {
+    const present = spec.keys.filter((key) => Object.prototype.hasOwnProperty.call(input, key));
+    if (!present.length) continue;
+    const presentValues = present.map((key) => norm(input[key]));
+    let reason = null;
+    let value = presentValues[0] || '';
+    if (new Set(presentValues).size !== 1) reason = 'field_ambiguous';
+    else if (!value) reason = 'empty_value';
+    else if (!HOTJOB_MC_SELECT_SPECS[spec.label].alternates.includes(value)) reason = 'select_option_not_allowed';
+    if (reason === 'field_ambiguous') value = '';
+    selectFields.push({
+      label: spec.label,
+      path: spec.path,
+      value,
+      ready: reason === null,
+      reason
+    });
+  }
+  const blockers = selectFields.filter((row) => !row.ready);
+  if (blockers.length) {
+    return neverSaveStamp({
+      ok: false,
+      reason: blockers[0].reason,
+      values: null,
+      fields: [...textPlan.fields, ...selectFields],
+      blockers
+    });
+  }
+  return neverSaveStamp({
+    ok: true,
+    reason: 'never_save_plan_ready',
+    values: {
+      ...textPlan.values,
+      gender: selectFields.find((row) => row.label === '性别')?.value ?? null,
+      idType: selectFields.find((row) => row.label === '证件类型')?.value ?? null
+    },
+    fields: [...textPlan.fields, ...selectFields],
+    blockers: []
+  });
 }

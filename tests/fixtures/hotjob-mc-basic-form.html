@@ -26,7 +26,8 @@
   <p class="note">Offline fixture mirroring live 中联 mc antd-mobile DOM
     (<code>.my-list-item</code> / <code>.header-title</code> / <code>.am-input-control input</code> /
     <code>.select-am-list-extra</code> + <code>.am-modal.mc-select-popup</code>).
-    siteId <code>hotjob-mc</code>. Selects: 性别 · 证件类型. Never click 下一步.</p>
+    siteId <code>hotjob-mc</code>. Selects: 性别 · 证件类型. Never click 下一步/保存/提交/投递/删除.
+    待真机 Never-Save，未宣称已支持.</p>
   <div class="am-list">
 
     <div class="my-list-item" id="2_ref">
@@ -121,7 +122,7 @@
       document.addEventListener('click', function (event) {
         var node = event.target.closest('button, a, .my-button');
         var text = (node && node.textContent || '').replace(/\s+/g, '');
-        if (node && /下一步|保存|提交/.test(text)) window.__hotjobMcCommitClicks += 1;
+        if (node && /下一步|保存|提交|投递|删除/.test(text)) window.__hotjobMcCommitClicks += 1;
       }, true);
 
       var OPTIONS = {

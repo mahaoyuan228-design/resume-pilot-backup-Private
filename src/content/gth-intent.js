@@ -16,7 +16,10 @@
 // The 2026-10-22 probe opens 期望工作地区 on 北京 (selected, currentClick)
 // with the level-2 list (北京, 大兴区, …) already shown; a second click can
 // collapse that list. A replace waits out the panel close for the input and
-// the one chip. Closing alone is not picker_replace_unverified. Any picker_*
+// the one chip. Closing alone is not picker_replace_unverified. A 2026-10-22
+// ~18:50 UTC+8 never-save run reads the 期望工作地区 chip and the input as
+// L1+L2 joined (北京大兴区). Chip and input readback accept that join or the
+// level-2 text alone. Level-2 row labels stay the level-2 text. Any picker_*
 // abort returns pickerDiag from a read of the cascader panel: no click
 // outside that panel, and never 保存.
 // Closed-card guesses used kind:'unsupported' until that census. Unknown
@@ -396,6 +399,7 @@
   async function fillPicker(target, parts, replaceExisting, markWrite, guard) {
     const {panel, trigger, input} = target;
     const {l1, l2} = parts;
+    const pOk = text => text === l2 || text === l1 + l2;
     let opened = false;
     let replaced = false;
     const trace = {question:ownLabel(target.item), inputBefore:null, confirmClicked:false, steps:[]};
@@ -403,7 +407,7 @@
       if (trace.steps.length >= 11 && name !== 'abort') return;
       if (trace.steps.length >= 12) return;
       const snap = describePicker(panel, input, target, clicked, trace.confirmClicked);
-      if (noteText) snap.note = String(noteText).slice(0, 80);
+      if (noteText) snap.note = String(noteText).slice(0, 400);
       if (trace.inputBefore == null) trace.inputBefore = snap.inputValue;
       trace.steps.push({step:name, ...snap});
     };
@@ -450,10 +454,10 @@
     const chips = chipTexts(panel);
     if (!chips) await abort('picker_chip_unknown');
     const triggerValue = norm(input.value);
-    if (chips.length === 1 && chips[0] === l2 && triggerValue === l2) {
+    if (chips.length === 1 && pOk(chips[0]) && pOk(triggerValue)) {
       await clickPanelCancel(panel);
       opened = false;
-      if (norm(input.value) !== l2 || shown(panel)) fail('picker_readback_mismatch');
+      if (!pOk(norm(input.value)) || shown(panel)) fail('picker_readback_mismatch');
       return {status:'verified', reason:'preexisting_same_value'};
     }
     const counterNow = readCounter(panel);
@@ -465,8 +469,8 @@
       if (!counterNow) await abort('picker_counter_unknown');
       let entries = chipEntries(panel);
       if (!entries) await abort('picker_structure_changed');
-      while (entries.some(entry => entry.text !== l2)) {
-        const entry = entries.find(row => row.text !== l2);
+      while (entries.some(entry => !pOk(entry.text))) {
+        const entry = entries.find(row => !pOk(row.text));
         const before = readCounter(panel);
         if (!before || !entry?.remove?.isConnected) await abort(before ? 'picker_structure_changed' : 'picker_counter_unknown');
         const beforeCount = entries.length;
@@ -486,7 +490,7 @@
         entries = chipEntries(panel);
         if (!entries) await abort('picker_structure_changed');
       }
-      if (entries.length > 1 || (entries.length === 1 && entries[0].text !== l2)) await abort('picker_structure_changed');
+      if (entries.length > 1 || (entries.length === 1 && !pOk(entries[0].text))) await abort('picker_structure_changed');
     }
     step('picker_level1');
     const level1 = l1Rows(panel).filter(shown);
@@ -524,8 +528,9 @@
     const beforeChips = chipTexts(panel);
     if (!beforeChips) await abort('picker_chip_unknown');
     if (replaceExisting === true && !single) {
-      if (beforeChips.length > 1 || (beforeChips.length === 1 && beforeChips[0] !== l2)) await abort('picker_structure_changed');
+      if (beforeChips.length > 1 || (beforeChips.length === 1 && !pOk(beforeChips[0]))) await abort('picker_structure_changed');
     } else if (beforeChips.length && !(replaceExisting === true && single)) await abort('picker_existing_selection_conflict');
+    note('picker_branch', null, (single?'single':'multi')+' max='+(counter?counter.max:'na')+' chips='+JSON.stringify(beforeChips));
     if (single) {
       const clickable = l2Clickable(found.row, l2);
       if (!clickable) await abort('picker_level2_missing');
@@ -548,7 +553,7 @@
     const box = label ? [...label.querySelectorAll('input[type="checkbox"]')].find(node => label.contains(node)) : null;
     if (!label || norm(label.textContent) !== l2 || !(box instanceof HTMLInputElement) || box.disabled)
       await abort('picker_level2_checkbox_missing');
-    const already = beforeChips.length === 1 && beforeChips[0] === l2;
+    const already = beforeChips.length === 1 && pOk(beforeChips[0]);
     if (box.checked && !already) await abort('picker_level2_checkbox_missing');
     if (!box.checked) {
       step('picker_checkbox');
@@ -558,9 +563,14 @@
       note('picker_level2', clickedOption(box, 2), '');
       const applied = await waitUntil(() => {
         const now = chipTexts(panel);
-        return now && now.length === 1 && now[0] === l2 ? now : null;
+        return now && now.length === 1 && pOk(now[0]) ? now : null;
       });
-      if (!applied) await abort(replaced ? 'picker_replace_unverified' : 'picker_selection_not_applied');
+      if (!applied) {
+        const view = panel.querySelector('.selected-view-data, [class*=selected-view]');
+        const html = String(view && view.outerHTML || '').replace(/\s+/gu, ' ').slice(0, 260);
+        note('picker_chips_dump', null, 'checked='+box.checked+' chips='+JSON.stringify(chipTexts(panel))+' html='+html);
+        await abort(replaced ? 'picker_replace_unverified' : 'picker_selection_not_applied');
+      }
     }
     const confirms = [...panel.querySelectorAll('.pop-foot a.confirm.pop-btn')].filter(node => shown(node) && norm(node.textContent) === '确定');
     if (confirms.length !== 1) await abort('picker_confirm_not_unique');
@@ -572,7 +582,7 @@
     note('picker_confirm', null, '');
     const matched = await waitUntil(() => {
       const now = chipTexts(panel);
-      const ok = norm(input.value) === l2 && now && now.length === 1 && now[0] === l2 && !shown(panel);
+      const ok = pOk(norm(input.value)) && now && now.length === 1 && pOk(now[0]) && !shown(panel);
       return ok ? {ok:true} : null;
     });
     if (!matched?.ok || !siteValid(target)) await abort(replaced ? 'picker_replace_unverified' : 'picker_readback_mismatch');

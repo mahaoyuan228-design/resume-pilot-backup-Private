@@ -92,7 +92,7 @@ test('field rows verify fills against readback and leave the other four read-onl
     expected: expectedReadback()
   });
   assert.equal(matched.find((row) => row.q === '期望工作地区').status, 'verified');
-  assert.equal(matched.find((row) => row.q === '期望工作地区').value, '大兴区');
+  assert.equal(matched.find((row) => row.q === '期望工作地区').value, '北京大兴区');
   assert.equal(matched.find((row) => row.q === '期望薪资').reason, 'readback_reapplied');
   assert.equal(matched.find((row) => row.q === '到岗日期').value, '一个月内');
   for (const question of READ_QUESTIONS) {
@@ -234,7 +234,7 @@ test('the fixed profile confirms only the three live fixtures', () => {
   assert.equal(LIVE_BINDING.profileHash.length, 64);
   assert.deepEqual(LIVE_FILES, ['src/content/gth-intent.js']);
   assert.deepEqual(expectedReadback(), {
-    期望工作地区: '大兴区',
+    期望工作地区: '北京大兴区',
     期望薪资: '15000',
     到岗日期: '一个月内'
   });
@@ -384,7 +384,7 @@ test('a fake CDP run injects the shipped writer, records readback, and cancels',
   assert.deepEqual(evidence.saveLikePost, []);
   assert.deepEqual(evidence.fields.map((row) => row.q), PLANNED.map((item) => item.q));
   assert.equal(evidence.fields.every((row) => row.status === 'verified'), true);
-  assert.equal(evidence.fields.find((row) => row.q === '期望工作地区').value, '大兴区');
+  assert.equal(evidence.fields.find((row) => row.q === '期望工作地区').value, '北京大兴区');
   assert.equal(evidence.fields.find((row) => row.q === '现薪资').reason, 'read_only');
   assert.equal(evidence.finalDetails.exitCode, 0);
   assert.equal(evidence.finalDetails.cancelsOk, true);
@@ -611,7 +611,21 @@ test('click_edit waits for late form items, then the shipped writer fills and re
     const form = slot.querySelector('form');
     page.window.setTimeout(() => {
       form.insertAdjacentHTML('afterbegin', intentInner());
-      stats = wireIntentForm(form);
+      // The 2026-10-22 panel writes the chip as L1+L2 joined after the level-2 checkbox.
+      stats = wireIntentForm(form, {
+        pickers: {
+          期望工作地区: {
+            onOpen({ panel }) {
+              panel.querySelector(':scope > .eo-cascader-panel').addEventListener('click', (event) => {
+                if (!event.target.closest('input[type="checkbox"]')) return;
+                for (const node of panel.querySelectorAll('.selected-view-data > li p')) {
+                  if (node.textContent.replace(/\s+/gu, ' ').trim() === '大兴区') node.textContent = '北京大兴区';
+                }
+              });
+            }
+          }
+        }
+      });
       form.querySelector('#intent-cancel').addEventListener('click', () => form.remove());
       itemsMounted = true;
     }, 120);
@@ -651,7 +665,7 @@ test('click_edit waits for late form items, then the shipped writer fills and re
     extraLabels: read.extraLabels
   });
   assert.equal(rows.every((row) => row.status === 'verified'), true);
-  assert.equal(rows.find((row) => row.q === '期望工作地区').value, '大兴区');
+  assert.equal(rows.find((row) => row.q === '期望工作地区').value, '北京大兴区');
   assert.equal(rows.find((row) => row.q === '现薪资').reason, 'read_only');
   assert.equal(rows.find((row) => row.q === '现薪资').value, '12000');
 

@@ -90,7 +90,7 @@ function areaControl(id, value, state) {
 function selectInner(id, label, value, state, key) {
   const live = probe.select.liveReadback;
   const valueId = id.replace(/-select$/u, '-value');
-  if (state.ambiguousValue && key === 'school') {
+  if (state.ambiguousValue && key === 'degree') {
     return `<span class="${esc(live.selectedValueClass)}">${esc(value || '甲')}</span><span class="${esc(live.selectedValueClass)}">乙</span>`;
   }
   if (state.placeholderMash === 'class' && FIELD[key]) {
@@ -105,12 +105,12 @@ function selectInner(id, label, value, state, key) {
 function selectControl(id, value, state, key) {
   const live = probe.select.liveReadback;
   const label = FIELD[key]?.label || '';
-  const disabled = state.selectDisabled && key === 'school' ? ' ant-select-disabled' : '';
-  const selectClass = state.dropAllowClear && key === 'school'
+  const disabled = state.selectDisabled && key === 'degree' ? ' ant-select-disabled' : '';
+  const selectClass = state.dropAllowClear && key === 'degree'
     ? 'ant-select ant-select-enabled'
     : `${probe.select.controlClass}${disabled}`;
-  const trigger = state.dropSearch && key === 'school' ? '' : `<input class="${esc(probe.select.triggerClass)}" type="text" value="">`;
-  const extra = state.extraSelect && key === 'school'
+  const trigger = state.dropSearch && key === 'degree' ? '' : `<input class="${esc(probe.select.triggerClass)}" type="text" value="">`;
+  const extra = state.extraSelect && key === 'degree'
     ? `<div class="${esc(probe.select.controlClass)}"><span></span><input class="${esc(probe.select.triggerClass)}" type="text" value=""></div>` : '';
   const inner = selectInner(id, label, value, state, key);
   const faced = FIELD[key] && (state.closedSearch || state.placeholderMash === 'class')
@@ -120,8 +120,15 @@ function selectControl(id, value, state, key) {
 }
 
 function textRow(key, value, state, id = `${key}-input`) {
-  const hidden = state.hiddenAddress && key === 'address';
-  return row(key, FIELD[key].label, textControl(id, value, state, key), state, { hidden });
+  const hidden = (state.hiddenAddress && key === 'address') || (state.hiddenSchool && key === 'school');
+  const extraLabel = key === 'school'
+    ? (state.duplicateSchoolCaption ? star(SCHOOL) : (state.schoolNoiseLabel || ''))
+    : '';
+  return row(key, FIELD[key].label, textControl(id, value, state, key), state, {
+    hidden,
+    wrapControl: state.wrapSchool && key === 'school',
+    extraLabel
+  });
 }
 
 function noteRow(value, state) {
@@ -130,10 +137,7 @@ function noteRow(value, state) {
 
 function selectRow(key, value, state) {
   if (state.degreeIsText && key === 'degree') return textRow('degree', value, state, 'degree-input');
-  return row(key, FIELD[key].label, selectControl(`${key}-select`, value, state, key), state, {
-    hidden: state.hiddenSchool && key === 'school',
-    wrapControl: state.wrapSchool && key === 'school'
-  });
+  return row(key, FIELD[key].label, selectControl(`${key}-select`, value, state, key), state);
 }
 
 function majorRow(value, state) {
@@ -214,7 +218,7 @@ function html(state) {
   const body = [
     textRow('address', state.address ?? '', state),
     duplicateAddress,
-    selectRow('school', state.school ?? '', state),
+    textRow('school', state.school ?? '', state),
     selectRow('degree', state.degree ?? '', state),
     selectRow('level', state.level ?? '', state),
     basicMajor,
@@ -316,7 +320,7 @@ function wire(document, state) {
     closeWidgets(document);
   });
   if (state.busy) {
-    const select = document.getElementById('school-select');
+    const select = document.getElementById('degree-select');
     select.classList.add('ant-select-open', 'ant-select-focused');
     paintMenu(document, select, state);
   }
@@ -480,6 +484,8 @@ test('inspect matches the nine probed fields and does not claim support', async 
     assert.deepEqual(Array.from(view.fields, (field) => field.label), probe.fields.map((field) => field.label));
     assert.deepEqual(Array.from(view.fields, (field) => field.kind), probe.fields.map((field) => field.kind));
     assert.equal(view.fields.find((field) => field.label === NOTE).value, '已有评价');
+    assert.equal(view.fields.find((field) => field.label === SCHOOL).kind, 'text');
+    assert.equal(view.fields.find((field) => field.label === SCHOOL).value, FIELD.school.valueSample);
     assert.equal(view.fields.find((field) => field.label === DEGREE).value, FIELD.degree.valueSample);
     assert.equal(view.fields.map((field) => field.label).includes(probe.neighbors.eduSchool.label), false);
     assert.equal(view.fields.map((field) => field.label).includes(probe.neighbors.residence.label), false);
@@ -512,7 +518,7 @@ test('empty text, textarea, and flat selects read back without touching the educ
     assert.equal(address.neverSave, true);
     assert.equal(address.softwareClickedSave, false);
     assert.equal(school.reason, 'readback_matched');
-    assert.equal(school.opened, true);
+    assert.equal(school.opened, false);
     assert.equal(school.canceled, false);
     assert.equal(school.stillOpen, 0);
     assert.equal(degree.after, FIELD.degree.valueSample);
@@ -529,15 +535,15 @@ test('empty text, textarea, and flat selects read back without touching the educ
     assert.match(h.stats.openClass, /ant-select-focused/);
     assert.match(h.stats.openClass, /ant-select-enabled/);
     assert.equal(valueOf(h.document, 'address-input'), '合成联系地址');
+    assert.equal(valueOf(h.document, 'school-input'), FIELD.school.valueSample);
     assert.equal(valueOf(h.document, 'major-input'), '合成专业名称');
     assert.equal(valueOf(h.document, 'note-input'), '合成评价内容');
-    assert.equal(textOf(h.document, 'school-value'), FIELD.school.valueSample);
     assert.equal(textOf(h.document, 'degree-value'), FIELD.degree.valueSample);
     assert.equal(valueOf(h.document, 'edu-major-input'), FIELD.major.valueSample);
     assert.equal(h.document.querySelectorAll('.ant-select-open').length, 0);
     assert.equal(h.document.getElementById('select-menu').hidden, true);
-    assert.equal(h.stats.option, 6);
-    assert.equal(h.stats.textInput, 3);
+    assert.equal(h.stats.option, 5);
+    assert.equal(h.stats.textInput, 4);
     unchanged(h.document, h.stats);
   } finally { h.dom.window.close(); }
 });
@@ -557,7 +563,7 @@ test('a query string on the probed pb path still fills and fillFields covers all
     assert.equal(textOf(h.document, 'salary-value'), FIELD.salary.valueSample);
     assert.equal(textOf(h.document, 'arrival-value'), FIELD.arrival.valueSample);
     assert.equal(valueOf(h.document, 'edu-major-input'), probe.neighbors.eduMajor.token);
-    assert.equal(h.stats.option, 6);
+    assert.equal(h.stats.option, 5);
     unchanged(h.document, h.stats);
   } finally { h.dom.window.close(); }
 });
@@ -627,7 +633,7 @@ test('a different existing value is kept and nothing is opened or painted', asyn
     assert.equal(valueOf(h.document, 'address-input'), '已有地址');
     assert.equal(valueOf(h.document, 'note-input'), '已有评价');
     assert.equal(valueOf(h.document, 'major-input'), '已有专业');
-    assert.equal(textOf(h.document, 'school-value'), '已有院校');
+    assert.equal(valueOf(h.document, 'school-input'), '已有院校');
     assert.equal(textOf(h.document, 'degree-value'), '已有学位');
     assert.equal(valueOf(h.document, 'edu-major-input'), probe.neighbors.eduMajor.token);
     unchanged(h.document, h.stats);
@@ -687,7 +693,7 @@ test('empty values, short labels, and out-of-scope labels fail closed', async ()
 test('Escape closes a flat select and does not change the value; text and textarea do not click', async () => {
   const h = await boot({ school: '', degree: FIELD.degree.valueSample });
   try {
-    const canceled = await h.api.cancelField(SCHOOL);
+    const canceled = await h.api.cancelField(NATURE);
     assert.equal(canceled.ok, true, JSON.stringify(canceled));
     assert.equal(canceled.reason, 'menu_closed');
     assert.equal(canceled.canceled, true);
@@ -735,7 +741,7 @@ test('a menu that ignores Escape fails closed and does not keep a painted value'
 test('missing and duplicate options fail closed before a write', async () => {
   const missing = await boot({});
   try {
-    const school = await missing.api.fillField(SCHOOL, '合成院校');
+    const school = await missing.api.fillField(NATURE, '合成性质');
     assert.equal(school.reason, 'option_not_found', JSON.stringify(school));
     assert.equal(school.after, '');
     assert.equal(school.stillOpen, 0);
@@ -774,11 +780,12 @@ test('missing, duplicate, and drifted controls fail closed', async () => {
     [{ extraTextarea: true }, NOTE, '合成评价内容'],
     [{ readonlyNote: true }, NOTE, '合成评价内容'],
     [{ hiddenNote: true }, NOTE, '合成评价内容'],
-    [{ dropSearch: true }, SCHOOL, FIELD.school.valueSample],
-    [{ dropAllowClear: true }, SCHOOL, FIELD.school.valueSample],
-    [{ extraSelect: true }, SCHOOL, FIELD.school.valueSample],
-    [{ selectDisabled: true }, SCHOOL, FIELD.school.valueSample],
+    [{ dropSearch: true }, DEGREE, FIELD.degree.valueSample],
+    [{ dropAllowClear: true }, DEGREE, FIELD.degree.valueSample],
+    [{ extraSelect: true }, DEGREE, FIELD.degree.valueSample],
+    [{ selectDisabled: true }, DEGREE, FIELD.degree.valueSample],
     [{ hiddenSchool: true }, SCHOOL, FIELD.school.valueSample],
+    [{ schoolNoiseLabel: '学历' }, DEGREE, FIELD.degree.valueSample],
     [{ badDropdown: true }, DEGREE, FIELD.degree.valueSample],
     [{ emptyMenu: true }, DEGREE, FIELD.degree.valueSample],
     [{ busy: true }, LEVEL, FIELD.level.valueSample],
@@ -788,8 +795,8 @@ test('missing, duplicate, and drifted controls fail closed', async () => {
     [{ duplicateAnchorSchool: true }, DEGREE, FIELD.degree.valueSample],
     [{ duplicateGraduation: true }, LEVEL, FIELD.level.valueSample],
     [{ majorIsSelect: true }, MAJOR, '合成专业名称'],
-    [{ closedSearchBare: true }, SCHOOL, FIELD.school.valueSample],
-    [{ ambiguousValue: true }, SCHOOL, FIELD.school.valueSample],
+    [{ closedSearchBare: true }, DEGREE, FIELD.degree.valueSample],
+    [{ ambiguousValue: true }, DEGREE, FIELD.degree.valueSample],
     [{ extraMajorCaption: '学历' }, MAJOR, '合成专业名称'],
     [{ degreeIsText: true }, DEGREE, FIELD.degree.valueSample],
     [{ dropRoot: true }, ADDRESS, '合成联系地址'],
@@ -830,6 +837,7 @@ test('closed flat selects with a placeholder mash match the selected value and d
     closedSearch: true,
     placeholderMash: 'text',
     wrapSchool: true,
+    school: FIELD.school.valueSample,
     ...samples
   });
   try {
@@ -857,7 +865,8 @@ test('closed flat selects with a placeholder mash match the selected value and d
     assert.equal(text.stats.faceClass, '');
     assert.equal(text.stats.forbidden, 0);
     const live = probe.select.liveReadback;
-    assert.equal(text.document.getElementById('school-value').textContent, `${live.placeholderPrefix}${SCHOOL}${FIELD.school.valueSample}`);
+    assert.equal(valueOf(text.document, 'school-input'), FIELD.school.valueSample);
+    assert.equal(text.document.getElementById('degree-value').textContent, `${live.placeholderPrefix}${DEGREE}${FIELD.degree.valueSample}`);
     unchanged(text.document, text.stats);
   } finally { text.dom.window.close(); }
 
@@ -877,10 +886,10 @@ test('closed flat selects with a placeholder mash match the selected value and d
     }
     assert.equal(classes.stats.open, 0);
     assert.equal(classes.stats.forbidden, 0);
-    const nation = classes.document.querySelector('#school-select .ant-select-selection-selected-value');
-    const prompt = classes.document.querySelector('#school-select .ant-select-selection__placeholder');
-    assert.equal(nation.textContent, FIELD.school.valueSample);
-    assert.equal(prompt.textContent, `${probe.select.liveReadback.placeholderPrefix}${SCHOOL}`);
+    const nation = classes.document.querySelector('#degree-select .ant-select-selection-selected-value');
+    const prompt = classes.document.querySelector('#degree-select .ant-select-selection__placeholder');
+    assert.equal(nation.textContent, FIELD.degree.valueSample);
+    assert.equal(prompt.textContent, `${probe.select.liveReadback.placeholderPrefix}${DEGREE}`);
     unchanged(classes.document, classes.stats);
   } finally { classes.dom.window.close(); }
 });
@@ -908,13 +917,71 @@ test('an empty closed flat select opens from the visible face and reads the sele
     assert.equal(h.stats.triggerClass, '');
     assert.equal(h.stats.faceClass, probe.select.liveReadback.faceClass);
     assert.equal(h.stats.forbidden, 0);
-    assert.equal(h.document.querySelector('#school-select .ant-select-selection-selected-value').textContent, FIELD.school.valueSample);
+    assert.equal(valueOf(h.document, 'school-input'), '');
+    assert.equal(h.document.querySelector('#degree-select .ant-select-selection-selected-value').textContent, FIELD.degree.valueSample);
     assert.equal(
       h.document.querySelector('#arrival-select .ant-select-selection__placeholder').textContent,
       `${probe.select.liveReadback.placeholderPrefix}${ARRIVAL}`
     );
     assert.equal(h.document.getElementById('select-menu').hidden, true);
     assert.equal(h.document.querySelectorAll('.ant-select-open').length, 0);
+    unchanged(h.document, h.stats);
+  } finally { h.dom.window.close(); }
+});
+
+test('duplicate 毕业院校 captions still locate the text row and the anchored degree, level, and major', async () => {
+  const h = await boot({
+    duplicateSchoolCaption: true,
+    wrapSchool: true,
+    closedSearch: true,
+    placeholderMash: 'class',
+    school: FIELD.school.valueSample,
+    degree: FIELD.degree.valueSample,
+    level: FIELD.level.valueSample
+  });
+  try {
+    const view = h.api.inspect();
+    assert.equal(view.liveSupportClaimed, false);
+    assert.equal(view.supportClaimed, false);
+    assert.equal(view.neverSave, true);
+    assert.equal(view.saved, false);
+    for (const label of [SCHOOL, DEGREE, LEVEL, MAJOR]) {
+      const field = view.fields.find((item) => item.label === label);
+      assert.equal(field.reason, 'structure_matched', label);
+      assert.equal(field.supported, false, label);
+    }
+    assert.equal(view.fields.find((field) => field.label === SCHOOL).value, FIELD.school.valueSample);
+    assert.equal(view.fields.find((field) => field.label === DEGREE).value, FIELD.degree.valueSample);
+    assert.equal(view.fields.find((field) => field.label === LEVEL).value, FIELD.level.valueSample);
+    assert.equal(view.fields.find((field) => field.label === MAJOR).value, '');
+    const school = await h.api.fillField(SCHOOL, ` ${FIELD.school.valueSample} `);
+    const degree = await h.api.fillField(DEGREE, FIELD.degree.valueSample);
+    const level = await h.api.fillField(LEVEL, FIELD.level.valueSample);
+    const major = await h.api.fillField(MAJOR, '合成专业名称');
+    assert.equal(school.reason, 'preexisting_same_value', JSON.stringify(school));
+    assert.equal(school.opened, false);
+    assert.equal(school.saved, false);
+    assert.equal(school.liveSupportClaimed, false);
+    assert.equal(school.supportClaimed, false);
+    assert.equal(school.neverSave, true);
+    assert.equal(degree.reason, 'preexisting_same_value', JSON.stringify(degree));
+    assert.equal(degree.opened, false);
+    assert.equal(degree.liveSupportClaimed, false);
+    assert.equal(level.reason, 'preexisting_same_value');
+    assert.equal(level.opened, false);
+    assert.equal(major.ok, true, JSON.stringify(major));
+    assert.equal(major.reason, 'readback_matched');
+    assert.equal(major.after, '合成专业名称');
+    assert.equal(major.opened, false);
+    assert.equal(major.liveSupportClaimed, false);
+    assert.equal(major.supportClaimed, false);
+    assert.equal(valueOf(h.document, 'school-input'), FIELD.school.valueSample);
+    assert.equal(valueOf(h.document, 'major-input'), '合成专业名称');
+    assert.equal(valueOf(h.document, 'edu-major-input'), probe.neighbors.eduMajor.token);
+    assert.equal(h.stats.open, 0);
+    assert.equal(h.stats.option, 0);
+    assert.equal(h.stats.forbidden, 0);
+    assert.equal(h.document.querySelector('#degree-select .ant-select-selection-selected-value').textContent, FIELD.degree.valueSample);
     unchanged(h.document, h.stats);
   } finally { h.dom.window.close(); }
 });

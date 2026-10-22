@@ -31,7 +31,7 @@
     "triggerClass": "ant-select-search__field",
     "dropdownClass": "ant-select-dropdown ant-select-dropdown--single ant-select-dropdown-placement-bottomLeft",
     "openClass": "ant-select ant-select-open ant-select-focused ant-select-enabled",
-    "openClassNote": "These six selects were not individually opened. Dropdown class and ant-select-search__field are the same page's 国籍/地区, 民族, 婚姻状况, and 政治面貌 probes. Open/focused/enabled is the same page's 现居住地 click, already required by hotjob-pb-region.js and hotjob-pb-basic.js.",
+    "openClassNote": "学位, 学历, 期望工作性质, 期望年薪, and 到岗时间 were not individually opened. Dropdown class and ant-select-search__field are the same page's 国籍/地区, 民族, 婚姻状况, and 政治面貌 probes. Open/focused/enabled is the same page's 现居住地 click, already required by hotjob-pb-region.js and hotjob-pb-basic.js. 毕业院校 is the harvested text placeholder, not this select contract.",
     "cancel": "Escape",
     "liveReadback": {
       "note": "2026-10-23 live closed .ant-select-search__field has getClientRects().length 0 while .ant-select-selection[role=combobox] is visible. Clone text was 请选择 plus the label plus the value. Read .ant-select-selection-selected-value, or strip that placeholder prefix. The current value is not a row selector.",
@@ -52,10 +52,10 @@
     {
       "key": "school",
       "label": "毕业院校",
-      "kind": "select",
+      "kind": "text",
+      "placeholder": "请填写毕业院校",
       "valueSample": "悉尼大学",
-      "optionsSample": ["悉尼大学"],
-      "optionsNote": "Interactive probe did not open 毕业院校. The only probed token is the display valueSample. No other school text is included."
+      "controlNote": "Same-page harvest tests/fixtures/live-harvest/20261019/cms-readiness.json records an INPUT type=text placeholder 请填写毕业院校 (valueLen 28) on this resumeOperation URL. The 2026-10-23 structural list called the row a flat select only because those rows were not opened and the class list was copied from 国籍/地区. Live 2026-10-23 07:23 after the closed-select face fallback still returned control_not_supported for this row while 期望工作性质 located. The harvest labels list 毕业院校* four times and neighboring labels twice, so duplicate identical captions still name the one row. valueSample is the probed display token only."
     },
     {
       "key": "degree",

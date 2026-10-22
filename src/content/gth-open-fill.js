@@ -640,6 +640,13 @@
     async function settleMonthPanels(inputs) {
       if (!openMonthPanels().length) return;
       await dismissMonthSurfaces(inputs);
+      // Dismiss starts Element-UI's leave transition. The start panel stays
+      // connected with el-zoom-in-top-leave-active, and monthPanelPending treats
+      // that animation as open. Checking immediately fail-closes 任职时间 / 在校时间
+      // (control_not_supported, month_panel_structure_unknown) before the end
+      // month can open. Wait for the leave to finish, then fail closed if a
+      // panel is still pending.
+      if (openMonthPanels().length) await waitUntil(() => openMonthPanels().length ? null : true, 800);
       if (openMonthPanels().length) {
         step('month_panel_structure_unknown');
         stop('control_not_supported');

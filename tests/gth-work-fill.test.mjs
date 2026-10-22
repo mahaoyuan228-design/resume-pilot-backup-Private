@@ -598,6 +598,7 @@ function wireRaceMonth(document, options = {}) {
     typedChanges: 0, typedClears: 0, tableCommits: 0, anchorWalkMisses: 0, vuePicks: 0, vueEmits: 0,
     domPaints: 0, paintCloses: 0, panelRemoved: 0, emptyCloses: 0,
     pendingHuskRevealed: false, huskDismissIgnored: 0,
+    startLeaveStarted: 0, startLeaveFinished: 0, leaveStillPending: false, leaveFinishedBeforeEndOpen: null,
     panels: {},
   };
   const editors = Object.fromEntries(['start-date', 'end-date'].map((id) => {
@@ -634,6 +635,41 @@ function wireRaceMonth(document, options = {}) {
     editor.panel.style.display = 'none';
     editor.panel.style.visibility = '';
     for (const name of RACE_ANIM) editor.panel.classList.remove(name);
+  };
+  // Live: after the start month is accepted, dismiss leaves the panel connected
+  // with el-zoom-in-top-leave-active. It disconnects only when that transition ends.
+  const LEAVE_CLASS = 'el-zoom-in-top-leave-active';
+  let startLeaveTimer = 0;
+  const finishStartLeave = () => {
+    startLeaveTimer = 0;
+    const start = editors['start-date'];
+    start.panel.classList.remove(LEAVE_CLASS);
+    hide(start);
+    start.panel.remove();
+    stats.startLeaveFinished += 1;
+  };
+  const beginStartLeave = () => {
+    if (options.startLeaveMs == null) return false;
+    const start = editors['start-date'];
+    if (!start.panel.isConnected) return false;
+    const pending = start.panel.style.display !== 'none' || start.panel.classList.contains(LEAVE_CLASS);
+    if (!pending) return false;
+    start.panel.classList.add(LEAVE_CLASS);
+    start.panel.style.display = 'block';
+    start.panel.style.visibility = 'visible';
+    stats.startLeaveStarted += 1;
+    const view = document.defaultView;
+    if (startLeaveTimer) view.clearTimeout(startLeaveTimer);
+    startLeaveTimer = 0;
+    view.setTimeout(() => {
+      if (start.panel.isConnected && start.panel.classList.contains(LEAVE_CLASS)) stats.leaveStillPending = true;
+    }, 40);
+    if (Number.isFinite(options.startLeaveMs)) {
+      startLeaveTimer = view.setTimeout(finishStartLeave, options.startLeaveMs);
+    } else {
+      stats.startLeaveStuck = true;
+    }
+    return true;
   };
   const paint = (editor) => {
     const year = Number(editor.year.textContent.match(/\d{4}/u)[0]);
@@ -712,6 +748,11 @@ function wireRaceMonth(document, options = {}) {
   const connectedMonthPanels = () => [...document.querySelectorAll('.el-picker-panel')].filter((node) => node.isConnected);
   document.getElementById('end-date-icon').addEventListener('click', () => {
     stats.endOpenClicks += 1;
+    if (options.startLeaveMs != null) {
+      const startPanel = editors['start-date'].panel;
+      stats.leaveFinishedBeforeEndOpen = stats.startLeaveFinished > 0
+        && !startPanel.classList.contains(LEAVE_CLASS);
+    }
     stats.monthPanelNodesAtEndClick.push(connectedMonthPanels().length);
     stats.quietAtEndOpen.push(quietHuskCount());
     show('end-date');
@@ -738,6 +779,7 @@ function wireRaceMonth(document, options = {}) {
         continue;
       }
       if (options.preserveEndOnDismiss && editor.input.id === 'end-date') continue;
+      if (editor.input.id === 'start-date' && beginStartLeave()) continue;
       editor.closed = true;
       revertTyped(editor);
       hide(editor);
@@ -861,6 +903,13 @@ function wireRaceMonth(document, options = {}) {
         const current = Number(editor.year.textContent.match(/\d{4}/u)[0]);
         editor.model = `${current}-${String(month).padStart(2, '0')}`;
         editor.input.value = editor.model;
+        if (options.startLeaveMs != null && editor.input.id === 'start-date') {
+          editor.committed = true;
+          editor.panel.style.display = 'block';
+          editor.panel.style.visibility = 'visible';
+          stats.commits += 1;
+          return;
+        }
         hide(editor);
         editor.closed = false;
         editor.committed = true;
@@ -1029,6 +1078,55 @@ test('任职时间 commits the end month while the start panel husk stays connec
     flags(result);
     assert.equal(forbidden(clicks).length, 0);
   }
+});
+
+test('任职时间 waits out a start panel leave transition before the end month', async () => {
+  for (const [startDate, endDate] of [['2023-01', '2024-06'], ['2022-03', '2023-12']]) {
+    const { doc, clicks, context, months } = bootRace({ startLeaveMs: 200 });
+    const result = await context.ResumeGthWorkOpen.trial(request(workProfile({ ...ROW, startDate, endDate })));
+    assert.equal(result.ok, true, JSON.stringify({
+      startDate, endDate, reason: result.reason, step: result.selectorStep,
+      leaveStarted: months.startLeaveStarted, leaveFinished: months.startLeaveFinished,
+      still: months.leaveStillPending, beforeEnd: months.leaveFinishedBeforeEndOpen,
+    }));
+    assert.equal(`${doc.getElementById('start-date').value} | ${doc.getElementById('end-date').value}`, `${startDate} | ${endDate}`);
+    assert.equal(result.fields.find((field) => field.question === '任职时间').reason, 'readback_matched');
+    assert.equal(result.fields.find((field) => field.question === '任职时间').status, 'verified');
+    assert.equal(result.liveSupportClaimed, false);
+    assert.equal(months.leaveStillPending, true);
+    assert.equal(months.startLeaveFinished > 0, true);
+    assert.equal(months.leaveFinishedBeforeEndOpen, true);
+    assert.equal(months.endOpenClicks, 1);
+    assert.equal(months.endCellClicks, 1);
+    assert.equal(months.panels.start.classList.contains('el-zoom-in-top-leave-active'), false);
+    assert.equal(doc.getElementById('salary').value, '');
+    flags(result);
+    assert.equal(forbidden(clicks).length, 0);
+  }
+});
+
+test('任职时间 fails closed when the start panel leave transition is still pending after 800ms', async () => {
+  const { doc, clicks, context, months } = bootRace({ startLeaveMs: Infinity });
+  const result = await context.ResumeGthWorkOpen.trial(request(workProfile({ ...ROW, startDate: '2023-01', endDate: '2024-06' })));
+  assert.equal(result.ok, false);
+  assert.equal(result.reason, 'control_not_supported');
+  assert.equal(result.selectorStep, 'month_panel_structure_unknown');
+  assert.equal(result.fields.find((field) => field.question === '任职时间').status, 'failed');
+  assert.equal(result.fields.find((field) => field.question === '任职时间').reason, 'control_not_supported');
+  assert.equal(result.liveSupportClaimed, false);
+  assert.equal(doc.getElementById('start-date').value, '2023-01');
+  assert.equal(doc.getElementById('end-date').value, '');
+  assert.notEqual(`${doc.getElementById('start-date').value} | ${doc.getElementById('end-date').value}`, '2023-01 | 2024-06');
+  assert.equal(months.leaveStillPending, true);
+  assert.equal(months.startLeaveStuck, true);
+  assert.equal(months.startLeaveFinished, 0);
+  assert.equal(months.endOpenClicks, 0);
+  assert.equal(months.endCellClicks, 0);
+  assert.equal(months.panels.start.isConnected, true);
+  assert.equal(months.panels.start.classList.contains('el-zoom-in-top-leave-active'), true);
+  assert.equal(doc.getElementById('salary').value, '');
+  flags(result);
+  assert.equal(forbidden(clicks).length, 0);
 });
 
 test('任职时间 writes the end month through input change when the cell click does not', async () => {

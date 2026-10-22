@@ -7,8 +7,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { connectCdp, getJson } from '../../tools/live-harvest/cdp-client.mjs';
-import { assertLoopback, EDIT_PAGE, redactUrl, selectResumeTarget } from '../probe-gth-intent.mjs';
+import { assertLoopback, EDIT_PAGE, looksLikeLogin, pageGuardExpression, redactUrl, selectResumeTarget } from '../probe-gth-intent.mjs';
 import { readOutDir, readPort, readStepTimeout, readTipSha } from './gth-intent-live.mjs';
+import { buildPageExpression as buildEducationPageExpression } from './gth-education-live.mjs';
 import { buildPageExpression, isAllowedRequest } from './lib/gth-full-page.mjs';
 import { ensureVisible, runSections } from './lib/gth-full-orchestrator.mjs';
 import { LIVE_FILES, SECTIONS, chromeShimExpression, requestsFor } from './lib/gth-full-sections.mjs';
@@ -22,6 +23,8 @@ export const RUNTIME_FILES = Object.freeze([
   'scripts/live/lib/gth-full-orchestrator.mjs',
   'scripts/live/lib/gth-full-page.mjs',
   'scripts/live/lib/gth-full-sections.mjs',
+  'scripts/live/gth-education-live.mjs',
+  'scripts/live/lib/gth-education-page.mjs',
   'scripts/live/gth-other-skills-live.mjs',
   'scripts/live/gth-intent-live.mjs',
   'scripts/probe-gth-section.mjs',
@@ -40,9 +43,10 @@ Attaches once to the existing https://hr.gtht.com/resume/edit/ Edge tab.
 Runs 基本信息 / 教育经历 / 工作经验 / 职业技能与特长 / 其他信息 / 求职意向.
 PORT defaults to 9239; OUTDIR defaults to the current directory.
 Writes ${EVIDENCE_NAME}. Never saves; liveSupportClaimed stays false.
-Allowed clicks: 编辑, 取消, in-panel options/checkboxes/radios, date-panel
-arrows and day cells, and visible in-panel 确定. 保存, 提交, and type=submit
-stay blocked. POST lookups are getsalaryunit.json and getPhotoSize.json
+Allowed clicks: known edit/add controls, 取消, basic/education radio groups,
+in-panel options/checkboxes/radios, date-header arrows and month/day cells,
+and visible in-panel 确定. 保存, 提交, 投递, 删除 and type=submit stay blocked.
+POST lookups are getsalaryunit.json and getPhotoSize.json
 (exact path, query stripped). A failed section cancels and, if the form
 remains, removes that editor before the next section rebinds its writer.
 STEP_TIMEOUT_MS defaults to 30000 (1000..120000).
@@ -71,6 +75,7 @@ export async function runGthFullResumeLive(options = {}) {
   };
   let session;
   let installed = false;
+  let educationAdapterInstalled = false;
   let fetchEnabled = false;
   let currentSection = null;
   const pending = new Set();
@@ -137,11 +142,23 @@ export async function runGthFullResumeLive(options = {}) {
     // Installation failure is fatal: an unguarded live trial must not begin.
     await send('Fetch.enable', { patterns: [{ urlPattern: '*', requestStage: 'Request' }] });
     fetchEnabled = true;
-    const initial = await evaluate('({ href: location.href })', 'page_location');
+    const initial = await evaluate(pageGuardExpression(), 'page_location');
+    if (looksLikeLogin(initial)) throw failure('needs_login');
     if (initial?.href !== EDIT_PAGE) throw failure('wrong_page');
+    // A prior standalone trial may have left its adapter installed. Remove its
+    // taps before the shared guard captures originals; never layer a second
+    // request policy over the full runner's exact lookup allowlist.
+    await evaluate('globalThis.__gthEducationLive?.restore(); delete globalThis.__gthEducationLive', 'restore_previous_education_adapter');
     const result = await evaluate(buildPageExpression(), 'install_page_guard');
     if (!result?.ok) throw failure('guard_install_failed');
     installed = true;
+    const educationAdapter = await evaluate(`(() => {
+      const result = ${buildEducationPageExpression()};
+      globalThis.__gthEducationLive?.restore();
+      return result;
+    })()`, 'install_education_readback');
+    if (!educationAdapter?.ok) throw failure('education_adapter_failed');
+    educationAdapterInstalled = true;
     const shim = await evaluate(chromeShimExpression(), 'chrome_shim');
     if (!shim?.ok) throw failure('chrome_shim_failed');
     const injectFailures = new Map();
@@ -157,8 +174,10 @@ export async function runGthFullResumeLive(options = {}) {
         }
       }
       const name = section?.globalName;
+      const method = section?.method || 'trial';
       if (!/^ResumeGth[A-Za-z]+$/u.test(name || '')) throw failure('writer_not_bound');
-      const ready = await evaluate(`typeof globalThis.${name}?.trial === 'function'`, `writer_ready_${section.id}`);
+      if (!['trial', 'fullTrial'].includes(method)) throw failure('writer_not_bound');
+      const ready = await evaluate(`typeof globalThis.${name}?.${method} === 'function'`, `writer_ready_${section.id}`);
       if (ready !== true) throw failure('writer_not_bound');
     };
     const driver = {
@@ -166,13 +185,22 @@ export async function runGthFullResumeLive(options = {}) {
       bringToFront: () => send('Page.bringToFront'),
       bindWriters,
       forceClose: (section) => page('discard', [section.sectionIndex]),
-      open: (section) => { currentSection = section.id; return page('open', [section.sectionIndex]); },
+      async open(section) {
+        currentSection = section.id;
+        if (section.id !== 'education') return page('open', [section.sectionIndex]);
+        const active = await page('activate', [section.sectionIndex]);
+        if (active?.ok !== true) return active;
+        // The shipped fullTrial owns the row-icon edit, record identity and
+        // editor wait. A title 编辑 click belongs to the legacy open-fill path.
+        const inspected = await evaluate('globalThis.__gthEducationLive.inspect()', 'inspect_education');
+        return { ...inspected, writerOpensEditor: true };
+      },
       async fill(section) {
         const fills = [];
         for (const trial of requestsFor(section)) {
           const before = await readEvidence();
           let fill;
-          const attempt = () => evaluate(`globalThis.${section.globalName}.trial(${JSON.stringify(trial.request)})`, `fill_${section.id}`, true);
+          const attempt = () => evaluate(`globalThis.${section.globalName}.${section.method || 'trial'}(${JSON.stringify(trial.request)})`, `fill_${section.id}`, true);
           try {
             await ensureVisible(driver);
             fill = await attempt();
@@ -194,8 +222,17 @@ export async function runGthFullResumeLive(options = {}) {
         }
         return fills;
       },
-      read: (section) => page('read', [section.sectionIndex, section.questions]),
-      cancel: (section) => page('cancel', [section.sectionIndex]),
+      read: (section) => section.id === 'education'
+        ? evaluate(`globalThis.__gthEducationLive.read(${JSON.stringify(section.questions)})`, 'read_education')
+        : page('read', [section.sectionIndex, section.questions]),
+      async cancel(section) {
+        if (section.id !== 'education') return page('cancel', [section.sectionIndex]);
+        const adapterCancel = await evaluate('globalThis.__gthEducationLive.cancel()', 'cancel_education', true);
+        // The standalone helper accepts a hidden form as closed. The full
+        // runner additionally disconnects it and any teleported picker before
+        // a later section binds; generic cancel already owns that cleanup.
+        return { ...(await page('cancel', [section.sectionIndex])), adapterCancel };
+      },
       evidence: readEvidence
     };
     evidence.sections = await runSections(driver);
@@ -205,6 +242,12 @@ export async function runGthFullResumeLive(options = {}) {
     evidence.detail = String(error?.message || error).slice(0, 300);
   } finally {
     if (session) {
+      if (educationAdapterInstalled) {
+        // Its taps were already restored at installation. Calling restore()
+        // again here would reinstall the full guard after its own cleanup.
+        try { await evaluate('delete globalThis.__gthEducationLive', 'remove_education_readback'); evidence.cleanup.educationAdapterRemoved = true; }
+        catch { evidence.cleanup.educationAdapterRemoved = false; }
+      }
       if (installed) {
         try { Object.assign(evidence, await readEvidence()); }
         catch { evidence.cleanup.evidenceReadFailed = true; }

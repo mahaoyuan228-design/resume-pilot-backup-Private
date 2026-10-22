@@ -8,7 +8,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createGthBasicAutoRunner } from '../src/background/gth-basic-auto.mjs';
-import { BASIC_PAGE, basicJobKey } from '../src/background/basic-task-runner.mjs';
+import { BASIC_PAGE, BASIC_FIELDS, basicCandidate, basicCoverage, basicJobKey } from '../src/background/basic-task-runner.mjs';
+import { emptyProfile, listFilledPaths, normalizeProfile } from '../src/profile/store.js';
 
 const epoch = '00000000-0000-4000-8000-000000000001';
 const tabId = 42;
@@ -20,11 +21,12 @@ const fixture = () => ({
   gender: '男',
   phone: '13800138000',
   birthDate: '1998-06',
+  workStart: '2022-01',
   email: 'synthetic@example.com',
   education: Array.from({ length: 6 }, (_, index) =>
     index === 5 ? { degree: '硕士' } : {}),
   confirmedFields: [
-    'fullName', 'gender', 'phone', 'birthDate', 'email', 'education.5.degree',
+    'fullName', 'gender', 'phone', 'birthDate', 'email', 'workStart', 'education.5.degree',
   ],
 });
 
@@ -34,7 +36,7 @@ async function harness({ trialResponse, statusOutcome = 'verified_preexisting', 
     resumeProfileLifecycle: { version: 1, epoch, state: 'ready' },
   };
   const clone = (value) => (value === undefined ? undefined : structuredClone(value));
-  const stats = { trial: 0, status: 0, inject: 0, probe: 0 };
+  const stats = { trial: 0, status: 0, inject: 0, probe: 0, trialProfile: null };
   const storage = {
     get: async (keys) =>
       keys === null
@@ -79,6 +81,7 @@ async function harness({ trialResponse, statusOutcome = 'verified_preexisting', 
       { question: '出生年月', path: 'birthDate', status: 'verified', reason: 'preexisting_same_value' },
       { question: '电子邮件', path: 'email', status: 'skipped', reason: 'site_readonly', readOnlyState: 'same' },
       { question: '最高学历', path: 'education.5.degree', status: 'verified', reason: 'preexisting_same_value' },
+      { question: '参加工作时间', path: 'workStart', status: 'verified', reason: 'preexisting_same_value' },
     ],
   };
   // coverage must match basicCoverage(response, 5)
@@ -91,7 +94,7 @@ async function harness({ trialResponse, statusOutcome = 'verified_preexisting', 
     { key: 'currentCity', question: '现居住地', path: 'currentCity', supported: false, status: 'failed', reason: 'control_not_supported' },
     { key: 'degree', question: '最高学历', path: 'education.5.degree', supported: true, status: 'verified', reason: 'preexisting_same_value' },
     { key: 'photo', question: '照片', path: null, supported: false, status: 'failed', reason: 'control_not_supported' },
-    { key: 'workStart', question: '参加工作时间', path: null, supported: false, status: 'failed', reason: 'control_not_supported' },
+    { key: 'workStart', question: '参加工作时间', path: 'workStart', supported: true, status: 'verified', reason: 'preexisting_same_value' },
   ];
   const api = {
     storage: { local: storage },
@@ -114,6 +117,7 @@ async function harness({ trialResponse, statusOutcome = 'verified_preexisting', 
       sendMessage: async (_tab, message) => {
         if (message.type === 'GTH_BASIC_TRIAL') {
           stats.trial += 1;
+          stats.trialProfile = clone(message.profile);
           const body = trialResponse || defaultTrial;
           return patchTrial ? patchTrial(structuredClone(body)) : body;
         }
@@ -181,6 +185,7 @@ test('GTH_BASIC_AUTO readiness probes without trial write', async () => {
   assert.equal(h.stats.inject, 0);
   assert.equal(response.readiness?.pageState, 'ready');
   assert.equal(response.readiness?.sources?.find((row) => row.educationIndex === 5)?.hasDegree, true);
+  assert.ok(response.readiness?.sources?.find((row) => row.educationIndex === 5)?.confirmedBasics.includes('workStart'));
   assert.equal(h.data.resumeGthBasicAutoRun?.ok, true);
   assert.equal(h.data.resumeGthBasicAutoRun?.mode, 'readiness');
 });
@@ -200,7 +205,7 @@ test('GTH_BASIC_AUTO defaults to readiness when mode omitted', async () => {
   assert.equal(response.readiness?.coverageReadiness?.selector, null);
   assert.equal(response.readiness?.coverageReadiness?.blocked, true);
   const closed = response.readiness?.coverageReadiness?.fields || [];
-  assert.deepEqual(closed.map((row) => row.key), ['currentCity', 'photo', 'workStart']);
+  assert.deepEqual(closed.map((row) => row.key), ['currentCity', 'photo']);
   assert.equal(closed.every((row) => row.status === 'failed' && row.supported === false), true);
   assert.equal(JSON.stringify(response).includes('已支持'), false);
   assert.equal(h.stats.trial, 0);
@@ -231,11 +236,17 @@ test('GTH_BASIC_AUTO fill dispatches trial once and never Save', async () => {
   assert.equal(response.job?.complete, false);
   assert.equal(response.job?.softwareClickedSave, false);
   assert.equal(response.job?.softwareClickedSubmit, false);
-  assert.equal(response.job?.fields?.length, 6);
+  assert.equal(response.job?.fields?.length, 7);
+  assert.equal(h.stats.trialProfile.workStart, '2022-01');
+  assert.ok(h.stats.trialProfile.confirmedFields.includes('workStart'));
+  assert.deepEqual(response.job.coverage.find(row => row.key === 'workStart'), {
+    key: 'workStart', question: '参加工作时间', path: 'workStart', supported: true,
+    status: 'verified', reason: 'preexisting_same_value'
+  });
   const city = response.job?.coverage?.find((row) => row.key === 'currentCity');
   assert.equal(city?.status, 'failed');
   assert.equal(city?.reason, 'control_not_supported');
-  assert.equal(response.job?.coverage?.filter((row) => row.status === 'failed').length, 3);
+  assert.equal(response.job?.coverage?.filter((row) => row.status === 'failed').length, 2);
   assert.equal(h.data[basicJobKey(tabId)]?.state, 'unknown');
   assert.notEqual(h.data[basicJobKey(tabId)]?.state, 'completed');
   assert.ok(h.data['resumePendingFillReview:' + tabId]);
@@ -317,6 +328,52 @@ const fillMessage = {
   replaceExisting: true,
   originConfirmed: true,
 };
+
+test('optional workStart survives profile normalization and enters candidates only when confirmed', () => {
+  assert.equal(Object.hasOwn(emptyProfile(), 'workStart'), false);
+  assert.equal(Object.hasOwn(normalizeProfile({}), 'workStart'), false);
+  const confirmed = normalizeProfile({ ...fixture(), sources: { workStart: 'import' } });
+  assert.equal(confirmed.workStart, '2022-01');
+  assert.ok(listFilledPaths(confirmed).includes('workStart'));
+  assert.ok(confirmed.confirmedFields.includes('workStart'));
+  assert.equal(confirmed.sources.workStart, 'import');
+  assert.equal(normalizeProfile(JSON.parse(JSON.stringify(confirmed))).workStart, '2022-01');
+  assert.ok(BASIC_FIELDS.some(([question, key]) => question === '参加工作时间' && key === 'workStart'));
+  assert.equal(basicCandidate(confirmed, 5).profile.workStart, '2022-01');
+  const unconfirmed = { ...fixture(), confirmedFields: fixture().confirmedFields.filter(path => path !== 'workStart') };
+  assert.equal(basicCandidate(unconfirmed, 5).profile.workStart, '');
+  assert.ok(!basicCandidate(unconfirmed, 5).profile.confirmedFields.includes('workStart'));
+  const missing = fixture();
+  delete missing.workStart;
+  missing.experience = [{ startDate: '2019-02' }];
+  assert.equal(basicCandidate(missing, 5).profile.workStart, '', 'experience must not be used to infer workStart');
+  const invalid = { ...fixture(), workStart: '2022-13' };
+  assert.equal(basicCandidate(invalid, 5).profile.workStart, '2022-13', 'writer must receive explicit source for its invalid-profile diagnostic');
+});
+
+test('basicCoverage retains workStart missing, unconfirmed, and invalid source diagnostics', () => {
+  for (const reason of ['missing_profile_value', 'profile_fact_unconfirmed', 'invalid_profile_value']) {
+    const coverage = basicCoverage({ fields: [{ question: '参加工作时间', path: 'workStart', status: 'skipped', reason }] }, 5);
+    assert.deepEqual(coverage.find(row => row.key === 'workStart'), {
+      key: 'workStart', question: '参加工作时间', path: 'workStart', supported: true, status: 'skipped', reason
+    });
+  }
+});
+
+test('basic auto rejects legacy six-field bodies that omit workStart evidence', async () => {
+  const h = await harness({ patchTrial: trial => {
+    trial.fields = trial.fields.filter(row => row.path !== 'workStart');
+    trial.coverage = trial.coverage.map(row => row.key === 'workStart'
+      ? { ...row, path: null, supported: false, status: 'failed', reason: 'control_not_supported' } : row);
+    return trial;
+  } });
+  const response = await h.invoke(fillMessage);
+  assert.equal(response.ok, false);
+  assert.equal(response.job?.state, 'unknown');
+  assert.equal(response.complete, false);
+  assert.equal(response.liveSupportClaimed, false);
+  assert.equal(response.saveAttempted, false);
+});
 
 test('GTH_BASIC_AUTO fill fails closed when post-fill status is unsettled', async () => {
   const h = await harness({ statusOutcome: 'unknown' });

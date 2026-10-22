@@ -105,11 +105,16 @@ function installGthFullLive(doc, options) {
     const matches = section ? [...section.querySelectorAll('form.el-form.sec-form')] : [];
     return matches.length === 1 && forms().length === 1 ? matches[0] : null;
   }
-  const PANEL_SELECTOR = '.el-select-dropdown,.el-picker-panel,div.dialog-wrap.plugin-dialog-wrap.popover.blue';
+  const PANEL_SELECTOR = '.el-select-dropdown,.el-picker-panel,.popover.plugin-dialog-wrap';
+  function enabled(node) {
+    return !!node && !node.disabled && !node.hasAttribute('formaction')
+      && node.getAttribute('aria-disabled') !== 'true'
+      && !node.classList.contains('is-disabled') && !node.classList.contains('disabled');
+  }
   function submitControl(node) {
-    const control = node.closest('button, input[type="submit"]');
+    const control = node.closest('button, input[type="submit"], input[type="image"]');
     if (!control) return false;
-    if (control.matches('input[type="submit"]')) return true;
+    if (control.matches('input[type="submit"],input[type="image"]')) return true;
     return String(control.type || '').toLowerCase() === 'submit';
   }
   function controlText(node) {
@@ -118,7 +123,7 @@ function installGthFullLive(doc, options) {
   }
   function openPanel(node) {
     const panel = node.closest(PANEL_SELECTOR);
-    if (!panel || !visible(panel)) return null;
+    if (!panel || !visible(panel) || !activeForm()) return null;
     const owner = panel.closest('.r-section');
     if (owner && owner !== sections()[activeSectionIndex]) return null;
     return panel;
@@ -139,7 +144,11 @@ function installGthFullLive(doc, options) {
     if (!picker || !panel.contains(node) || !visible(picker)) return false;
     // Arrows and cells match gth-basic / gth-open-fill month panels, plus the
     // Element date-table day cell those panels sit beside.
-    return !!node.closest('button.el-picker-panel__icon-btn, .el-icon-d-arrow-left, .el-icon-d-arrow-right, .el-icon-arrow-left, .el-icon-arrow-right, .el-month-table td, .el-date-table td, a.cell');
+    const arrow = node.closest('.el-icon-d-arrow-left,.el-icon-d-arrow-right,.el-icon-arrow-left,.el-icon-arrow-right');
+    if (arrow && picker.contains(arrow) && arrow.closest('.el-date-picker__header')
+      && visible(arrow) && enabled(arrow)) return true;
+    const cell = node.closest('.el-month-table td,.el-date-table td');
+    return !!cell && picker.contains(cell) && visible(cell) && enabled(cell);
   }
   function isPanelOption(node, panel) {
     if (!panel.contains(node)) return false;
@@ -171,21 +180,68 @@ function installGthFullLive(doc, options) {
     return !!pointer && form.contains(pointer)
       && !pointer.closest('.plugin-dialog-wrap, .el-picker-panel, .el-select-dropdown');
   }
+  // Basic gender and education admissions are the two in-form radio groups
+  // clicked by the shipped writers. A hidden native radio may receive the
+  // label's forwarded click; its visible, enabled label still owns the action.
+  function isWriterRadio(node, form) {
+    const question = activeSectionIndex === 0 ? '性别' : activeSectionIndex === 1 ? '是否统招' : null;
+    const expected = activeSectionIndex === 0 ? ['男', '女'] : ['是', '否'];
+    if (!question || !form.contains(node) || node.closest(PANEL_SELECTOR)) return false;
+    const items = [...form.querySelectorAll('.el-form-item')].filter(item => {
+      const labels = [...item.querySelectorAll('.el-form-item__label')]
+        .filter(label => label.closest('.el-form-item') === item);
+      return labels.length === 1 && norm(labels[0].textContent) === question;
+    });
+    if (items.length !== 1 || !items[0].contains(node)) return false;
+    const item = items[0];
+    const radios = [...item.querySelectorAll('input[type="radio"]')]
+      .filter(input => input.closest('.el-form-item') === item);
+    if (radios.length !== 2) return false;
+    const labels = radios.map(input => input.closest('label.el-radio'));
+    if (labels.some(label => !label || !item.contains(label) || !visible(label) || !enabled(label))
+      || radios.some(input => !enabled(input))) return false;
+    const values = labels.map(label => norm(label.querySelector('.el-radio__label')?.textContent));
+    if (new Set(values).size !== 2 || !expected.every(value => values.includes(value))) return false;
+    const group = radios[0].closest('.el-radio-group');
+    if (!(group && item.contains(group) && radios.every(input => input.closest('.el-radio-group') === group))
+      && !(radios[0].name && radios.every(input => input.name === radios[0].name))) return false;
+    return labels.some((label, index) => label.contains(node)
+      && (node === label || node === radios[index]
+        || node.matches('.el-radio__label,.el-radio__input,.el-radio__inner')));
+  }
   function classifyClick(target) {
     const node = target?.nodeType === 1 ? target : target?.parentElement;
     const denied = { allowed: false, kind: 'forbidden', reason: 'refusing_forbidden_click' };
-    if (!node || !visible(node) || !state().hrefOk || !state().visible) return denied;
+    if (!node || !node.isConnected || !state().hrefOk || !state().visible) return denied;
     // type=submit is never a discard or picker action, including a footer
     // button whose default type is submit.
     if (submitControl(node)) return denied;
+    const control = node.closest('button,a,input,label.el-radio,label.el-checkbox,li,td');
+    const anchorHost = node.closest('a');
+    if (node.closest('[disabled],[aria-disabled="true"],.is-disabled,.disabled,[formaction]')
+      || control && !enabled(control) || anchorHost && wouldNavigate(anchorHost)) return denied;
     const hostText = controlText(node);
-    if (['保存', '提交', '投递', '删除'].some(word => hostText.includes(word))) return denied;
+    if (['保存', '提交', '投递', '删除'].some(word => hostText.includes(word) || norm(node.textContent).includes(word))) return denied;
+    const form = activeForm();
+    if (form && isWriterRadio(node, form)) return { allowed: true, kind: 'radio_option', reason: null };
+    if (!visible(node)) return denied;
     const edit = node.closest('.title_ a.h-e-btn');
     if (edit && norm(edit.textContent) === '编辑' && !wouldNavigate(edit)
         && edit.closest('.r-section') === sections()[activeSectionIndex] && forms().length === 0) {
       return { allowed: true, kind: 'edit', reason: null };
     }
-    const form = activeForm();
+    // Education's current writer opens an existing record through its icon,
+    // or starts a new one through 添加/新增. These are the existing page roles.
+    const anchor = node.closest('a');
+    if (activeSectionIndex === 1 && anchor && !wouldNavigate(anchor) && forms().length === 0
+      && anchor.closest('.r-section') === sections()[1]) {
+      const row = anchor.closest('.sec-context > .sec-detail');
+      const editRecord = row && anchor.querySelector('.el-icon-edit-outline')
+        && ['', '编辑'].includes(norm(anchor.textContent));
+      const addRecord = anchor.matches('a.h-e-btn') && anchor.closest('.title_')
+        && ['添加', '新增'].includes(norm(anchor.textContent));
+      if (editRecord || addRecord) return { allowed: true, kind: editRecord ? 'edit' : 'add', reason: null };
+    }
     const panel = openPanel(node);
     const cancel = node.closest('button');
     if (form && cancel && form.contains(cancel) && cancel.type === 'button' && norm(cancel.textContent) === '取消' && !panel) {
@@ -299,6 +355,22 @@ function installGthFullLive(doc, options) {
     } while (Date.now() < deadline);
     return false;
   }
+  // Some shipped section writers own their open action. Arm the same guard
+  // without substituting the generic title 编辑 path for that writer's opener.
+  function activate(sectionIndex) {
+    const shot = state();
+    if (!Number.isInteger(sectionIndex) || sectionIndex < 0 || sectionIndex >= options.titles.length)
+      return { ok: false, reason: 'section_not_supported' };
+    if (!shot.hrefOk || !shot.titlesOk || shot.readyState !== 'complete' || !shot.visible)
+      return { ok: false, reason: !shot.visible ? 'page_hidden' : 'page_not_ready' };
+    if (shot.sectionFormCounts.some((count, index) => count > 0 && index !== sectionIndex))
+      return { ok: false, reason: 'other_section_editor_open' };
+    const ownForms = sections()[sectionIndex].querySelectorAll('form');
+    if (ownForms.length > 1 || ownForms.length === 1 && !ownForms[0].matches('form.el-form.sec-form'))
+      return { ok: false, reason: 'editor_not_unique' };
+    activeSectionIndex = sectionIndex;
+    return { ok: true, activeSectionIndex };
+  }
   async function open(sectionIndex) {
     const decision = decideOpen(snapshot(sectionIndex));
     if (decision.action === 'stop') return { ok: false, openedByUs: false, ...decision };
@@ -408,7 +480,7 @@ function installGthFullLive(doc, options) {
     if (originalBeacon) view.navigator.sendBeacon = originalBeacon;
   }
   view.__gthFullLive = {
-    open, cancel, discard: discardEditor, read, state, snapshot,
+    open, activate, cancel, discard: discardEditor, read, state, snapshot,
     clicks: () => clickRows.slice(), requests: () => requestRows.slice(), restore
   };
   return { ok: true };

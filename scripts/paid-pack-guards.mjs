@@ -4,7 +4,7 @@
 // Edge 155 MV3 does not register a service worker that top-level await-imports paid-config.
 // The packed tree must also carry tip CMS 学历 duplicate_target ids, region fail-closed
 // markers, and the CMS auto inject files. It must carry tip GTH basic fail-closed
-// coverage: unsupported or unsettled 现居住地/照片/参加工作时间 are failed, and a
+// coverage: unsupported or unsettled 现居住地/照片 are failed, and a
 // requested fill is not stored as completed. It must carry tip CMB basic fail-closed
 // coverage: a requested field that is ambiguous, unsupported, or unsettled stays
 // failed, with requestedFillBlocked and fillAllowed false. This gate does not claim
@@ -199,7 +199,7 @@ const NEVER_SAVE_FILES = new Set([
 ]);
 
 // Byte-compared into the paid output. Pre-PR#23 GTH basic stored unsupported
-// 现居住地/照片/参加工作时间 as skipped and could still mark the job completed.
+// 现居住地/照片 as skipped and could still mark the job completed.
 export const GTH_TIP_SOURCE_FILES = [
   'src/content/gth-basic.js',
   'src/background/basic-task-runner.mjs',
@@ -274,7 +274,7 @@ export const GTH_TIP_MARKERS = [
       'sealGthJobCoverage',
       'gthRequestedFillBlocksComplete',
       'if(gthRequestedFillBlocksComplete(coveragePlan)){',
-      'Unsupported or unsettled 现居住地/照片/参加工作时间 fail closed and are not a completed fill.',
+      'Unsupported or unsettled 现居住地/照片 fail closed and are not a completed fill.',
       "'src/content/gth-basic.js'",
     ],
   },
@@ -283,7 +283,7 @@ export const GTH_TIP_MARKERS = [
     group: 'gth-no-completed-on-skip',
     needles: [
       'GTH_COVERAGE_FAIL_CLOSED_REASONS',
-      '现居住地、照片或参加工作时间未能填写（控件尚未支持，或地区资料未定）。本次不记为完成，未保存、未提交。',
+      '现居住地或照片未能填写（控件尚未支持，或地区资料未定）。本次不记为完成，未保存、未提交。',
     ],
   },
   {
@@ -770,7 +770,7 @@ export function assertPackedBytesMatchSource(repoRoot, extensionRoot, rels = [..
  * - BG_PING is registered (service worker module ran)
  * - CMS/GTH basic auto and CMS education auto listeners are installed (sync deny, no page DOM)
  * - packed CMS files carry tip 学历 / region fail-closed / auto inject pieces
- * - packed GTH basic files fail closed on unsupported or unsettled 现居住地/照片/参加工作时间
+ * - packed GTH basic files fail closed on unsupported or unsettled 现居住地/照片
  *   and do not store that fill as completed
  * - packed CMB basic files fail closed on an unsettled requested field
  *   (requestedFillBlocked, fillAllowed false) and keep that row failed

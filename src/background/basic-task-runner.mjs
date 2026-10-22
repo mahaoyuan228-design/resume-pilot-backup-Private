@@ -1,5 +1,5 @@
-// GTH basic six candidates. Account-owned contacts may be site-read-only.
-// Preparation and writing belong to the worker. 现居住地 / 照片 / 参加工作时间
+// GTH basic candidates. Account-owned contacts may be site-read-only.
+// Preparation and writing belong to the worker. 现居住地 / 照片
 // stay unsupported: a requested fill records them failed, never as a completed skip.
 // Region facts that are missing a unique confirmed pair fail closed offline.
 // This planner does not look up DOM, invent selectors, fill, Save, or submit.
@@ -10,7 +10,7 @@ import {beginRecentRequest,saveRecentResult} from '../popup/recent-result.js';
 export const BASIC_PAGE='https://hr.gtht.com/resume/edit/';
 export const BASIC_KIND='gth_basic_trial';
 export const BASIC_FIELDS=[['姓名','fullName'],['性别','gender'],['手机号码','phone'],
-  ['出生年月','birthDate'],['电子邮件','email'],['最高学历','degree']];
+  ['出生年月','birthDate'],['电子邮件','email'],['最高学历','degree'],['参加工作时间','workStart']];
 export const BASIC_COVERAGE=[...BASIC_FIELDS.slice(0,5),['现居住地','currentCity'],BASIC_FIELDS[5],
   ['照片','photo'],['参加工作时间','workStart']];
 export const basicJobKey=tabId=>`resumeBasicJob:${tabId}`;
@@ -27,19 +27,19 @@ const stable=value=>JSON.stringify(value,(_key,item)=>item&&typeof item==='objec
   ?Object.fromEntries(Object.keys(item).sort().map(key=>[key,item[key]])):item);
 const fail=reason=>{throw Error(reason);};
 const safeCode=value=>typeof value==='string'&&/^[a-z_]{2,80}$/u.test(value)?value:'basic_job_failed';
-const pathFor=(key,index)=>key==='degree'?`education.${index}.degree`:['photo','workStart'].includes(key)?null:key;
+const pathFor=(key,index)=>key==='degree'?`education.${index}.degree`:key==='photo'?null:key;
 
 export function basicCandidate(input,educationIndex) {
   const profile=normalizeProfile(input),row=profile.education[educationIndex];
   if(!Number.isInteger(educationIndex)||educationIndex<0||educationIndex>29||!row)fail('basic_education_source_required');
   const confirmed=new Set(profile.confirmedFields),degreePath=`education.${educationIndex}.degree`;
   if(!row.degree||!confirmed.has(degreePath))fail('basic_education_source_unconfirmed');
-  const facts={fullName:'',gender:'',phone:'',birthDate:'',email:'',education:Array.from({length:educationIndex+1},()=>({})),confirmedFields:[]};
-  for(const key of ['fullName','gender','phone','birthDate','email'])if(profile[key]&&confirmed.has(key)){
+  const facts={fullName:'',gender:'',phone:'',birthDate:'',email:'',workStart:'',education:Array.from({length:educationIndex+1},()=>({})),confirmedFields:[]};
+  for(const key of ['fullName','gender','phone','birthDate','email','workStart'])if(profile[key]&&confirmed.has(key)){
     facts[key]=profile[key];facts.confirmedFields.push(key);
   }
   facts.education[educationIndex].degree=row.degree;facts.confirmedFields.push(degreePath);
-  if([facts.fullName,facts.gender,facts.phone,facts.birthDate,facts.email,row.degree].some(value=>/[\u0000-\u001f]/u.test(value)))fail('basic_source_invalid');
+  if([facts.fullName,facts.gender,facts.phone,facts.birthDate,facts.email,facts.workStart,row.degree].some(value=>/[\u0000-\u001f]/u.test(value)))fail('basic_source_invalid');
   return {educationIndex,profile:facts};
 }
 export function basicCoverage(response,educationIndex) {
@@ -120,8 +120,7 @@ function planGthResidence(profile,sitePageUrl){
 export function planGthBasicCoverage(profile,{sitePageUrl=BASIC_PAGE,fillRequested=false}={}){
   const fields=[
     planGthResidence(profile,sitePageUrl),
-    planUnsupportedControl('photo','照片',null),
-    planUnsupportedControl('workStart','参加工作时间',null)
+    planUnsupportedControl('photo','照片',null)
   ];
   const region=fields.find(field=>field.reason!=='control_not_supported');
   const blocked=fields.some(field=>field.status==='failed'&&GTH_COVERAGE_FAIL_CLOSED_REASONS.includes(field.reason));
@@ -149,10 +148,12 @@ export function gthRequestedFillBlocksComplete(plan){
 }
 function validResponse(response,index) {
   const rows=response?.fields;
+  // Keep the established wire scope; BASIC_FIELDS defines the seven-field
+  // contract now that 参加工作时间 has an evidenced month adapter.
   return response?.ok===true&&response.scope==='gth_basic_six'&&response.complete===false
     &&response.editorLeftOpen===true&&response.savedOnSite===null&&response.submitted===null
     &&response.softwareClickedSave===false&&response.softwareClickedSubmit===false&&response.softwareClickedDelete===false
-    &&Array.isArray(rows)&&rows.length===6&&BASIC_FIELDS.every(([question,key])=>{
+    &&Array.isArray(rows)&&rows.length===BASIC_FIELDS.length&&BASIC_FIELDS.every(([question,key])=>{
       const matches=rows.filter(row=>row?.question===question&&row.path===pathFor(key,index));
       return matches.length===1&&validRow(matches[0],key);
     })&&response.supportedComplete===rows.every(row=>row.status==='verified')
@@ -259,7 +260,7 @@ export function createBasicTaskRunner({api=globalThis.chrome,verifyBeforeFill=nu
           supportedRemaining:fields.filter(row=>row.status!=='verified'&&row.reason!=='site_readonly').length,
           siteReadOnly:fields.filter(row=>row.reason==='site_readonly').length,
           operable:fields.filter(row=>row.reason!=='site_readonly').length,
-          unsupported:3,remaining:coverage.filter(row=>row.status!=='verified').length}});
+          unsupported:coverage.filter(row=>row.supported===false).length,remaining:coverage.filter(row=>row.status!=='verified').length}});
       await withProfileBinding(api.storage.local,binding,()=>clearExact(tabId,requestId),lifecycleOptions);
     }catch(error){
       const reason=safeCode(error?.message);

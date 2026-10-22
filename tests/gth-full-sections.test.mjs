@@ -13,6 +13,10 @@ test('full trial adapters reuse six section definitions and confirmed work month
   assert.deepEqual(SECTIONS.map((item) => item.questions.length), [9, 11, 13, 1, 2, 7]);
   assert.equal(LIVE_FILES[0], 'src/content/gth-open-fill.js');
   assert.equal(LIVE_FILES.length, 7);
+  assert.equal(section('education').globalName, 'ResumeGthEducationTextTrial');
+  assert.equal(section('education').method, 'fullTrial');
+  assert.ok(LIVE_FILES.includes('src/content/gth-education.js'));
+  assert.ok(!LIVE_FILES.includes('src/content/gth-education-fill.js'));
   const [{ request }] = requestsFor(section('work'));
   assert.equal(request.profile.experience[0].subordinateCount, '5');
   assert.equal(request.profile.experience[0].startDate, '2020-03');
@@ -22,6 +26,49 @@ test('full trial adapters reuse six section definitions and confirmed work month
   }
   assert.equal(request.profileIndex, 0);
   assert.equal(requestsFor(section('basic'))[0].request.educationIndex, 0);
+});
+
+test('basic full trial carries an explicitly confirmed work-start month and checks its readback', () => {
+  const current = section('basic');
+  const [{ request }] = requestsFor(current);
+  assert.equal(request.profile.workStart, '2022-01');
+  assert.ok(request.profile.confirmedFields.includes('workStart'));
+  const fills = [{ fields: [verified('参加工作时间')] }];
+  assert.equal(buildFieldRows(current, fills, read({ 参加工作时间: '2022-01' }))
+    .find(row => row.q === '参加工作时间').status, 'verified');
+  assert.equal(buildFieldRows(current, fills, read({ 参加工作时间: '2022-09' }))
+    .find(row => row.q === '参加工作时间').reason, 'readback_mismatch');
+});
+
+test('education adapter uses current fullTrial candidate schema and paired month readback', () => {
+  const current = section('education');
+  const [{ request }] = requestsFor(current);
+  assert.equal(request.targetMode, 'existing');
+  assert.equal(request.rowIndex, 0);
+  assert.equal(request.profileIndex, 0);
+  assert.equal(request.profile, undefined);
+  const [candidate] = request.educationCandidates;
+  assert.equal(candidate.school, '复旦大学');
+  assert.equal(candidate.majorCategory, '金融学');
+  assert.equal(candidate.confirmedPaths.length, 12);
+  for (const key of ['school', 'major', 'degree', 'unifiedAdmissions', 'startDate', 'endDate', 'majorCategory']) {
+    assert.ok(candidate.confirmedPaths.includes(`education.0.${key}`));
+  }
+  const fills = [{ fields: [verified('在校时间（开始）'), verified('在校时间（结束）'), verified('专业类别')] }];
+  const rows = buildFieldRows(current, fills, {
+    ok: true, readback: [
+      { q: '在校时间', value: '2020-09 至 2024-06', values: ['2020-09', '2024-06'], reason: null },
+      { q: '专业类别', value: '金融学', reason: null }
+    ]
+  });
+  assert.equal(rows.find(row => row.q === '在校时间').status, 'verified');
+  assert.equal(rows.find(row => row.q === '在校时间').startMonth, '2020-09');
+  assert.equal(rows.find(row => row.q === '在校时间').endMonth, '2024-06');
+  assert.equal(rows.find(row => row.q === '专业类别').status, 'verified');
+  const partial = buildFieldRows(current, [{ fields: [verified('在校时间（开始）')] }], {
+    ok: true, readback: [{ q: '在校时间', value: '2020-09 至 2024-06', reason: null }]
+  });
+  assert.equal(partial.find(row => row.q === '在校时间').status, 'failed');
 });
 
 test('intent adapters preserve independent one-answer trials', () => {

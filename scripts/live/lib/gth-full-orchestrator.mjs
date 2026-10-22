@@ -39,9 +39,9 @@ export async function runSections(driver, { sections = SECTIONS } = {}) {
       if (formsRemain(state) && !(section.id === 'basic' && runs.length === 1 && state.basicInitialEditor === true)) {
         throw failure('previous_editor_still_open');
       }
-      // Re-install the shipped writers after a previous abort. Education and
-      // work use the same open-fill engine as skills and other; a fresh bind
-      // keeps a failed basic trial from leaving that engine uninstalled.
+      // Re-install the shipped writers after a previous abort. Education owns
+      // its row opening through fullTrial; work/skills/other use open-fill.
+      // A failed earlier section must not leave a later writer uninstalled.
       if (typeof driver.bindWriters === 'function') await driver.bindWriters(section);
       attemptedOpen = true;
       run.open = await driver.open(section);
@@ -58,6 +58,8 @@ export async function runSections(driver, { sections = SECTIONS } = {}) {
         return fill?.liveSupportClaimed === true || fill?.softwareClickedSave === true
           || fill?.softwareClickedSubmit === true || fill?.softwareClickedDelete === true;
       })) run.reason = 'writer_policy_violation';
+      const failedTrial = run.fills.map(entry => entry?.fill || entry).find(fill => fill?.ok === false);
+      if (failedTrial) run.reason ||= failedTrial.reason || 'writer_failed';
     } catch (error) {
       run.reason = errorReason(error);
       run.detail = String(error?.message || error).slice(0, 300);
@@ -68,7 +70,10 @@ export async function runSections(driver, { sections = SECTIONS } = {}) {
       if (attemptedOpen) {
         try {
           await ensureVisible(driver);
-          run.cancel = await driver.cancel(section);
+          try { run.cancel = await driver.cancel(section); }
+          catch (error) {
+            run.cancel = { ok: false, closed: false, reason: errorReason(error) };
+          }
           let after = await driver.state();
           const stuck = run.cancel?.ok !== true || run.cancel?.closed !== true || formsRemain(after);
           if (stuck && typeof driver.forceClose === 'function') {
@@ -82,6 +87,13 @@ export async function runSections(driver, { sections = SECTIONS } = {}) {
             run.cancel = { ...(run.cancel || {}), ok: false, closed: false,
               reason: run.cancel?.reason || 'editor_still_open' };
             run.reason ||= run.cancel.reason;
+          }
+          // Disconnecting a stuck basic editor permits later sections, but
+          // does not prove that the site processed Cancel and restored the
+          // work-start month. Keep that distinction in the section verdict.
+          if (section.id === 'basic' && run.cancel?.forced === true) {
+            run.cancel.restorationVerified = false;
+            run.reason ||= 'cancel_not_verified';
           }
         } catch (error) {
           run.cancel = { ...(run.cancel || {}), ok: false, closed: false, reason: errorReason(error) };

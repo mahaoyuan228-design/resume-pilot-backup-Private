@@ -1,6 +1,6 @@
-// Six understood GTH basic facts, with explicit coverage for all nine questions.
+// Seven understood GTH basic facts, with explicit coverage for all nine questions.
 // Account-owned phone/email are read-only; never follow their account links.
-// City, photo and first-work date are unsupported. A requested fill records
+// City and photo are unsupported. A requested fill records
 // them as failed, not as a skipped success. Never save or submit.
 // Highest qualification uses an explicitly selected education.N.degree fact;
 // the profile has no top-level highest-qualification field to infer from.
@@ -14,11 +14,12 @@
     {key:'phone',question:'手机号码',kind:'text'},
     {key:'birthDate',question:'出生年月',kind:'month'},
     {key:'email',question:'电子邮件',kind:'text'},
-    {key:'degree',question:'最高学历',kind:'select'}];
+    {key:'degree',question:'最高学历',kind:'select'},
+    {key:'workStart',question:'参加工作时间',kind:'month'}];
   const COVERAGE = [FIELDS[0],FIELDS[1],FIELDS[2],FIELDS[3],FIELDS[4],
     {key:'currentCity',question:'现居住地',kind:'unsupported'},FIELDS[5],
     {key:'photo',question:'照片',kind:'unsupported'},
-    {key:'workStart',question:'参加工作时间',kind:'unsupported'}];
+    FIELDS[6]];
   const norm = value => String(value ?? '').replace(/[\s\u00a0]+/gu,' ').trim();
   const pause = ms => new Promise(resolve => setTimeout(resolve,ms));
   const visible = node => !!node?.getClientRects().length
@@ -184,7 +185,10 @@
       if(raw!==undefined&&typeof raw!=='string'||typeof raw==='string'&&(raw.length>200||/[\u0000-\u001f]/u.test(raw)))
         stop('basic_profile_invalid');
       const original=typeof raw==='string'?raw:'';
-      const value=field.kind==='month'&&original?(birthMonth(original)||''):original;
+      // A work-start source is an explicit month, matching education/work
+      // month facts. Only birthDate accepts a full calendar date.
+      const value=field.kind==='month'&&original?(field.key==='birthDate'?birthMonth(original)||''
+        :/^(19|20)\d{2}-(0[1-9]|1[0-2])$/u.test(original)?original:''):original;
       return [field.key,{path,value,reason:!path?'education_source_required':!original?'missing_profile_value'
         :!confirmed.has(path)?'profile_fact_unconfirmed':field.kind==='month'&&!value?'invalid_profile_value':field.key==='gender'&&!['男','女'].includes(value)
           ?'invalid_profile_value':null}];
@@ -208,10 +212,10 @@
     }
     const result={fields:[],coverage:COVERAGE.map(field=>({key:field.key,question:field.question,
       path:field.key==='degree'?(Number.isInteger(request?.educationIndex)?`education.${request.educationIndex}.degree`:null)
-        :['photo','workStart'].includes(field.key)?null:field.key,
+        :field.key==='photo'?null:field.key,
       supported:field.kind!=='unsupported',status:field.kind==='unsupported'?'failed':'skipped',reason:field.kind==='unsupported'?'control_not_supported':'not_run'})),
       complete:false,supportedComplete:false,operableComplete:false,writeStarted:false,editorLeftOpen:false,savedOnSite:null,submitted:null,
-      softwareClickedSave:false,softwareClickedSubmit:false,softwareClickedDelete:false,scope:'gth_basic_six'};
+      softwareClickedSave:false,softwareClickedSubmit:false,softwareClickedDelete:false,liveSupportClaimed:false,scope:'gth_basic_six'};
     if(state.busy)return {ok:false,reason:'fill_in_progress',...result};
     state.busy=true;activeBinding=request?.profileBinding;lastBinding=activeBinding;state.progress={requestId:request?.requestId,activeField:null,selectorStep:'request_validation',completedFields:[],writeStarted:false};
     const markWrite=()=>{result.writeStarted=true;state.progress.writeStarted=true;};
@@ -257,7 +261,7 @@
         const selected=targets[field.key];
         const answerVal=answers[field.key]?.value||'';
         let valuesOk;
-        if(allowOwnIntermediate===true&&request.replaceExisting===true&&untouched!=null){
+        if(allowOwnIntermediate===true&&untouched!=null){
           const readVal=selected.read();
           const progressOk=readVal===''||readVal===existing||norm(readVal)===norm(answerVal);
           valuesOk=valuesExcept(form,selected.controls)===untouched&&progressOk;
@@ -313,7 +317,9 @@
               const previous=readYear()>year,buttons=[...popup.querySelectorAll(previous?'.el-icon-d-arrow-left':'.el-icon-d-arrow-right')]
                 .filter(node=>visible(node)&&enabled(node));
               if(buttons.length!==1)stop('basic_month_navigation_unknown');
-              const old=readYear();await boundAction(()=>{if(!(buttons[0])?.isConnected)stop('profile_action_target_changed');return buttons[0].click();});await waitFor(()=>readYear()===old+(previous?-1:1),1500);
+              const old=readYear();await boundAction(()=>{if(!(buttons[0])?.isConnected)stop('profile_action_target_changed');return buttons[0].click();});
+              await waitFor(()=>{const next=readYear();if(next!==old&&next!==old+(previous?-1:1))stop('basic_month_navigation_unknown');
+                return next===old+(previous?-1:1);},1500);
             }
             step('month_option_lookup');midGuard();
             const tables=[...popup.querySelectorAll('.el-month-table')].filter(visible);
@@ -324,8 +330,50 @@
               ||norm(node.textContent).replace(/\s/gu,'')===`${month}月`);
             if(cells.length!==12||choices.length!==1)stop('basic_month_option_unknown');
             if(!enabled(choices[0]))stop('basic_month_option_disabled');
-            step('month_option_click');midGuard();markWrite();await boundAction(()=>{if(!(choices[0])?.isConnected)stop('profile_action_target_changed');return choices[0].click();});
-            step('month_close');await waitFor(()=>!visible(popup));chosen=true;
+            const anchors=[...choices[0].querySelectorAll('a.cell')].filter(node=>visible(node));
+            if(anchors.length!==1)stop('basic_month_option_unknown');
+            if(!enabled(anchors[0]))stop('basic_month_option_disabled');
+            // Use the same Element-UI month path as education/work: the anchor
+            // handles the normal click; a still-connected TD retries a table
+            // handler that ignores an A target. DOM paint alone is not model
+            // acceptance, so ask the existing MAIN-world bridge before close.
+            step('month_option_click');midGuard();markWrite();
+            await boundAction(()=>{if(!anchors[0].isConnected)stop('profile_action_target_changed');return anchors[0].click();});
+            await pause(80);
+            if(selected.read()===''&&choices[0].isConnected&&popup.isConnected&&visible(popup)){
+              await boundAction(()=>{if(!choices[0].isConnected)stop('profile_action_target_changed');return choices[0].click();});
+              await pause(80);
+            }
+            if(menus().some(node=>node!==popup))stop('basic_menu_not_unique');
+            guard(field,allBefore,{allowOwnIntermediate:true,existing,untouched});
+            step('month_model_accept');
+            let accepted;
+            try{
+              await boundAction(()=>{
+                if(!selected.control.isConnected)stop('profile_action_target_changed');
+                selected.control.setAttribute('data-gth-month-role','input');
+                selected.control.setAttribute('data-gth-month-answer',answer.value);
+                selected.control.setAttribute('data-gth-month-result','pending');
+                if(popup.isConnected)popup.setAttribute('data-gth-month-role','panel');
+              });
+              try{accepted=await chrome.runtime.sendMessage({type:'GTH_MONTH_MODEL_ACCEPT',answer:answer.value});}catch{}
+            }finally{
+              selected.control.removeAttribute('data-gth-month-role');
+              selected.control.removeAttribute('data-gth-month-answer');
+              selected.control.removeAttribute('data-gth-month-result');
+              popup.removeAttribute('data-gth-month-role');
+            }
+            if(['dual','bad-year','mismatch'].includes(accepted?.result))stop('basic_readback_mismatch');
+            // A removed popup needs explicit picker/editor acceptance; its
+            // painted value cannot establish that the Vue model retained it.
+            if(!popup.isConnected&&!['picked','emitted'].includes(accepted?.result))stop('basic_readback_mismatch');
+            step('month_close');
+            await boundAction(()=>{if(!selected.control.isConnected)stop('profile_action_target_changed');
+              selected.control.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',code:'Escape',keyCode:27,which:27,bubbles:true}));
+              selected.control.blur();});
+            await waitFor(()=>!popup.isConnected||!visible(popup));
+            if(selected.read()!==answer.value)stop('basic_readback_mismatch');
+            chosen=true;
           }finally{
             if(!chosen&&popup&&visible(popup)&&location.href===PAGE&&document.visibilityState==='visible'
               &&menus().length===1&&menus()[0]===popup){await boundAction(()=>{if(!(selected.control)?.isConnected)stop('profile_action_target_changed');return selected.control.dispatchEvent(new KeyboardEvent('keydown',

@@ -1,5 +1,5 @@
 /**
- * Offline fail-closed planner for GTH 现居住地 / 照片 / 参加工作时间.
+ * Offline fail-closed planner for GTH 现居住地 / 照片.
  * Unsupported controls and unsettled region facts are failed, not a completed skip.
  * No DOM selectors, no Save/submit, no site-support claim.
  */
@@ -13,6 +13,7 @@ import {
   GTH_COVERAGE_FAIL_CLOSED_REASONS,
   gthRequestedFillBlocksComplete,
   planGthBasicCoverage,
+  sealGthJobCoverage,
 } from '../src/background/basic-task-runner.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -64,9 +65,18 @@ test('absent 现居住地 stays control_not_supported and blocks a requested fil
   assert.equal(plan.reason, 'control_not_supported');
   assert.equal(plan.fields.find((row) => row.key === 'currentCity').factSettled, false);
   assert.equal(plan.fields.find((row) => row.key === 'photo').reason, 'control_not_supported');
-  assert.equal(plan.fields.find((row) => row.key === 'workStart').path, null);
+  assert.equal(plan.fields.some((row) => row.key === 'workStart'), false);
   assert.equal(gthRequestedFillBlocksComplete(plan), true);
   assert.equal(gthRequestedFillBlocksComplete({ ...plan, fillRequested: false }), false);
+});
+
+test('unsupported-control planning cannot overwrite verified workStart month evidence', () => {
+  const row = { key: 'workStart', question: '参加工作时间', path: 'workStart', supported: true,
+    status: 'verified', reason: 'readback_matched' };
+  const plan = planGthBasicCoverage({ workStart: '2022-01', confirmedFields: ['workStart'] }, { fillRequested: true });
+  assertNeverFill(plan);
+  assert.deepEqual(plan.fields.map(field => field.key), ['currentCity', 'photo']);
+  assert.deepEqual(sealGthJobCoverage([row], plan), [row]);
 });
 
 test('unsettled 现居住地 facts fail closed without a selector', () => {

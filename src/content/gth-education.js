@@ -333,6 +333,24 @@
           if (!path.length || path.length > 6) stop('education_category_path_invalid');
           const labelOf = row => row.querySelector(':scope > label > span[uid],:scope > label > span,:scope > span');
           const selectedRows = () => [...popup.querySelectorAll('.selected-view-data > li')];
+          const confirmCategory = async (uid, text) => {
+            // This is only the local picker confirmation. A matching leaf name
+            // alone cannot bind a selected row with a different category UID.
+            selectorStep('category_confirm');
+            await boundAction(() => {
+              const selected = selectedRows();
+              const confirm = [...popup.querySelectorAll('a.pop-btn.confirm')].filter(visible);
+              const href = confirm[0]?.getAttribute('href');
+              if (selected.length !== 1 || selected[0].getAttribute('uid') !== uid
+                || norm(selected[0].textContent) !== text || confirm.length !== 1
+                || !enabled(confirm[0]) || norm(confirm[0].textContent) !== '确定'
+                || href && !/^(#|javascript:(?:;|void\(0\)))$/iu.test(href))
+                stop('education_category_selection_unknown');
+              if (!popup?.isConnected || !visible(popup) || !confirm[0]?.isConnected
+                || !popup.contains(confirm[0])) stop('profile_action_target_changed');
+              return confirm[0].click();
+            });
+          };
           const acceptsCategory = value => norm(value) === norm(answer) || norm(value) === path.at(-1)
             || path.length === 1 && norm(value).split('/').at(-1) === path[0];
           const reopenCategory = async () => {
@@ -509,22 +527,13 @@
                 stop('education_category_reselect_unknown');
               selectorStep('category_reselect_click');await boundAction(()=>{if(!(againCheckbox)?.isConnected)stop('profile_action_target_changed');return againCheckbox.click();});await pause(180);
               if (visible(popup)) {
-                const selected = [...popup.querySelectorAll('.selected-view-data > li')].filter(visible);
-                const confirm = [...popup.querySelectorAll('a.pop-btn.confirm')].filter(visible);
-                if (selected.length !== 1 || norm(selected[0].textContent) !== knownText
-                  || confirm.length !== 1 || !enabled(confirm[0]))
-                  stop('education_category_selection_unknown');
-                selectorStep('category_confirm');await boundAction(()=>{if(!(confirm[0])?.isConnected)stop('profile_action_target_changed');return confirm[0].click();});
+                await confirmCategory(knownUid, knownText);
               }
               return;
             }
             selectorStep('category_option_click');commit();await boundAction(()=>{if(!(checkbox)?.isConnected)stop('profile_action_target_changed');return checkbox.click();});await pause(150);
             if (visible(popup)) {
-              const selected = [...popup.querySelectorAll('.selected-view-data > li')].filter(visible);
-              const confirm = [...popup.querySelectorAll('a.pop-btn.confirm')].filter(visible);
-              if (selected.length !== 1 || norm(selected[0].textContent) !== path.at(-1)
-                || confirm.length !== 1 || !enabled(confirm[0])) stop('education_category_selection_unknown');
-              selectorStep('category_confirm');await boundAction(()=>{if(!(confirm[0])?.isConnected)stop('profile_action_target_changed');return confirm[0].click();});
+              await confirmCategory(knownUid, knownText);
             }
           };
           let categoryReselectAttempt = 0;

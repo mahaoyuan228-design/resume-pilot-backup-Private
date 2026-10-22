@@ -77,6 +77,7 @@ export async function runGthFullResumeLive(options = {}) {
   let installed = false;
   let educationAdapterInstalled = false;
   let fetchEnabled = false;
+  let focusEmulationEnabled = false;
   let currentSection = null;
   const pending = new Set();
   const cdpRequests = [];
@@ -182,7 +183,18 @@ export async function runGthFullResumeLive(options = {}) {
     };
     const driver = {
       state: () => page('state'),
-      bringToFront: () => send('Page.bringToFront'),
+      async bringToFront() {
+        // An unattended Edge tab may remain hidden after bringToFront. Wake
+        // its lifecycle before falling back to session-local focus emulation;
+        // ensureVisible still requires an actual visible state afterward.
+        try { await send('Page.bringToFront'); } catch { /* try lifecycle recovery */ }
+        if ((await page('state'))?.visible === true) return;
+        try { await send('Page.setWebLifecycleState', { state: 'active' }); }
+        catch { /* an older CDP target may still support focus emulation */ }
+        if ((await page('state'))?.visible === true) return;
+        await send('Emulation.setFocusEmulationEnabled', { enabled: true });
+        focusEmulationEnabled = true;
+      },
       bindWriters,
       forceClose: (section) => page('discard', [section.sectionIndex]),
       async open(section) {
@@ -259,6 +271,10 @@ export async function runGthFullResumeLive(options = {}) {
         evidence.cleanup.chromeShimRestored = true;
       } catch { evidence.cleanup.chromeShimRestored = false; }
       await Promise.all([...pending]);
+      if (focusEmulationEnabled) {
+        try { await send('Emulation.setFocusEmulationEnabled', { enabled: false }); evidence.cleanup.focusEmulationRestored = true; }
+        catch { evidence.cleanup.focusEmulationRestored = false; }
+      }
       if (fetchEnabled) {
         try { await send('Fetch.disable'); evidence.cleanup.requestGuardRestored = true; }
         catch { evidence.cleanup.requestGuardRestored = false; }

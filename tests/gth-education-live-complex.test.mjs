@@ -8,8 +8,8 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { JSDOM } from 'jsdom';
 import {
-  ALL_QUESTIONS, COMPLEX_QUESTIONS, buildFieldRows, buildPageExpression,
-  clicksAreDiscardOnly, expectedReadback, liveFillRequest
+  ALL_QUESTIONS, COMPLEX_QUESTIONS, buildEvidence, buildFieldRows, buildPageExpression,
+  clicksAreDiscardOnly, evidenceExitCode, expectedReadback, liveFillRequest
 } from '../scripts/live/gth-education-live.mjs';
 
 const writer = fs.readFileSync(new URL('../src/content/gth-education.js', import.meta.url), 'utf8');
@@ -26,11 +26,22 @@ function textItem(question, id, tag = 'input') {
   return `<div class="el-form-item"><label class="el-form-item__label">${question}</label><div class="el-form-item__content">${control}</div></div>`;
 }
 
-function editorHtml({ lockedDegree = false } = {}) {
+function editorHtml({ lockedDegree = false, categoryWrappers = ['cascader-wrap'] } = {}) {
   const month = id => `<div class="el-date-editor el-date-editor--month el-input el-input--prefix">
     <span class="el-input__prefix"><i class="el-input__icon el-icon-date" id="${id}-icon"></i></span>
     <input type="text" readonly class="el-input__inner" id="${id}" aria-controls="month-panel">
   </div>`;
+  const categoryBody = `<div class="input-l pointer" id="category-trigger"><input type="text" readonly class="el-input__inner" id="category"></div>
+    <div class="dialog-wrap plugin-dialog-wrap popover blue" id="category-panel" style="display:none">
+      <input type="text" class="search-input">
+      <ul class="selected-view-data"></ul>
+      <div class="dialog-search-wrap"><div class="eo-cascader-menu simple-tree-outer"><ul class="simple-tree-wrapper">
+        <li class="branch"><label><input type="checkbox" uid="synthetic-finance"><span uid="synthetic-finance">金融学</span></label></li>
+      </ul></div></div>
+      <div class="pop-foot"><a class="pop-btn confirm" href="javascript:;">确定</a></div>
+    </div>`;
+  const category = categoryWrappers.reduceRight((content, classes, index) =>
+    `<div class="${index === 0 ? 'el-form-item__content ' : ''}${classes}">${content}</div>`, categoryBody);
   return `<form class="el-form sec-form" id="education-form">
     ${textItem('毕业学校', 'school')}${textItem('专业名称', 'major')}
     ${textItem('在校活动/职务', 'activities', 'textarea')}${textItem('在校成绩排名', 'rank')}
@@ -41,17 +52,7 @@ function editorHtml({ lockedDegree = false } = {}) {
       <label class="el-radio" id="admissions-no"><input style="display:none" type="radio" name="admissions" value="0"><span class="el-radio__label">否</span></label>
     </div></div></div>
     <div class="el-form-item" id="dates-item"><label class="el-form-item__label">在校时间</label><div class="el-form-item__content">${month('start')}${month('end')}</div></div>
-    <div class="el-form-item" id="category-item"><label class="el-form-item__label">专业类别</label><div class="el-form-item__content cascader-wrap">
-      <div class="input-l pointer" id="category-trigger"><input type="text" readonly class="el-input__inner" id="category"></div>
-      <div class="dialog-wrap plugin-dialog-wrap popover blue" id="category-panel" style="display:none">
-        <input type="text" class="search-input">
-        <ul class="selected-view-data"></ul>
-        <div class="dialog-search-wrap"><div class="eo-cascader-menu simple-tree-outer"><ul class="simple-tree-wrapper">
-          <li class="branch"><label><input type="checkbox" uid="synthetic-finance"><span uid="synthetic-finance">金融学</span></label></li>
-        </ul></div></div>
-        <div class="pop-foot"><a class="pop-btn confirm" href="javascript:;">确定</a></div>
-      </div>
-    </div></div>
+    <div class="el-form-item" id="category-item"><label class="el-form-item__label">专业类别</label>${category}</div>
     <button type="button" id="education-cancel">取消</button><button type="button" id="education-save">保存</button>
   </form>`;
 }
@@ -158,32 +159,72 @@ async function trial(page, env = ENV) {
   return { result, read, rows };
 }
 
-test('synthetic fullTrial fills all four complex groups through Never-Save guards and cancels', async () => {
+// The nesting variants exercise synthetic contracts, not observed live layouts.
+for (const categoryWrappers of [
+  ['cascader-wrap'],
+  ['cascader-wrap', 'professional-category'],
+  ['professional-category', 'cascader-wrap']
+]) {
+  test(`synthetic fullTrial verifies all complex groups with ${categoryWrappers.length > 1 ? 'nested ' : ''}${categoryWrappers.join(' > ')} and cancels`, async () => {
+    const page = boot({ categoryWrappers });
+    try {
+      const { result, read, rows } = await trial(page);
+      assert.equal(result.ok, true, `${result.reason}: ${JSON.stringify(result)}`);
+      for (const q of COMPLEX_QUESTIONS) {
+        assert.equal(rows.find(row => row.q === q)?.status, 'verified', `${q}: ${JSON.stringify(rows)}`);
+      }
+      assert.equal(rows.find(row => row.q === '在校时间').value, '2020-09 至 2024-06');
+      assert.equal(read.readback.find(row => row.q === '是否统招').value, '是');
+      const category = read.readback.find(row => row.q === '专业类别');
+      assert.equal(category.value, '金融学');
+      assert.equal(category.dom.items[0].categoryCount, categoryWrappers.length);
+      const writerCategory = result.fields.find(row => row.question === '专业类别');
+      assert.equal(writerCategory.status, 'verified');
+      assert.equal(writerCategory.reason, 'readback_matched');
+      assert.notEqual(result.liveSupportClaimed, true);
+      assert.equal(result.softwareClickedSave, false);
+      assert.equal(result.softwareClickedSubmit, false);
+      assert.equal(result.softwareClickedDelete, false);
+      assert.equal(page.observed.degreePicks, 1);
+      assert.deepEqual(page.observed.monthPicks, [{ input: 'start', value: '2020-09' }, { input: 'end', value: '2024-06' }]);
+      assert.equal(page.observed.categoryConfirms, 1);
+      assert.equal(page.api.posts().length, 0);
+      assert.equal(clicksAreDiscardOnly(Array.from(page.api.clicks())), true, JSON.stringify(page.api.clicks()));
+      const cancelled = await page.api.cancel();
+      assert.equal(cancelled.closed, true);
+      assert.equal(page.observed.cancels, 1);
+      assert.equal(page.observed.saves, 0);
+      assert.equal(page.doc.querySelector('#education-form'), null);
+      const evidence = buildEvidence({
+        tipSha: 'synthetic-fixture', fields: rows, saveLikePost: Array.from(page.api.posts()),
+        finalDetails: {
+          fillQuestions: [...COMPLEX_QUESTIONS], auditComplete: true,
+          cancelsOk: cancelled.closed, moduleClaimedSupport: result.liveSupportClaimed,
+          bannedClick: !clicksAreDiscardOnly(Array.from(page.api.clicks()))
+        }
+      });
+      assert.equal(evidence.neverSave, true);
+      assert.equal(evidence.liveSupportClaimed, false);
+      assert.equal(evidence.finalDetails.liveSupportClaimed, false);
+      assert.equal(evidenceExitCode(evidence), 0);
+    } finally { page.api.restore(); page.dom.window.close(); }
+  });
+}
+
+test('final paired month readback rejects drift after successful writer results', async () => {
   const page = boot();
   try {
-    const { result, read, rows } = await trial(page);
-    assert.equal(result.ok, true, `${result.reason}: ${JSON.stringify(result)}`);
-    for (const q of COMPLEX_QUESTIONS) {
-      assert.equal(rows.find(row => row.q === q)?.status, 'verified', `${q}: ${JSON.stringify(rows)}`);
-    }
-    assert.equal(rows.find(row => row.q === '在校时间').value, '2020-09 至 2024-06');
-    assert.equal(read.readback.find(row => row.q === '是否统招').value, '是');
-    assert.equal(page.observed.degreePicks, 1);
-    assert.deepEqual(page.observed.monthPicks, [{ input: 'start', value: '2020-09' }, { input: 'end', value: '2024-06' }]);
-    assert.equal(page.observed.categoryConfirms, 1);
-    assert.equal(page.api.posts().length, 0);
-    assert.equal(clicksAreDiscardOnly(Array.from(page.api.clicks())), true, JSON.stringify(page.api.clicks()));
-    // A later site rerender must not be hidden by the earlier two verified
-    // writer results. The runner checks the final paired DOM readback again.
+    const { result, rows } = await trial(page, { FIELDS: '在校时间', START_DATE: ENV.START_DATE, END_DATE: ENV.END_DATE });
+    assert.equal(result.ok, true, result.reason);
+    assert.equal(rows.find(row => row.q === '在校时间').status, 'verified');
     page.doc.querySelector('#end').value = '2024-05';
     const drifted = buildFieldRows({
-      questions: ALL_QUESTIONS, fillQuestions: [...COMPLEX_QUESTIONS], fillFields: result.fields,
-      readback: page.api.read(ALL_QUESTIONS).readback, expected: expectedReadback(ENV)
+      questions: ALL_QUESTIONS, fillQuestions: ['在校时间'], fillFields: result.fields,
+      readback: page.api.read(ALL_QUESTIONS).readback,
+      expected: expectedReadback({ FIELDS: '在校时间', START_DATE: ENV.START_DATE, END_DATE: ENV.END_DATE })
     });
-    assert.notEqual(drifted.find(row => row.q === '在校时间').status, 'verified');
-    const cancelled = await page.api.cancel();
-    assert.equal(cancelled.closed, true);
-    assert.equal(page.observed.cancels, 1);
+    assert.equal(drifted.find(row => row.q === '在校时间').reason, 'readback_mismatch');
+    assert.equal((await page.api.cancel()).closed, true);
     assert.equal(page.observed.saves, 0);
   } finally { page.api.restore(); page.dom.window.close(); }
 });

@@ -8,9 +8,12 @@ const item = (label, body) => `<div class="el-form-item"><label class="el-form-i
 const degree = '<div class="el-select"><input id="degree" type="text" readonly value="本科"></div>';
 const radio = '<div class="el-radio-group"><label class="el-radio" id="yes"><input type="radio" name="admissions" style="display:none" checked><span class="el-radio__label">是</span></label><label class="el-radio" id="no"><input type="radio" name="admissions" style="display:none"><span class="el-radio__label">否</span></label></div>';
 const month = (id, value) => `<div class="el-date-editor el-date-editor--month"><span class="el-input__prefix"><i id="${id}-icon" class="el-input__icon el-icon-date"></i></span><input id="${id}" type="text" value="${value}"></div>`;
-const category = `<div class="cascader-wrap"><div class="input-l pointer" id="category-trigger"><input id="category" type="text" readonly value="金融学"></div><div class="popover plugin-dialog-wrap" id="category-panel" style="display:none"><input class="search-input" value="search is not a field"><div class="eo-cascader-menu"><ul><li class="branch"><label><input id="leaf" type="checkbox" uid="finance"><span uid="finance">金融学</span></label></li></ul></div><ul class="selected-view-data"><li uid="finance">金融学</li></ul><a class="pop-btn confirm" id="category-confirm" href="javascript:;">确定</a></div></div>`;
-function page(extra = '') {
-  const body = SECTION_TITLES.map((title, index) => `<section class="r-section"><div class="title_">${title}</div>${index === 1 ? `<form id="editor">${item('学历', degree)}${item('是否统招', radio)}${item('在校时间', month('start', '2018-09') + month('end', '2022-06'))}${item('专业类别', category)}<button type="button" id="cancel">取消</button><button type="button" id="save"><span id="nested-save">保存</span></button><button id="submit">取消</button><button type="button" id="global-confirm">确定</button></form>` : ''}</section>`).join('');
+function category(wrappers = ['cascader-wrap']) {
+  const body = `<div class="input-l pointer" id="category-trigger"><input id="category" type="text" readonly value="金融学"></div><div class="popover plugin-dialog-wrap" id="category-panel" style="display:none"><input class="search-input" value="search is not a field"><div class="eo-cascader-menu"><ul><li class="branch"><label><input id="leaf" type="checkbox" uid="finance"><span uid="finance">金融学</span></label></li></ul></div><ul class="selected-view-data"><li uid="finance">金融学</li></ul><a class="pop-btn confirm" id="category-confirm" href="javascript:;">确定</a></div>`;
+  return wrappers.reduceRight((content, classes) => `<div class="${classes}">${content}</div>`, body);
+}
+function page(extra = '', categoryMarkup = category()) {
+  const body = SECTION_TITLES.map((title, index) => `<section class="r-section"><div class="title_">${title}</div>${index === 1 ? `<form id="editor">${item('学历', degree)}${item('是否统招', radio)}${item('在校时间', month('start', '2018-09') + month('end', '2022-06'))}${item('专业类别', categoryMarkup)}<button type="button" id="cancel">取消</button><button type="button" id="save"><span id="nested-save">保存</span></button><button id="submit">取消</button><button type="button" id="global-confirm">确定</button></form>` : ''}</section>`).join('');
   const dom = new JSDOM(`<!doctype html><body>${body}${extra}</body>`, { url: 'https://hr.gtht.com/resume/edit/', pretendToBeVisual: true, runScripts: 'dangerously' });
   const w = dom.window;
   Object.defineProperty(w.document, 'readyState', { get: () => 'complete' });
@@ -35,6 +38,54 @@ test('typed readback uses native radio and ordered months; popup search is exclu
   assert.equal(p.api.read(['是否统招']).readback[0].value, '否');
   assert.equal(p.api.clicks().every(row => row.allowed && row.kind === 'radio_option'), true);
   p.dom.window.close();
+});
+
+// Both orientations are synthetic contract fixtures, not captured live markup.
+for (const wrappers of [
+  ['cascader-wrap'],
+  ['cascader-wrap', 'professional-category'],
+  ['professional-category', 'cascader-wrap']
+]) {
+  test(`category readback accepts one owner in synthetic ${wrappers.length > 1 ? 'nested ' : ''}${wrappers.join(' > ')} wrappers`, () => {
+    const p = page('', category(wrappers));
+    try {
+      p.el('category-panel').style.display = 'block';
+      const row = p.api.read(['专业类别']).readback[0];
+      assert.equal(row.reason, null);
+      assert.equal(row.value, '金融学');
+      assert.equal(row.dom.itemCount, 1);
+      assert.equal(row.dom.items[0].categoryCount, wrappers.length);
+      assert.equal(row.dom.items[0].popupCount, 1);
+      assert.equal(JSON.stringify(row).includes('search is not a field'), false);
+    } finally { p.api.restore(); p.dom.window.close(); }
+  });
+}
+
+test('category readback rejects ambiguous ownership and changed display controls', () => {
+  const scenarios = [
+    ['independent widget', (p, owner, root) => root.after(owner.cloneNode(true))],
+    ['empty sibling wrapper', (p, owner, root) => root.insertAdjacentHTML('afterend', '<div class="professional-category"></div>')],
+    ['split trigger and popup ownership', (p, owner, root) => root.append(p.el('category-panel'))],
+    ['duplicate trigger', (p, owner) => owner.insertAdjacentHTML('beforeend', '<div class="input-l pointer"></div>')],
+    ['duplicate popup', (p, owner) => owner.append(p.el('category-panel').cloneNode(true))],
+    ['ancestor duplicate trigger', (p, owner, root) => root.insertAdjacentHTML('beforeend', '<div class="input-l pointer"></div>')],
+    ['ancestor duplicate popup', (p, owner, root) => root.append(p.el('category-panel').cloneNode(true))],
+    ['missing popup', p => p.el('category-panel').remove()],
+    ['editable display', p => { p.el('category').readOnly = false; }],
+    ['disabled display', p => { p.el('category').disabled = true; }],
+    ['additional visible control', (p, owner) => owner.insertAdjacentHTML('beforeend', '<select><option>额外控件</option></select>')]
+  ];
+  for (const [name, change] of scenarios) {
+    const p = page('', category(['cascader-wrap', 'professional-category']));
+    try {
+      const owner = p.el('category-trigger').parentElement;
+      change(p, owner, owner.parentElement);
+      const row = p.api.read(['专业类别']).readback[0];
+      assert.equal(row.reason, 'control_not_supported', name);
+      assert.equal(row.detail, 'category_structure_changed', name);
+      assert.equal(row.value, null, name);
+    } finally { p.api.restore(); p.dom.window.close(); }
+  }
 });
 
 test('unknown or disabled controls expose bounded DOM shape without fabricating support', () => {

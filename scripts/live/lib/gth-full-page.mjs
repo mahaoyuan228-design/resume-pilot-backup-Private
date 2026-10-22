@@ -42,6 +42,7 @@ function installGthFullLive(doc, options) {
   let activeSectionIndex = null;
   let monthDismissal = null;
   let monthDismissClick = null;
+  let workLabelForward = null;
   const norm = value => String(value ?? '').replace(/[\s\u00a0]+/gu, ' ').trim();
   const sections = () => [...doc.querySelectorAll('.r-section')];
   const forms = () => sections().flatMap(section => [...section.querySelectorAll('form')]);
@@ -313,7 +314,7 @@ function installGthFullLive(doc, options) {
         && !input.hasAttribute('form') && visible(input) && enabled(input)
         && !input.closest('[disabled],[aria-disabled="true"],.is-disabled,.disabled,[formaction]'));
   }
-  function classifyClick(target, event) {
+  function classifyClick(target, event, allowLabelForwarding = false) {
     const node = target?.nodeType === 1 ? target : target?.parentElement;
     const denied = { allowed: false, kind: 'forbidden', reason: 'refusing_forbidden_click' };
     if (!node || !node.isConnected || !state().hrefOk || !state().visible) return denied;
@@ -333,6 +334,21 @@ function installGthFullLive(doc, options) {
     const hostText = controlText(node);
     if (['保存', '提交', '投递', '删除'].some(word => hostText.includes(word) || norm(node.textContent).includes(word))) return denied;
     const form = activeForm();
+    // A single-select label may close its panel before the browser forwards
+    // the activation to its native checkbox. Only capture may admit that one
+    // event, within the validated label's synchronous click() call. Explicit
+    // click()/dispatchEvent() calls on a hidden checkbox still fail closed.
+    const forward = workLabelForward;
+    if (allowLabelForwarding && forward && !forward.used && activeSectionIndex === 3
+      && node === forward.input && form === forward.form && node.form === form && !node.hasAttribute('form')
+      && event instanceof view.MouseEvent && event.target === node && node.matches('input[type="checkbox"]')
+      && node.parentElement === forward.label && forward.label.parentElement === forward.row
+      && forward.panel.contains(forward.row) && forward.panel.closest('form') === form && visible(form)
+      && forward.label.querySelectorAll('input').length === 1
+      && !forward.label.querySelector('a,button,select,textarea') && norm(forward.label.textContent) === forward.text) {
+      forward.used = true;
+      return { allowed: true, kind: 'picker_option', reason: null };
+    }
     if (form && isWriterRadio(node, form)) return { allowed: true, kind: 'radio_option', reason: null };
     if (form && isWriterCascaderCheckbox(node, form)) return { allowed: true, kind: 'picker_option', reason: null };
     // The work writer uses this exact discard on a failed single-select
@@ -397,7 +413,14 @@ function installGthFullLive(doc, options) {
   view.HTMLElement.prototype.click = function guardedClick() {
     monthDismissal = null;
     if (forbiddenClick(this)) throw refusal();
-    return originalClick.call(this);
+    const form = activeForm();
+    const input = this.matches('label') ? this.querySelector('input[type="checkbox"]') : null;
+    const previous = workLabelForward;
+    workLabelForward = activeSectionIndex === 3 && form && input && isWriterCascaderCheckbox(input, form)
+      ? { input, form, label: this, row: this.parentElement, panel: this.closest(PANEL_SELECTOR),
+        text: norm(this.textContent), used: false } : null;
+    try { return originalClick.call(this); }
+    finally { workLabelForward = previous; }
   };
   const originalDispatch = view.EventTarget.prototype.dispatchEvent;
   view.EventTarget.prototype.dispatchEvent = function guardedDispatch(event) {
@@ -418,7 +441,7 @@ function installGthFullLive(doc, options) {
     } finally { monthDismissClick = null; }
   };
   function clickCapture(event) {
-    const classification = classifyClick(event.target, event);
+    const classification = classifyClick(event.target, event, true);
     noteClick(event.target, classification);
     if (!classification.allowed) {
       event.preventDefault();

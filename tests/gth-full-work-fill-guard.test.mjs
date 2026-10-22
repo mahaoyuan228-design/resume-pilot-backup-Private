@@ -42,9 +42,9 @@ function dates() {
       <table class="el-month-table"><tbody><tr>${MONTHS.map(name => `<td><div><a class="cell">${name}</a></div></td>`).join('')}</tr></tbody></table></div>
     </div></div>`;
 }
-function fields(single) {
+function fields(single, industrySingle = false) {
   return [plain('职位名称', 'position'), cascader('职位类别', 'job', '金融/保险', single), plain('公司名称', 'organization'), dates(),
-    plain('工作地区', 'area'), plain('职责与业绩', 'description', 'textarea'), cascader('公司所属行业', 'industry', '金融', false),
+    plain('工作地区', 'area'), plain('职责与业绩', 'description', 'textarea'), cascader('公司所属行业', 'industry', '金融', industrySingle),
     plain('公司介绍', 'intro', 'textarea'), plain('所属部门', 'department'), plain('汇报对象', 'report'), plain('下属人数', 'reports'),
     plain('薪资', 'salary'), plain('离职原因', 'leave', 'textarea')].join('');
 }
@@ -53,7 +53,7 @@ function wireCascader(doc, id, leaf, { single = false, reveal = true } = {}) {
   const panel = doc.getElementById(id + '-panel');
   const input = doc.getElementById(id);
   const root = panel.querySelector('.eo-cascader-panel');
-  const stats = { open: 0, level1: 0, checkbox: 0, confirm: 0, cancel: 0 };
+  const stats = { open: 0, level1: 0, checkbox: 0, single: 0, confirm: 0, cancel: 0 };
   trigger.addEventListener('click', () => { stats.open++; panel.style.display = 'block'; });
   root.addEventListener('click', event => {
     const menus = [...root.children];
@@ -67,11 +67,23 @@ function wireCascader(doc, id, leaf, { single = false, reveal = true } = {}) {
       return;
     }
     if (!menus[1]?.contains(event.target)) return;
+    // Match work-fill's existing single-select fixture: the row/label click
+    // commits and hides the panel before the label forwards to its input.
+    if (single) {
+      const row = event.target.closest('li.branch');
+      if (!row || !menus[1].contains(row) || row.classList.contains('has-child')) return;
+      const text = (row.querySelector('label') || row.querySelector(':scope > span'))?.textContent.trim();
+      if (!text) return;
+      stats.single++;
+      panel.querySelector('.selected-view-data').innerHTML = `<li><p>${text}</p><i></i></li>`;
+      input.value = text;
+      panel.style.display = 'none';
+      return;
+    }
     const checkbox = event.target.closest('input[type="checkbox"]');
     if (checkbox?.checked) {
       stats.checkbox++;
       panel.querySelector('.selected-view-data').innerHTML = `<li><p>${leaf}</p><i></i></li>`;
-      if (single) { input.value = leaf; panel.style.display = 'none'; }
     }
   });
   panel.querySelector('a.confirm').addEventListener('click', () => {
@@ -107,7 +119,7 @@ function wireMonths(doc) {
   doc.addEventListener('keydown', event => { if (event.key === 'Escape') panel.style.display = 'none'; });
   return stats;
 }
-async function boot({ single = false, reveal = true } = {}) {
+async function boot({ single = false, reveal = true, industrySingle = false } = {}) {
   const dom = new JSDOM(`<!doctype html><head><style>input[type="checkbox"] { display:none }</style></head><body>${SECTION_TITLES.map(title =>
     `<section class="r-section"><div class="title_">${title}${title === '工作经验' ? '<a class="h-e-btn" href="javascript:;">添加</a>' : ''}</div><div class="sec-context"></div></section>`).join('')}</body>`,
   { url: 'https://hr.gtht.com/resume/edit/', pretendToBeVisual: true, runScripts: 'outside-only' });
@@ -124,10 +136,10 @@ async function boot({ single = false, reveal = true } = {}) {
     add.remove();
     const form = doc.createElement('form');
     form.className = 'el-form sec-form';
-    form.innerHTML = fields(single) + '<button type="button" id="editor-cancel">取消</button><button type="button" id="editor-save">保存</button>';
+    form.innerHTML = fields(single, industrySingle) + '<button type="button" id="editor-cancel">取消</button><button type="button" id="editor-save">保存</button>';
     section.append(form);
     stats.job = wireCascader(doc, 'job', '银行', { single, reveal });
-    stats.industry = wireCascader(doc, 'industry', '证券/投资/基金/信托');
+    stats.industry = wireCascader(doc, 'industry', '证券/投资/基金/信托', { single: industrySingle });
     stats.months = wireMonths(doc);
     form.querySelector('#editor-cancel').addEventListener('click', () => { form.remove(); section.querySelector('.title_').append(add); });
     form.querySelector('#editor-save').addEventListener('click', () => stats.dangerous.push('save'));
@@ -199,6 +211,28 @@ test('shipped work cascader abort may discard its hidden footer without a forbid
     assert.equal((await f.api.cancel(3)).closed, true);
     assert.deepEqual(f.stats.dangerous, []);
     assert.equal(evidenceExitCode({ clicks: f.api.clicks(), requests: f.api.requests(), sections: [] }), 2);
+  } finally { f.close(); }
+});
+
+test('single-select industry label commits before its forwarded native checkbox click without a false forbidden audit', async () => {
+  const f = await boot({ industrySingle: true });
+  try {
+    const fill = await f.window.ResumeGthWorkOpen.trial(request);
+    assert.equal(fill.ok, true, JSON.stringify(fill));
+    assert.equal(fill.fields.find(row => row.question === '公司所属行业').status, 'verified');
+    assert.equal(f.stats.industry.single >= 1, true);
+    assert.equal(f.stats.industry.confirm, 0);
+    assert.equal(f.doc.getElementById('industry').value, '证券/投资/基金/信托');
+    assert.equal(f.doc.getElementById('industry-panel').style.display, 'none');
+    assert.equal(f.api.clicks().every(row => row.allowed), true, JSON.stringify(f.api.clicks()));
+    // Any later explicit click on that now-hidden checkbox is still unknown;
+    // only the label's synchronous native forwarding belongs to the action.
+    const checkbox = f.doc.getElementById('industry-panel').querySelector('input[type="checkbox"]');
+    assert.throws(() => checkbox.click(), /refusing_forbidden_click/);
+    assert.throws(() => checkbox.dispatchEvent(new f.window.MouseEvent('click', { bubbles: true, cancelable: true })), /refusing_forbidden_click/);
+    assert.equal((await f.api.cancel(3)).closed, true);
+    assert.equal(f.section.querySelectorAll('.sec-context > .sec-detail').length, 0);
+    assert.deepEqual(f.stats.dangerous, []);
   } finally { f.close(); }
 });
 

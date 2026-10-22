@@ -32,8 +32,12 @@ function request(profile, extra = {}) {
   return { requestId: '1234567890-work', profileBinding: binding, replaceExisting: false, profileIndex: 0, profile, ...extra };
 }
 
-function boot(html) {
-  const dom = new JSDOM(`<!DOCTYPE html><body>${html}</body>`, { url: PAGE, pretendToBeVisual: true });
+function boot(html, options = {}) {
+  const dom = new JSDOM(`<!DOCTYPE html><body>${html}</body>`, {
+    url: PAGE,
+    pretendToBeVisual: true,
+    ...(options.runScripts ? { runScripts: 'dangerously' } : {}),
+  });
   const { window } = dom;
   window.Element.prototype.getClientRects = () => [{ width: 8, height: 8, top: 0, left: 0, bottom: 8, right: 8 }];
   Object.defineProperty(window.document, 'readyState', { configurable: true, get: () => 'complete' });
@@ -486,8 +490,11 @@ test('dispatch injects the work scripts and sends GTH_WORK_FILL', async () => {
 
 const RACE_ANIM = ['el-zoom-in-top-enter', 'el-zoom-in-top-enter-active', 'el-zoom-in-top-enter-to'];
 
-function raceMonthItem() {
-  const cells = MONTH_NAMES.map((name) => `<td><div><a class="cell">${name}</a></div></td>`).join('');
+function raceMonthItem(options = {}) {
+  const anchor = (name) => options.deepCell
+    ? `<div><div><a class="cell">${name}</a></div></div>`
+    : `<a class="cell">${name}</a>`;
+  const cells = MONTH_NAMES.map((name) => `<td><div>${anchor(name)}</div></td>`).join('');
   const editor = (id) => `<div class="el-date-editor date-hl el-input el-input--prefix el-input--suffix el-date-editor--month" id="${id}-editor">
     <span class="el-input__prefix"><i class="el-input__icon el-icon-date" id="${id}-icon"></i></span>
     <input class="el-input__inner" id="${id}" readonly type="text" value="">
@@ -508,6 +515,7 @@ function wireRaceMonth(document, options = {}) {
     open: 0, earlyClicks: 0, drift: 0, commits: 0, dualClicks: 0, escapes: 0, huskBlocks: 0,
     huskRemainedAfterStart: false, quietAtEndClick: null, quietAtEndOpen: [], monthPanelNodesAtEndClick: [],
     quietAfterEndShow: [], endOpenClicks: 0, endCellClicks: 0, endChangeCommits: 0, opensBesideHusk: 0, didReattachQuiet: false,
+    typedChanges: 0, typedClears: 0, tableCommits: 0, anchorWalkMisses: 0, vuePicks: 0, vueEmits: 0,
     panels: {},
   };
   const editors = Object.fromEntries(['start-date', 'end-date'].map((id) => {
@@ -523,6 +531,7 @@ function wireRaceMonth(document, options = {}) {
       ready: false,
       committed: false,
       openedBesideHusk: false,
+      model: '',
     }];
   }));
   stats.panels = { start: editors['start-date'].panel, end: editors['end-date'].panel };
@@ -625,14 +634,24 @@ function wireRaceMonth(document, options = {}) {
     stats.quietAtEndOpen.push(quietHuskCount());
     show('end-date');
   });
+  const revertTyped = (editor) => {
+    if (!options.closeClearsTyped || editor.input.id !== 'end-date') return;
+    const model = editor.model || '';
+    if (editor.input.value !== model) stats.typedClears += 1;
+    editor.input.value = model;
+  };
   document.addEventListener('keydown', (event) => {
     if (event.key !== 'Escape') return;
     stats.escapes += 1;
     for (const editor of Object.values(editors)) {
       editor.closed = true;
+      revertTyped(editor);
       hide(editor);
     }
   });
+  if (options.closeClearsTyped) {
+    editors['end-date'].input.addEventListener('blur', () => revertTyped(editors['end-date']));
+  }
   for (const editor of Object.values(editors)) {
     const shift = (delta) => {
       const early = !editor.ready || RACE_ANIM.some((name) => editor.panel.classList.contains(name));
@@ -661,10 +680,11 @@ function wireRaceMonth(document, options = {}) {
         if (editor.input.id === 'end-date') {
           stats.quietAtEndClick = others.length;
           stats.endCellClicks += 1;
-          // Live end panel: the month cell click does not write. The mounted picker
-          // still commits yyyy-MM from input + change.
-          if (options.endCellNoop) return;
+          // Live end panel: the anchor click does not write. A TD target can.
+          // input+change is not the model; close restores model and clears the rest.
+          if (options.endCellNoop || (options.closeClearsTyped && !options.tablePick)) return;
         }
+        if (options.tablePick) return;
         const open = [...document.querySelectorAll('.el-picker-panel')].filter((panel) => panel.style.display !== 'none');
         if (open.length > 1) {
           stats.dualClicks += 1;
@@ -680,7 +700,8 @@ function wireRaceMonth(document, options = {}) {
         }
         const month = MONTH_NAMES.indexOf(cell.textContent.replace(/\s+/gu, '')) + 1;
         const current = Number(editor.year.textContent.match(/\d{4}/u)[0]);
-        editor.input.value = `${current}-${String(month).padStart(2, '0')}`;
+        editor.model = `${current}-${String(month).padStart(2, '0')}`;
+        editor.input.value = editor.model;
         hide(editor);
         editor.closed = false;
         editor.committed = true;
@@ -704,6 +725,7 @@ function wireRaceMonth(document, options = {}) {
       endEditor.input.value = '';
       return;
     }
+    endEditor.model = text;
     endEditor.committedValue = text;
     stats.endChangeCommits += 1;
     endEditor.committed = true;
@@ -711,14 +733,84 @@ function wireRaceMonth(document, options = {}) {
     hide(endEditor);
     endEditor.closed = true;
   });
+  if (options.closeClearsTyped) {
+    endEditor.input.addEventListener('input', () => { endEditor.typedArmed = true; });
+    endEditor.input.addEventListener('change', () => {
+      if (!endEditor.typedArmed) return;
+      endEditor.typedArmed = false;
+      if ((endEditor.model || '') === endEditor.input.value) return;
+      stats.typedChanges += 1;
+    });
+  }
+  if (options.tablePick) {
+    for (const editor of Object.values(editors)) {
+      editor.panel.querySelector('.el-month-table').addEventListener('click', (event) => {
+        let target = event.target;
+        if (target.tagName === 'A') target = target.parentNode?.parentNode;
+        if (target?.tagName === 'DIV') target = target.parentNode;
+        if (!target || target.tagName !== 'TD' || !editor.panel.contains(target)) {
+          stats.anchorWalkMisses += 1;
+          return;
+        }
+        if (target.classList.contains('disabled')) return;
+        const month = MONTH_NAMES.indexOf(target.textContent.replace(/\s+/gu, '')) + 1;
+        if (month < 1) return;
+        const current = Number(editor.year.textContent.match(/\d{4}/u)[0]);
+        editor.model = `${current}-${String(month).padStart(2, '0')}`;
+        editor.input.value = editor.model;
+        stats.tableCommits += 1;
+        hide(editor);
+        editor.committed = true;
+        stats.commits += 1;
+      });
+    }
+  }
+  if (options.acceptVue) {
+    endEditor.panel.__vue__ = {
+      selectionMode: 'month',
+      get year() { return Number(endEditor.year.textContent.match(/\d{4}/u)[0]); },
+      get date() { return new Date(this.year, 0, 1); },
+      handleMonthPick(monthIndex) {
+        const value = `${this.year}-${String(monthIndex + 1).padStart(2, '0')}`;
+        endEditor.model = value;
+        endEditor.input.value = value;
+        stats.vuePicks += 1;
+        hide(endEditor);
+        endEditor.committed = true;
+        stats.commits += 1;
+      },
+      $children: [],
+    };
+  }
+  if (options.acceptEmit) {
+    endEditor.input.closest('.el-date-editor').__vue__ = {
+      userInput: null,
+      parseString(text) {
+        const match = /^(\d{4})-(\d{2})$/u.exec(String(text || ''));
+        if (!match) return null;
+        return new Date(Number(match[1]), Number(match[2]) - 1, 1);
+      },
+      emitInput(date) {
+        const time = date && typeof date.getTime === 'function' ? date.getTime() : NaN;
+        if (typeof time !== 'number' || Number.isNaN(time)) return;
+        const value = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+        endEditor.model = value;
+        endEditor.input.value = value;
+        stats.vueEmits += 1;
+        hide(endEditor);
+        endEditor.committed = true;
+        stats.commits += 1;
+      },
+    };
+  }
   return stats;
 }
 
 function bootRace(options = {}) {
   const html = shell(formWrap(workFields({
-    dates: raceMonthItem(), industrySingle: true, industryCounter: '(0/1)',
+    dates: raceMonthItem(options), industrySingle: true, industryCounter: '(0/1)',
   })));
-  const booted = boot(html);
+  const booted = boot(html, { runScripts: options.acceptVue === true || options.acceptEmit === true });
   const doc = booted.dom.window.document;
   wireCascader(doc, 'job', { leaves: JOB_LEAVES, reveal: true });
   wireCascader(doc, 'industry', { leaves: INDUSTRY_LEAVES, reveal: true, single: true });
@@ -783,6 +875,84 @@ test('任职时间 writes the end month through input change when the cell click
     flags(result);
     assert.equal(forbidden(clicks).length, 0);
   }
+});
+
+test('任职时间 keeps the end month when only a TD target commits and close clears typed text', async () => {
+  for (const [startDate, endDate] of [['2023-01', '2024-06'], ['2022-03', '2023-12']]) {
+    const { doc, clicks, context, months } = bootRace({ deepCell: true, tablePick: true, closeClearsTyped: true });
+    const result = await context.ResumeGthWorkOpen.trial(request(workProfile({ ...ROW, startDate, endDate })));
+    assert.equal(result.ok, true, JSON.stringify({ startDate, endDate, reason: result.reason, step: result.selectorStep, tables: months.tableCommits, clears: months.typedClears }));
+    assert.equal(`${doc.getElementById('start-date').value} | ${doc.getElementById('end-date').value}`, `${startDate} | ${endDate}`);
+    assert.equal(result.fields.find((field) => field.question === '任职时间').reason, 'readback_matched');
+    assert.equal(result.liveSupportClaimed, false);
+    assert.equal(months.tableCommits, 2);
+    assert.equal(months.anchorWalkMisses, 2);
+    assert.equal(months.endCellClicks, 1);
+    assert.equal(months.endChangeCommits, 0);
+    assert.equal(months.typedChanges, 0);
+    assert.equal(months.typedClears, 0);
+    assert.equal(months.vuePicks, 0);
+    assert.equal(months.panels.start.isConnected, true);
+    assert.equal(months.panels.start.style.display, 'none');
+    assert.equal(doc.getElementById('salary').value, '');
+    flags(result);
+    assert.equal(forbidden(clicks).length, 0);
+  }
+});
+
+test('任职时间 keeps the end month after panel close when the mounted picker accepts it', async () => {
+  for (const [startDate, endDate] of [['2023-01', '2024-06'], ['2022-03', '2023-12']]) {
+    const { doc, clicks, context, months } = bootRace({ closeClearsTyped: true, acceptVue: true });
+    const result = await context.ResumeGthWorkOpen.trial(request(workProfile({ ...ROW, startDate, endDate })));
+    assert.equal(result.ok, true, JSON.stringify({ startDate, endDate, reason: result.reason, step: result.selectorStep, picks: months.vuePicks, clears: months.typedClears, typed: months.typedChanges }));
+    assert.equal(`${doc.getElementById('start-date').value} | ${doc.getElementById('end-date').value}`, `${startDate} | ${endDate}`);
+    assert.equal(result.fields.find((field) => field.question === '任职时间').reason, 'readback_matched');
+    assert.equal(result.liveSupportClaimed, false);
+    assert.equal(months.vuePicks, 1);
+    assert.equal(months.vueEmits, 0);
+    assert.equal(months.endChangeCommits, 0);
+    assert.equal(months.typedChanges, 0);
+    assert.equal(months.typedClears, 0);
+    assert.equal(months.tableCommits, 0);
+    assert.equal(months.quietAtEndClick, 1);
+    assert.equal(months.panels.start.isConnected, true);
+    assert.equal(doc.getElementById('salary').value, '');
+    flags(result);
+    assert.equal(forbidden(clicks).length, 0);
+  }
+  const emitted = bootRace({ closeClearsTyped: true, acceptEmit: true });
+  const emittedResult = await emitted.context.ResumeGthWorkOpen.trial(request(workProfile({ ...ROW, startDate: '2022-03', endDate: '2023-12' })));
+  assert.equal(emittedResult.ok, true, JSON.stringify({ reason: emittedResult.reason, step: emittedResult.selectorStep, emits: emitted.months.vueEmits }));
+  assert.equal(`${emitted.doc.getElementById('start-date').value} | ${emitted.doc.getElementById('end-date').value}`, '2022-03 | 2023-12');
+  assert.equal(emitted.months.vueEmits, 1);
+  assert.equal(emitted.months.vuePicks, 0);
+  assert.equal(emitted.months.typedClears, 0);
+  assert.equal(emittedResult.liveSupportClaimed, false);
+  assert.equal(forbidden(emitted.clicks).length, 0);
+});
+
+test('任职时间 fails closed when panel close clears a typed end month', async () => {
+  const { doc, clicks, context, months } = bootRace({ closeClearsTyped: true });
+  const result = await context.ResumeGthWorkOpen.trial(request(workProfile({ ...ROW, startDate: '2023-01', endDate: '2024-06' })));
+  assert.equal(result.ok, false);
+  assert.equal(result.reason, 'readback_mismatch');
+  assert.equal(result.selectorStep, 'month_option');
+  assert.equal(result.liveSupportClaimed, false);
+  assert.equal(result.fields.find((field) => field.question === '任职时间').reason, 'readback_mismatch');
+  assert.equal(doc.getElementById('start-date').value, '2023-01');
+  assert.equal(doc.getElementById('end-date').value, '');
+  assert.notEqual(`${doc.getElementById('start-date').value} | ${doc.getElementById('end-date').value}`, '2023-01 | 2024-06');
+  assert.ok(months.typedChanges >= 1);
+  assert.ok(months.typedClears >= 1);
+  assert.equal(months.vuePicks, 0);
+  assert.equal(months.vueEmits, 0);
+  assert.equal(months.tableCommits, 0);
+  assert.equal(months.endChangeCommits, 0);
+  assert.equal(result.fields.find((field) => field.question === '公司名称').reason, 'not_run');
+  assert.equal(doc.getElementById('salary').value, '');
+  assert.equal(months.panels.start.isConnected, true);
+  flags(result);
+  assert.equal(forbidden(clicks).length, 0);
 });
 
 test('a leftover start panel or a decade year step fails closed without an empty end success', async () => {

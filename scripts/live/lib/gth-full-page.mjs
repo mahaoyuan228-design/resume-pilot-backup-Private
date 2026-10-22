@@ -209,6 +209,38 @@ function installGthFullLive(doc, options) {
       && (node === label || node === radios[index]
         || node.matches('.el-radio__label,.el-radio__input,.el-radio__inner')));
   }
+  // The intent writer clicks the native level-2 checkbox, which may have no
+  // rendered box. Its visible label and row must match the census structure.
+  // This exception is only for 期望工作地区 inside the active intent form;
+  // body-level panels and arbitrary hidden inputs cannot borrow ownership.
+  function isWriterRegionCheckbox(node, form) {
+    if (activeSectionIndex !== 2 || !node.matches('input[type="checkbox"]')
+      || node.closest('form') !== form || node.form !== form || node.hasAttribute('form')) return false;
+    const items = [...form.querySelectorAll('.el-form-item')].filter(item => {
+      const labels = [...item.querySelectorAll('.el-form-item__label')]
+        .filter(label => label.closest('.el-form-item') === item);
+      return item.closest('form') === form && labels.length === 1 && norm(labels[0].textContent) === '期望工作地区';
+    });
+    if (items.length !== 1 || !items[0].contains(node)) return false;
+    const wraps = [...items[0].querySelectorAll(':scope > .el-form-item__content.cascader-wrap')];
+    if (wraps.length !== 1) return false;
+    const panels = [...wraps[0].querySelectorAll(':scope > div.dialog-wrap.plugin-dialog-wrap.popover.blue')];
+    const open = [...doc.querySelectorAll('div.dialog-wrap.plugin-dialog-wrap.popover.blue')].filter(visible);
+    if (panels.length !== 1 || open.length !== 1 || open[0] !== panels[0] || !panels[0].contains(node)) return false;
+    const panel = panels[0];
+    const menus = [...panel.querySelectorAll(':scope > div.eo-cascader-panel > div.eo-cascader-menu.simple-tree-outer')];
+    const label = node.parentElement;
+    const row = label?.parentElement;
+    if (menus.length !== 2 || !label?.matches('label') || !row?.matches('li.branch:not(.has-child)')
+      || !row.parentElement?.matches('ul.simple-tree-wrapper') || row.parentElement.parentElement !== menus[1]
+      || !visible(label) || !visible(row) || !enabled(label) || !enabled(row)) return false;
+    const labels = [...row.children].filter(child => child.tagName === 'LABEL');
+    const inputs = [...label.querySelectorAll('input')];
+    const text = norm(label.textContent);
+    return labels.length === 1 && labels[0] === label && inputs.length === 1 && inputs[0] === node
+      && !label.querySelector('a,button,select,textarea') && !!text
+      && !['保存', '提交', '投递', '删除', '确定', '取消'].some(word => text.includes(word));
+  }
   function classifyClick(target) {
     const node = target?.nodeType === 1 ? target : target?.parentElement;
     const denied = { allowed: false, kind: 'forbidden', reason: 'refusing_forbidden_click' };
@@ -224,6 +256,7 @@ function installGthFullLive(doc, options) {
     if (['保存', '提交', '投递', '删除'].some(word => hostText.includes(word) || norm(node.textContent).includes(word))) return denied;
     const form = activeForm();
     if (form && isWriterRadio(node, form)) return { allowed: true, kind: 'radio_option', reason: null };
+    if (form && isWriterRegionCheckbox(node, form)) return { allowed: true, kind: 'picker_option', reason: null };
     if (!visible(node)) return denied;
     const edit = node.closest('.title_ a.h-e-btn');
     if (edit && norm(edit.textContent) === '编辑' && !wouldNavigate(edit)

@@ -101,12 +101,12 @@ function wireCascader(doc, id, leaf, { single = false, reveal = true } = {}) {
 }
 function wireModelMonths(doc, options) {
   const panel = doc.getElementById('month-panel');
-  doc.body.append(panel);
+  if (!options.inlinePanel) doc.body.append(panel);
   const year = panel.querySelector('.el-date-picker__header-label');
   const inputs = ['start-date', 'end-date'].map(id => doc.getElementById(id));
   const models = new Map(inputs.map(input => [input, '']));
   let active;
-  const stats = { open: 0, cells: 0, picks: 0, emits: 0, rollbacks: 0, anchorClicks: 0, tdClicks: 0, rootClicks: 0 };
+  const stats = { open: 0, cells: 0, picks: 0, emits: 0, rollbacks: 0, anchorClicks: 0, tdClicks: 0, rootClicks: 0, deferred: 0, flushes: 0 };
   const hide = () => { panel.style.display = 'none'; };
   const rollback = () => {
     for (const input of inputs) {
@@ -131,13 +131,26 @@ function wireModelMonths(doc, options) {
     }
     hide();
   };
+  const accept = (input, answer, kind) => {
+    if (!options.deferredModel) return commit(input, answer, kind);
+    stats.deferred++;
+    // Model acceptance may cross a parent component's asynchronous flush.
+    // This is an offline scheduling case: the task commits automatically,
+    // even when the harness never asks the component for its next tick.
+    doc.defaultView.setTimeout(() => commit(input, answer, kind), 0);
+  };
+  const nextTick = options.stuckTick ? () => undefined : callback => new Promise(resolve => doc.defaultView.setTimeout(() => {
+    stats.flushes++;
+    callback?.();
+    resolve();
+  }, 0));
   for (const input of inputs) {
     const picker = {
       selectionMode: 'month',
       get year() { return Number(year.textContent.match(/\d{4}/u)[0]); },
       handleMonthPick(index) {
         const answer = `${this.year}-${String(index + 1).padStart(2, '0')}`;
-        commit(input, options.mismatch ? '2001-01' : answer, 'picks');
+        accept(input, options.mismatch ? '2001-01' : answer, 'picks');
       },
       $children: []
     };
@@ -146,8 +159,12 @@ function wireModelMonths(doc, options) {
       editor.__vue__ = options.emit ? {
         userInput: '',
         parseString(answer) { const [y, m] = answer.split('-').map(Number); return new Date(y, m - 1, 1); },
-        emitInput(date) { commit(input, `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`, 'emits'); }
+        emitInput(date) { accept(input, `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`, 'emits'); }
       } : { picker };
+      if (options.deferredModel || options.stuckTick) {
+        editor.__vue__.$nextTick = nextTick;
+        picker.$nextTick = nextTick;
+      }
     }
     doc.getElementById(input.id + '-icon').addEventListener('click', () => {
       active = input;
@@ -289,6 +306,94 @@ test('title_add empty work card fills blank no-layout cascaders with the shipped
     assert.deepEqual(Array.from(f.api.requests()), []);
     assert.equal(evidenceExitCode({ clicks: f.api.clicks(), requests: f.api.requests(), sections: [{ status: 'failed', fields: rows }] }), 2);
   } finally { f.close(); }
+});
+
+test('full work readback uses the writer-owned month inputs while unrelated item controls remain visible', async () => {
+  // These are offline variants of the existing month fixture, not assertions
+  // about live GTH DOM. The shipped range resolver deliberately excludes
+  // picker-panel inputs and resolves one input in each of two month editors.
+  for (const variant of ['inline picker input', 'sibling checkbox']) {
+    const f = await boot({ months: { model: true, inlinePanel: true } });
+    try {
+      const item = f.doc.getElementById('start-date').closest('.el-form-item');
+      const helper = f.doc.createElement('input');
+      helper.id = 'unrelated-month-control';
+      helper.type = variant === 'sibling checkbox' ? 'checkbox' : 'text';
+      helper.value = 'unrelated';
+      if (variant === 'inline picker input') f.doc.getElementById('month-panel').append(helper);
+      else {
+        // Cascader checkboxes intentionally lack layout in the shared fixture;
+        // this independent control is visible for the readback regression.
+        helper.style.display = 'block';
+        helper.getClientRects = () => [{ width: 8, height: 8 }];
+        item.querySelector('.el-form-item__content').append(helper);
+      }
+      const fill = await f.window.ResumeGthWorkOpen.trial(request);
+      assert.equal(fill.ok, true, JSON.stringify({ variant, fill }));
+      assert.equal(fill.fields.find(row => row.question === '职位类别').status, 'verified', variant);
+      assert.equal(f.doc.getElementById('job').value, '银行', variant);
+      assert.equal(fill.fields.find(row => row.question === '任职时间').supported, true, variant);
+      assert.equal(fill.fields.find(row => row.question === '任职时间').status, 'verified', variant);
+      assert.equal(f.stats.months.picks, 2, variant);
+      if (variant === 'inline picker input') {
+        // Reopen the existing picker so its helper is visible when read runs.
+        // The read itself must neither dismiss it nor modify any control.
+        f.doc.getElementById('end-date-icon').click();
+      }
+      const before = f.api.clicks().length;
+      const read = f.api.read(3, work.questions);
+      assert.equal(f.api.clicks().length, before, variant);
+      const observed = read.readback.find(row => row.q === '任职时间');
+      assert.equal(observed.reason, null, JSON.stringify({ variant, observed }));
+      assert.equal(observed.value, '2020-03 | 2024-08', variant);
+      assert.equal(observed.startMonth, '2020-03', variant);
+      assert.equal(observed.endMonth, '2024-08', variant);
+      assert.equal(helper.value, 'unrelated', variant);
+      const rows = buildFieldRows(work, [{ fill }], read);
+      assert.equal(rows.find(row => row.q === '任职时间').status, 'verified', variant);
+      assert.equal(rows.find(row => row.q === '任职时间').reason, 'readback_matched', variant);
+      assert.equal(rows.find(row => row.q === '下属人数').value, '5', variant);
+      assert.equal(rows.find(row => row.q === '薪资').reason, 'control_not_supported', variant);
+      assert.equal(f.doc.getElementById('salary').value, '', variant);
+      assert.equal(fill.liveSupportClaimed, false, variant);
+      assert.equal(fill.complete, false, variant);
+      assert.equal(fill.softwareClickedSave, false, variant);
+      assert.equal(fill.softwareClickedSubmit, false, variant);
+      assert.equal(fill.softwareClickedDelete, false, variant);
+      const cancel = await f.api.cancel(3);
+      assert.equal(cancel.closed, true, variant);
+      assert.equal(cancel.forced, false, variant);
+      assert.equal(f.api.state().editorFormCount, 0, variant);
+      assert.equal(f.section.querySelectorAll('.sec-context > .sec-detail').length, 0, variant);
+      assert.equal(f.api.clicks().every(row => row.allowed), true, JSON.stringify(f.api.clicks()));
+      assert.deepEqual(f.stats.dangerous, [], variant);
+      assert.deepEqual(Array.from(f.api.requests()), [], variant);
+    } finally { f.close(); }
+  }
+});
+
+test('full work month readback rejects ambiguity in the same controls the writer owns', async () => {
+  for (const variant of ['third month editor', 'second editor input', 'duplicate tenure item']) {
+    const f = await boot();
+    try {
+      const item = f.doc.getElementById('start-date').closest('.el-form-item');
+      const editor = f.doc.getElementById('end-date').closest('.el-date-editor');
+      if (variant === 'third month editor') editor.after(editor.cloneNode(true));
+      if (variant === 'second editor input') editor.append(f.doc.createElement('input'));
+      if (variant === 'duplicate tenure item') item.after(item.cloneNode(true));
+      const fill = await f.window.ResumeGthWorkOpen.trial(request);
+      assert.equal(fill.ok, false, JSON.stringify({ variant, fill }));
+      assert.equal(fill.fields.find(row => row.question === '任职时间').reason,
+        variant === 'duplicate tenure item' ? 'label_ambiguous' : 'control_not_supported', variant);
+      const observed = f.api.read(3, work.questions).readback.find(row => row.q === '任职时间');
+      assert.equal(observed.reason, 'control_not_supported', variant);
+      assert.equal(observed.value, null, variant);
+      assert.equal(f.stats.months.cells, 0, variant);
+      assert.equal((await f.api.cancel(3)).closed, true, variant);
+      assert.deepEqual(f.stats.dangerous, [], variant);
+      assert.deepEqual(Array.from(f.api.requests()), [], variant);
+    } finally { f.close(); }
+  }
 });
 
 test('shipped work cascader abort may discard its hidden footer without a forbidden click', async () => {
@@ -455,6 +560,75 @@ test('month dismissal sequence cannot borrow a wrong, hidden, ambiguous or forei
   }
 });
 
+for (const emit of [false, true]) test(`full work waits for deferred ${emit ? 'editor' : 'picker'} model acceptance before month dismissal`, async () => {
+  const f = await boot({ months: { model: true, deferredModel: true, emit } });
+  try {
+    const fill = await f.window.ResumeGthWorkOpen.trial(request);
+    assert.equal(fill.ok, true, JSON.stringify({ fill, months: f.stats.months }));
+    assert.equal(fill.fields.find(row => row.question === '职位类别').status, 'verified');
+    assert.equal(f.doc.getElementById('job').value, '银行');
+    assert.equal(fill.fields.find(row => row.question === '任职时间').supported, true);
+    assert.equal(fill.fields.find(row => row.question === '任职时间').status, 'verified');
+    assert.equal(f.stats.months.deferred, 2);
+    assert.equal(f.stats.months[emit ? 'emits' : 'picks'], 2);
+    assert.equal(f.stats.months.flushes >= 2, true);
+    assert.equal(f.stats.months.rollbacks, 0);
+    const rows = buildFieldRows(work, [{ fill }], f.api.read(3, work.questions));
+    const tenure = rows.find(row => row.q === '任职时间');
+    assert.equal(tenure.status, 'verified');
+    assert.equal(tenure.reason, 'readback_matched');
+    assert.equal(tenure.value, '2020-03 | 2024-08');
+    assert.equal(tenure.startMonth, '2020-03');
+    assert.equal(tenure.endMonth, '2024-08');
+    for (const q of ['工作地区', '职责与业绩', '公司所属行业', '下属人数', '离职原因']) {
+      assert.equal(rows.find(row => row.q === q).status, 'verified', q);
+    }
+    assert.equal(rows.find(row => row.q === '薪资').reason, 'control_not_supported');
+    assert.equal(f.doc.getElementById('salary').value, '');
+    assert.equal(fill.liveSupportClaimed, false);
+    assert.equal(fill.complete, false);
+    assert.equal(fill.softwareClickedSave, false);
+    assert.equal(fill.softwareClickedSubmit, false);
+    assert.equal(fill.softwareClickedDelete, false);
+    const cancel = await f.api.cancel(3);
+    assert.equal(cancel.closed, true);
+    assert.equal(cancel.forced, false);
+    assert.equal(f.api.state().editorFormCount, 0);
+    assert.equal(f.section.querySelectorAll('.sec-context > .sec-detail').length, 0);
+    assert.equal(f.api.clicks().every(row => row.allowed), true, JSON.stringify(f.api.clicks()));
+    assert.deepEqual(f.stats.dangerous, []);
+    assert.deepEqual(Array.from(f.api.requests()), []);
+  } finally { f.close(); }
+});
+
+test('a month component whose next tick never settles fails within the trial bound and remains discardable', { timeout: 5000 }, async () => {
+  const f = await boot({ months: { model: true, stuckTick: true } });
+  try {
+    const fill = await f.window.ResumeGthWorkOpen.trial(request);
+    assert.equal(fill.ok, false, JSON.stringify(fill));
+    assert.equal(fill.reason, 'readback_mismatch');
+    assert.equal(fill.selectorStep, 'month_option');
+    assert.equal(fill.fields.find(row => row.question === '任职时间').status, 'failed');
+    assert.equal(fill.fields.find(row => row.question === '职责与业绩').reason, 'not_run');
+    assert.equal(f.stats.months.picks, 0);
+    assert.equal(f.stats.months.rollbacks > 0, true);
+    assert.equal(f.doc.getElementById('start-date').value, '');
+    assert.equal(f.doc.getElementById('description').value, '');
+    assert.equal(f.doc.getElementById('salary').value, '');
+    assert.deepEqual(Array.from(f.window.__gthFullResumeMonthModels(), row => row.result), ['threw']);
+    assert.equal(fill.liveSupportClaimed, false);
+    assert.equal(fill.softwareClickedSave, false);
+    assert.equal(fill.softwareClickedSubmit, false);
+    assert.equal(fill.softwareClickedDelete, false);
+    assert.equal((await f.api.cancel(3)).closed, true);
+    assert.equal(f.api.state().editorFormCount, 0);
+    assert.equal(f.section.querySelectorAll('.sec-context > .sec-detail').length, 0);
+    assert.equal(f.api.clicks().every(row => row.allowed), true, JSON.stringify(f.api.clicks()));
+    assert.deepEqual(f.stats.dangerous, []);
+    assert.deepEqual(Array.from(f.api.requests()), []);
+  } finally { f.close(); }
+});
+
 test('full work trial retains both painted months through model acceptance and dismissal, then fills later fields', async () => {
   const scenarios = [
     { name: 'connected open panel', picks: 2 },
@@ -493,20 +667,32 @@ test('full work trial retains both painted months through model acceptance and d
         const input = f.doc.getElementById('end-date');
         const item = input.closest('.el-form-item');
         const failedValidation = () => f.api.read(3, work.questions).readback.find(row => row.q === '任职时间').siteValidationFailed;
+        const rejectedRange = () => {
+          const row = buildFieldRows(work, [{ fill }], f.api.read(3, work.questions)).find(row => row.q === '任职时间');
+          assert.equal(row.status, 'failed');
+          assert.equal(row.reason, 'readback_mismatch');
+          assert.equal(row.value, '2020-03 | 2024-08');
+          assert.equal(row.startMonth, '2020-03');
+          assert.equal(row.endMonth, '2024-08');
+        };
         item.classList.add('is-validating');
         assert.equal(failedValidation(), true);
+        rejectedRange();
         item.classList.remove('is-validating');
         input.setAttribute('aria-invalid', 'true');
         assert.equal(failedValidation(), true);
+        rejectedRange();
         input.removeAttribute('aria-invalid');
         input.setCustomValidity('invalid range');
         assert.equal(failedValidation(), true);
+        rejectedRange();
         input.setCustomValidity('');
         const error = f.doc.createElement('div');
         error.className = 'el-form-item__error';
         error.textContent = '请选择任职时间';
         item.append(error);
         assert.equal(failedValidation(), true);
+        rejectedRange();
         error.style.display = 'none';
         assert.equal(failedValidation(), false);
         error.remove();

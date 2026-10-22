@@ -162,7 +162,7 @@ test('missing, failed, or explicitly errored readbacks cannot retain verified st
 });
 
 test('chrome shim uses the shipped page-world month accept bridge and restores original chrome', async () => {
-  const dom = new JSDOM('<!doctype html><div class="el-date-editor"><input data-gth-month-role="input" data-gth-month-answer="2024-08"></div>', {
+  const dom = new JSDOM('<!doctype html><section class="r-section"><form class="el-form sec-form"><div class="el-form-item"><label class="el-form-item__label">参加工作时间</label><div class="el-date-editor el-date-editor--month"><input type="text" readonly data-gth-month-role="input" data-gth-month-answer="2024-08"></div></div></form></section>', {
     url: 'https://hr.gtht.com/resume/edit/', runScripts: 'outside-only'
   });
   try {
@@ -184,7 +184,7 @@ test('chrome shim uses the shipped page-world month accept bridge and restores o
     assert.equal(input.value, '2024-08');
     assert.equal(emitted, 1);
     assert.deepEqual(JSON.parse(JSON.stringify(window.__gthFullResumeMonthModels())), [{
-      question: null, endpoint: null, answer: '2024-08', result: 'emitted', panelConnected: false, value: null
+      question: '参加工作时间', endpoint: null, answer: '2024-08', result: 'emitted', panelConnected: false, value: '2024-08'
     }]);
     window.__gthFullResumeChromeRestore();
     assert.equal(window.chrome, originalChrome);
@@ -193,5 +193,37 @@ test('chrome shim uses the shipped page-world month accept bridge and restores o
     assert.throws(() => window.eval(chromeShimExpression()), /chrome_shim_unavailable/);
     assert.equal(window.__gthFullResumeMonthModels, undefined);
     assert.equal(window.__gthFullResumeChromeRestore, undefined);
+  } finally { dom.window.close(); }
+});
+
+test('the month bridge refuses an editor moved into another section during its component flush', async () => {
+  const dom = new JSDOM('<!doctype html><section class="r-section" id="owner"><form class="el-form sec-form"><div class="el-form-item"><label class="el-form-item__label">任职时间</label><div class="el-date-editor el-date-editor--month"><input type="text" readonly data-gth-month-role="input" data-gth-month-answer="2020-03"></div></div></form></section><section class="r-section" id="foreign"></section>', {
+    url: 'https://hr.gtht.com/resume/edit/', runScripts: 'outside-only'
+  });
+  try {
+    const { window } = dom;
+    const doc = window.document;
+    const editor = doc.querySelector('.el-date-editor');
+    const input = editor.querySelector('input');
+    const form = input.form;
+    let emitted = 0;
+    editor.__vue__ = {
+      $nextTick(done) {
+        window.setTimeout(() => {
+          doc.getElementById('foreign').append(form);
+          done();
+        }, 0);
+      },
+      emitInput() { emitted++; input.value = '2020-03'; }
+    };
+    window.eval(chromeShimExpression());
+    const accepted = await window.chrome.runtime.sendMessage({ type: 'GTH_MONTH_MODEL_ACCEPT', answer: '2020-03' });
+    assert.equal(accepted.ok, false);
+    assert.equal(accepted.result, 'bad-answer');
+    assert.equal(emitted, 0);
+    assert.equal(input.value, '');
+    assert.equal(form.parentElement.id, 'foreign');
+    assert.deepEqual(Array.from(window.__gthFullResumeMonthModels(), row => row.result), ['bad-answer']);
+    window.__gthFullResumeChromeRestore();
   } finally { dom.window.close(); }
 });

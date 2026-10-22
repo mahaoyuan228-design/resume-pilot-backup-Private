@@ -138,12 +138,58 @@ export function chromeShimExpression() {
           const inputs = [...document.querySelectorAll('[data-gth-month-role="input"]')];
           const input = inputs.length === 1 ? inputs[0] : null;
           const item = input?.closest('.el-form-item');
+          const editor = input?.closest('.el-date-editor');
+          const form = input?.form;
+          const formParent = form?.parentElement;
+          const section = form?.closest('.r-section');
+          const panel = document.querySelector('[data-gth-month-role="panel"]');
           const question = item?.querySelector('.el-form-item__label')?.textContent.trim();
           const known = ['出生年月', '参加工作时间', '任职时间', '在校时间'].includes(question);
-          const peers = item ? [...item.querySelectorAll('.el-date-editor--month input')] : [];
+          const peers = item ? [...item.querySelectorAll('.el-date-editor--month')]
+            .filter(node => node.closest('.el-form-item') === item && !node.closest('.el-picker-panel'))
+            .flatMap(node => [...node.querySelectorAll('input')].filter(control => !control.closest('.el-picker-panel'))) : [];
           const month = value => /^[0-9]{4}-(0[1-9]|1[0-2])$/u.test(String(value || '').trim()) ? String(value).trim() : null;
           const panelConnected = document.querySelectorAll('[data-gth-month-role="panel"]').length === 1;
-          const result = acceptMonth({ answer: message.answer });
+          const ownsInput = () => input?.isConnected && editor?.isConnected && item?.isConnected && form?.isConnected
+            && input.closest('.el-date-editor') === editor && input.closest('.el-form-item') === item
+            && input.form === form && input.closest('form') === form && item.closest('form') === form
+            && form.parentElement === formParent && form.closest('.r-section') === section
+            && input.closest('.r-section') === section && item.closest('.r-section') === section
+            && document.querySelectorAll('[data-gth-month-role="input"]').length === 1
+            && document.querySelector('[data-gth-month-role="input"]') === input;
+          // The extension crosses tabs.get/executeScript/sendResponse tasks.
+          // The in-page shim must let the owned Vue render and its queued parent
+          // update settle too; an immediately resolved response can otherwise
+          // let the writer dismiss and roll back a pending accepted month.
+          const settleMonth = async () => {
+            const vue = editor?.__vue__ || panel?.__vue__;
+            if (typeof vue?.$nextTick === 'function') {
+              await new Promise((resolve, reject) => {
+                const timer = globalThis.setTimeout(() => reject(new Error('month_render_timeout')), 400);
+                const done = () => { globalThis.clearTimeout(timer); resolve(); };
+                const failed = error => { globalThis.clearTimeout(timer); reject(error); };
+                try {
+                  const pending = vue.$nextTick(done);
+                  if (pending?.then) pending.then(done, failed);
+                } catch (error) { failed(error); }
+              });
+            }
+            await new Promise(resolve => globalThis.setTimeout(resolve, 0));
+          };
+          let result;
+          try {
+            const acceptOwnedMonth = async () => {
+              const lost = () => ({ ok: false, result: 'bad-answer' });
+              if (!ownsInput()) return lost();
+              await settleMonth();
+              if (!ownsInput()) return lost();
+              const accepted = acceptMonth({ answer: message.answer });
+              if (!ownsInput()) return lost();
+              await settleMonth();
+              return ownsInput() ? accepted : lost();
+            };
+            result = await acceptOwnedMonth();
+          } catch { result = { ok: false, result: 'threw' }; }
           monthModels.push({ question: known ? question : null,
             endpoint: known && peers.length === 2 ? ['start', 'end'][peers.indexOf(input)] || null : null,
             answer: month(message.answer), result: result.result,
@@ -276,6 +322,8 @@ export function buildFieldRows(section, fills = [], read = {}) {
     if (status === 'verified' && (!observed || observed.reason === 'control_not_supported')) {
       status = 'failed'; reason = 'control_not_supported';
     } else if (status === 'verified' && typeof expected[q] === 'string' && value !== expected[q]) {
+      status = 'failed'; reason = 'readback_mismatch';
+    } else if (status === 'verified' && q === '任职时间' && observed?.siteValidationFailed === true) {
       status = 'failed'; reason = 'readback_mismatch';
     }
     const row = { q, status, reason, value };

@@ -295,24 +295,35 @@ function installGthFullLive(doc, options) {
     return feet.length === 1 && feet[0].parentElement === panel && node.parentElement === feet[0]
       && cancels.length === 1 && cancels[0] === node && !visible(feet[0]) && enabled(feet[0]);
   }
-  function isWorkMonthInput(node, form) {
-    if (activeSectionIndex !== 3 || !form || node?.nodeType !== 1 || node.closest('form') !== form
-      || node.form !== form || node.hasAttribute('form')) return false;
+  // Use the work writer's two editor inputs for both readback and dismissal.
+  // A date panel or a sibling helper control is not a range endpoint.
+  function workMonthTarget(form) {
+    if (activeSectionIndex !== 3 || !form) return null;
     const items = [...form.querySelectorAll('.el-form-item')].filter(item => {
       const labels = [...item.querySelectorAll('.el-form-item__label')]
         .filter(label => label.closest('.el-form-item') === item);
       return item.closest('form') === form && labels.length === 1 && norm(labels[0].textContent) === '任职时间';
     });
-    if (items.length !== 1 || !items[0].contains(node)) return false;
-    const editors = [...items[0].querySelectorAll('.el-date-editor')];
-    const inputs = editors.flatMap(editor => [...editor.querySelectorAll('input')]);
-    return editors.length === 2 && editors.every(editor => editor.closest('.el-form-item') === items[0]
-      && editor.matches('.el-date-editor--month') && editor.querySelectorAll('input').length === 1
-      && !editor.closest(PANEL_SELECTOR))
-      && inputs.length === 2 && new Set(inputs).size === 2 && inputs.includes(node)
-      && inputs.every(input => input.type === 'text' && input.readOnly && input.form === form
+    if (items.length !== 1) return null;
+    const item = items[0];
+    const editors = [...item.querySelectorAll('.el-date-editor')]
+      .filter(editor => editor.closest('.el-form-item') === item && !editor.closest('.el-picker-panel'));
+    if (editors.length !== 2 || editors.some(editor => !editor.matches('.el-date-editor--month'))) return null;
+    const perEditor = editors.map(editor => [...editor.querySelectorAll('input')]
+      .filter(input => !input.closest('.el-picker-panel')));
+    if (perEditor.some(inputs => inputs.length !== 1)) return null;
+    const inputs = perEditor.flat();
+    return new Set(inputs).size === 2
+      && inputs.every(input => input instanceof view.HTMLInputElement && input.type === 'text'
+        && input.readOnly && input.closest('form') === form && input.form === form
         && !input.hasAttribute('form') && visible(input) && enabled(input)
-        && !input.closest('[disabled],[aria-disabled="true"],.is-disabled,.disabled,[formaction]'));
+        && !input.closest('[disabled],[aria-disabled="true"],.is-disabled,.disabled,[formaction]'))
+      ? { item, editors, inputs } : null;
+  }
+  function isWorkMonthInput(node, form) {
+    const target = workMonthTarget(form);
+    return !!target && target.editors.every(editor => !editor.closest(PANEL_SELECTOR))
+      && target.inputs.includes(node);
   }
   function classifyClick(target, event, allowLabelForwarding = false) {
     const node = target?.nodeType === 1 ? target : target?.parentElement;
@@ -612,6 +623,15 @@ function installGthFullLive(doc, options) {
       const rows = labeled.filter(row => row.q === q);
       if (rows.length !== 1) return unsupported(q);
       const item = rows[0].item;
+      if (sectionIndex === 3 && q === '任职时间') {
+        const target = workMonthTarget(form);
+        if (!target || target.item !== item) return unsupported(q);
+        const [startMonth, endMonth] = target.inputs.map(node => norm(node.value));
+        return { q, value: `${startMonth} | ${endMonth}`, startMonth, endMonth, reason: null,
+          siteValidationFailed: item.classList.contains('is-error') || item.classList.contains('is-validating')
+            || target.inputs.some(node => node.getAttribute('aria-invalid') === 'true' || node.validity && !node.validity.valid)
+            || [...item.querySelectorAll('.el-form-item__error')].some(node => visible(node) && norm(node.textContent)) };
+      }
       const contact = [...item.querySelectorAll('.e-direct-row > span')].filter(visible);
       if (item.classList.contains('custom-direct-form-item') && contact.length === 1) {
         return { q, value: norm(contact[0].textContent), reason: 'site_readonly' };

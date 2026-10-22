@@ -12,7 +12,7 @@ import { spawnSync } from 'node:child_process';
 import { webcrypto } from 'node:crypto';
 import { JSDOM } from 'jsdom';
 import { integrationFixture } from './fixtures/cms-education-fixture.mjs';
-import { validatePlan } from '../src/profile/cms-education-plan.mjs';
+import { hash, validatePlan } from '../src/profile/cms-education-plan.mjs';
 import * as runner from '../scripts/live/cms-education-live.mjs';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -32,7 +32,7 @@ function target(url = LIVE_URL, id = 'education-tab') {
   return { type: 'page', id, url, title: '简历操作', webSocketDebuggerUrl: `ws://127.0.0.1:9239/devtools/page/${id}` };
 }
 
-async function educationDom(t, { originals, url = LIVE_URL, mutate } = {}) {
+async function educationDom(t, { originals, rowCount = 1, rowIndex = 0, installTrial = true, url = LIVE_URL, mutate } = {}) {
   const dom = new JSDOM(await fixtureHtml, {
     url,
     pretendToBeVisual: true,
@@ -52,13 +52,16 @@ async function educationDom(t, { originals, url = LIVE_URL, mutate } = {}) {
   Object.defineProperty(window.document, 'visibilityState', { configurable: true, get: () => 'visible' });
   window.document.hasFocus = () => true;
   window.fetch = async () => ({ ok: true, json: async () => ({ state: 200 }) });
-  const inputs = Object.fromEntries(Object.entries(FIELD_IDS).map(([key, id]) => [key, window.document.getElementById(id).querySelector('input,textarea')]));
+  // Mount extra fictional rows before the Never-Save guard/trial starts.
+  for (let index = 1; index < rowCount; index += 1) window.document.querySelector('.add-more').click();
+  const inputs = Object.fromEntries(Object.entries(FIELD_IDS).map(([key, id]) => [key,
+    window.document.getElementById(id.replace(/_0$/u, `_${Math.min(rowIndex, rowCount - 1)}`)).querySelector('input,textarea')]));
   for (const [key, value] of Object.entries(originals || {})) {
     inputs[key].value = value;
     inputs[key].dispatchEvent(new window.Event('input', { bubbles: true }));
   }
   if (mutate) await mutate(window, inputs);
-  const install = window.eval(runner.buildPageExpression());
+  const install = installTrial ? window.eval(runner.buildPageExpression(repoRoot, rowIndex)) : null;
   if (install?.ok) {
     for (const rel of runner.LIVE_FILES) window.eval(fs.readFileSync(path.join(repoRoot, rel), 'utf8'));
   }
@@ -71,6 +74,12 @@ test('Windows options, runtime files, and help keep the trial narrowly scoped', 
   assert.equal(runner.READBACK_WAIT_MS, 500);
   assert.equal(runner.readPort({}), 9239);
   assert.equal(runner.readPort({ PORT: '9239' }), 9239);
+  assert.equal(runner.readRowIndex({}), 0);
+  assert.equal(runner.readRowIndex({ ROW_INDEX: '0' }), 0);
+  assert.equal(runner.readRowIndex({ ROW_INDEX: '1' }), 1);
+  for (const ROW_INDEX of ['', ' ', '-1', '1.5', '1x', '1e1', '0x1', '+1', 'Infinity', 'NaN', '9007199254740992']) {
+    assert.throws(() => runner.readRowIndex({ ROW_INDEX }), /ROW_INDEX/u);
+  }
   for (const PORT of ['0', '65536', 'http://localhost', '-1', '9239x']) assert.throws(() => runner.readPort({ PORT }));
   assert.equal(runner.readStepTimeout({}), 30000);
   for (const STEP_TIMEOUT_MS of ['999', '120001', 'x']) assert.throws(() => runner.readStepTimeout({ STEP_TIMEOUT_MS }));
@@ -85,6 +94,8 @@ test('Windows options, runtime files, and help keep the trial narrowly scoped', 
   assert.equal(help.status, 0, help.stderr);
   assert.match(help.stdout, /liveSupportClaimed remains false/u);
   assert.match(help.stdout, /9239/u);
+  assert.match(help.stdout, /ROW_INDEX/u);
+  assert.match(help.stdout, /Zero-based/u);
 });
 
 test('target selection accepts only one exact baseline tenant over loopback CDP', () => {
@@ -125,6 +136,148 @@ test('the fixture plan confirms only the two supported product text paths and bi
   assert.deepEqual(Object.entries(plan.records[0].facts).filter(([, fact]) => fact.status === 'ready').map(([key]) => key), ['major', 'description']);
   assert.equal((await validatePlan(runner.fixtureProfile(), plan, plan.ownerBinding.epoch)).ok, true);
   assert.deepEqual(runner.UNCLAIMED, ['学校', '学历', '学位', '开始时间', '结束时间', '城市', '专业排名']);
+});
+
+test('multi-row plans bind every existing identity but authorize exactly the selected two text facts', async () => {
+  const identities = [0, 1].map(index => JSON.stringify([`14_53_${index}`, `14_55_${index}`]));
+  for (const rowIndex of [0, 1]) {
+    const plan = await runner.createLivePlan(identities, rowIndex);
+    assert.equal((await validatePlan(runner.fixtureProfile(rowIndex, 2), plan, plan.ownerBinding.epoch)).ok, true);
+    assert.deepEqual(plan.records.map(row => row.target), identities.map(identity => ({ mode: 'existing', identity })));
+    assert.deepEqual(plan.records.map(row => row.replaceExisting), [rowIndex === 0, rowIndex === 1]);
+    const ready = plan.records.flatMap(row => Object.values(row.facts).filter(fact => fact.status === 'ready'));
+    assert.deepEqual(ready.map(fact => fact.path), [`education.${rowIndex}.major`, `education.${rowIndex}.majorDescription`]);
+  }
+  await assert.rejects(runner.createLivePlan(identities, 2), /education_row_index_out_of_range/u);
+  await assert.rejects(runner.createLivePlan([], 0), /education_row_count_not_supported/u);
+  await assert.rejects(runner.createLivePlan(Array.from({ length: 31 }, (_, index) => String(index))), /education_row_count_not_supported/u);
+});
+
+for (const rowIndex of [0, 1]) {
+  for (const originals of [undefined, { major: '  原专业私有内容  ', description: '\n原描述私有内容\n' }]) {
+    test(`two existing rows: row ${rowIndex} alone receives trial/restore events (${originals ? 'nonempty' : 'empty'})`, async t => {
+      const { api, window, inputs } = await educationDom(t, { rowCount: 2, rowIndex, originals });
+      const untouchedIndex = 1 - rowIndex;
+      const untouched = window.document.getElementById(`14_53_${untouchedIndex}`).querySelector('input');
+      untouched.value = '另一行私有内容';
+      untouched.dispatchEvent(new window.Event('input', { bubbles: true }));
+      const before = window.fixtureSnapshot();
+      const events = [];
+      for (const type of ['input', 'change', 'focus', 'blur']) window.document.addEventListener(type, event => events.push(event.target), true);
+      const prepared = api.prepare();
+      assert.equal(prepared.ok, true, JSON.stringify(prepared));
+      assert.equal(prepared.rowIndex, rowIndex);
+      assert.equal(prepared.recordCount, 2);
+      assert.equal(prepared.identity, prepared.identities[rowIndex]);
+      const result = await api.run(await runner.createLivePlan(plain(prepared.identities), rowIndex));
+      assert.equal(result.ok, true, JSON.stringify(result));
+      assert.equal(result.restored, true);
+      assert.equal(result.pageLeftAsFound, true);
+      assert.equal(result.otherChanged, false);
+      assert.equal(result.liveSupportClaimed, false);
+      assert.deepEqual(plain(result.readbacks.map(row => row.path)), runner.fieldSpecsForRow(rowIndex).map(spec => spec.path));
+      assert.ok(events.length > 0);
+      assert.ok(events.every(input => Object.values(inputs).includes(input)), 'no events on the untouched row');
+      for (const [key, input] of Object.entries(inputs)) assert.equal(input.value, originals?.[key] || '');
+      assert.equal(untouched.value, '另一行私有内容');
+      const after = window.fixtureSnapshot();
+      const untouchedData = data => Object.fromEntries(Object.entries(data).filter(([key]) => key.endsWith(`_${untouchedIndex + 1}`)));
+      assert.deepEqual(plain(untouchedData(after.formData)), plain(untouchedData(before.formData)));
+      for (const key of ['records', 'schools', 'dates', 'regions', 'outside']) assert.deepEqual(plain(after[key]), plain(before[key]));
+      for (const key of ['adds', 'saves', 'submits', 'selects']) assert.equal(after.counts[key], before.counts[key]);
+      assert.deepEqual(plain(api.clicks()), []);
+      assert.deepEqual(plain(api.posts()), []);
+      assert.equal(JSON.stringify(result).includes('私有内容'), false);
+      await api.cleanup();
+    });
+  }
+}
+
+test('zero rows and an out-of-range index fail before writes and retain row-count diagnostics', async t => {
+  for (const [rowIndex, expectedCount, mutate] of [
+    [2, 2, undefined],
+    [0, 0, window => {
+      window.document.querySelectorAll('.form-cell-inner').forEach(row => row.remove());
+      window.fixtureProps.infoData = [];
+    }]
+  ]) {
+    const { api, window } = await educationDom(t, { rowCount: 2, rowIndex, mutate });
+    const before = window.fixtureCounts.textEvents;
+    assert.deepEqual(plain(api.prepare()), { ok: false, reason: 'education_row_index_out_of_range', rowIndex, recordCount: expectedCount });
+    assert.equal(window.fixtureCounts.textEvents, before);
+    assert.deepEqual(plain(api.clicks()), []);
+    await api.cleanup();
+  }
+});
+
+test('multi-row plan tampering cannot authorize another row, new rows, or unbound rows', async t => {
+  for (const change of [
+    plan => { plan.records[0].facts.major = { status: 'ready', value: '金融学', path: 'education.0.major' }; },
+    plan => { plan.records[0].replaceExisting = true; },
+    plan => { plan.records[0].target = { mode: 'new' }; },
+    plan => { plan.records.reverse(); },
+    plan => { plan.records.pop(); },
+    plan => { plan.records[1].target.identity = plan.records[0].target.identity; }
+  ]) {
+    const { api, window } = await educationDom(t, { rowCount: 2, rowIndex: 1 });
+    const prepared = api.prepare();
+    const plan = await runner.createLivePlan(plain(prepared.identities), 1);
+    change(plan);
+    plan.fingerprint = await hash({ ...plan, fingerprint: undefined });
+    const result = await api.run(plan);
+    assert.equal(result.ok, false);
+    assert.equal(result.reason, 'education_trial_plan_invalid');
+    assert.equal(window.fixtureCounts.textEvents, 0);
+    assert.deepEqual(plain(api.clicks()), []);
+    await api.cleanup();
+  }
+});
+
+test('row removal, reorder, and identity drift after prepare cannot retarget the trial', async t => {
+  for (const change of [
+    window => window.document.querySelector('.form-cell-inner').remove(),
+    window => {
+      const rows = window.document.querySelectorAll('.form-cell-inner');
+      rows[0].before(rows[1]);
+    },
+    window => { window.document.getElementById('14_53_0').id = '14_53_7'; }
+  ]) {
+    const { api, window } = await educationDom(t, { rowCount: 2, rowIndex: 1 });
+    const prepared = api.prepare();
+    const plan = await runner.createLivePlan(plain(prepared.identities), 1);
+    change(window);
+    const result = await api.run(plan);
+    assert.equal(result.ok, false);
+    assert.equal(window.fixtureCounts.textEvents, 0);
+    assert.deepEqual(plain(api.clicks()), []);
+    await api.cleanup();
+  }
+});
+
+test('untouched DOM, React props, and absent-to-empty drift fail without overwriting the other row', async t => {
+  for (const mutate of [
+    (window, input) => { input.value = '其他行私有变更'; },
+    window => { window.fixtureProps.formData['14_53_1'] = '其他行私有变更'; },
+    window => { window.fixtureProps.formData['14_53_1'] = ''; }
+  ]) {
+    const { api, window, inputs } = await educationDom(t, { rowCount: 2, rowIndex: 1 });
+    const other = window.document.getElementById('14_53_0').querySelector('input');
+    let changed = false;
+    inputs.major.addEventListener('input', () => {
+      if (!changed) { changed = true; mutate(window, other); }
+    });
+    const prepared = api.prepare();
+    const result = await api.run(await runner.createLivePlan(plain(prepared.identities), 1));
+    assert.equal(result.ok, false);
+    assert.equal(result.otherChanged, true);
+    assert.equal(result.pageLeftAsFound, false);
+    assert.equal(result.liveSupportClaimed, false);
+    assert.equal(inputs.major.value, '');
+    assert.equal(inputs.description.value, '');
+    assert.deepEqual(plain(api.clicks()), []);
+    assert.equal(JSON.stringify(result).includes('私有'), false);
+    await api.cleanup();
+  }
 });
 
 for (const [label, originals] of [
@@ -177,7 +330,6 @@ test('missing React public props stops before writing or clicking', async t => {
 });
 
 for (const [label, mutate] of [
-  ['multiple existing rows', window => window.document.querySelector('.add-more').click()],
   ['readonly text control', (_window, inputs) => { inputs.major.readOnly = true; }],
   ['calendar-wrapped text control', (window, inputs) => { const wrapper = window.document.createElement('span'); wrapper.className = 'ant-calendar-picker'; inputs.major.replaceWith(wrapper); wrapper.append(inputs.major); }],
   ['duplicate question', (window) => { const wrapper = window.document.getElementById('14_53_0'); wrapper.append(wrapper.querySelector('.ant-form-item').cloneNode(true)); }]
@@ -350,13 +502,14 @@ test('page guards block native clicks, dispatched clicks, submits, fetch, XHR, a
   await api.cleanup();
 });
 
-function happyOutcome() {
+function happyOutcome(rowIndex = 0, recordCount = 1) {
   return {
     ok: true,
     reason: null,
     liveSupportClaimed: false,
+    rowIndex, recordCount,
     productReason: 'education_records_partial',
-    readbacks: runner.FIELD_SPECS.map(spec => ({ path: spec.path, key: spec.key, ok: true, reason: 'readback_matched', value: spec.fixture })),
+    readbacks: runner.fieldSpecsForRow(rowIndex).map(spec => ({ path: spec.path, key: spec.key, ok: true, reason: 'readback_matched', value: spec.fixture })),
     restored: true,
     pageLeftAsFound: true,
     otherChanged: false,
@@ -373,7 +526,8 @@ function happyAnswers(overrides = {}) {
     'inject_cms-session': { ok: true },
     'inject_cms-record-controller': { ok: true },
     'inject_cms-education-multi': { ok: true },
-    education_prepare: { ok: true, identity: JSON.stringify(['14_53_0', '14_55_0']) },
+    education_prepare: { ok: true, rowIndex: 0, recordCount: 1, identity: JSON.stringify(['14_53_0', '14_55_0']),
+      identities: [JSON.stringify(['14_53_0', '14_55_0'])] },
     education_run: happyOutcome(),
     read_posts: [],
     read_clicks: [],
@@ -382,7 +536,7 @@ function happyAnswers(overrides = {}) {
   };
 }
 
-async function runFake(t, { answers = happyAnswers(), targets = [target()], errors = {}, onStep, connectionError, listError } = {}) {
+async function runFake(t, { answers = happyAnswers(), targets = [target()], errors = {}, onStep, connectionError, listError, env = {}, pageWindow } = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cms-education-live-'));
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
   const calls = [];
@@ -394,14 +548,14 @@ async function runFake(t, { answers = happyAnswers(), targets = [target()], erro
       if (onStep) await onStep(step, event => eventHandler(event), calls);
       if (errors[step] || errors[method]) throw errors[step] || errors[method];
       if (method !== 'Runtime.evaluate') return {};
-      const value = answers[step];
+      const value = pageWindow ? await pageWindow.eval(params.expression) : answers[step];
       if (value instanceof Error) throw value;
       return { result: { value } };
     },
     close() { calls.push({ method: 'close', step: 'close' }); }
   };
   const evidence = await runner.runCmsEducationLive({
-    env: {}, port: 9239, outDir: dir, tipSha: runner.BASE_TIP, stepTimeoutMs: 1000,
+    env, port: 9239, outDir: dir, tipSha: runner.BASE_TIP, stepTimeoutMs: 1000,
     getJson: async (port, pathname) => {
       assert.equal(port, 9239);
       assert.equal(pathname, '/json/list');
@@ -416,6 +570,55 @@ async function runFake(t, { answers = happyAnswers(), targets = [target()], erro
   });
   return { evidence, calls, dir };
 }
+
+test('ROW_INDEX reaches the real page harness, shipped writer, restore, and redacted evidence via fake CDP', async t => {
+  for (const rowIndex of [0, 1]) {
+    const { window, inputs } = await educationDom(t, { rowCount: 2, rowIndex, installTrial: false,
+      originals: { major: '原专业私有内容', description: '原描述私有内容' } });
+    const before = window.fixtureSnapshot();
+    const { evidence, calls } = await runFake(t, { pageWindow: window, env: rowIndex === 0 ? {} : { ROW_INDEX: '1' } });
+    assert.equal(evidence.finalDetails.exitCode, 0, JSON.stringify(evidence));
+    assert.equal(evidence.finalDetails.rowIndex, rowIndex);
+    assert.equal(evidence.finalDetails.recordCount, 2);
+    assert.equal(evidence.finalDetails.clickCount, 0);
+    assert.equal(evidence.finalDetails.otherChanged, false);
+    assert.equal(evidence.liveSupportClaimed, false);
+    assert.equal(evidence.finalDetails.liveSupportClaimed, false);
+    assert.deepEqual(evidence.fields.slice(0, 2).map(field => field.path), runner.fieldSpecsForRow(rowIndex).map(spec => spec.path));
+    assert.equal(inputs.major.value, '原专业私有内容');
+    assert.equal(inputs.description.value, '原描述私有内容');
+    assert.deepEqual(plain(window.fixtureSnapshot().formData), plain(before.formData));
+    assert.equal(window.fixtureCounts.adds, before.counts.adds);
+    assert.equal(window.fixtureCounts.saves, 0);
+    assert.equal(window.fixtureCounts.submits, 0);
+    assert.equal(window.__cmsEducationLive, undefined);
+    assert.equal(calls.some(call => /^Page\.navigate|Input\./u.test(call.method)), false);
+    assert.deepEqual(evidence.nonGet, []);
+    assert.equal(JSON.stringify(evidence).includes('私有内容'), false);
+    assert.equal(JSON.stringify(evidence).includes('private-'), false);
+  }
+});
+
+test('invalid ROW_INDEX is rejected before CDP discovery or connection', async () => {
+  for (const ROW_INDEX of ['', '-1', '1.5', 'garbage', '9007199254740992']) {
+    let called = false;
+    const connect = async () => { called = true; throw new Error('must not connect'); };
+    await assert.rejects(runner.runCmsEducationLive({ env: { ROW_INDEX }, getJson: connect, connectCdp: connect }), /ROW_INDEX/u);
+    assert.equal(called, false);
+  }
+});
+
+test('out-of-range ROW_INDEX produces failed evidence with the observed count and no writes', async t => {
+  const { window } = await educationDom(t, { rowCount: 2, installTrial: false });
+  const { evidence, calls } = await runFake(t, { pageWindow: window, env: { ROW_INDEX: '2' } });
+  assert.equal(evidence.finalDetails.exitCode, 2);
+  assert.equal(evidence.finalDetails.reason, 'education_row_index_out_of_range');
+  assert.equal(evidence.finalDetails.rowIndex, 2);
+  assert.equal(evidence.finalDetails.recordCount, 2);
+  assert.equal(calls.some(call => call.step === 'education_run'), false);
+  assert.equal(window.fixtureCounts.textEvents, 0);
+  assert.equal(evidence.liveSupportClaimed, false);
+});
 
 test('fake CDP success requires interception before injection and leaves all widget fields unsupported', async t => {
   const { evidence, calls, dir } = await runFake(t);
@@ -563,7 +766,9 @@ test('readback failure, restore failure, support claims, and cleanup failure can
     { restored: false, pageLeftAsFound: false },
     { liveSupportClaimed: true },
     { readbacks: [] },
-    { otherChanged: true }
+    { otherChanged: true },
+    { rowIndex: 1 },
+    { recordCount: 2 }
   ]) {
     const { evidence } = await runFake(t, { answers: happyAnswers({ education_run: { ...happyOutcome(), ...patch } }) });
     assert.notEqual(evidence.finalDetails.exitCode, 0, JSON.stringify(patch));

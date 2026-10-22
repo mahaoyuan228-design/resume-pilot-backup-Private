@@ -166,8 +166,10 @@ export function shippedGthWorkOpenFill({api,tab,requestId,binding,profile,profil
 }
 
 // Page-world month accept. chrome.scripting serializes this function into MAIN,
-// so it cannot close over imports. It only calls the open picker's own
-// handleMonthPick or the editor's emitInput. It does not click, navigate, or save.
+// so it cannot close over imports. It calls the marked picker's handleMonthPick
+// or the editor's emitInput. A painted input is not acceptance. If the panel
+// node is gone, only the editor Vue may pick or emit. It does not click,
+// navigate, or save. Neither path means no-vue.
 export const GTH_MONTH_MODEL_MESSAGE='GTH_MONTH_MODEL_ACCEPT';
 const MONTH_PAGE='https://hr.gtht.com/resume/edit/';
 export function acceptGthMonthInPage(payload){
@@ -220,41 +222,53 @@ export function acceptGthMonthInPage(payload){
     const monthIndex=Number(answer.slice(5,7))-1;
     const inputs=marked('input');
     const panels=marked('panel');
-    if(inputs.length!==1||panels.length!==1)return fail('bad-answer');
+    if(inputs.length!==1||panels.length>1)return fail('bad-answer');
     const input=inputs[0];
-    const panel=panels[0];
+    const panel=panels.length===1?panels[0]:null;
     if(input.getAttribute('data-gth-month-answer')!==answer)return fail('bad-answer');
-    if(!input.isConnected||!panel.isConnected)return fail('bad-answer');
+    if(!input.isConnected)return fail('bad-answer');
+    if(panel&&!panel.isConnected)return fail('bad-answer');
     const others=[...doc.querySelectorAll('.el-picker-panel')].filter(node=>node!==panel&&visuallyShown(node));
     if(others.length)return fail('dual');
-    const shownYear=headerYear(panel);
-    if(shownYear==null||shownYear!==year)return fail('bad-year');
-    let pick=findPick(panel.__vue__,0);
     const editor=input.closest?.('.el-date-editor');
     const editorVue=editor&&editor.__vue__;
-    if(!pick&&editorVue?.picker)pick=findPick(editorVue.picker,0);
+    const finish=kind=>{
+      const shown=String(input.value||'').replace(/[\s\u00a0]+/g,' ').trim();
+      if(shown&&shown!==answer)return fail('mismatch');
+      return {ok:true,result:kind};
+    };
+    const emitFrom=start=>{
+      let vue=start;
+      let guard=0;
+      while(vue&&typeof vue.emitInput!=='function'&&vue.$parent&&guard<6){
+        vue=vue.$parent;
+        guard+=1;
+      }
+      if(!vue||typeof vue.emitInput!=='function')return null;
+      const parsed=typeof vue.parseString==='function'?vue.parseString(answer):null;
+      const date=isDate(parsed)?parsed:new Date(year,monthIndex,1);
+      if(!isDate(date)||date.getFullYear()!==year||date.getMonth()!==monthIndex)return fail('bad-year');
+      vue.userInput=null;
+      vue.emitInput(date);
+      return finish('emitted');
+    };
+    let pick=null;
+    if(panel){
+      const shownYear=headerYear(panel);
+      if(shownYear==null||shownYear!==year)return fail('bad-year');
+      pick=findPick(panel.__vue__,0);
+      if(!pick&&editorVue?.picker)pick=findPick(editorVue.picker,0);
+    }else if(editorVue?.picker){
+      pick=findPick(editorVue.picker,0);
+    }
     const pickYear=yearOf(pick);
     if(pick&&(pickYear==null||pickYear===year)){
       pick.handleMonthPick(monthIndex);
-      const shown=String(input.value||'').replace(/[\s\u00a0]+/g,' ').trim();
-      if(shown&&shown!==answer)return fail('mismatch');
-      return {ok:true,result:'picked'};
+      return finish('picked');
     }
-    let vue=editorVue;
-    let guard=0;
-    while(vue&&typeof vue.emitInput!=='function'&&vue.$parent&&guard<6){
-      vue=vue.$parent;
-      guard+=1;
-    }
-    if(!vue||typeof vue.emitInput!=='function')return fail('no-vue');
-    const parsed=typeof vue.parseString==='function'?vue.parseString(answer):null;
-    const date=isDate(parsed)?parsed:new Date(year,monthIndex,1);
-    if(!isDate(date)||date.getFullYear()!==year||date.getMonth()!==monthIndex)return fail('bad-year');
-    vue.userInput=null;
-    vue.emitInput(date);
-    const shown=String(input.value||'').replace(/[\s\u00a0]+/g,' ').trim();
-    if(shown&&shown!==answer)return fail('mismatch');
-    return {ok:true,result:'emitted'};
+    const emitted=emitFrom(editorVue);
+    if(emitted)return emitted;
+    return fail('no-vue');
   }catch{
     return fail('threw');
   }

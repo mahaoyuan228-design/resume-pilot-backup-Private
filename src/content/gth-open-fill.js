@@ -517,15 +517,20 @@
     // ±1 fails closed. A month click that leaves the input empty is retried on the
     // cell (the table handler reads a TD target). A click can paint input.value
     // while the Element-UI model stays empty; closing the panel then restores that
-    // empty model. While the panel is still open, the extension worker runs
-    // acceptGthMonthInPage in the page world even if the DOM already shows the
-    // answer. picked and emitted accept the model. dual, bad-year, and mismatch
-    // stop. After close, a blank or different value stops readback_mismatch. If
-    // the bridge is unavailable, a still-empty input may be typed, and a value
-    // that close clears still fails closed. The page-world call uses the mounted
-    // picker's handleMonthPick or the editor's emitInput. No <script> is inserted,
-    // so a strict script-src cannot skip the call. input+change is kept only when
-    // the value is still there after close. liveSupportClaimed stays false.
+    // empty model. Painted input.value is not model acceptance, including when
+    // readMonth already sees the target. The cell click may close or remove the
+    // panel before this gate runs. The extension worker still runs
+    // acceptGthMonthInPage in the page world when the input shows the target
+    // YYYY-MM, when the panel is pending, or when the input is still empty.
+    // A missing panel node is not marked; MAIN then uses the editor Vue.
+    // picked and emitted accept the model. dual, bad-year, and mismatch stop.
+    // If the panel node is gone and neither pick nor emit runs, stop. After
+    // dismiss, a blank or different value stops readback_mismatch. If the
+    // bridge is unavailable, a still-empty input may be typed, and a painted
+    // value is not typed over. A value that close clears still fails closed.
+    // No <script> is inserted, so a strict script-src cannot skip the call.
+    // input+change is kept only when the value is still there after close.
+    // liveSupportClaimed stays false.
     function monthPanelNodes() {
       return [...document.querySelectorAll('.el-picker-panel')].filter(node => node.isConnected);
     }
@@ -650,19 +655,22 @@
     // paints the DOM, and panel close restores the empty model. The worker instead
     // runs acceptGthMonthInPage via chrome.scripting in world MAIN. That call is not
     // a page script, so script-src does not apply. A painted or typed value is still
-    // not the model: picked and emitted are the only acceptances.
+    // not the model: picked and emitted are the only acceptances. The panel
+    // marker is omitted when that node is already gone so MAIN can use the editor.
     async function acceptMonthInPage(panel, input, answer) {
       if (!/^\d{4}-(0[1-9]|1[0-2])$/u.test(answer)) return 'no';
-      if (!document.documentElement?.isConnected || !panel?.isConnected || !input?.isConnected) return 'no';
-      if (otherPendingPanels(panel).length) return 'no';
+      if (!document.documentElement?.isConnected || !input?.isConnected) return 'no';
+      const panelLive = () => !!panel?.isConnected;
+      if (panelLive() ? otherPendingPanels(panel).length : openMonthPanels().length) return 'no';
       let result = 'pending';
       try {
         await boundAction(() => {
-          if (!input.isConnected || !panel.isConnected || otherPendingPanels(panel).length) stop('profile_action_target_changed');
+          if (!input.isConnected) stop('profile_action_target_changed');
+          if (panelLive() ? otherPendingPanels(panel).length : openMonthPanels().length) stop('profile_action_target_changed');
           input.setAttribute('data-gth-month-role', 'input');
-          panel.setAttribute('data-gth-month-role', 'panel');
           input.setAttribute('data-gth-month-answer', answer);
           input.setAttribute('data-gth-month-result', 'pending');
+          if (panelLive()) panel.setAttribute('data-gth-month-role', 'panel');
           return null;
         });
         let response = null;
@@ -678,7 +686,7 @@
           input.removeAttribute('data-gth-month-role');
           input.removeAttribute('data-gth-month-answer');
           input.removeAttribute('data-gth-month-result');
-          panel.removeAttribute('data-gth-month-role');
+          if (panel) panel.removeAttribute('data-gth-month-role');
         } catch { /* keep the month reason */ }
       }
       if (result === 'picked' || result === 'emitted') return 'ok';
@@ -785,14 +793,19 @@
           await dismissMonthSurfaces(company);
           stop('control_not_supported');
         }
-        // DOM paint is not model acceptance. While this panel is still open, ask
-        // MAIN even if input.value already equals the answer. An empty input still
-        // asks when the panel has already closed. picked/emitted continue; dual,
-        // bad-year, and mismatch stop. An unavailable bridge does not type over a
-        // painted value.
-        const painted = norm(input.value) !== '';
+        // DOM paint is not model acceptance. readMonth seeing the target does
+        // not skip MAIN. Ask even when this panel is no longer pending, and
+        // still ask when the click removed the panel node so the editor Vue
+        // can pick or emit. An empty input still asks while the panel node
+        // remains. picked/emitted continue; dual, bad-year, and mismatch stop.
+        // Neither pick nor emit on a missing panel stops. An unavailable
+        // bridge does not type over a painted value.
+        const currentValue = norm(input.value);
+        const painted = currentValue !== '';
+        const showsTarget = currentValue === answer;
+        const panelHere = !!panel?.isConnected;
         let accepted = 'no';
-        if ((monthPanelPending(panel) || !painted) && panel.isConnected && input.isConnected) {
+        if ((monthPanelPending(panel) || !painted || showsTarget) && input.isConnected && (panelHere || showsTarget)) {
           accepted = await acceptMonthInPage(panel, input, answer);
         }
         if (accepted === 'stop') {
@@ -801,6 +814,9 @@
         }
         if (accepted === 'ok') {
           matched = await waitUntil(readMonth, 480);
+        } else if (!panelHere && showsTarget) {
+          await dismissMonthSurfaces(company);
+          stop('readback_mismatch');
         } else if (!matched && !painted && norm(input.value) === '' && !drifted() && !otherPendingPanels(panel).length) {
           await commitMonthThroughInput(input, answer);
           matched = await waitUntil(readMonth, 320);

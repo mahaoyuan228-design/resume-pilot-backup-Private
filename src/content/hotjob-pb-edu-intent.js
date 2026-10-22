@@ -10,6 +10,11 @@
 // These six selects were not individually opened. Dropdown class and
 // ant-select-search__field are the same page's flat-select probes. Open/focused/enabled
 // matches the same page's ant-select contract in hotjob-pb-basic.js / hotjob-pb-region.js.
+// Live 2026-10-23: a closed .ant-select-search__field can have no client rect while
+// .ant-select-selection / [role=combobox] is visible. Readback uses
+// .ant-select-selection-selected-value and strips a 请选择+label placeholder.
+// Caption text drops nested controls, so a current value is not the row selector.
+// The basic 专业名称 row stays the single text input between 毕业院校 and 毕业时间.
 // Option text is whatever the open menu shows. Nothing is hardcoded.
 // Pending live Never-Save. This does not claim the site is supported.
 // liveSupportClaimed stays false. Never clicks 保存/提交/投递/删除/下一步/返回/确定.
@@ -45,6 +50,9 @@
     'ant-select-dropdown-placement-bottomLeft'
   ]);
   const FORBIDDEN = /^(?:保存|提交|投递|删除|下一步|返回|确定|取消)$/u;
+  const PLACEHOLDER_PREFIX = '请选择';
+  const SELECTED_VALUE = '.ant-select-selection-selected-value';
+  const SELECT_FACE = '.ant-select-selection, .ant-select-selector, .ant-select-selection-item, .ant-select-selection-selected-value, [role="combobox"]';
   const PATH = /^\/SU[0-9A-Za-z]{8,64}\/pb\/resumeOperation\.html$/u;
   const STRAY = '.ant-select, .cascader-plugins-wrap, input.ant-radio-input, input.ant-checkbox-input, input[type="file"], .ant-calendar-picker-input';
 
@@ -97,10 +105,16 @@
     return [...item.querySelectorAll('label')].filter((node) => node.closest('.ant-row.ant-form-item') === item);
   }
 
+  function captionText(node) {
+    const clone = node.cloneNode(true);
+    clone.querySelectorAll('input, textarea, select, button, .ant-select, .cascader-plugins-wrap, .ant-calendar-picker, .ant-select-dropdown').forEach((child) => child.remove());
+    return cleanLabel(clone.textContent);
+  }
+
   function labelOf(item) {
-    const labels = ownedLabels(item);
-    if (labels.length !== 1) return '';
-    return cleanLabel(labels[0].textContent);
+    const captions = ownedLabels(item).map(captionText).filter(Boolean);
+    if (captions.length !== 1) return '';
+    return captions[0];
   }
 
   function itemsFor(label) {
@@ -148,7 +162,34 @@
     return { ok: true, kind: 'textarea', item, control };
   }
 
-  function locateSelect(item) {
+  function stripPrompt(text, label) {
+    const prompt = exact(`${PLACEHOLDER_PREFIX}${label || ''}`);
+    if (text === prompt || text === PLACEHOLDER_PREFIX) return '';
+    if (label && text.startsWith(prompt)) return text.slice(prompt.length);
+    return text;
+  }
+
+  function readSelectText(select, label) {
+    const selected = [...select.querySelectorAll(SELECTED_VALUE)]
+      .filter((node) => node.closest('.ant-select') === select);
+    const texts = [...new Set(selected.map((node) => exact(node.textContent)).filter(Boolean))];
+    if (texts.length > 1) return { ok: false, value: '' };
+    if (texts.length === 1) return { ok: true, value: stripPrompt(texts[0], label) };
+    const clone = select.cloneNode(true);
+    clone.querySelectorAll('input, textarea, .ant-select-search__field, .ant-select-dropdown, .ant-select-selection__placeholder').forEach((node) => node.remove());
+    return { ok: true, value: stripPrompt(exact(clone.textContent), label) };
+  }
+
+  function selectFace(select) {
+    const faces = [...select.querySelectorAll(SELECT_FACE)]
+      .filter((node) => node.closest('.ant-select') === select
+        && !node.matches('input, textarea, .ant-select-search__field')
+        && visible(node));
+    if (!faces.length) return null;
+    return faces.find((node) => faces.every((other) => other === node || node.contains(other))) || faces[0];
+  }
+
+  function locateSelect(item, label) {
     if (item.querySelector('.cascader-plugins-wrap')) return { ok: false, reason: 'control_not_supported' };
     if (stray(item, 'input.ant-radio-input, input.ant-checkbox-input, input.ant-input, input[type="file"], textarea, .ant-calendar-picker-input').length) {
       return { ok: false, reason: 'control_not_supported' };
@@ -156,16 +197,20 @@
     const selects = stray(item, '.ant-select');
     if (selects.length !== 1) return { ok: false, reason: 'control_not_supported' };
     const select = selects[0];
-    const triggers = [...select.querySelectorAll('.ant-select-search__field')];
+    const triggers = [...select.querySelectorAll('.ant-select-search__field')]
+      .filter((node) => node.closest('.ant-select') === select);
+    const search = triggers[0];
+    const trigger = search && visible(search) ? search : selectFace(select);
     if (!select.classList.contains('ant-select-enabled')
       || !select.classList.contains('ant-select-allow-clear')
       || select.classList.contains('ant-select-disabled')
       || triggers.length !== 1
       || !visible(select)
-      || !visible(triggers[0])) {
+      || !trigger
+      || !readSelectText(select, label).ok) {
       return { ok: false, reason: 'control_not_supported' };
     }
-    return { ok: true, kind: 'select', item, select, trigger: triggers[0] };
+    return { ok: true, kind: 'select', item, select, trigger };
   }
 
   function locate(label) {
@@ -173,9 +218,9 @@
     const items = itemsFor(label);
     if (items.length !== 1) return { ok: false, reason: 'control_not_supported' };
     const kind = KINDS[label];
-    if (kind === 'text') return locateText(items[0]);
-    if (kind === 'textarea') return locateTextarea(items[0]);
-    return locateSelect(items[0]);
+    const found = kind === 'text' ? locateText(items[0]) : kind === 'textarea' ? locateTextarea(items[0]) : locateSelect(items[0], label);
+    if (found.ok) found.label = label;
+    return found;
   }
 
   function readControl(found) {
@@ -183,9 +228,8 @@
   }
 
   function readDisplay(found) {
-    const clone = found.select.cloneNode(true);
-    clone.querySelectorAll('input, textarea, .ant-select-search__field, .ant-select-dropdown').forEach((node) => node.remove());
-    return exact(clone.textContent);
+    const read = readSelectText(found.select, found.label);
+    return read.ok ? read.value : '';
   }
 
   function readFound(found) {

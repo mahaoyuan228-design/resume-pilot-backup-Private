@@ -32,7 +32,15 @@
     "dropdownClass": "ant-select-dropdown ant-select-dropdown--single ant-select-dropdown-placement-bottomLeft",
     "openClass": "ant-select ant-select-open ant-select-focused ant-select-enabled",
     "openClassNote": "These six selects were not individually opened. Dropdown class and ant-select-search__field are the same page's 国籍/地区, 民族, 婚姻状况, and 政治面貌 probes. Open/focused/enabled is the same page's 现居住地 click, already required by hotjob-pb-region.js and hotjob-pb-basic.js.",
-    "cancel": "Escape"
+    "cancel": "Escape",
+    "liveReadback": {
+      "note": "2026-10-23 live closed .ant-select-search__field has getClientRects().length 0 while .ant-select-selection[role=combobox] is visible. Clone text was 请选择 plus the label plus the value. Read .ant-select-selection-selected-value, or strip that placeholder prefix. The current value is not a row selector.",
+      "selectedValueClass": "ant-select-selection-selected-value",
+      "placeholderClass": "ant-select-selection__placeholder",
+      "placeholderPrefix": "请选择",
+      "faceClass": "ant-select-selection",
+      "faceRole": "combobox"
+    }
   },
   "fields": [
     {

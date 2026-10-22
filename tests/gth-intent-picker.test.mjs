@@ -532,6 +532,14 @@ test('a level-1 click that never reveals a level-2 menu cancels and fails closed
   assert.equal(result.reason, 'picker_level2_menu_missing');
   assert.equal(result.writeStarted, false);
   flags(result);
+  assert.equal(result.pickerDiag.reason, 'picker_level2_menu_missing');
+  assert.equal(result.pickerDiag.question, '期望从事职位类别');
+  assert.equal(result.pickerDiag.confirmClicked, false);
+  assert.equal(result.pickerDiag.confirmPresent, true);
+  assert.equal(result.pickerDiag.steps.at(-1).step, 'abort');
+  assert.equal(result.pickerDiag.steps.at(-1).panelFound, true);
+  assert.ok(result.pickerDiag.steps.at(-1).levels.some((level) => level.level === 1 && level.options.some((option) => option.text === '金融/保险' && option.classes.includes('selected') && option.classes.includes('has-child'))));
+  assert.equal(result.pickerDiag.steps.some((step) => step.clicked && step.clicked.text === '金融/保险' && step.clicked.level === 1), true);
   assert.equal(stats.level1, 1);
   assert.equal(stats.checkbox, 0);
   assert.equal(stats.confirm, 0);
@@ -915,6 +923,19 @@ test('replaceExisting re-picks a single-select level-2 and fails closed when rea
   assert.equal(mismatch.stats.confirm, 0);
   assert.equal(mismatch.stats.save, 0);
   assert.equal(failed.fields.find((row) => row.question === '现从事行业').reason, 'picker_replace_unverified');
+  assert.equal(failed.pickerDiag.reason, 'picker_replace_unverified');
+  assert.equal(failed.pickerDiag.question, '现从事行业');
+  assert.equal(failed.pickerDiag.inputBefore, '银行');
+  assert.equal(failed.pickerDiag.inputAfter, '保险');
+  assert.equal(failed.pickerDiag.confirmPresent, false);
+  assert.equal(failed.pickerDiag.confirmClicked, false);
+  assert.equal(failed.pickerDiag.siteValid, true);
+  assert.equal(failed.pickerDiag.steps.some((step) => step.note === 'level1_already_selected' && step.clicked == null), true);
+  assert.equal(failed.pickerDiag.steps.some((step) => step.panelFound === true && step.panelShown === true), true);
+  const replaceAbort = failed.pickerDiag.steps.at(-1);
+  assert.equal(replaceAbort.step, 'abort');
+  assert.equal(replaceAbort.panelShown, false);
+  assert.ok(replaceAbort.levels.some((level) => level.options.some((option) => option.text === '证券/投资/基金/信托' && option.classes.includes('branch'))));
   assert.equal(failed.fields.find((row) => row.question === '现从事职位类别').reason, 'not_run');
   assert.equal(failed.fields.find((row) => row.question === '期望薪资').reason, 'not_run');
   assert.equal(assessGthIntentFill(failed).state, 'unknown');
@@ -1085,4 +1106,105 @@ test('omitAbsent fills 到岗日期, 北京||大兴区, and 15000 without writin
   assert.equal(filled.stats.remove, 1);
   assert.equal(assessGthIntentFill(result).ok, false);
   assert.equal(source.includes("status:'skipped'"), false);
+});
+
+function regionRequest() {
+  return request({ 期望工作地区: '北京||大兴区' }, ['期望工作地区'], { omitAbsent: true, replaceExisting: true });
+}
+
+test('replace leaves a selected level-1 alone and chooses level-2, including when 确定 commits late', async () => {
+  const collapse = {
+    onLevel1({ list }) {
+      list?.closest('.eo-cascader-menu')?.remove();
+    }
+  };
+  const confirmed = mount({
+    salaries: { 期望薪资: '12000', 现薪资: '12000' },
+    arrival: ''
+  }, { pickers: { 期望工作地区: collapse } });
+  const level1 = itemByLabel(confirmed.form, '期望工作地区').querySelector('li.branch.has-child.selected');
+  assert.equal(level1.querySelector(':scope > span').textContent.trim(), '北京');
+  assert.ok([...level1.classList].includes('currentClick'));
+  assert.ok([...itemByLabel(confirmed.form, '期望工作地区').querySelectorAll('.eo-cascader-menu li')].some((row) => row.textContent.trim() === '大兴区'));
+  const result = await confirmed.api.trial(regionRequest());
+  assert.equal(result.ok, true);
+  assert.equal(result.pickerDiag, undefined);
+  assert.equal(itemInput(confirmed.form, '期望工作地区').value, '大兴区');
+  assert.equal(confirmed.stats.level1, 0);
+  assert.equal(confirmed.stats.checkbox, 1);
+  assert.equal(confirmed.stats.confirm, 1);
+  assert.equal(confirmed.stats.panelCancel, 0);
+  assert.equal(confirmed.stats.save, 0);
+  assert.equal(result.fields.find((row) => row.question === '期望工作地区').reason, 'readback_reapplied');
+  assert.equal(result.liveSupportClaimed, false);
+
+  const late = mount({
+    salaries: { 期望薪资: '12000', 现薪资: '12000' },
+    arrival: ''
+  }, {
+    pickers: {
+      期望工作地区: {
+        ...collapse,
+        onConfirm({ input, panel }) {
+          panel.style.display = 'none';
+          input.ownerDocument.defaultView.setTimeout(() => { input.value = '大兴区'; }, 60);
+        }
+      }
+    }
+  });
+  const delayed = await late.api.trial(regionRequest());
+  assert.equal(delayed.ok, true);
+  assert.equal(delayed.pickerDiag, undefined);
+  assert.equal(itemInput(late.form, '期望工作地区').value, '大兴区');
+  assert.equal(late.stats.level1, 0);
+  assert.equal(late.stats.confirm, 1);
+  assert.equal(late.stats.checkbox, 1);
+  assert.equal(late.stats.panelCancel, 0);
+  assert.equal(late.stats.save, 0);
+  assert.equal(itemByLabel(late.form, '期望工作地区').querySelector('.pop-foot').style.display, '');
+});
+
+test('replace waits when a preselected level-1 panel closes on the level-2 click and has no 确定', async () => {
+  const mounted = mount({
+    pickers: {
+      期望工作地区: { trigger: '北京', chips: ['北京'], single: true, counter: '（1/1）' }
+    },
+    salaries: { 期望薪资: '12000', 现薪资: '12000' },
+    arrival: ''
+  }, {
+    pickers: {
+      期望工作地区: {
+        onLevel1({ list }) {
+          list?.closest('.eo-cascader-menu')?.remove();
+        },
+        onSingle({ input, panel, text, chips }) {
+          panel.style.display = 'none';
+          input.ownerDocument.defaultView.setTimeout(() => {
+            const li = input.ownerDocument.createElement('li');
+            li.setAttribute('uid', '1313');
+            const paragraph = input.ownerDocument.createElement('p');
+            paragraph.textContent = text;
+            li.append(paragraph, input.ownerDocument.createElement('i'));
+            chips.replaceChildren(li);
+            input.value = text;
+          }, 60);
+        }
+      }
+    }
+  });
+  const foot = itemByLabel(mounted.form, '期望工作地区').querySelector('.pop-foot');
+  assert.equal(foot.style.display, 'none');
+  const result = await mounted.api.trial(regionRequest());
+  assert.equal(result.ok, true);
+  assert.equal(result.pickerDiag, undefined);
+  assert.equal(itemInput(mounted.form, '期望工作地区').value, '大兴区');
+  assert.equal(mounted.stats.level1, 0);
+  assert.equal(mounted.stats.level2, 1);
+  assert.equal(mounted.stats.confirm, 0);
+  assert.equal(mounted.stats.checkbox, 0);
+  assert.equal(mounted.stats.panelCancel, 0);
+  assert.equal(mounted.stats.save, 0);
+  assert.equal(result.fields.find((row) => row.question === '期望工作地区').reason, 'readback_reapplied');
+  assert.equal(result.softwareClickedSave, false);
+  assert.equal(result.liveSupportClaimed, false);
 });

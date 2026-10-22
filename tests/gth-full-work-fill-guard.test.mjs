@@ -106,7 +106,7 @@ function wireModelMonths(doc, options) {
   const inputs = ['start-date', 'end-date'].map(id => doc.getElementById(id));
   const models = new Map(inputs.map(input => [input, '']));
   let active;
-  const stats = { open: 0, cells: 0, picks: 0, emits: 0, rollbacks: 0, anchorClicks: 0, tdClicks: 0, rootClicks: 0, deferred: 0, flushes: 0 };
+  const stats = { open: 0, cells: 0, picks: 0, emits: 0, rollbacks: 0, anchorClicks: 0, tdClicks: 0, rootClicks: 0, deferred: 0, flushes: 0, replaced: 0, panelRemoved: 0 };
   const hide = () => { panel.style.display = 'none'; };
   const rollback = () => {
     for (const input of inputs) {
@@ -115,11 +115,10 @@ function wireModelMonths(doc, options) {
     }
     hide();
   };
-  const commit = (input, answer, kind) => {
-    models.set(input, answer);
-    input.value = answer;
-    stats[kind]++;
-    const item = input.closest('.el-form-item');
+  const syncValidation = () => {
+    const sample = inputs.find(node => node.isConnected) || inputs[0];
+    const item = sample?.closest('.el-form-item');
+    if (!item) return;
     const invalid = options.validationError || inputs.some(node => !models.get(node));
     item.classList.toggle('is-error', invalid);
     item.querySelector('.el-form-item__error')?.remove();
@@ -129,7 +128,31 @@ function wireModelMonths(doc, options) {
       error.textContent = '请选择任职时间';
       item.append(error);
     }
+  };
+  const commit = (input, answer, kind) => {
+    models.set(input, answer);
+    input.value = answer;
+    stats[kind]++;
+    syncValidation();
     hide();
+  };
+  // The month click commits the visible value, then the editor swaps in a new
+  // input and drops the panel. The writer's original node stays detached with
+  // the painted month. This is an offline scheduling case, not a live DOM claim.
+  const replaceInput = (node, answer) => {
+    const replacement = node.cloneNode(true);
+    replacement.value = answer;
+    replacement.readOnly = true;
+    node.value = answer;
+    node.replaceWith(replacement);
+    const index = inputs.indexOf(node);
+    if (index >= 0) inputs[index] = replacement;
+    models.delete(node);
+    models.set(replacement, answer);
+    if (active === node) active = replacement;
+    replacement.addEventListener('blur', rollback);
+    stats.replaced++;
+    return replacement;
   };
   const accept = (input, answer, kind) => {
     if (!options.deferredModel) return commit(input, answer, kind);
@@ -145,21 +168,22 @@ function wireModelMonths(doc, options) {
     resolve();
   }, 0));
   for (const input of inputs) {
+    const editor = input.closest('.el-date-editor');
+    const connected = () => [...editor.querySelectorAll('input')].find(node => node.isConnected && !node.closest('.el-picker-panel')) || input;
     const picker = {
       selectionMode: 'month',
       get year() { return Number(year.textContent.match(/\d{4}/u)[0]); },
       handleMonthPick(index) {
         const answer = `${this.year}-${String(index + 1).padStart(2, '0')}`;
-        accept(input, options.mismatch ? '2001-01' : answer, 'picks');
+        accept(connected(), options.mismatch ? '2001-01' : answer, 'picks');
       },
       $children: []
     };
-    const editor = input.closest('.el-date-editor');
     if (options.accept !== false) {
       editor.__vue__ = options.emit ? {
         userInput: '',
         parseString(answer) { const [y, m] = answer.split('-').map(Number); return new Date(y, m - 1, 1); },
-        emitInput(date) { accept(input, `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`, 'emits'); }
+        emitInput(date) { accept(connected(), `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`, 'emits'); }
       } : { picker };
       if (options.deferredModel || options.stuckTick) {
         editor.__vue__.$nextTick = nextTick;
@@ -185,6 +209,16 @@ function wireModelMonths(doc, options) {
     if (event.target.tagName === 'TD') stats.tdClicks++;
     if (options.tdOnly && event.target.tagName !== 'TD') return;
     const month = MONTHS.indexOf(cell.textContent.trim()) + 1;
+    if (options.replaceInputOnCommit && active && month >= 1) {
+      const answer = `${year.textContent.match(/\d{4}/u)[0]}-${String(month).padStart(2, '0')}`;
+      active.value = answer;
+      stats.cells++;
+      replaceInput(active, answer);
+      syncValidation();
+      panel.remove();
+      stats.panelRemoved++;
+      return;
+    }
     // The click paints only the DOM. Escape/blur restores the model unless
     // the shared page-world bridge accepted this exact input first.
     active.value = `${year.textContent.match(/\d{4}/u)[0]}-${String(month).padStart(2, '0')}`;
@@ -621,6 +655,61 @@ test('a month component whose next tick never settles fails within the trial bou
     assert.equal(fill.softwareClickedSubmit, false);
     assert.equal(fill.softwareClickedDelete, false);
     assert.equal((await f.api.cancel(3)).closed, true);
+    assert.equal(f.api.state().editorFormCount, 0);
+    assert.equal(f.section.querySelectorAll('.sec-context > .sec-detail').length, 0);
+    assert.equal(f.api.clicks().every(row => row.allowed), true, JSON.stringify(f.api.clicks()));
+    assert.deepEqual(f.stats.dangerous, []);
+    assert.deepEqual(Array.from(f.api.requests()), []);
+  } finally { f.close(); }
+});
+
+test('full work follows a replaced month input and accepts both tenure months', async () => {
+  const f = await boot({ months: { model: true, replaceInputOnCommit: true } });
+  try {
+    const fill = await f.window.ResumeGthWorkOpen.trial(request);
+    assert.equal(fill.ok, true, JSON.stringify({ fill, months: f.stats.months }));
+    assert.equal(fill.selectorStep, 'complete');
+    assert.equal(fill.fields.find(row => row.question === '任职时间').status, 'verified');
+    assert.equal(fill.fields.find(row => row.question === '任职时间').reason, 'readback_matched');
+    assert.equal(f.stats.months.replaced, 2);
+    assert.equal(f.stats.months.panelRemoved, 2);
+    assert.equal(f.stats.months.picks, 2);
+    assert.equal(f.stats.months.rollbacks, 0);
+    assert.equal(f.doc.getElementById('start-date').value, '2020-03');
+    assert.equal(f.doc.getElementById('end-date').value, '2024-08');
+    const read = f.api.read(3, work.questions);
+    const observed = read.readback.find(row => row.q === '任职时间');
+    assert.equal(observed.value, '2020-03 | 2024-08');
+    assert.equal(observed.startMonth, '2020-03');
+    assert.equal(observed.endMonth, '2024-08');
+    assert.equal(observed.siteValidationFailed, false);
+    const rows = buildFieldRows(work, [{ fill }], read);
+    const tenure = rows.find(row => row.q === '任职时间');
+    assert.equal(tenure.status, 'verified');
+    assert.equal(tenure.reason, 'readback_matched');
+    assert.equal(tenure.startMonth, '2020-03');
+    assert.equal(tenure.endMonth, '2024-08');
+    assert.deepEqual(Array.from(f.window.__gthFullResumeMonthModels(), row => ({
+      question: row.question, endpoint: row.endpoint, answer: row.answer, result: row.result
+    })), [
+      { question: '任职时间', endpoint: 'start', answer: '2020-03', result: 'picked' },
+      { question: '任职时间', endpoint: 'end', answer: '2024-08', result: 'picked' }
+    ]);
+    for (const q of ['职位名称', '公司名称', '工作地区', '职责与业绩', '公司所属行业', '所属部门', '汇报对象', '下属人数', '离职原因']) {
+      assert.equal(rows.find(row => row.q === q).status, 'verified', q);
+      assert.notEqual(rows.find(row => row.q === q).reason, 'not_run', q);
+    }
+    assert.equal(rows.find(row => row.q === '薪资').reason, 'control_not_supported');
+    assert.equal(rows.find(row => row.q === '薪资').status, 'failed');
+    assert.equal(f.doc.getElementById('salary').value, '');
+    assert.equal(fill.liveSupportClaimed, false);
+    assert.equal(fill.complete, false);
+    assert.equal(fill.softwareClickedSave, false);
+    assert.equal(fill.softwareClickedSubmit, false);
+    assert.equal(fill.softwareClickedDelete, false);
+    const cancel = await f.api.cancel(3);
+    assert.equal(cancel.closed, true);
+    assert.equal(cancel.forced, false);
     assert.equal(f.api.state().editorFormCount, 0);
     assert.equal(f.section.querySelectorAll('.sec-context > .sec-detail').length, 0);
     assert.equal(f.api.clicks().every(row => row.allowed), true, JSON.stringify(f.api.clicks()));

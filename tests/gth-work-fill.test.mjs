@@ -686,6 +686,14 @@ function wireRaceMonth(document, options = {}) {
         stats.huskDismissIgnored += 1;
         continue;
       }
+      if (options.removePanelOnDismiss && editor.input.id === 'end-date'
+          && editor.panel.isConnected && editor.panel.style.display !== 'none') {
+        editor.panel.remove();
+        editor.closed = true;
+        stats.panelRemoved += 1;
+        continue;
+      }
+      if (options.preserveEndOnDismiss && editor.input.id === 'end-date') continue;
       editor.closed = true;
       revertTyped(editor);
       hide(editor);
@@ -722,6 +730,22 @@ function wireRaceMonth(document, options = {}) {
         if (editor.input.id === 'end-date') {
           stats.quietAtEndClick = others.length;
           stats.endCellClicks += 1;
+          // Live R8: the cell click leaves this panel connected and the input
+          // empty, and the start month husk is still pending. Dismiss that husk,
+          // then ask. A still-connected panel is not a reason to skip the bridge.
+          if (options.keepPanelOnEmpty) {
+            if (options.pendingStartHusk) {
+              const start = editors['start-date'];
+              if (!start.panel.isConnected) document.body.appendChild(start.panel);
+              start.panel.style.display = 'block';
+              start.panel.style.visibility = 'visible';
+              for (const name of RACE_ANIM) start.panel.classList.remove(name);
+              start.huskSticky = options.stickyPendingHusk !== false;
+              stats.pendingHuskRevealed = start.panel.isConnected && start.panel.style.display === 'block';
+            }
+            stats.panelConnectedAtEmptyClick = editor.panel.isConnected && editor.panel.style.display !== 'none';
+            return;
+          }
           // Live R6: the cell click unloads the panel and leaves input.value empty.
           // The writer must still ask the page-world bridge.
           if (options.closeEmpty) {
@@ -1095,9 +1119,22 @@ test('month accept runs in the page world without an inserted script', () => {
   second.className = 'el-picker-panel';
   second.style.display = 'block';
   doc.body.appendChild(second);
+  const huskIgnored = runMonthAccept(doc, '2024-06');
+  assert.equal(huskIgnored.result, 'picked');
+  assert.equal(huskIgnored.ok, true);
+  assert.equal(picks, 2);
+  const monthTable = doc.createElement('table');
+  monthTable.className = 'el-month-table';
+  panel.appendChild(monthTable);
+  panel.style.display = 'block';
+  const otherActive = doc.createElement('div');
+  otherActive.className = 'el-picker-panel el-date-picker';
+  otherActive.style.display = 'block';
+  otherActive.innerHTML = '<span class="el-date-picker__header-label">2024 年</span><table class="el-month-table"></table>';
+  doc.body.appendChild(otherActive);
   const dual = runMonthAccept(doc, '2024-06');
   assert.equal(dual.result, 'dual');
-  assert.equal(picks, 1);
+  assert.equal(picks, 2);
 
   const gone = new JSDOM('<!DOCTYPE html><body><div class="el-date-editor" id="editor"><input id="end" data-gth-month-role="input" data-gth-month-answer="2024-06" value="2024-06"></div></body>');
   const goneDoc = gone.window.document;
@@ -1711,6 +1748,80 @@ test('任职时间 calls the month bridge when a connected start husk stays pend
     assert.equal(stoppedResult.liveSupportClaimed, false, code);
     flags(stoppedResult);
     assert.equal(forbidden(stopped.clicks).length, 0, code);
+  }
+});
+
+test('任职时间 calls the month bridge when the end panel stays connected beside a pending start husk', async () => {
+  const endSeen = (bridge, endDate) => bridge.seen.filter((row) => row.answer === endDate);
+  const connectedHusk = { keepPanelOnEmpty: true, pendingStartHusk: true, stickyPendingHusk: false, preserveEndOnDismiss: true, closeClearsTyped: true };
+  for (const [startDate, endDate, mode] of [['2023-01', '2024-06', 'pick'], ['2022-03', '2023-12', 'emit']]) {
+    const { doc, clicks, context, months, bridge } = bootRace({
+      ...connectedHusk,
+      acceptVue: mode === 'pick',
+      acceptEmit: mode === 'emit',
+    });
+    const result = await context.ResumeGthWorkOpen.trial(request(workProfile({ ...ROW, startDate, endDate })));
+    const seen = endSeen(bridge, endDate);
+    assert.equal(result.ok, true, JSON.stringify({
+      startDate, endDate, mode, reason: result.reason, step: result.selectorStep,
+      picks: months.vuePicks, emits: months.vueEmits, seen, husk: months.pendingHuskRevealed,
+    }));
+    assert.equal(`${doc.getElementById('start-date').value} | ${doc.getElementById('end-date').value}`, `${startDate} | ${endDate}`);
+    assert.equal(result.fields.find((field) => field.question === '任职时间').reason, 'readback_matched');
+    assert.equal(result.liveSupportClaimed, false);
+    assert.equal(seen.length, 1);
+    assert.equal(seen[0].value, '');
+    assert.equal(seen[0].panelConnected, true);
+    assert.equal(seen[0].panelOpen, true);
+    assert.equal(months.pendingHuskRevealed, true);
+    assert.equal(months.panelConnectedAtEmptyClick, true);
+    assert.equal(months.huskDismissIgnored, 0);
+    assert.equal(months.panels.start.style.display, 'none');
+    assert.equal(months.panels.end.isConnected, true);
+    assert.equal(months.emptyCloses, 0);
+    assert.equal(months.panelRemoved, 0);
+    assert.equal(months.vuePicks, mode === 'pick' ? 1 : 0);
+    assert.equal(months.vueEmits, mode === 'emit' ? 1 : 0);
+    assert.equal(months.typedChanges, 0);
+    assert.equal(months.typedClears, 0);
+    assert.equal(months.endCellClicks, 1);
+    assert.equal(doc.getElementById('salary').value, '');
+    flags(result);
+    assert.equal(forbidden(clicks).length, 0);
+  }
+});
+
+test('任职时间 still bridges through the editor when dismiss unmounts the connected end panel', async () => {
+  const endSeen = (bridge, endDate) => bridge.seen.filter((row) => row.answer === endDate);
+  for (const [startDate, endDate] of [['2023-01', '2024-06'], ['2022-03', '2023-12']]) {
+    const { doc, clicks, context, months, bridge } = bootRace({
+      keepPanelOnEmpty: true, pendingStartHusk: true, stickyPendingHusk: false,
+      removePanelOnDismiss: true, closeClearsTyped: true, acceptEmit: true,
+    });
+    const result = await context.ResumeGthWorkOpen.trial(request(workProfile({ ...ROW, startDate, endDate })));
+    const seen = endSeen(bridge, endDate);
+    assert.equal(result.ok, true, JSON.stringify({
+      startDate, endDate, reason: result.reason, step: result.selectorStep,
+      emits: months.vueEmits, seen, husk: months.pendingHuskRevealed, removed: months.panelRemoved,
+    }));
+    assert.equal(`${doc.getElementById('start-date').value} | ${doc.getElementById('end-date').value}`, `${startDate} | ${endDate}`);
+    assert.equal(result.fields.find((field) => field.question === '任职时间').reason, 'readback_matched');
+    assert.equal(result.liveSupportClaimed, false);
+    assert.equal(seen.length, 1);
+    assert.equal(seen[0].value, '');
+    assert.equal(seen[0].panelConnected, false);
+    assert.equal(seen[0].panelOpen, false);
+    assert.equal(months.pendingHuskRevealed, true);
+    assert.equal(months.panelConnectedAtEmptyClick, true);
+    assert.equal(months.panels.end.isConnected, false);
+    assert.equal(months.panelRemoved, 1);
+    assert.equal(months.vueEmits, 1);
+    assert.equal(months.vuePicks, 0);
+    assert.equal(months.typedChanges, 0);
+    assert.equal(months.typedClears, 0);
+    assert.equal(doc.getElementById('salary').value, '');
+    flags(result);
+    assert.equal(forbidden(clicks).length, 0);
   }
 });
 

@@ -11,10 +11,12 @@
 // may close or remove the panel before the gate runs. Painted DOM is not
 // acceptance. After that click, while the input is connected, the extension
 // worker still accepts the month in the page world (handleMonthPick / emitInput,
-// no inserted script), including when the panel node is gone, the input is
-// still empty, and a start husk is still pending. That husk is dismissed and
-// is not a reason to skip the ask. A missing panel is not marked; MAIN uses
-// the editor Vue. Two still-open month panels fail closed.
+// no inserted script), including when the panel stays connected, the input is
+// still empty, and a start husk is still pending. That husk is dismissed before
+// the ask whether or not this panel is connected, and it is not a reason to
+// skip the ask. A panel still connected after the dismiss is marked for
+// handleMonthPick. A missing panel is not marked; MAIN uses the editor Vue.
+// Two active month panels fail closed.
 // picked and emitted stay. dual, bad-year, mismatch, neither pick nor
 // emit, and a blank readback after close fail closed. It waits out
 // el-zoom-in-top-enter*.

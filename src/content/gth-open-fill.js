@@ -524,9 +524,13 @@
     // retry, while the input is connected and this pass has not stopped for dual
     // or drift, always run acceptGthMonthInPage. Do not skip when the panel node
     // is gone and the input is empty, and do not skip because a leftover start
-    // husk is still pending. Dismiss that husk, then ask. A missing panel node
-    // is not marked; MAIN then uses the editor Vue. One leftover month panel is
-    // not a second editor. Two open month panels still fail closed.
+    // husk is still pending. Dismiss that husk before sendMessage whether or not
+    // this panel is still connected, then ask. Do not return without asking
+    // because the panel is connected beside one husk. If the dismiss unmounts
+    // this panel, it is not marked and MAIN uses the editor Vue. If it stays
+    // connected, it is marked so MAIN calls handleMonthPick. One leftover month
+    // husk is not a second editor. Two active month panels (a month table and
+    // one year each) still fail closed.
     // picked and emitted accept the model. dual, bad-year, and mismatch stop.
     // If the panel node is gone and neither pick nor emit runs, stop. After
     // dismiss, a blank or different value stops readback_mismatch. If the
@@ -572,12 +576,13 @@
         return years.length === 1;
       });
     }
-    // While the bound panel is connected, any other pending panel is ambiguous.
-    // After that node is gone, one leftover month husk is not a second editor.
-    // Two open month panels (a month table and one year) still conflict.
+    // One leftover month husk is not a second editor, including while the bound
+    // panel is still connected. Two other active month panels (a month table
+    // and one year each), or two active panels after this node is gone, conflict.
     function pendingMonthConflict(panel) {
-      if (panel?.isConnected) return otherPendingPanels(panel).length > 0;
-      return activeOpenMonthPanels().length > 1;
+      const active = activeOpenMonthPanels();
+      if (panel?.isConnected) return active.filter(node => node !== panel).length > 1;
+      return active.length > 1;
     }
     function panelOpenedByClick(before) {
       const pending = openMonthPanels();
@@ -674,24 +679,27 @@
     // paints the DOM, and panel close restores the empty model. The worker instead
     // runs acceptGthMonthInPage via chrome.scripting in world MAIN. That call is not
     // a page script, so script-src does not apply. A painted or typed value is still
-    // not the model: picked and emitted are the only acceptances. The panel
-    // marker is omitted when that node is already gone so MAIN can use the editor.
-    // A disconnected panel must not return before sendMessage just because a
-    // husk is still pending, and that husk is not profile_action_target_changed.
+    // not the model: picked and emitted are the only acceptances. Before
+    // sendMessage, dismiss an unrelated pending month husk whether or not this
+    // panel is still connected. One leftover husk must not skip the ask and is
+    // not profile_action_target_changed. If this panel is still connected after
+    // that dismiss, mark it so MAIN calls handleMonthPick. If the dismiss
+    // unmounts it, omit the marker so MAIN uses the editor Vue. Two active
+    // month panels still fail closed in the page world.
     async function acceptMonthInPage(panel, input, answer, company = []) {
       if (!/^\d{4}-(0[1-9]|1[0-2])$/u.test(answer)) return 'no';
       if (!document.documentElement?.isConnected || !input?.isConnected) return 'no';
       const panelLive = () => !!panel?.isConnected;
-      if (!panelLive() && openMonthPanels().length) {
+      if (otherPendingPanels(panel).length || (!panelLive() && openMonthPanels().length)) {
         await dismissMonthSurfaces(company);
-        if (openMonthPanels().length > 1) await waitUntil(() => openMonthPanels().length <= 1 ? true : null, 400);
+        if (activeOpenMonthPanels().length > 1) {
+          await waitUntil(() => activeOpenMonthPanels().length <= 1 ? true : null, 400);
+        }
       }
-      if (panelLive() && otherPendingPanels(panel).length) return 'no';
       let result = 'pending';
       try {
         await boundAction(() => {
           if (!input.isConnected) stop('profile_action_target_changed');
-          if (panelLive() && otherPendingPanels(panel).length) stop('profile_action_target_changed');
           input.setAttribute('data-gth-month-role', 'input');
           input.setAttribute('data-gth-month-answer', answer);
           input.setAttribute('data-gth-month-result', 'pending');
@@ -815,19 +823,19 @@
           await guardedClick(monthCell, boundAction);
           matched = await waitUntil(readMonth, 320);
         }
-        if (matched?.bad === 'drift' || drifted() || (panel?.isConnected && (matched?.bad === 'dual' || otherPendingPanels(panel).length))) {
+        if (matched?.bad === 'drift' || drifted()) {
           await dismissMonthSurfaces(company);
           stop('control_not_supported');
         }
         // DOM paint is not model acceptance. readMonth seeing the target does
         // not skip MAIN. After the cell click, while this input is connected
-        // and this pass has not stopped for dual or drift, always ask the
-        // page-world bridge. A removed panel and an empty input do not skip
-        // it, including when a start husk is still pending. Dismiss that husk
-        // first. The panel marker is omitted when that node is gone so the
-        // editor Vue can pick or emit. picked/emitted continue; dual, bad-year,
-        // and mismatch stop. Neither pick nor emit on a missing panel stops. An
-        // unavailable bridge does not type over a painted value.
+        // and this pass has not stopped for drift, always ask the page-world
+        // bridge. A connected panel beside one pending start husk does not
+        // skip it: dismiss that husk, then ask. If the panel stays connected,
+        // mark it for handleMonthPick. If the dismiss unmounts it, omit the
+        // marker so the editor Vue can pick or emit. picked/emitted continue;
+        // dual, bad-year, and mismatch stop. Neither pick nor emit on a missing
+        // panel stops. An unavailable bridge does not type over a painted value.
         const currentValue = norm(input.value);
         const painted = currentValue !== '';
         const showsTarget = currentValue === answer;

@@ -84,11 +84,41 @@ function installGthFullLive(doc, options) {
     const href = node?.getAttribute('href')?.trim();
     return !!href && href !== '#' && !/^javascript:(?:;|void\(0\))$/iu.test(href);
   }
+  // The work writer only accepts an already-open form. Reuse the section
+  // probe's record-first opener, defaulting to its first record. A title 编辑
+  // is a fallback only for one record without an edit; an empty card may use
+  // its existing 添加/新增 affordance. Never treat a delete icon as an edit.
+  function workOpeningControls(section) {
+    const entries = [...section.querySelectorAll('.sec-context > .sec-detail')]
+      .filter(node => node.closest('.r-section') === section);
+    const titleLinks = [...section.querySelectorAll('.title_ a.h-e-btn')]
+      .filter(node => node.closest('.r-section') === section);
+    const name = node => norm(node.getAttribute('aria-label') || node.textContent);
+    const notDelete = node => !node.matches('.eduexp-opt-icon,.el-icon-delete')
+      && !node.querySelector('.eduexp-opt-icon,.el-icon-delete')
+      && !/delete\.json/iu.test((node.getAttribute('url') || '') + ' ' + (node.getAttribute('href') || ''));
+    const edits = nodes => nodes.filter(node => notDelete(node) && !node.closest(PANEL_SELECTOR)
+      && (name(node) === '编辑' || name(node) === '' && node.querySelector('.el-icon-edit-outline,.el-icon-edit')));
+    const titleEdits = edits(titleLinks).filter(node => name(node) === '编辑');
+    if (entries.length) {
+      const recordEdits = edits([...entries[0].querySelectorAll('a')]
+        .filter(node => node.closest('.sec-context > .sec-detail') === entries[0]));
+      if (recordEdits.length || entries.length > 1) {
+        return { links: recordEdits, kind: 'record_edit', entryIndex: 0, entryCount: entries.length };
+      }
+      return { links: titleEdits, kind: 'title_edit', entryIndex: 0, entryCount: 1 };
+    }
+    if (titleEdits.length) return { links: titleEdits, kind: 'title_edit', entryCount: 0 };
+    return { links: titleLinks.filter(node => notDelete(node) && ['添加', '新增'].includes(name(node))),
+      kind: 'title_add', entryCount: 0 };
+  }
   function snapshot(sectionIndex) {
     const list = sections();
     const section = list[sectionIndex];
-    const links = section ? [...section.querySelectorAll('.title_ a.h-e-btn')]
-      .filter(node => norm(node.textContent) === '编辑') : [];
+    const work = sectionIndex === 3 && section && !section.querySelector('form')
+      ? workOpeningControls(section) : null;
+    const links = work?.links || (section ? [...section.querySelectorAll('.title_ a.h-e-btn')]
+      .filter(node => norm(node.textContent) === '编辑') : []);
     const shownLinks = links.filter(visible);
     return {
       ...state(),
@@ -259,9 +289,17 @@ function installGthFullLive(doc, options) {
     if (form && isWriterRegionCheckbox(node, form)) return { allowed: true, kind: 'picker_option', reason: null };
     if (!visible(node)) return denied;
     const edit = node.closest('.title_ a.h-e-btn');
-    if (edit && norm(edit.textContent) === '编辑' && !wouldNavigate(edit)
+    if (activeSectionIndex !== 3 && edit && norm(edit.textContent) === '编辑' && !wouldNavigate(edit)
         && edit.closest('.r-section') === sections()[activeSectionIndex] && forms().length === 0) {
       return { allowed: true, kind: 'edit', reason: null };
+    }
+    if (activeSectionIndex === 3 && forms().length === 0) {
+      const work = workOpeningControls(sections()[3]);
+      const candidates = work.links.filter(visible);
+      const anchor = node.closest('a');
+      if (candidates.length === 1 && anchor === candidates[0] && !anchor.closest('form')) {
+        return { allowed: true, kind: work.kind === 'title_add' ? 'add' : 'edit', reason: null };
+      }
     }
     // Education's current writer opens an existing record through its icon,
     // or starts a new one through 添加/新增. These are the existing page roles.
@@ -409,9 +447,14 @@ function installGthFullLive(doc, options) {
     if (decision.action === 'stop') return { ok: false, openedByUs: false, ...decision };
     activeSectionIndex = sectionIndex;
     const openedByUs = decision.action === 'click_edit';
+    const work = sectionIndex === 3 && openedByUs ? workOpeningControls(sections()[3]) : null;
     if (openedByUs) {
-      const link = [...sections()[sectionIndex].querySelectorAll('.title_ a.h-e-btn')]
-        .find(node => norm(node.textContent) === '编辑' && visible(node));
+      const link = work ? work.links.find(visible)
+        : [...sections()[sectionIndex].querySelectorAll('.title_ a.h-e-btn')]
+          .find(node => norm(node.textContent) === '编辑' && visible(node));
+      if (work && !classifyClick(link).allowed) {
+        return { ok: false, openedByUs: false, action: 'stop', reason: 'control_not_supported', detail: 'edit_not_safe' };
+      }
       link.click();
     }
     const ready = await waitFor(() => {
@@ -419,7 +462,10 @@ function installGthFullLive(doc, options) {
       return decideOpen(shot).action === 'already_open' && !!activeForm()?.querySelector('.el-form-item');
     });
     return ready
-      ? { ok: true, openedByUs, alreadyOpen: !openedByUs, action: decision.action }
+      ? { ok: true, openedByUs, alreadyOpen: !openedByUs,
+        action: work?.kind === 'title_add' ? 'click_add' : decision.action,
+        ...(work ? { opener: work.kind, entryCount: work.entryCount,
+          ...(work.entryIndex == null ? {} : { entryIndex: work.entryIndex }) } : {}) }
       : { ok: false, openedByUs, reason: state().visible ? 'editor_items_not_rendered' : 'page_hidden' };
   }
   // Click 取消 first. If the form only hides, or a picker panel stays

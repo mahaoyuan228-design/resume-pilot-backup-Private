@@ -4,7 +4,7 @@
  * Run from the repository root with an already-open Edge resume tab:
  *   $env:PORT='9239'; $env:OUTDIR=Join-Path ([Environment]::GetFolderPath('Desktop')) 'ResumeQuickFill-Dev\_temp-scripts'; node scripts/live/cms-education-live.mjs
  *
- * Exactly one existing education row is required. No Add, edit, select, date,
+ * ROW_INDEX (default 0) selects one existing education row. No Add, edit, select, date,
  * Save, Submit, or Apply control is clicked. The shipped record controller
  * writes 专业名称 / 专业描述; the shipped public-props reader and verifier
  * check React serialization. Other education fields stay unsupported.
@@ -28,7 +28,7 @@ import {
 
 export { readPort, readOutDir, readStepTimeout, classifyCmsTabUrl, selectCmsResumeTarget };
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
-export const BASE_TIP = '4280724552f47e6d04309ceb49c61e3092351ce5';
+export const BASE_TIP = '947e318e42c8f3b3dcb52111848989d3280ce0bc';
 export const DEFAULT_PORT = 9239;
 export const EVIDENCE_NAME = 'cms-education-live.json';
 export const READBACK_WAIT_MS = 500;
@@ -43,16 +43,32 @@ export const HELP = `Usage (Windows PowerShell, repository root):
   ${POWERSHELL}
 
 Never-Save trial. Attach to the already-open baseline 招商 CMS resume tab using Edge CDP.
-Exactly one existing education row; 专业名称 and 专业描述 only.
+Select one existing education row with ROW_INDEX; 专业名称 and 专业描述 only.
+All other rows are bound with no ready facts and must remain unchanged.
+Supports 1–30 existing rows (the shipped planner's limit); never adds rows.
 No navigation, login, Add, clicks, 保存/提交/投递, or non-GET requests.
 Close menus first and leave the tab alone during the trial. Originals are
 restored and verified. liveSupportClaimed remains false; no live-site claim.
 
   PORT              Loopback CDP port. Default 9239
   OUTDIR            Evidence directory. Default current directory
+  ROW_INDEX         Zero-based existing row in controller/DOM order. Default 0
   STEP_TIMEOUT_MS   Per CDP call timeout, 1000–120000. Default 30000
 Evidence: ${EVIDENCE_NAME}
 `;
+
+export function readRowIndex(env = process.env) {
+  const value = env.ROW_INDEX ?? '0';
+  if (typeof value !== 'string' || !/^\d+$/u.test(value) || !Number.isSafeInteger(Number(value))) {
+    throw new Error('ROW_INDEX must be a nonnegative safe integer');
+  }
+  return Number(value);
+}
+
+export function fieldSpecsForRow(rowIndex = 0) {
+  if (!Number.isSafeInteger(rowIndex) || rowIndex < 0) throw new Error('education_row_index_invalid');
+  return FIELD_SPECS.map((spec) => ({ ...spec, path: spec.path.replace('education.0.', `education.${rowIndex}.`) }));
+}
 
 export function isNonGetMethod(method) {
   return String(method ?? '').toUpperCase() !== 'GET';
@@ -81,29 +97,40 @@ export function partitionTraffic(rows) {
   return { nonGet: nonGet.slice(0, 80), saveLikePost: nonGet.slice(0, 80) };
 }
 
-export function fixtureProfile() {
+export function fixtureProfile(rowIndex = 0, recordCount = rowIndex + 1) {
+  const specs = fieldSpecsForRow(rowIndex);
+  if (!Number.isInteger(recordCount) || recordCount < 1 || recordCount > 30) throw new Error('education_row_count_not_supported');
+  if (rowIndex >= recordCount) throw new Error('education_row_index_out_of_range');
   return {
-    education: [{ major: FIELD_SPECS[0].fixture, majorDescription: FIELD_SPECS[1].fixture }],
-    confirmedFields: FIELD_SPECS.map((spec) => spec.path)
+    education: Array.from({ length: recordCount }, (_unused, index) => index === rowIndex
+      ? { major: specs[0].fixture, majorDescription: specs[1].fixture } : {}),
+    confirmedFields: specs.map((spec) => spec.path)
   };
 }
 
-export async function createLivePlan(identity) {
-  const profile = fixtureProfile();
+export async function createLivePlan(identityOrIdentities, rowIndex = 0) {
+  const identities = Array.isArray(identityOrIdentities) ? identityOrIdentities : [identityOrIdentities];
+  const profile = fixtureProfile(rowIndex, identities.length);
   const binding = await ownerBindingFor(profile, '00000000-0000-4000-8000-0000000000ed');
-  const source = await sourceSnapshot(profile, 0);
-  return createPlan(profile, [{ profileIndex: 0, sourceSnapshotHash: source.hash,
-    target: { mode: 'existing', identity }, replaceExisting: true }], [], binding);
+  // The shipped writer/verifier require every existing row to be bound. Empty
+  // source rows produce only skipped facts: no applicant values leave the page,
+  // and only the selected row is authorized for text writes/replacement.
+  const requests = await Promise.all(identities.map(async (identity, profileIndex) => ({
+    profileIndex, sourceSnapshotHash: (await sourceSnapshot(profile, profileIndex)).hash,
+    target: { mode: 'existing', identity }, replaceExisting: profileIndex === rowIndex
+  })));
+  return createPlan(profile, requests, [], binding);
 }
 
 // Copy the shipped read-only serialization module into this evaluation's
 // closure. No selectors, React handlers, or write adapters are invented here.
-export function buildPageExpression(root = repoRoot) {
+export function buildPageExpression(root = repoRoot, rowIndex = 0) {
   const serialization = fs.readFileSync(path.join(root, 'src/content/cms-education-serialization.mjs'), 'utf8')
     .replace(/^export /gmu, '');
   return `(() => {
     ${serialization}
-    const FIELD_SPECS = ${JSON.stringify(FIELD_SPECS)};
+    const FIELD_SPECS = ${JSON.stringify(fieldSpecsForRow(rowIndex))};
+    const ROW_INDEX = ${rowIndex};
     const READBACK_WAIT_MS = ${READBACK_WAIT_MS};
     const isNonGetMethod = ${isNonGetMethod.toString()};
     const redactUrl = ${redactUrl.toString()};
@@ -219,35 +246,59 @@ function installEducationTrial(view, page, readSerialization, verifySerializatio
   function readProof() {
     const proof = readSerialization();
     if (!proof?.ok) fail(proof?.reason || 'education_serialization_unavailable');
+    if (prepared && !sameRecordSet(proof.rows)) fail('education_binding_changed');
     return proof;
+  }
+  function sameRecordSet(records) {
+    return records.length === prepared.identities.length
+      && records.every((row, index) => row.identity === prepared.identities[index]);
   }
   function proofSnapshot(proof) {
     // Ant can materialize an absent empty field as '' after cleanup. Both
     // serialize to an omitted DTO key. Normalize only the two empty originals,
     // never another control or the serialized payload itself.
     const rows = proof.rows.map((row) => ({ ...row, fields: row.fields.map((field) => {
-      if (!prepared?.originals.some(({ spec, value }) => spec.q === field.question && value === '')) return field;
+      if (row.identity !== prepared?.identity
+        || !prepared.originals.some(({ spec, value }) => spec.q === field.question && value === '')) return field;
       return { ...field, raw: field.raw ?? '', display: field.display ?? '', serialized: field.serialized ?? '' };
     }) }));
     return stable({ rows, serialized: proof.serialized });
+  }
+  function protectedProofSnapshot(proof) {
+    // Only the selected row's two text values may change. Preserve all other
+    // public props and DTO values, including absent vs empty in untouched rows.
+    const serialized = proof.serialized.set_14.map((record) => ({ ...record }));
+    const rows = proof.rows.map((row, index) => ({ ...row, fields: row.fields.map((field) => {
+      if (row.identity !== prepared.identity || !FIELD_SPECS.some((spec) => spec.q === field.question)) return field;
+      delete serialized[index]['item_' + field.oldItemId];
+      return { ...field, raw: null, display: null, serialized: null };
+    }) }));
+    return stable({ rows, serialized });
   }
   function outsideSnapshot(targets) {
     const skip = new Set(targets);
     return stable([...doc.querySelectorAll('input,textarea,select,.ant-select-selection-selected-value,.ant-select-selection-item')]
       .filter((node) => !skip.has(node)).map((node) => [node.tagName, node.type || '', node.value ?? node.textContent ?? '', !!node.checked, node.selectedIndex ?? null]));
   }
-  function locate(spec) {
-    const controller = view.ResumeCmsEducationMulti;
-    const state = controller.inspect();
-    if (!state.ok || state.records.length !== 1 || state.records[0].identity !== prepared.identity) fail('education_binding_changed');
-    const field = controller.locateField(state.form, prepared.identity, spec.q);
+  function boundState() {
+    const state = view.ResumeCmsEducationMulti.inspect();
+    if (!state.ok || !sameRecordSet(state.records)) fail('education_binding_changed');
+    return state;
+  }
+  function locate(spec, state = boundState()) {
+    const field = view.ResumeCmsEducationMulti.locateField(state.form, prepared.identity, spec.q);
     const input = field?.input;
     if (field?.kind !== 'text' || !input || input.disabled || input.readOnly
       || !(input instanceof view.HTMLTextAreaElement || input instanceof view.HTMLInputElement && input.type === 'text')
       || input.closest('.ant-select,.ant-calendar-picker,.ant-picker,.el-date-editor,.el-select,.el-cascader,.cascader-wrap,.cascader-plugins-wrap')) fail('control_not_supported');
     return input;
   }
+  function targetInputs() {
+    const state = boundState();
+    return FIELD_SPECS.map((spec) => locate(spec, state));
+  }
   function prepare() {
+    let recordCount = null;
     try {
       if (prepared) fail('trial_already_prepared');
       safetyCheck();
@@ -256,13 +307,15 @@ function installEducationTrial(view, page, readSerialization, verifySerializatio
       if (typeof controller?.inspect !== 'function' || typeof controller?.run !== 'function') fail('education_module_unavailable');
       const state = controller.inspect();
       if (!state.ok) fail(state.reason);
-      if (state.records.length !== 1) fail('education_single_existing_row_required');
-      prepared = { identity: state.records[0].identity, href: view.location.href, timeOrigin: view.performance.timeOrigin, originals: [] };
+      recordCount = state.records.length;
+      if (ROW_INDEX >= recordCount) fail('education_row_index_out_of_range');
+      if (recordCount > 30) fail('education_row_count_not_supported');
+      prepared = { identity: state.records[ROW_INDEX].identity, identities: state.records.map((row) => row.identity),
+        href: view.location.href, timeOrigin: view.performance.timeOrigin, originals: [] };
       const proof = readProof();
-      if (proof.rows.length !== 1 || proof.rows[0].identity !== prepared.identity) fail('education_binding_changed');
       for (const spec of FIELD_SPECS) {
         const input = locate(spec);
-        const fields = proof.rows[0].fields.filter((field) => field.question === spec.q);
+        const fields = proof.rows[ROW_INDEX].fields.filter((field) => field.question === spec.q);
         const field = fields[0];
         if (fields.length !== 1 || ![1, 6].includes(field.fillType) || field.customDataSource
           || ![null, 'string'].includes(field.raw === null ? null : typeof field.raw)
@@ -270,16 +323,17 @@ function installEducationTrial(view, page, readSerialization, verifySerializatio
         prepared.originals.push({ spec, value: input.value });
       }
       prepared.proof = proofSnapshot(proof);
-      prepared.others = outsideSnapshot(FIELD_SPECS.map(locate));
-      return { ok: true, identity: prepared.identity };
-    } catch (error) { prepared = null; return { ok: false, reason: safeReason(error) }; }
+      prepared.protectedProof = protectedProofSnapshot(proof);
+      prepared.others = outsideSnapshot(targetInputs());
+      return { ok: true, rowIndex: ROW_INDEX, recordCount, identity: prepared.identity, identities: prepared.identities.slice() };
+    } catch (error) { prepared = null; return { ok: false, reason: safeReason(error), rowIndex: ROW_INDEX, recordCount }; }
   }
 
   async function restore() {
     pageCheck();
     if (prepared.originals.every(({ spec, value }) => locate(spec).value === value)
       && proofSnapshot(readProof()) === prepared.proof
-      && outsideSnapshot(FIELD_SPECS.map(locate)) === prepared.others) {
+      && outsideSnapshot(targetInputs()) === prepared.others) {
       return { ok: true, via: 'not_needed', otherChanged: false };
     }
     let changed = false;
@@ -300,12 +354,14 @@ function installEducationTrial(view, page, readSerialization, verifySerializatio
     pageCheck();
     const domMatch = prepared.originals.every(({ spec, value }) => locate(spec).value === value);
     const propsMatch = proofSnapshot(readProof()) === prepared.proof;
-    changed = outsideSnapshot(FIELD_SPECS.map(locate)) !== prepared.others;
+    changed = outsideSnapshot(targetInputs()) !== prepared.others
+      || protectedProofSnapshot(readProof()) !== prepared.protectedProof;
     return { ok: domMatch && propsMatch && !changed, via: 'native_events', otherChanged: changed };
   }
 
   async function execute(plan) {
     const result = { ok: false, reason: 'not_run', liveSupportClaimed: false, readbacks: [],
+      rowIndex: ROW_INDEX, recordCount: prepared?.identities.length ?? null,
       restored: false, pageLeftAsFound: false, otherChanged: false, waitedMs: 0, productReason: null };
     let writeStarted = false;
     try {
@@ -315,29 +371,33 @@ function installEducationTrial(view, page, readSerialization, verifySerializatio
       const session = await view.ResumeCmsSession?.check();
       if (session?.authenticated !== true) fail(session?.reason || 'site_session_unverified');
       safetyCheck();
-      const record = plan?.records?.[0];
-      if (plan?.page !== page || plan.records.length !== 1 || record.profileIndex !== 0
-        || record.target?.mode !== 'existing' || record.target.identity !== prepared.identity || record.replaceExisting !== true
+      const record = plan?.records?.[ROW_INDEX];
+      if (plan?.page !== page || !Array.isArray(plan.records) || plan.records.length !== prepared.identities.length
+        || plan.records.some((item, index) => item?.profileIndex !== index || item.target?.mode !== 'existing'
+          || item.target.identity !== prepared.identities[index] || item.replaceExisting !== (index === ROW_INDEX)
+          || !item.facts || Object.entries(item.facts).some(([key, fact]) => fact?.status === 'ready'
+            && (index !== ROW_INDEX || !FIELD_SPECS.some((spec) => spec.key === key))))
         || !plan.ownerBinding || FIELD_SPECS.some((spec) => record.facts?.[spec.key]?.status !== 'ready'
-          || record.facts[spec.key].value !== spec.fixture || record.facts[spec.key].path !== spec.path)
-        || Object.entries(record.facts).some(([key, fact]) => !FIELD_SPECS.some((spec) => spec.key === key) && fact.status === 'ready')) fail('education_trial_plan_invalid');
+          || record.facts[spec.key].value !== spec.fixture || record.facts[spec.key].path !== spec.path)) fail('education_trial_plan_invalid');
       const digest = await view.crypto.subtle.digest('SHA-256', new view.TextEncoder().encode(stable({ ...plan, fingerprint: undefined })));
       const fingerprint = [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, '0')).join('');
       if (fingerprint !== plan.fingerprint) fail('education_plan_changed');
       activePlan = stable(plan);
-      if (proofSnapshot(readProof()) !== prepared.proof || outsideSnapshot(FIELD_SPECS.map(locate)) !== prepared.others
+      if (proofSnapshot(readProof()) !== prepared.proof || outsideSnapshot(targetInputs()) !== prepared.others
         || prepared.originals.some(({ spec, value }) => locate(spec).value !== value)) fail('education_original_state_changed');
       const check = () => {
         safetyCheck();
         if (stable(plan) !== activePlan) fail('education_plan_changed');
-        FIELD_SPECS.forEach(locate);
+        if (outsideSnapshot(targetInputs()) !== prepared.others
+          || protectedProofSnapshot(readProof()) !== prepared.protectedProof) fail('other_values_changed');
         return true;
       };
       writeStarted = true;
       const product = await view.ResumeCmsEducationMulti.run(plan, {
         verifyBeforeWrite: check,
         checkOwner: (owner) => check() && stable(owner) === stable(plan.ownerBinding),
-        checkSource: (index, hash) => check() && index === 0 && hash === record.sourceSnapshotHash,
+        checkSource: (index, hash) => check() && Number.isInteger(index) && index >= 0
+          && index < plan.records.length && hash === plan.records[index].sourceSnapshotHash,
         readSerialization: async () => { await wait(READBACK_WAIT_MS); check(); return readProof(); },
         verifySerialization
         // No school/select/date/region adapters: they cannot be clicked.
@@ -349,13 +409,14 @@ function installEducationTrial(view, page, readSerialization, verifySerializatio
       const verified = verifySerialization(plan, product.bindings || [], proof);
       result.waitedMs = READBACK_WAIT_MS;
       result.readbacks = FIELD_SPECS.map((spec) => {
-        const fields = product.fields?.filter((field) => field.key === spec.key && field.path === spec.path) || [];
-        const serialized = verified.records?.[0]?.fields.filter((field) => field.key === spec.key) || [];
-        const ok = product.ok === true && fields.length === 1 && fields[0].status === 'verified'
+        const fields = product.fields?.filter((field) => field.profileIndex === ROW_INDEX && field.key === spec.key && field.path === spec.path) || [];
+        const serialized = verified.records?.find((row) => row.profileIndex === ROW_INDEX)?.fields.filter((field) => field.key === spec.key) || [];
+        const ok = product.ok === true && verified.ok === true && fields.length === 1 && fields[0].status === 'verified'
           && serialized.length === 1 && serialized[0].status === 'verified' && locate(spec).value === spec.fixture;
         return { path: spec.path, ok, reason: ok ? 'readback_matched' : 'readback_mismatch', value: ok ? spec.fixture : null };
       });
-      result.otherChanged = outsideSnapshot(FIELD_SPECS.map(locate)) !== prepared.others;
+      result.otherChanged = outsideSnapshot(targetInputs()) !== prepared.others
+        || protectedProofSnapshot(proof) !== prepared.protectedProof;
       if (product.addClicks || product.saveClicks || product.deleteClicks || product.finalSubmitClicks) fail('click_not_allowed');
       if (result.otherChanged) fail('other_values_changed');
       if (!product.ok || result.readbacks.some((row) => !row.ok)) fail('readback_mismatch');
@@ -402,9 +463,9 @@ function installEducationTrial(view, page, readSerialization, verifySerializatio
   return { ok: true };
 }
 
-function plannedFields(reason = 'not_run') {
+function plannedFields(reason = 'not_run', specs = FIELD_SPECS) {
   return [
-    ...FIELD_SPECS.map((spec) => ({ q: spec.q, path: spec.path, status: 'failed', reason, value: null })),
+    ...specs.map((spec) => ({ q: spec.q, path: spec.path, status: 'failed', reason, value: null })),
     ...UNCLAIMED.map((q) => ({ q, status: 'skipped', reason: 'control_not_supported', value: null }))
   ];
 }
@@ -414,13 +475,16 @@ export function evidenceExitCode(evidence) {
   if ((evidence?.nonGet || []).length || (evidence?.saveLikePost || []).length || details.clickCount > 0
     || details.reason === 'non_get_request' || details.reason === 'click_not_allowed' || details.reason === 'refusing_forbidden_click') return 3;
   if (['timeout', 'cdp_unreachable', 'cdp_endpoint_invalid', 'cdp_targets_invalid', 'interception_failed', 'network_guard_failed'].includes(details.reason)) return 1;
+  if (!Number.isInteger(details.recordCount) || details.recordCount < 1 || details.recordCount > 30
+    || !Number.isSafeInteger(details.rowIndex) || details.rowIndex < 0 || details.rowIndex >= details.recordCount) return 2;
+  const specs = fieldSpecsForRow(details.rowIndex);
   const fields = evidence?.fields || [];
   const ok = evidence?.neverSave === true && evidence.liveSupportClaimed === false
     && details.liveSupportClaimed === false && details.moduleClaimedSupport === false
     && !details.reason && details.restored === true && details.pageLeftAsFound === true
     && details.cleanupOk === true && details.otherChanged === false
     && fields.length === FIELD_SPECS.length + UNCLAIMED.length
-    && FIELD_SPECS.every((spec, index) => fields[index]?.q === spec.q && fields[index]?.path === spec.path
+    && specs.every((spec, index) => fields[index]?.q === spec.q && fields[index]?.path === spec.path
       && fields[index]?.status === 'verified' && fields[index]?.reason === 'readback_matched' && fields[index]?.value === spec.fixture)
     && UNCLAIMED.every((q, index) => fields[index + FIELD_SPECS.length]?.q === q
       && fields[index + FIELD_SPECS.length]?.status === 'skipped'
@@ -433,6 +497,8 @@ export async function runCmsEducationLive(options = {}) {
   const port = options.port ?? readPort(env);
   const outDir = options.outDir || readOutDir(env);
   const stepTimeoutMs = options.stepTimeoutMs ?? readStepTimeout(env);
+  const rowIndex = options.rowIndex ?? readRowIndex(env);
+  const specs = fieldSpecsForRow(rowIndex);
   const root = options.repoRoot || repoRoot;
   const tipSha = options.tipSha || readTipSha(root);
   const filePath = path.join(outDir, EVIDENCE_NAME);
@@ -451,6 +517,7 @@ export async function runCmsEducationLive(options = {}) {
   let interceptionFailed = false;
   let href = null;
   let tabAction = 'none';
+  let recordCount = null;
   const safeReason = (value, fallback) => typeof value === 'string' && /^[a-z0-9_]+$/u.test(value) ? value : fallback;
   const recordTraffic = (request, via) => {
     if (trafficRows.length < 160 && isNonGetMethod(request?.method)) trafficRows.push({ method: request?.method, url: request?.url, via });
@@ -515,7 +582,7 @@ export async function runCmsEducationLive(options = {}) {
       else if (guard?.visible !== 'visible') reason = 'page_hidden';
       stopIfTraffic();
       if (!reason) {
-        const install = await evaluate(buildPageExpression(root), 'install_live');
+        const install = await evaluate(buildPageExpression(root, rowIndex), 'install_live');
         installed = install?.ok === true;
         if (!installed) reason = safeReason(install?.reason, 'guard_install_failed');
       }
@@ -530,9 +597,12 @@ export async function runCmsEducationLive(options = {}) {
       if (!reason) {
         stopIfTraffic();
         const prepared = await evaluate('globalThis.__cmsEducationLive.prepare()', 'education_prepare');
+        recordCount = Number.isSafeInteger(prepared?.recordCount) && prepared.recordCount >= 0 ? prepared.recordCount : null;
         if (!prepared?.ok) reason = safeReason(prepared?.reason, 'control_not_supported');
+        else if (prepared.rowIndex !== rowIndex || !Array.isArray(prepared.identities)
+          || prepared.identities.length !== recordCount || prepared.identity !== prepared.identities[rowIndex]) reason = 'education_binding_changed';
         else {
-          const plan = await createLivePlan(prepared.identity);
+          const plan = await createLivePlan(prepared.identities, rowIndex);
           stopIfTraffic();
           outcome = await evaluate(`globalThis.__cmsEducationLive.run(${JSON.stringify(plan)})`, 'education_run', true);
           if (outcome?.ok !== true) reason = safeReason(outcome?.reason, 'control_not_supported');
@@ -585,20 +655,21 @@ export async function runCmsEducationLive(options = {}) {
   else if (traffic.nonGet.length) reason = 'non_get_request';
   else if (interceptionFailed) reason = 'interception_failed';
   const verified = !reason && cleanupOk && outcome?.ok === true && outcome.liveSupportClaimed === false
+    && outcome.rowIndex === rowIndex && outcome.recordCount === recordCount
     && outcome.restored === true && outcome.pageLeftAsFound === true && outcome.otherChanged === false
-    && outcome.waitedMs >= READBACK_WAIT_MS && FIELD_SPECS.every((spec) => {
+    && outcome.waitedMs >= READBACK_WAIT_MS && specs.every((spec) => {
       const found = outcome.readbacks?.filter((row) => row.path === spec.path) || [];
       return found.length === 1 && found[0].ok === true && found[0].reason === 'readback_matched' && found[0].value === spec.fixture;
     });
   if (!verified) reason ||= 'readback_mismatch';
-  const fields = plannedFields(reason);
-  if (verified) for (let index = 0; index < FIELD_SPECS.length; index += 1) Object.assign(fields[index], {
-    status: 'verified', reason: 'readback_matched', value: FIELD_SPECS[index].fixture
+  const fields = plannedFields(reason, specs);
+  if (verified) for (let index = 0; index < specs.length; index += 1) Object.assign(fields[index], {
+    status: 'verified', reason: 'readback_matched', value: specs[index].fixture
   });
   const evidence = {
     tipSha, neverSave: true, liveSupportClaimed: false, fields, ...traffic,
     finalDetails: {
-      baseTip: BASE_TIP, port, href, tabAction, reason, steps,
+      baseTip: BASE_TIP, port, rowIndex, recordCount, href, tabAction, reason, steps,
       neverSave: true, liveSupportClaimed: false, moduleClaimedSupport: false,
       clickCount: clicks.length, bannedClick: clickDecision.banned === true,
       cleanupOk, restored: outcome?.restored === true, pageLeftAsFound: outcome?.pageLeftAsFound === true,
@@ -606,8 +677,8 @@ export async function runCmsEducationLive(options = {}) {
       waitedMs: Number(outcome?.waitedMs) || 0, productReason: safeReason(outcome?.productReason, null),
       limits: [
         'Offline-tested fixture trial only. No live site support is claimed.',
-        'Exactly one existing row, bound by the shipped education controller identity; zero Add or widget clicks.',
-        'Only education.0.major and education.0.majorDescription are confirmed. No widget adapters are injected.',
+        'ROW_INDEX selects one existing row by the shipped controller identity; all other rows are bound with no ready facts and must stay unchanged. Zero Add or widget clicks.',
+        `Only education.${rowIndex}.major and education.${rowIndex}.majorDescription are confirmed. No widget adapters are injected.`,
         'Trial writes use ResumeCmsEducationMulti.run and its native text writer; DOM and shipped React serialization proof must match.',
         'Cleanup uses native setters, input/change, and real focus/blur to preserve exact original text, including empty strings. Original values and proof stay in the page.',
         'All clicks and form submissions are blocked. Every non-GET, including HEAD/OPTIONS, fails; CDP interception is mandatory.',
@@ -633,7 +704,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
       process.exitCode = evidence.finalDetails.exitCode;
     }
   } catch {
-    process.stderr.write('CMS education live runner failed; check PORT, OUTDIR, and STEP_TIMEOUT_MS.\n');
+    process.stderr.write('CMS education live runner failed; check PORT, OUTDIR, ROW_INDEX, and STEP_TIMEOUT_MS.\n');
     process.exitCode = 1;
   }
 }

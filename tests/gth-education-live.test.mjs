@@ -13,6 +13,8 @@ import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { JSDOM } from 'jsdom';
 import {
+  ALL_QUESTIONS,
+  COMPLEX_QUESTIONS,
   BASE_TIP,
   EDUCATION_INDEX,
   FILL_QUESTIONS,
@@ -200,7 +202,9 @@ test('the fixed request confirms only plain education facts', () => {
   assert.equal(fresh.rowIndex, undefined);
   assert.deepEqual(fresh.educationCandidates[0].confirmedPaths, ['education.0.school', 'education.0.gpa']);
   assert.deepEqual(readFillFields({}), [...FILL_QUESTIONS]);
-  assert.throws(() => readFillFields({ FIELDS: '学历' }), /bad fields/);
+  assert.deepEqual(readFillFields({ FIELDS: '学历' }), ['学历']);
+  assert.throws(() => readFillFields({ FIELDS: '不存在' }), /bad fields/);
+  assert.throws(() => liveFillRequest({ FIELDS: '学历' }), /missing DEGREE/);
   assert.throws(() => readTargetMode({ TARGET_MODE: 'add' }), /bad target-mode/);
   assert.throws(() => readRowIndex({ ROW_INDEX: '30' }), /bad row-index/);
   assert.deepEqual(LIVE_FILES, ['src/content/gth-education.js']);
@@ -619,4 +623,102 @@ test('fullTrial new mode clicks 添加 and still does not save', async () => {
   assert.deepEqual(page.clicks, ['添加', '取消']);
   assert.equal(page.clicks.includes('保存'), false);
   assert.equal(page.clicks.includes('编辑'), false);
+});
+
+
+const complexEnv = {
+  FIELDS: '学历,是否统招,在校时间,专业类别', DEGREE: '本科',
+  UNIFIED_ADMISSIONS: '是', START_DATE: '2020-09', END_DATE: '2024-06', MAJOR_CATEGORY: '经济学/金融学'
+};
+
+test('complex trial inputs are explicit, validated, and date confirmation covers both endpoints', () => {
+  const request = liveFillRequest(complexEnv);
+  assert.deepEqual(request.educationCandidates[0], {
+    profileIndex: 0,
+    confirmedPaths: ['education.0.degree', 'education.0.unifiedAdmissions', 'education.0.startDate', 'education.0.endDate', 'education.0.majorCategory'],
+    degree: '本科', unifiedAdmissions: '是', startDate: '2020-09', endDate: '2024-06', majorCategory: '经济学/金融学'
+  });
+  assert.equal(expectedReadback(complexEnv)['在校时间'], '2020-09 至 2024-06');
+  for (const [variable, value] of [['DEGREE', ''], ['UNIFIED_ADMISSIONS', '1'], ['START_DATE', '2020-13'], ['END_DATE', '2019-09'], ['MAJOR_CATEGORY', '经济学//金融学']]) {
+    assert.throws(() => liveFillRequest({ ...complexEnv, [variable]: value }), /missing|bad/, variable);
+  }
+  assert.throws(() => liveFillRequest({ FIELDS: '在校时间', START_DATE: '2020-09' }), /missing END_DATE/);
+  // Unselected environment values never become confirmed facts.
+  assert.equal(liveFillRequest({ ...complexEnv, FIELDS: '绩点' }).educationCandidates[0].degree, undefined);
+});
+
+function complexVerifiedRows() {
+  return ['学历', '是否统招', '在校时间（开始）', '在校时间（结束）', '专业类别']
+    .map(question => ({ question, status: 'verified', reason: 'readback_reapplied' }));
+}
+
+test('paired month evidence needs both writer outcomes and exact final endpoint readback', () => {
+  const expected = expectedReadback(complexEnv);
+  const build = (fillFields, value = expected['在校时间']) => buildFieldRows({
+    questions: ['在校时间'], fillQuestions: ['在校时间'], fillFields,
+    readback: [{ q: '在校时间', value, reason: null, dom: { itemCount: 1, controls: [{ tag: 'INPUT' }, { tag: 'INPUT' }] } }], expected
+  })[0];
+  assert.equal(build(complexVerifiedRows()).status, 'verified');
+  const missingEnd = build(complexVerifiedRows().filter(row => row.question !== '在校时间（结束）'));
+  assert.equal(missingEnd.reason, 'control_not_supported');
+  assert.equal(missingEnd.detail, 'field_not_verified');
+  assert.equal(missingEnd.dom.controls.length, 2);
+  assert.equal(build(complexVerifiedRows(), '2020-09 至 2024-05').reason, 'readback_mismatch');
+});
+
+test('fake complex CDP run preserves diagnostics, verifies requested groups, cancels, and remains unclaimed', async () => {
+  const answers = happyAnswers({ fields: [...verifiedRows(), ...complexVerifiedRows()] });
+  const expected = expectedReadback(complexEnv);
+  answers.read_education.readback = ALL_QUESTIONS.map(q => ({ q, value: expected[q], reason: null,
+    ...(COMPLEX_QUESTIONS.includes(q) ? { dom: { itemCount: 1 }, detail: null } : {}) }));
+  answers.read_clicks.splice(1, 0, { kind: 'picker_trigger', label: '', allowed: true }, { kind: 'category_confirm', label: '确定', allowed: true });
+  const { evidence } = await runFake(answers, { env: complexEnv });
+  assert.equal(evidence.finalDetails.exitCode, 0, evidence.finalDetails.reason);
+  assert.equal(evidence.liveSupportClaimed, false);
+  assert.equal(evidence.neverSave, true);
+  assert.equal(evidence.fields.find(row => row.q === '在校时间').value, expected['在校时间']);
+  assert.equal(evidence.fields.find(row => row.q === '专业类别').dom.itemCount, 1);
+  assert.equal(evidence.finalDetails.read.readback.length, ALL_QUESTIONS.length);
+  assert.equal(evidence.finalDetails.cancelsOk, true);
+
+  answers.fill_education.fields = [{ question: '学历', status: 'skipped', reason: 'site_control_disabled' }];
+  answers.read_education.readback.find(row => row.q === '学历').dom = { controls: [{ disabled: true, readOnly: true }] };
+  const locked = await runFake(answers, { env: { FIELDS: '学历', DEGREE: '本科' } });
+  assert.equal(locked.evidence.finalDetails.exitCode, 2);
+  const row = locked.evidence.fields.find(row => row.q === '学历');
+  assert.equal(row.reason, 'control_not_supported');
+  assert.equal(row.detail, 'site_control_disabled');
+  assert.equal(row.dom.controls[0].disabled, true);
+});
+
+test('missing traffic or click audit cannot produce a successful run', async () => {
+  for (const step of ['read_posts', 'read_clicks']) {
+    const answers = happyAnswers();
+    answers[step] = new Error('audit unavailable');
+    const { evidence } = await runFake(answers);
+    assert.equal(evidence.finalDetails.exitCode, 2);
+    assert.equal(evidence.finalDetails.reason, 'audit_incomplete');
+  }
+});
+
+
+test('a final writer failure never passes even after all field readbacks verified', async () => {
+  const { evidence } = await runFake(happyAnswers({ ok: false, reason: 'profile_binding_changed' }));
+  assert.equal(evidence.fields.filter(row => FILL_QUESTIONS.includes(row.q)).every(row => row.status === 'verified'), true);
+  assert.equal(evidence.finalDetails.cancelsOk, true);
+  assert.equal(evidence.finalDetails.reason, 'profile_binding_changed');
+  assert.equal(evidence.finalDetails.exitCode, 2);
+});
+
+
+test('an unresolved writer or unconfirmed cancellation keeps Never-Save hooks installed', async () => {
+  for (const step of ['fill_education', 'cancel_education']) {
+    const answers = happyAnswers();
+    answers[step] = new Error('evaluation failed');
+    const { evidence, session } = await runFake(answers);
+    assert.equal(evidence.finalDetails.hooksRestored, false);
+    assert.equal(session.steps.includes('restore_hooks'), false);
+    assert.equal(evidence.finalDetails.steps.includes('retain_hooks'), true);
+    assert.notEqual(evidence.finalDetails.exitCode, 0);
+  }
 });

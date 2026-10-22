@@ -40,6 +40,9 @@ function installGthFullLive(doc, options) {
   const clickRows = [];
   const requestRows = [];
   let activeSectionIndex = null;
+  let monthDismissal = null;
+  let monthDismissClick = null;
+  let workLabelForward = null;
   const norm = value => String(value ?? '').replace(/[\s\u00a0]+/gu, ' ').trim();
   const sections = () => [...doc.querySelectorAll('.r-section')];
   const forms = () => sections().flatMap(section => [...section.querySelectorAll('form')]);
@@ -239,25 +242,36 @@ function installGthFullLive(doc, options) {
       && (node === label || node === radios[index]
         || node.matches('.el-radio__label,.el-radio__input,.el-radio__inner')));
   }
-  // The intent writer clicks the native level-2 checkbox, which may have no
-  // rendered box. Its visible label and row must match the census structure.
-  // This exception is only for 期望工作地区 inside the active intent form;
-  // body-level panels and arbitrary hidden inputs cannot borrow ownership.
-  function isWriterRegionCheckbox(node, form) {
-    if (activeSectionIndex !== 2 || !node.matches('input[type="checkbox"]')
-      || node.closest('form') !== form || node.form !== form || node.hasAttribute('form')) return false;
+  // Both shipped writers use this census-shaped cascader. Only these exact
+  // questions in the sole active form may own a no-layout native leaf or a
+  // hidden-footer discard. A body-level panel cannot borrow that ownership.
+  function writerCascaderPanel(node, form) {
+    const questions = activeSectionIndex === 2 ? ['期望工作地区']
+      : activeSectionIndex === 3 ? ['职位类别', '公司所属行业'] : [];
+    if (!questions.length || node.closest('form') !== form) return null;
+    const item = node.closest('.el-form-item');
+    if (!item || item.closest('form') !== form) return null;
+    const labels = [...item.querySelectorAll('.el-form-item__label')]
+      .filter(label => label.closest('.el-form-item') === item);
+    if (labels.length !== 1 || !questions.includes(norm(labels[0].textContent))) return null;
+    const question = norm(labels[0].textContent);
     const items = [...form.querySelectorAll('.el-form-item')].filter(item => {
       const labels = [...item.querySelectorAll('.el-form-item__label')]
         .filter(label => label.closest('.el-form-item') === item);
-      return item.closest('form') === form && labels.length === 1 && norm(labels[0].textContent) === '期望工作地区';
+      return item.closest('form') === form && labels.length === 1 && norm(labels[0].textContent) === question;
     });
-    if (items.length !== 1 || !items[0].contains(node)) return false;
+    if (items.length !== 1 || items[0] !== item) return null;
     const wraps = [...items[0].querySelectorAll(':scope > .el-form-item__content.cascader-wrap')];
-    if (wraps.length !== 1) return false;
+    if (wraps.length !== 1) return null;
     const panels = [...wraps[0].querySelectorAll(':scope > div.dialog-wrap.plugin-dialog-wrap.popover.blue')];
     const open = [...doc.querySelectorAll('div.dialog-wrap.plugin-dialog-wrap.popover.blue')].filter(visible);
-    if (panels.length !== 1 || open.length !== 1 || open[0] !== panels[0] || !panels[0].contains(node)) return false;
-    const panel = panels[0];
+    return panels.length === 1 && open.length === 1 && open[0] === panels[0] && panels[0].contains(node)
+      ? panels[0] : null;
+  }
+  function isWriterCascaderCheckbox(node, form) {
+    if (!node.matches('input[type="checkbox"]') || node.form !== form || node.hasAttribute('form')) return false;
+    const panel = writerCascaderPanel(node, form);
+    if (!panel) return false;
     const menus = [...panel.querySelectorAll(':scope > div.eo-cascader-panel > div.eo-cascader-menu.simple-tree-outer')];
     const label = node.parentElement;
     const row = label?.parentElement;
@@ -271,10 +285,45 @@ function installGthFullLive(doc, options) {
       && !label.querySelector('a,button,select,textarea') && !!text
       && !['保存', '提交', '投递', '删除', '确定', '取消'].some(word => text.includes(word));
   }
-  function classifyClick(target) {
+  function isWorkHiddenPickerCancel(node, form) {
+    if (activeSectionIndex !== 3 || !node.matches('a.cancel.pop-btn')
+      || norm(node.textContent) !== '取消' || wouldNavigate(node)) return false;
+    const panel = writerCascaderPanel(node, form);
+    if (!panel) return false;
+    const feet = [...panel.querySelectorAll('.pop-foot')];
+    const cancels = [...panel.querySelectorAll('a.cancel.pop-btn')];
+    return feet.length === 1 && feet[0].parentElement === panel && node.parentElement === feet[0]
+      && cancels.length === 1 && cancels[0] === node && !visible(feet[0]) && enabled(feet[0]);
+  }
+  function isWorkMonthInput(node, form) {
+    if (activeSectionIndex !== 3 || !form || node?.nodeType !== 1 || node.closest('form') !== form
+      || node.form !== form || node.hasAttribute('form')) return false;
+    const items = [...form.querySelectorAll('.el-form-item')].filter(item => {
+      const labels = [...item.querySelectorAll('.el-form-item__label')]
+        .filter(label => label.closest('.el-form-item') === item);
+      return item.closest('form') === form && labels.length === 1 && norm(labels[0].textContent) === '任职时间';
+    });
+    if (items.length !== 1 || !items[0].contains(node)) return false;
+    const editors = [...items[0].querySelectorAll('.el-date-editor')];
+    const inputs = editors.flatMap(editor => [...editor.querySelectorAll('input')]);
+    return editors.length === 2 && editors.every(editor => editor.closest('.el-form-item') === items[0]
+      && editor.matches('.el-date-editor--month') && editor.querySelectorAll('input').length === 1
+      && !editor.closest(PANEL_SELECTOR))
+      && inputs.length === 2 && new Set(inputs).size === 2 && inputs.includes(node)
+      && inputs.every(input => input.type === 'text' && input.readOnly && input.form === form
+        && !input.hasAttribute('form') && visible(input) && enabled(input)
+        && !input.closest('[disabled],[aria-disabled="true"],.is-disabled,.disabled,[formaction]'));
+  }
+  function classifyClick(target, event, allowLabelForwarding = false) {
     const node = target?.nodeType === 1 ? target : target?.parentElement;
     const denied = { allowed: false, kind: 'forbidden', reason: 'refusing_forbidden_click' };
     if (!node || !node.isConnected || !state().hrefOk || !state().visible) return denied;
+    // The shared month writer dismisses with Escape on its exact inputs,
+    // followed synchronously by root mousedown/up/click. Only that one event
+    // may bypass the generic empty/unknown-click refusal, even after Escape
+    // has hidden the month panel. Bare root clicks remain forbidden.
+    if (node === doc.documentElement && event && event === monthDismissClick)
+      return { allowed: true, kind: 'date_dismiss', reason: null };
     // type=submit is never a discard or picker action, including a footer
     // button whose default type is submit.
     if (submitControl(node)) return denied;
@@ -285,8 +334,26 @@ function installGthFullLive(doc, options) {
     const hostText = controlText(node);
     if (['保存', '提交', '投递', '删除'].some(word => hostText.includes(word) || norm(node.textContent).includes(word))) return denied;
     const form = activeForm();
+    // A single-select label may close its panel before the browser forwards
+    // the activation to its native checkbox. Only capture may admit that one
+    // event, within the validated label's synchronous click() call. Explicit
+    // click()/dispatchEvent() calls on a hidden checkbox still fail closed.
+    const forward = workLabelForward;
+    if (allowLabelForwarding && forward && !forward.used && activeSectionIndex === 3
+      && node === forward.input && form === forward.form && node.form === form && !node.hasAttribute('form')
+      && event instanceof view.MouseEvent && event.target === node && node.matches('input[type="checkbox"]')
+      && node.parentElement === forward.label && forward.label.parentElement === forward.row
+      && forward.panel.contains(forward.row) && forward.panel.closest('form') === form && visible(form)
+      && forward.label.querySelectorAll('input').length === 1
+      && !forward.label.querySelector('a,button,select,textarea') && norm(forward.label.textContent) === forward.text) {
+      forward.used = true;
+      return { allowed: true, kind: 'picker_option', reason: null };
+    }
     if (form && isWriterRadio(node, form)) return { allowed: true, kind: 'radio_option', reason: null };
-    if (form && isWriterRegionCheckbox(node, form)) return { allowed: true, kind: 'picker_option', reason: null };
+    if (form && isWriterCascaderCheckbox(node, form)) return { allowed: true, kind: 'picker_option', reason: null };
+    // The work writer uses this exact discard on a failed single-select
+    // reveal even when the picker footer is hidden. The panel must be open.
+    if (form && isWorkHiddenPickerCancel(node, form)) return { allowed: true, kind: 'cancel', reason: null };
     if (!visible(node)) return denied;
     const edit = node.closest('.title_ a.h-e-btn');
     if (activeSectionIndex !== 3 && edit && norm(edit.textContent) === '编辑' && !wouldNavigate(edit)
@@ -331,8 +398,8 @@ function installGthFullLive(doc, options) {
   function noteClick(node, classification) {
     clickRows.push({ label: norm(node?.textContent).slice(0, 100), ...classification, sectionIndex: activeSectionIndex });
   }
-  function forbiddenClick(node) {
-    const classification = classifyClick(node);
+  function forbiddenClick(node, event) {
+    const classification = classifyClick(node, event);
     if (classification.allowed) return false;
     noteClick(node, classification);
     return true;
@@ -344,16 +411,37 @@ function installGthFullLive(doc, options) {
   }
   const originalClick = view.HTMLElement.prototype.click;
   view.HTMLElement.prototype.click = function guardedClick() {
+    monthDismissal = null;
     if (forbiddenClick(this)) throw refusal();
-    return originalClick.call(this);
+    const form = activeForm();
+    const input = this.matches('label') ? this.querySelector('input[type="checkbox"]') : null;
+    const previous = workLabelForward;
+    workLabelForward = activeSectionIndex === 3 && form && input && isWriterCascaderCheckbox(input, form)
+      ? { input, form, label: this, row: this.parentElement, panel: this.closest(PANEL_SELECTOR),
+        text: norm(this.textContent), used: false } : null;
+    try { return originalClick.call(this); }
+    finally { workLabelForward = previous; }
   };
   const originalDispatch = view.EventTarget.prototype.dispatchEvent;
   view.EventTarget.prototype.dispatchEvent = function guardedDispatch(event) {
-    if (event?.type === 'click' && forbiddenClick(this)) throw refusal();
-    return originalDispatch.call(this, event);
+    const form = activeForm();
+    if (event?.type === 'keydown' && event.key === 'Escape' && isWorkMonthInput(this, form)) {
+      monthDismissal = { form, input: this, stage: 0 };
+    } else if (this === doc.documentElement && event instanceof view.MouseEvent && monthDismissal
+      && monthDismissal.form === form && isWorkMonthInput(monthDismissal.input, form)
+      && event.type === ['mousedown', 'mouseup', 'click'][monthDismissal.stage]) {
+      monthDismissal.stage += 1;
+      if (event.type === 'click') { monthDismissClick = event; monthDismissal = null; }
+    } else {
+      monthDismissal = null;
+    }
+    try {
+      if (event?.type === 'click' && forbiddenClick(this, event)) throw refusal();
+      return originalDispatch.call(this, event);
+    } finally { monthDismissClick = null; }
   };
   function clickCapture(event) {
-    const classification = classifyClick(event.target);
+    const classification = classifyClick(event.target, event, true);
     noteClick(event.target, classification);
     if (!classification.allowed) {
       event.preventDefault();

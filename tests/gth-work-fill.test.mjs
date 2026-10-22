@@ -9,7 +9,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 import { JSDOM } from 'jsdom';
-import { assessGthWorkOpenFill, shippedGthWorkOpenFill } from '../src/background/gth-open-fills.mjs';
+import { acceptGthMonthInPage, assessGthWorkOpenFill, shippedGthWorkOpenFill } from '../src/background/gth-open-fills.mjs';
 import { normalizeProfile } from '../src/profile/store.js';
 import { sourceSnapshot } from '../src/profile/cms-internship-plan.mjs';
 
@@ -32,11 +32,21 @@ function request(profile, extra = {}) {
   return { requestId: '1234567890-work', profileBinding: binding, replaceExisting: false, profileIndex: 0, profile, ...extra };
 }
 
+function runMonthAccept(doc, answer) {
+  const view = doc.defaultView;
+  const sandbox = {
+    document: doc,
+    getComputedStyle: view.getComputedStyle.bind(view),
+  };
+  vm.createContext(sandbox);
+  const source = `(${acceptGthMonthInPage.toString()})(${JSON.stringify({ answer })})`;
+  return vm.runInContext(source, sandbox);
+}
+
 function boot(html, options = {}) {
   const dom = new JSDOM(`<!DOCTYPE html><body>${html}</body>`, {
     url: PAGE,
     pretendToBeVisual: true,
-    ...(options.runScripts ? { runScripts: 'dangerously' } : {}),
   });
   const { window } = dom;
   window.Element.prototype.getClientRects = () => [{ width: 8, height: 8, top: 0, left: 0, bottom: 8, right: 8 }];
@@ -52,7 +62,20 @@ function boot(html, options = {}) {
     runtime: {
       id: 'synthetic-extension',
       getManifest: () => ({ background: { service_worker: 'src/background/worker.mjs' } }),
-      sendMessage: async (message) => (message?.type === 'RESUME_PROFILE_BINDING_CHECK' ? { allowed: true } : { allowed: false }),
+      sendMessage: async (message) => {
+        if (message?.type === 'RESUME_PROFILE_BINDING_CHECK' || message?.type === 'RESUME_PAID_VERIFY') return { allowed: true };
+        if (message?.type === 'GTH_MONTH_MODEL_ACCEPT') {
+          if (options.monthBridge === false) return { ok: false, result: 'unavailable' };
+          try {
+            const result = runMonthAccept(window.document, message.answer);
+            const code = result?.result || 'unavailable';
+            return { ok: code === 'picked' || code === 'emitted', result: code };
+          } catch {
+            return { ok: false, result: 'threw' };
+          }
+        }
+        return { allowed: false };
+      },
       onMessage: {
         addListener(listener) { listeners.add(listener); },
         removeListener(listener) { listeners.delete(listener); },
@@ -810,7 +833,7 @@ function bootRace(options = {}) {
   const html = shell(formWrap(workFields({
     dates: raceMonthItem(options), industrySingle: true, industryCounter: '(0/1)',
   })));
-  const booted = boot(html, { runScripts: options.acceptVue === true || options.acceptEmit === true });
+  const booted = boot(html, { monthBridge: options.monthBridge !== false });
   const doc = booted.dom.window.document;
   wireCascader(doc, 'job', { leaves: JOB_LEAVES, reveal: true });
   wireCascader(doc, 'industry', { leaves: INDUSTRY_LEAVES, reveal: true, single: true });
@@ -929,6 +952,66 @@ test('任职时间 keeps the end month after panel close when the mounted picker
   assert.equal(emitted.months.typedClears, 0);
   assert.equal(emittedResult.liveSupportClaimed, false);
   assert.equal(forbidden(emitted.clicks).length, 0);
+});
+
+test('任职时间 fails closed when the page-world bridge is down even if the picker is mounted', async () => {
+  const { doc, clicks, context, months } = bootRace({ closeClearsTyped: true, acceptVue: true, monthBridge: false });
+  const result = await context.ResumeGthWorkOpen.trial(request(workProfile({ ...ROW, startDate: '2023-01', endDate: '2024-06' })));
+  assert.equal(result.ok, false);
+  assert.equal(result.reason, 'readback_mismatch');
+  assert.equal(result.selectorStep, 'month_option');
+  assert.equal(result.liveSupportClaimed, false);
+  assert.equal(`${doc.getElementById('start-date').value} | ${doc.getElementById('end-date').value}`, '2023-01 | ');
+  assert.equal(months.vuePicks, 0);
+  assert.equal(months.vueEmits, 0);
+  assert.ok(months.typedChanges >= 1);
+  assert.ok(months.typedClears >= 1);
+  assert.equal(months.panels.start.isConnected, true);
+  assert.equal(doc.getElementById('salary').value, '');
+  flags(result);
+  assert.equal(forbidden(clicks).length, 0);
+});
+
+test('month accept runs in the page world without an inserted script', () => {
+  assert.equal(core.includes("createElement('script')"), false);
+  assert.equal(core.includes('__vue__'), false);
+  assert.match(core, /GTH_MONTH_MODEL_ACCEPT/);
+  assert.match(workSource, /no inserted script/);
+  const worker = readFileSync(new URL('../src/background/worker.mjs', import.meta.url), 'utf8');
+  const guard = readFileSync(new URL('../src/license/guard-worker.mjs', import.meta.url), 'utf8');
+  assert.match(worker, /registerGthMonthModelBridge/);
+  assert.match(guard, /registerGthMonthModelBridge/);
+  const dom = new JSDOM('<!DOCTYPE html><body><input id="end" data-gth-month-role="input" data-gth-month-answer="2024-06"><div class="el-picker-panel" id="panel" data-gth-month-role="panel"><span class="el-date-picker__header-label">2026 年</span></div></body>');
+  const doc = dom.window.document;
+  const input = doc.getElementById('end');
+  const panel = doc.getElementById('panel');
+  let picks = 0;
+  panel.__vue__ = {
+    selectionMode: 'month',
+    year: 2026,
+    handleMonthPick() { picks += 1; },
+    $children: [],
+  };
+  const mismatch = runMonthAccept(doc, '2024-06');
+  assert.equal(mismatch.result, 'bad-year');
+  assert.equal(picks, 0);
+  panel.querySelector('.el-date-picker__header-label').textContent = '2024 年';
+  panel.__vue__.year = 2024;
+  panel.__vue__.handleMonthPick = function handleMonthPick() {
+    picks += 1;
+    input.value = '2024-06';
+  };
+  const picked = runMonthAccept(doc, '2024-06');
+  assert.equal(picked.result, 'picked');
+  assert.equal(picked.ok, true);
+  assert.equal(picks, 1);
+  const second = doc.createElement('div');
+  second.className = 'el-picker-panel';
+  second.style.display = 'block';
+  doc.body.appendChild(second);
+  const dual = runMonthAccept(doc, '2024-06');
+  assert.equal(dual.result, 'dual');
+  assert.equal(picks, 1);
 });
 
 test('任职时间 fails closed when panel close clears a typed end month', async () => {

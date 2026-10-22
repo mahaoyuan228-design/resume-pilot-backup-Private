@@ -10,6 +10,7 @@ import { installEducationTaskRunner } from '../background/education-task-runner.
 import { installBasicTaskRunner } from '../background/basic-task-runner.mjs';
 import { installGthDraftTaskRunner } from '../background/gth-draft-task-runner.mjs';
 import { registerGthDraftMetadataBridge } from '../background/gth-draft-metadata.mjs';
+import { registerGthMonthModelBridge } from '../background/gth-open-fills.mjs';
 import { registerGthRefreshBasicMetadataBridge } from '../background/gth-refresh-basic-metadata.mjs';
 import { registerGthSerialPrototype } from '../background/gth-serial-runner.mjs';
 import { installGthEducationAutoRunner } from '../background/gth-education-auto.mjs';
@@ -111,6 +112,7 @@ function boot(name, install) {
 boot('education-task', () => installEducationTaskRunner({ verifyBeforeFill }));
 boot('basic-task', () => installBasicTaskRunner({ verifyBeforeFill }));
 boot('gth-draft-metadata', registerGthDraftMetadataBridge);
+boot('gth-month-model', registerGthMonthModelBridge);
 boot('gth-refresh-basic-metadata', registerGthRefreshBasicMetadataBridge);
 boot('gth-draft-task', () => installGthDraftTaskRunner({ verifyBeforeFill }));
 boot('cms-education', () => installCmsEducationTaskRunner({ verifyBeforeFill }));

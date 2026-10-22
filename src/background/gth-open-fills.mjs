@@ -164,3 +164,125 @@ export function shippedGthWorkOpenFill({api,tab,requestId,binding,profile,profil
     type:GTH_WORK_FILL_TYPE,requestId,profileBinding:binding,profile,profileIndex,replaceExisting:replaceExisting===true
   });
 }
+
+// Page-world month accept. chrome.scripting serializes this function into MAIN,
+// so it cannot close over imports. It only calls the open picker's own
+// handleMonthPick or the editor's emitInput. It does not click, navigate, or save.
+export const GTH_MONTH_MODEL_MESSAGE='GTH_MONTH_MODEL_ACCEPT';
+const MONTH_PAGE='https://hr.gtht.com/resume/edit/';
+export function acceptGthMonthInPage(payload){
+  const doc=document;
+  const fail=result=>({ok:false,result});
+  const marked=role=>[...doc.querySelectorAll(`[data-gth-month-role="${role}"]`)];
+  const isDate=value=>!!value&&typeof value.getTime==='function'&&!Number.isNaN(value.getTime());
+  const yearOf=vue=>{
+    if(!vue)return null;
+    if(typeof vue.year==='number'&&Number.isFinite(vue.year))return vue.year;
+    if(isDate(vue.date))return vue.date.getFullYear();
+    return null;
+  };
+  const headerYear=node=>{
+    const labels=node.querySelectorAll('.el-date-picker__header-label');
+    let found=null;
+    for(const label of labels){
+      const text=String(label.textContent||'').replace(/\s+/g,'');
+      const hit=/^(\d{4})年$/u.exec(text);
+      if(!hit)continue;
+      if(found!=null)return null;
+      found=Number(hit[1]);
+    }
+    return found;
+  };
+  const findPick=(vue,depth)=>{
+    if(!vue||depth>5)return null;
+    if(typeof vue.handleMonthPick==='function'&&vue.selectionMode==='month')return vue;
+    const kids=vue.$children||[];
+    for(const child of kids){
+      const found=findPick(child,depth+1);
+      if(found)return found;
+    }
+    return null;
+  };
+  const visuallyShown=node=>{
+    if(!node?.isConnected||node.hasAttribute('hidden'))return false;
+    let style=null;
+    if(typeof getComputedStyle==='function'){
+      try{style=getComputedStyle(node);}catch{style=null;}
+    }
+    if(!style)style=node.style;
+    if(!style||style.display==='none'||style.visibility==='hidden')return false;
+    return true;
+  };
+  try{
+    const answer=typeof payload?.answer==='string'?payload.answer:'';
+    if(!/^\d{4}-(0[1-9]|1[0-2])$/u.test(answer))return fail('bad-answer');
+    const year=Number(answer.slice(0,4));
+    const monthIndex=Number(answer.slice(5,7))-1;
+    const inputs=marked('input');
+    const panels=marked('panel');
+    if(inputs.length!==1||panels.length!==1)return fail('bad-answer');
+    const input=inputs[0];
+    const panel=panels[0];
+    if(input.getAttribute('data-gth-month-answer')!==answer)return fail('bad-answer');
+    if(!input.isConnected||!panel.isConnected)return fail('bad-answer');
+    const others=[...doc.querySelectorAll('.el-picker-panel')].filter(node=>node!==panel&&visuallyShown(node));
+    if(others.length)return fail('dual');
+    const shownYear=headerYear(panel);
+    if(shownYear==null||shownYear!==year)return fail('bad-year');
+    let pick=findPick(panel.__vue__,0);
+    const editor=input.closest?.('.el-date-editor');
+    const editorVue=editor&&editor.__vue__;
+    if(!pick&&editorVue?.picker)pick=findPick(editorVue.picker,0);
+    const pickYear=yearOf(pick);
+    if(pick&&(pickYear==null||pickYear===year)){
+      pick.handleMonthPick(monthIndex);
+      const shown=String(input.value||'').replace(/[\s\u00a0]+/g,' ').trim();
+      if(shown&&shown!==answer)return fail('mismatch');
+      return {ok:true,result:'picked'};
+    }
+    let vue=editorVue;
+    let guard=0;
+    while(vue&&typeof vue.emitInput!=='function'&&vue.$parent&&guard<6){
+      vue=vue.$parent;
+      guard+=1;
+    }
+    if(!vue||typeof vue.emitInput!=='function')return fail('no-vue');
+    const parsed=typeof vue.parseString==='function'?vue.parseString(answer):null;
+    const date=isDate(parsed)?parsed:new Date(year,monthIndex,1);
+    if(!isDate(date)||date.getFullYear()!==year||date.getMonth()!==monthIndex)return fail('bad-year');
+    vue.userInput=null;
+    vue.emitInput(date);
+    const shown=String(input.value||'').replace(/[\s\u00a0]+/g,' ').trim();
+    if(shown&&shown!==answer)return fail('mismatch');
+    return {ok:true,result:'emitted'};
+  }catch{
+    return fail('threw');
+  }
+}
+export function createGthMonthModelBridge({api=globalThis.chrome}={}){
+  const listener=(message,sender,sendResponse)=>{
+    if(message?.type!==GTH_MONTH_MODEL_MESSAGE)return false;
+    const answer=message.answer;
+    const valid=sender?.id===api.runtime.id&&sender?.url===MONTH_PAGE&&sender?.tab?.url===MONTH_PAGE
+      &&sender?.frameId===0&&Number.isSafeInteger(sender?.tab?.id)&&sender.tab.id>=0
+      &&typeof answer==='string'&&/^\d{4}-(0[1-9]|1[0-2])$/u.test(answer);
+    if(!valid){sendResponse({ok:false,result:'rejected'});return false;}
+    (async()=>{
+      const tab=await api.tabs.get(sender.tab.id);
+      if(tab?.url!==MONTH_PAGE||tab.id!==sender.tab.id)return {ok:false,result:'rejected'};
+      const rows=await api.scripting.executeScript({
+        target:{tabId:tab.id,frameIds:[0]},world:'MAIN',func:acceptGthMonthInPage,args:[{answer}]
+      });
+      const result=rows?.length===1&&rows[0].frameId===0?rows[0].result:null;
+      const code=typeof result?.result==='string'?result.result:'unavailable';
+      return {ok:code==='picked'||code==='emitted',result:code};
+    })().then(sendResponse,()=>sendResponse({ok:false,result:'unavailable'}));
+    return true;
+  };
+  return {listener};
+}
+export function registerGthMonthModelBridge(options={}){
+  const bridge=createGthMonthModelBridge(options);
+  (options.api||globalThis.chrome).runtime.onMessage.addListener(bridge.listener);
+  return bridge;
+}

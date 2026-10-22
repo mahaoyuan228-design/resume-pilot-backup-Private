@@ -231,6 +231,50 @@ function wireMonthRange(document) {
   return stats;
 }
 
+function armRangeRequiredError(document, { message, sticky = false } = {}) {
+  const item = document.getElementById('dates-item');
+  const start = document.getElementById('start-date');
+  const end = document.getElementById('end-date');
+  const content = item.querySelector('.el-form-item__content');
+  const phases = [];
+  const shownError = () => {
+    const node = content.querySelector('.el-form-item__error');
+    if (!node) return '';
+    const style = document.defaultView.getComputedStyle(node);
+    const shown = node.getClientRects().length > 0 && style.display !== 'none' && style.visibility !== 'hidden';
+    return shown ? node.textContent : '';
+  };
+  const apply = () => {
+    const startFilled = start.value.trim() !== '';
+    const endFilled = end.value.trim() !== '';
+    const show = startFilled && (sticky || !endFilled);
+    let error = content.querySelector('.el-form-item__error');
+    if (show) {
+      item.classList.add('is-required', 'is-error');
+      if (!error) {
+        error = document.createElement('div');
+        error.className = 'el-form-item__error';
+        content.appendChild(error);
+      }
+      error.textContent = message;
+    } else if (startFilled && endFilled) {
+      item.classList.remove('is-error');
+      error?.remove();
+    }
+    phases.push({ start: start.value, end: end.value, classes: item.className, text: shownError() });
+  };
+  start.addEventListener('input', apply);
+  start.addEventListener('change', apply);
+  end.addEventListener('input', apply);
+  end.addEventListener('change', apply);
+  return phases;
+}
+
+function sawHalfRangeError(phases, message) {
+  return phases.some((row) => row.start !== '' && row.end === ''
+    && row.classes.includes('is-required') && row.classes.includes('is-error') && row.text === message);
+}
+
 function wireCascader(document, id, { leaves, single = false, reveal = true }) {
   const trigger = document.getElementById(`${id}-trigger`);
   const panel = document.getElementById(`${id}-panel`);
@@ -1887,6 +1931,54 @@ test('a leftover start panel or a decade year step fails closed without an empty
   assert.equal(again.months.panels.start.isConnected, true);
   assert.equal(again.doc.getElementById('salary').value, '');
   assert.equal(forbidden(again.clicks).length, 0);
+});
+
+test('任职时间 continues through the required range error that appears before the end month', async () => {
+  const html = shell(formWrap(workFields({ industrySingle: true, industryCounter: '(0/1)' })));
+  const { dom, clicks, context, bridge } = boot(html);
+  const doc = dom.window.document;
+  const stats = wire(doc, { industrySingle: true });
+  const phases = armRangeRequiredError(doc, { message: '请选择任职时间' });
+  const result = await context.ResumeGthWorkOpen.trial(request(workProfile(ROW)));
+  assert.equal(result.ok, true, JSON.stringify({ reason: result.reason, step: result.selectorStep }));
+  assert.equal(`${doc.getElementById('start-date').value} | ${doc.getElementById('end-date').value}`, '2020-03 | 2024-08');
+  assert.equal(result.fields.find((field) => field.question === '任职时间').reason, 'readback_matched');
+  assert.equal(sawHalfRangeError(phases, '请选择任职时间'), true);
+  assert.equal(doc.getElementById('dates-item').classList.contains('is-error'), false);
+  assert.equal(doc.querySelector('#dates-item .el-form-item__error'), null);
+  assert.equal(stats.months.open, 2);
+  assert.equal(stats.months.cells, 2);
+  assert.deepEqual(bridge.answers, ['2020-03', '2024-08']);
+  assert.equal(doc.getElementById('position').value, '分析师');
+  assert.equal(doc.getElementById('salary').value, '');
+  flags(result);
+  assert.equal(forbidden(clicks).length, 0);
+});
+
+test('任职时间 fails closed when the range error remains after both months', async () => {
+  const html = shell(formWrap(workFields({ industrySingle: true, industryCounter: '(0/1)' })));
+  const { dom, clicks, context, bridge } = boot(html);
+  const doc = dom.window.document;
+  const stats = wire(doc, { industrySingle: true });
+  const phases = armRangeRequiredError(doc, { message: '请选择任职时间', sticky: true });
+  const result = await context.ResumeGthWorkOpen.trial(request(workProfile(ROW)));
+  assert.equal(result.ok, false);
+  assert.equal(result.reason, 'readback_mismatch');
+  assert.equal(result.fields.find((field) => field.question === '任职时间').status, 'failed');
+  assert.equal(result.fields.find((field) => field.question === '任职时间').reason, 'readback_mismatch');
+  assert.equal(`${doc.getElementById('start-date').value} | ${doc.getElementById('end-date').value}`, '2020-03 | 2024-08');
+  assert.equal(sawHalfRangeError(phases, '请选择任职时间'), true);
+  assert.equal(doc.getElementById('dates-item').classList.contains('is-error'), true);
+  assert.equal(doc.getElementById('dates-item').classList.contains('is-required'), true);
+  assert.equal(doc.querySelector('#dates-item .el-form-item__error').textContent, '请选择任职时间');
+  assert.equal(stats.months.open, 2);
+  assert.equal(stats.months.cells, 2);
+  assert.deepEqual(bridge.answers, ['2020-03', '2024-08']);
+  assert.equal(result.fields.find((field) => field.question === '公司名称').reason, 'not_run');
+  assert.equal(doc.getElementById('organization').value, '');
+  assert.equal(doc.getElementById('salary').value, '');
+  flags(result);
+  assert.equal(forbidden(clicks).length, 0);
 });
 
 test('empty work extras do not change an internship source hash', async () => {

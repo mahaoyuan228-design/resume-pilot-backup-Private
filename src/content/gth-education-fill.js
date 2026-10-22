@@ -3,6 +3,8 @@
 // 学历 reuses the intent el-select rules (body dropdown after the first open,
 // same-value decided from the input before a menu is required).
 // 在校时间 fills two el-date-editor--month inputs when that live shape is present.
+// That shared writer site-validates the form-item only after both months match,
+// so a half-filled 请选择在校时间 error does not stop the start month.
 // 专业类别 fills a readonly input-l.pointer / div.input-l.pointer picker.
 // Any other shape stays control_not_supported. Never clicks 保存 / 提交 / 投递 / 删除.
 (() => {

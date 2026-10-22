@@ -11,6 +11,14 @@
 // or exactly one body-level arrival menu after the select opens.
 // replaceExisting re-picks a single-select level-2 or, for a multi-select,
 // removes non-target chips through the one <i> on each chip and confirms.
+// When that replace finds the target level-1 row already class selected and
+// the target level-2 text already listed, it does not click level 1 again.
+// The 2026-10-22 probe opens 期望工作地区 on 北京 (selected, currentClick)
+// with the level-2 list (北京, 大兴区, …) already shown; a second click can
+// collapse that list. A replace waits out the panel close for the input and
+// the one chip. Closing alone is not picker_replace_unverified. Any picker_*
+// abort returns pickerDiag from a read of the cascader panel: no click
+// outside that panel, and never 保存.
 // Closed-card guesses used kind:'unsupported' until that census. Unknown
 // shapes still fail closed ('control_not_supported').
 // Picker answers are exact "一级||二级" text. No fuzzy match. Never clicks 保存 / 提交 / 投递.
@@ -334,19 +342,98 @@
   function rowLabel(row) {
     return [...row.children].find(node => node.tagName === 'LABEL') || null;
   }
+  function menuLevels(panel) {
+    if (!panel || panel.nodeType !== 1) return [];
+    const menus = [...panel.querySelectorAll(':scope > div.eo-cascader-panel > div.eo-cascader-menu.simple-tree-outer')].slice(0, 2);
+    return menus.map((menu, index) => ({
+      level:index + 1,
+      options:[...menu.querySelectorAll(':scope > ul.simple-tree-wrapper > li')].slice(0, 40).map(row => ({
+        text:norm(row.textContent).slice(0, 80),
+        classes:[...row.classList].slice(0, 12)
+      }))
+    }));
+  }
+  function clickedOption(node, level) {
+    if (!node) return null;
+    const row = typeof node.closest === 'function' ? (node.closest('li') || node) : node;
+    return {level, text:norm(node.textContent || row.textContent).slice(0, 80), classes:[...(row.classList || [])].slice(0, 12)};
+  }
+  function describePicker(panel, input, target, clicked, confirmClicked) {
+    const blank = {panelFound:false, panelShown:false, levels:[], clicked:clicked || null, inputValue:'',
+      confirmPresent:false, confirmClicked:confirmClicked === true, siteValid:null, note:''};
+    try {
+      const panelFound = !!(panel && panel.nodeType === 1 && panel.isConnected);
+      const confirms = panelFound
+        ? [...panel.querySelectorAll('.pop-foot a.confirm.pop-btn')].filter(node => norm(node.textContent) === '确定' && shown(node))
+        : [];
+      let valid = null;
+      if (target?.item && target?.input) valid = siteValid(target) === true;
+      return {
+        panelFound, panelShown:panelFound && shown(panel), levels:panelFound ? menuLevels(panel) : [],
+        clicked:clicked || null, inputValue:norm(input?.value).slice(0, 80), confirmPresent:confirms.length > 0,
+        confirmClicked:confirmClicked === true, siteValid:valid, note:''
+      };
+    } catch { return blank; }
+  }
+  function fallbackPickerDiag(form, question, reason) {
+    const empty = {panelFound:false, panelShown:false, levels:[], clicked:null, inputValue:'',
+      confirmPresent:false, confirmClicked:false, siteValid:null, note:''};
+    const base = {question:question || '', reason, inputBefore:'', inputAfter:'', confirmPresent:false,
+      confirmClicked:false, siteValid:null, steps:[{step:'abort', ...empty}]};
+    if (!form || !question) return base;
+    let panel = null, input = null, target = null;
+    try {
+      const items = itemsFor(form, question);
+      const item = items[0] || null;
+      panel = item?.querySelector('div.dialog-wrap.plugin-dialog-wrap.popover.blue') || null;
+      input = item?.querySelector('input.el-input__inner') || null;
+      if (item && input) target = {item, input};
+    } catch { /* diagnostics only read */ }
+    const snap = describePicker(panel, input, target, null, false);
+    return {question, reason, inputBefore:snap.inputValue, inputAfter:snap.inputValue, confirmPresent:snap.confirmPresent,
+      confirmClicked:false, siteValid:snap.siteValid, steps:[{step:'abort', ...snap}]};
+  }
   async function fillPicker(target, parts, replaceExisting, markWrite, guard) {
     const {panel, trigger, input} = target;
     const {l1, l2} = parts;
     let opened = false;
+    let replaced = false;
+    const trace = {question:ownLabel(target.item), inputBefore:null, confirmClicked:false, steps:[]};
+    const note = (name, clicked, noteText) => {
+      if (trace.steps.length >= 11 && name !== 'abort') return;
+      if (trace.steps.length >= 12) return;
+      const snap = describePicker(panel, input, target, clicked, trace.confirmClicked);
+      if (noteText) snap.note = String(noteText).slice(0, 80);
+      if (trace.inputBefore == null) trace.inputBefore = snap.inputValue;
+      trace.steps.push({step:name, ...snap});
+    };
+    const seal = code => {
+      note('abort', null, '');
+      const last = trace.steps[trace.steps.length - 1] || {};
+      return {question:trace.question, reason:code, inputBefore:trace.inputBefore ?? '', inputAfter:norm(input?.value).slice(0, 80),
+        confirmPresent:last.confirmPresent === true, confirmClicked:trace.confirmClicked === true,
+        siteValid:last.siteValid === true ? true : last.siteValid === false ? false : null, steps:trace.steps};
+    };
+    const fail = code => {
+      const error = new Stop(code);
+      error.pickerDiag = seal(code);
+      throw error;
+    };
     const abort = async code => {
+      const diag = seal(code);
       if (opened) {
+        const skipCancel = replaced && !shown(panel);
         opened = false;
-        try { await clickPanelCancel(panel); } catch { /* keep the picker reason */ }
+        if (!skipCancel) {
+          try { await clickPanelCancel(panel); } catch { /* keep the picker reason */ }
+        }
       }
-      stop(code);
+      const error = new Stop(code);
+      error.pickerDiag = diag;
+      throw error;
     };
     step('picker_open');
-    if (visiblePanels().length) stop('picker_panel_already_open');
+    if (visiblePanels().length) fail('picker_panel_already_open');
     guard();
     await boundAction(() => { if (!trigger.isConnected) stop('profile_action_target_changed'); return trigger.click(); });
     opened = true;
@@ -358,6 +445,7 @@
     });
     if (!openedPanel) await abort('picker_panel_not_unique');
     if (openedPanel.bad) await abort(openedPanel.bad);
+    note('picker_open', null, '');
     guard();
     const chips = chipTexts(panel);
     if (!chips) await abort('picker_chip_unknown');
@@ -365,12 +453,13 @@
     if (chips.length === 1 && chips[0] === l2 && triggerValue === l2) {
       await clickPanelCancel(panel);
       opened = false;
-      if (norm(input.value) !== l2 || shown(panel)) stop('picker_readback_mismatch');
+      if (norm(input.value) !== l2 || shown(panel)) fail('picker_readback_mismatch');
       return {status:'verified', reason:'preexisting_same_value'};
     }
     const counterNow = readCounter(panel);
     const single = footHidden(panel) || counterNow?.max === 1;
     const occupied = chips.length > 0 || triggerValue !== '';
+    replaced = occupied && replaceExisting === true;
     if (occupied && replaceExisting !== true) await abort('picker_existing_selection_conflict');
     if (occupied && replaceExisting === true && !single) {
       if (!counterNow) await abort('picker_counter_unknown');
@@ -405,8 +494,14 @@
     if (l1Matches.length !== 1) await abort(l1Matches.length ? 'picker_level1_ambiguous' : 'picker_level1_missing');
     const span = [...l1Matches[0].children].find(node => node.tagName === 'SPAN');
     if (!span || norm(span.textContent) !== l1) await abort('picker_level1_missing');
-    guard();
-    await boundAction(() => { if (!span.isConnected) stop('profile_action_target_changed'); return span.click(); });
+    const heldOpen = replaced && l1Matches[0].classList.contains('selected')
+      && l2Rows(panel).some(row => shown(row) && l2LeafText(row) === l2);
+    if (heldOpen) note('picker_level1', null, 'level1_already_selected');
+    else {
+      guard();
+      await boundAction(() => { if (!span.isConnected) stop('profile_action_target_changed'); return span.click(); });
+      note('picker_level1', clickedOption(span, 1), '');
+    }
     step('picker_level2');
     let sawL2Menu = false;
     const found = await waitUntil(() => {
@@ -431,7 +526,6 @@
     if (replaceExisting === true && !single) {
       if (beforeChips.length > 1 || (beforeChips.length === 1 && beforeChips[0] !== l2)) await abort('picker_structure_changed');
     } else if (beforeChips.length && !(replaceExisting === true && single)) await abort('picker_existing_selection_conflict');
-    const replaced = occupied && replaceExisting === true;
     if (single) {
       const clickable = l2Clickable(found.row, l2);
       if (!clickable) await abort('picker_level2_missing');
@@ -439,18 +533,13 @@
       guard();
       markWrite();
       await boundAction(() => { if (!clickable.isConnected) stop('profile_action_target_changed'); return clickable.click(); });
+      note('picker_level2', clickedOption(clickable, 2), '');
       const matched = await waitUntil(() => {
         const now = chipTexts(panel);
         const ok = !shown(panel) && norm(input.value) === l2 && now && now.length === 1 && now[0] === l2;
-        if (ok) return {ok:true};
-        if (replaced && !shown(panel)) return {bad:'picker_replace_unverified'};
-        return null;
+        return ok ? {ok:true} : null;
       });
-      if (matched?.bad) { opened = false; stop('picker_replace_unverified'); }
-      if (!matched?.ok || !siteValid(target)) {
-        if (replaced && !shown(panel)) { opened = false; stop('picker_replace_unverified'); }
-        await abort(replaced ? 'picker_replace_unverified' : 'picker_readback_mismatch');
-      }
+      if (!matched?.ok || !siteValid(target)) await abort(replaced ? 'picker_replace_unverified' : 'picker_readback_mismatch');
       opened = false;
       guard();
       return {status:'verified', reason:replaced ? 'readback_reapplied' : 'readback_matched'};
@@ -466,6 +555,7 @@
       guard();
       markWrite();
       await boundAction(() => { if (!box.isConnected) stop('profile_action_target_changed'); return box.click(); });
+      note('picker_level2', clickedOption(box, 2), '');
       const applied = await waitUntil(() => {
         const now = chipTexts(panel);
         return now && now.length === 1 && now[0] === l2 ? now : null;
@@ -478,14 +568,14 @@
     guard();
     markWrite();
     await boundAction(() => { if (!confirms[0].isConnected) stop('profile_action_target_changed'); return confirms[0].click(); });
+    trace.confirmClicked = true;
+    note('picker_confirm', null, '');
     const matched = await waitUntil(() => {
       const now = chipTexts(panel);
       const ok = norm(input.value) === l2 && now && now.length === 1 && now[0] === l2 && !shown(panel);
-      if (ok) return {ok:true};
-      if (replaced && !shown(panel)) return {bad:'picker_replace_unverified'};
-      return null;
+      return ok ? {ok:true} : null;
     });
-    if (matched?.bad || !matched?.ok || !siteValid(target)) await abort(replaced ? 'picker_replace_unverified' : 'picker_readback_mismatch');
+    if (!matched?.ok || !siteValid(target)) await abort(replaced ? 'picker_replace_unverified' : 'picker_readback_mismatch');
     opened = false;
     guard();
     return {status:'verified', reason:replaced ? 'readback_reapplied' : 'readback_matched'};
@@ -773,6 +863,11 @@
       return {ok:result.supportedComplete === true, ...result, ...info};
     } catch (error) {
       const reason = error instanceof Stop ? error.code : 'intent_fill_failed';
+      if (error instanceof Stop && error.pickerDiag) result.pickerDiag = error.pickerDiag;
+      else if (typeof reason === 'string' && reason.startsWith('picker_')) {
+        try { result.pickerDiag = fallbackPickerDiag(form, state.progress?.activeField, reason); }
+        catch { /* diagnostics must not replace the picker reason */ }
+      }
       const active = state.progress?.activeField || null;
       for (const field of attempted) {
         if (result.fields.some(row => row.question === field.question)) continue;
@@ -818,7 +913,7 @@
     return true;
   };
   globalThis.ResumeGthIntent = Object.freeze({
-    implementationRevision:5, installed:true, trial, listener,
+    implementationRevision:6, installed:true, trial, listener,
     fields:FIELDS.map(field => ({question:field.question, kind:field.kind, evidence:field.evidence})),
     optional:OPTIONAL.map(field => ({question:field.question, kind:field.kind, evidence:field.evidence}))
   });

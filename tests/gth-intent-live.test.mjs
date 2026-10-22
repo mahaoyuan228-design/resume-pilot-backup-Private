@@ -38,8 +38,11 @@ import {
   isAllowedLookup,
   isDisallowedNonGet,
   liveFillRequest,
+  liveFillRequestFor,
+  mergeFillResults,
   partitionTraffic,
   plannedFieldRows,
+  readFillFields,
   readOutDir,
   readPort,
   runGthIntentLive
@@ -269,6 +272,8 @@ test('the page expression waits for form items and does not click save', () => {
   assert.match(expression, /decideCancel/);
   assert.match(source, /src\/content\/gth-intent\.js/);
   assert.match(source, /omitAbsent/);
+  assert.match(source, /FIELDS/);
+  assert.match(source, /pickerDiag/);
   assert.match(source, new RegExp(SALARY_UNIT_LOOKUP.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
   assert.doesNotMatch(source, /isKnownDictEndpoint/);
   assert.doesNotMatch(source, /perform\([^)]*['"]保存['"]/);
@@ -326,20 +331,9 @@ function happyAnswers() {
     'inject_gth-intent': { ok: true },
     inject_check: { intent: true },
     open_intent: { ok: true, action: 'click_edit', openedByUs: true, alreadyOpen: false },
-    fill_intent: {
-      ok: true,
-      reason: null,
-      writeStarted: true,
-      liveSupportClaimed: false,
-      softwareClickedSave: false,
-      softwareClickedSubmit: false,
-      softwareClickedDelete: false,
-      fields: [
-        { question: '期望薪资', status: 'verified', reason: 'readback_reapplied' },
-        { question: '期望工作地区', status: 'verified', reason: 'readback_reapplied' },
-        { question: '到岗日期', status: 'verified', reason: 'readback_matched' }
-      ]
-    },
+    fill_intent_0: fieldFill('期望工作地区', 'verified', 'readback_reapplied'),
+    fill_intent_1: fieldFill('期望薪资', 'verified', 'readback_reapplied'),
+    fill_intent_2: fieldFill('到岗日期', 'verified', 'readback_matched'),
     read_intent: { ok: true, readback: happyReadback(), extraLabels: [], unlabeled: 0 },
     cancel_intent: { ok: true, closed: true, reason: null },
     read_posts: [
@@ -353,7 +347,21 @@ function happyAnswers() {
   };
 }
 
-async function runFake(answers, { getJson } = {}) {
+function fieldFill(question, status, reason, extra = {}) {
+  return {
+    ok: status === 'verified',
+    reason: status === 'verified' ? null : reason,
+    writeStarted: status === 'verified' || reason === 'picker_replace_unverified',
+    liveSupportClaimed: false,
+    softwareClickedSave: false,
+    softwareClickedSubmit: false,
+    softwareClickedDelete: false,
+    fields: [{ question, status, reason }],
+    ...extra
+  };
+}
+
+async function runFake(answers, { getJson, env } = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gth-intent-live-'));
   const session = fakeSession(answers);
   const evidence = await runGthIntentLive({
@@ -361,6 +369,7 @@ async function runFake(answers, { getJson } = {}) {
     outDir: dir,
     tipSha: 'a178adaabcdef',
     stepTimeoutMs: 1000,
+    env: env || {},
     getJson: getJson || (async () => [resumeTarget()]),
     connectCdp: async () => session
   });
@@ -381,7 +390,10 @@ test('a fake CDP run injects the shipped writer, records readback, and cancels',
   assert.equal(evidence.finalDetails.cancelsOk, true);
   assert.equal(evidence.finalDetails.allowedLookup, SALARY_UNIT_LOOKUP);
   assert.equal(session.steps.includes('inject_gth-intent'), true);
-  assert.equal(session.steps.includes('fill_intent'), true);
+  assert.equal(session.steps.includes('fill_intent_0'), true);
+  assert.equal(session.steps.includes('fill_intent_1'), true);
+  assert.equal(session.steps.includes('fill_intent_2'), true);
+  assert.deepEqual(evidence.finalDetails.pickerDiags, []);
   assert.equal(session.steps.includes('cancel_intent'), true);
   const file = JSON.parse(fs.readFileSync(evidence.finalDetails.path, 'utf8'));
   assert.equal(file.liveSupportClaimed, false);
@@ -410,7 +422,7 @@ test('any non-GET other than the salary-unit lookup fails, and a blocked edit sk
   const blocked = happyAnswers();
   blocked.open_intent = { ok: false, action: 'stop', reason: 'control_not_supported', detail: 'edit_not_found', openedByUs: false };
   const stopped = await runFake(blocked);
-  assert.equal(stopped.session.steps.includes('fill_intent'), false);
+  assert.equal(stopped.session.steps.some((step) => String(step).startsWith('fill_intent')), false);
   assert.equal(stopped.session.steps.includes('cancel_intent'), false);
   assert.equal(stopped.evidence.fields.every((row) => row.reason === 'control_not_supported'), true);
   assert.equal(stopped.evidence.finalDetails.exitCode, 2);
@@ -457,6 +469,7 @@ test('help text names the PowerShell command', () => {
   });
   assert.equal(help.status, 0);
   assert.match(help.stdout, /\$env:PORT='9239'/);
+  assert.match(help.stdout, /FIELDS/);
   assert.ok(help.stdout.includes(POWERSHELL));
 });
 
@@ -514,6 +527,78 @@ function valueOf(form, label) {
   });
   return item.querySelector('input.el-input__inner').value;
 }
+
+test('FIELDS limits fixture trials, and a cascader abort still fills 期望薪资 and 到岗日期', async () => {
+  assert.deepEqual(readFillFields({}), ['期望工作地区', '期望薪资', '到岗日期']);
+  assert.deepEqual(readFillFields({ FIELDS: ' 到岗日期,期望薪资 ' }), ['期望薪资', '到岗日期']);
+  assert.throws(() => readFillFields({ FIELDS: '现薪资' }), /bad fields/);
+  const salary = liveFillRequestFor('期望薪资', 1);
+  assert.equal(salary.omitAbsent, true);
+  assert.equal(salary.replaceExisting, true);
+  assert.equal(salary.requestId, 'live-intent-0001');
+  assert.deepEqual(salary.profile.customAnswers, { 期望薪资: SALARY_ANSWER });
+  const merged = mergeFillResults([
+    fieldFill('期望工作地区', 'failed', 'picker_replace_unverified', {
+      pickerDiag: { question: '期望工作地区', reason: 'picker_replace_unverified', inputBefore: '北京', inputAfter: '北京', confirmPresent: true, confirmClicked: false, siteValid: true, steps: [], token: 'secret' }
+    }),
+    fieldFill('期望薪资', 'verified', 'readback_reapplied')
+  ]);
+  assert.equal(merged.fields.find((row) => row.question === '期望薪资').status, 'verified');
+  assert.equal(merged.pickerDiags[0].token, undefined);
+  assert.equal(merged.pickerDiags[0].inputBefore, '北京');
+  assert.equal(merged.liveSupportClaimed, false);
+
+  const cascader = happyAnswers();
+  cascader.fill_intent_0 = fieldFill('期望工作地区', 'failed', 'picker_replace_unverified', {
+    pickerDiag: {
+      question: '期望工作地区',
+      reason: 'picker_replace_unverified',
+      inputBefore: '北京',
+      inputAfter: '北京',
+      confirmPresent: true,
+      confirmClicked: false,
+      siteValid: true,
+      steps: [{
+        step: 'abort',
+        panelFound: true,
+        panelShown: true,
+        levels: [{ level: 1, options: [{ text: '北京', classes: ['branch', 'has-child', 'selected', 'currentClick'] }] }, { level: 2, options: [{ text: '大兴区', classes: ['branch', 'undefined'] }] }],
+        clicked: null,
+        inputValue: '北京',
+        confirmPresent: true,
+        confirmClicked: false,
+        siteValid: true,
+        note: 'level1_already_selected'
+      }]
+    }
+  });
+  const ran = await runFake(cascader);
+  assert.deepEqual(ran.session.steps.filter((step) => String(step).startsWith('fill_intent')), ['fill_intent_0', 'fill_intent_1', 'fill_intent_2']);
+  assert.equal(ran.evidence.fields.find((row) => row.q === '期望工作地区').reason, 'picker_replace_unverified');
+  assert.equal(ran.evidence.fields.find((row) => row.q === '期望薪资').status, 'verified');
+  assert.equal(ran.evidence.fields.find((row) => row.q === '到岗日期').status, 'verified');
+  assert.equal(ran.evidence.finalDetails.exitCode, 2);
+  assert.equal(ran.evidence.neverSave, true);
+  assert.equal(ran.evidence.liveSupportClaimed, false);
+  assert.equal(ran.evidence.finalDetails.pickerDiags.length, 1);
+  assert.equal(ran.evidence.finalDetails.pickerDiags[0].steps[0].levels[1].options[0].text, '大兴区');
+  assert.equal(ran.evidence.finalDetails.sections[0].fill.pickerDiags.length, 1);
+  const saved = JSON.parse(fs.readFileSync(ran.evidence.finalDetails.path, 'utf8'));
+  assert.equal(saved.finalDetails.pickerDiags[0].reason, 'picker_replace_unverified');
+  assert.equal(saved.finalDetails.liveSupportClaimed, false);
+
+  const salaryOnly = happyAnswers();
+  salaryOnly.fill_intent_0 = fieldFill('期望薪资', 'verified', 'readback_reapplied');
+  const only = await runFake(salaryOnly, { env: { FIELDS: '期望薪资' } });
+  assert.deepEqual(only.session.steps.filter((step) => String(step).startsWith('fill_intent')), ['fill_intent_0']);
+  assert.equal(only.evidence.fields.find((row) => row.q === '期望薪资').status, 'verified');
+  assert.equal(only.evidence.fields.find((row) => row.q === '期望工作地区').reason, 'read_only');
+  assert.equal(only.evidence.fields.find((row) => row.q === '到岗日期').reason, 'read_only');
+  assert.deepEqual(only.evidence.finalDetails.profile.customAnswers, { 期望薪资: SALARY_ANSWER });
+  assert.equal(only.evidence.finalDetails.exitCode, 0);
+  assert.equal(only.evidence.neverSave, true);
+  assert.equal(only.evidence.liveSupportClaimed, false);
+});
 
 test('click_edit waits for late form items, then the shipped writer fills and readback matches', async () => {
   const page = liveWindow(resumeSections());

@@ -13,6 +13,14 @@
  * 现从事行业, 现从事职位类别, and 现薪资 untouched when this profile has no
  * answer for them. Those four are read back only.
  *
+ * trial() fills every answered field and throws on the first picker_* abort,
+ * leaving later answers not_run. There is no fields filter on that call.
+ * omitAbsent plus one confirmed answer is the per-field call, so this runner
+ * issues one trial per FIELDS entry. 期望薪资 and 到岗日期 still run when the
+ * cascader aborts. A picker abort's pickerDiag is copied into the evidence.
+ * That diag only reads the cascader panel. It does not click outside it and
+ * it never clicks 保存.
+ *
  * Windows PowerShell, from the repo root, with the resume tab already open:
  *
  *   $env:PORT='9239'; $env:OUTDIR='C:/Users/admin/Desktop/ResumeQuickFill-Dev/_temp-scripts'; node scripts/live/gth-intent-live.mjs
@@ -103,6 +111,9 @@ navigate, and does not claim the live site is supported.
   PORT                 Loopback CDP port. Default ${DEFAULT_PORT}
   OUTDIR               Directory for ${EVIDENCE_NAME}. Default current directory
   STEP_TIMEOUT_MS      Per CDP call timeout. Default 30000
+  FIELDS               Comma list of fixture fields to fill.
+                       Default 期望工作地区,期望薪资,到岗日期.
+                       Only those three names are accepted.
 `;
 
 export function readPort(env = process.env) {
@@ -171,6 +182,30 @@ export function expectedReadback() {
   };
 }
 
+const FIXTURE_ANSWERS = Object.freeze({
+  期望工作地区: REGION_PATH,
+  期望薪资: SALARY_ANSWER,
+  到岗日期: ARRIVAL_ANSWER
+});
+
+export function readFillFields(env = process.env) {
+  const raw = env.FIELDS;
+  if (raw == null || String(raw).trim() === '') return [...FILL_QUESTIONS];
+  const parts = String(raw).split(',').map((item) => item.trim()).filter(Boolean);
+  const allowed = new Set(FILL_QUESTIONS);
+  if (!parts.length || parts.some((item) => !allowed.has(item))) throw new Error('bad fields');
+  return FILL_QUESTIONS.filter((question) => parts.includes(question));
+}
+
+export function liveProfileFor(questions) {
+  const answers = {};
+  for (const question of questions) {
+    if (!Object.prototype.hasOwnProperty.call(FIXTURE_ANSWERS, question)) throw new Error('bad fields');
+    answers[question] = FIXTURE_ANSWERS[question];
+  }
+  return confirmedCustomProfile('求职意向', answers);
+}
+
 export function liveFillRequest() {
   return {
     requestId: 'live-intent-0001',
@@ -178,6 +213,103 @@ export function liveFillRequest() {
     replaceExisting: true,
     omitAbsent: true,
     profile: fixedLiveProfile()
+  };
+}
+
+export function liveFillRequestFor(question, index = 0) {
+  const requestId = `live-intent-${String(index).padStart(4, '0')}`;
+  return {
+    requestId,
+    profileBinding: LIVE_BINDING,
+    replaceExisting: true,
+    omitAbsent: true,
+    profile: liveProfileFor([question])
+  };
+}
+
+function compactLevels(levels) {
+  if (!Array.isArray(levels)) return [];
+  return levels.slice(0, 2).map((level, index) => ({
+    level: Number.isInteger(level?.level) ? level.level : index + 1,
+    options: Array.isArray(level?.options) ? level.options.slice(0, 40).map((option) => ({
+      text: typeof option?.text === 'string' ? option.text.slice(0, 80) : '',
+      classes: Array.isArray(option?.classes) ? option.classes.slice(0, 12).map((name) => String(name).slice(0, 40)) : []
+    })) : []
+  }));
+}
+
+function compactClicked(clicked) {
+  if (!clicked || typeof clicked !== 'object') return null;
+  return {
+    level: Number.isInteger(clicked.level) ? clicked.level : null,
+    text: typeof clicked.text === 'string' ? clicked.text.slice(0, 80) : '',
+    classes: Array.isArray(clicked.classes) ? clicked.classes.slice(0, 12).map((name) => String(name).slice(0, 40)) : []
+  };
+}
+
+function compactStep(step) {
+  const siteValid = step?.siteValid === true ? true : step?.siteValid === false ? false : null;
+  return {
+    step: typeof step?.step === 'string' ? step.step.slice(0, 40) : '',
+    panelFound: step?.panelFound === true,
+    panelShown: step?.panelShown === true,
+    levels: compactLevels(step?.levels),
+    clicked: compactClicked(step?.clicked),
+    inputValue: typeof step?.inputValue === 'string' ? step.inputValue.slice(0, 80) : '',
+    confirmPresent: step?.confirmPresent === true,
+    confirmClicked: step?.confirmClicked === true,
+    siteValid,
+    note: typeof step?.note === 'string' ? step.note.slice(0, 80) : ''
+  };
+}
+
+export function compactPickerDiag(diag) {
+  if (!diag || typeof diag !== 'object') return null;
+  const siteValid = diag.siteValid === true ? true : diag.siteValid === false ? false : null;
+  return {
+    question: typeof diag.question === 'string' ? diag.question.slice(0, 40) : '',
+    reason: typeof diag.reason === 'string' ? diag.reason.slice(0, 80) : '',
+    inputBefore: typeof diag.inputBefore === 'string' ? diag.inputBefore.slice(0, 80) : '',
+    inputAfter: typeof diag.inputAfter === 'string' ? diag.inputAfter.slice(0, 80) : '',
+    confirmPresent: diag.confirmPresent === true,
+    confirmClicked: diag.confirmClicked === true,
+    siteValid,
+    steps: Array.isArray(diag.steps) ? diag.steps.slice(0, 12).map(compactStep) : []
+  };
+}
+
+export function mergeFillResults(fills) {
+  const list = Array.isArray(fills) ? fills : [];
+  const fields = [];
+  const pickerDiags = [];
+  for (const fill of list) {
+    if (Array.isArray(fill?.fields)) {
+      for (const row of fill.fields) {
+        if (!row?.question) continue;
+        const compact = {
+          question: row.question,
+          status: row.status || 'failed',
+          reason: typeof row.reason === 'string' ? row.reason : ''
+        };
+        const index = fields.findIndex((item) => item.question === compact.question);
+        if (index >= 0) fields[index] = compact;
+        else fields.push(compact);
+      }
+    }
+    const diag = compactPickerDiag(fill?.pickerDiag);
+    if (diag) pickerDiags.push(diag);
+  }
+  const failed = fields.find((row) => row.status !== 'verified');
+  return {
+    ok: fields.length > 0 && fields.every((row) => row.status === 'verified'),
+    reason: failed ? failed.reason : null,
+    writeStarted: list.some((fill) => fill?.writeStarted === true),
+    liveSupportClaimed: list.some((fill) => fill?.liveSupportClaimed === true),
+    softwareClickedSave: list.some((fill) => fill?.softwareClickedSave === true),
+    softwareClickedSubmit: list.some((fill) => fill?.softwareClickedSubmit === true),
+    softwareClickedDelete: list.some((fill) => fill?.softwareClickedDelete === true),
+    fields,
+    pickerDiags
   };
 }
 
@@ -668,7 +800,8 @@ function publicFill(fill) {
       question: row?.question || '',
       status: row?.status || '',
       reason: row?.reason || ''
-    })) : []
+    })) : [],
+    pickerDiags: Array.isArray(fill.pickerDiags) ? fill.pickerDiags.map(compactPickerDiag).filter(Boolean) : []
   };
 }
 
@@ -703,8 +836,8 @@ export async function runGthIntentLive(options = {}) {
   const getJsonFn = options.getJson || getJson;
   const connectFn = options.connectCdp || connectCdp;
   const filePath = path.join(outDir, EVIDENCE_NAME);
-  const profile = fixedLiveProfile();
-  const request = liveFillRequest();
+  const fillQuestions = Array.isArray(options.fillQuestions) ? options.fillQuestions : readFillFields(env);
+  const profile = liveProfileFor(fillQuestions);
   const steps = [];
   const cdpPosts = [];
   const sessions = [];
@@ -873,26 +1006,33 @@ export async function runGthIntentLive(options = {}) {
               })));
               continue;
             }
-            try {
-              run.fill = await evaluate(
-                session,
-                `globalThis.${section.globalName}.trial(${JSON.stringify(request)})`,
-                { timeoutMs: stepTimeoutMs, step: `fill_${section.id}`, awaitPromise: true }
-              );
-              steps.push(`fill_${section.id}`);
-            } catch (error) {
-              run.fill = {
-                ok: false,
-                reason: error?.reason || 'eval_failed',
-                fields: [],
-                writeStarted: false,
-                liveSupportClaimed: false,
-                softwareClickedSave: false,
-                softwareClickedSubmit: false,
-                softwareClickedDelete: false
-              };
-              steps.push(`fill_${section.id}_failed`);
+            const fills = [];
+            for (let index = 0; index < fillQuestions.length; index += 1) {
+              const question = fillQuestions[index];
+              const step = `fill_${section.id}_${index}`;
+              try {
+                const fill = await evaluate(
+                  session,
+                  `globalThis.${section.globalName}.trial(${JSON.stringify(liveFillRequestFor(question, index))})`,
+                  { timeoutMs: stepTimeoutMs, step, awaitPromise: true }
+                );
+                fills.push(fill);
+                steps.push(step);
+              } catch (error) {
+                fills.push({
+                  ok: false,
+                  reason: error?.reason || 'eval_failed',
+                  fields: [{ question, status: 'failed', reason: error?.reason || 'eval_failed' }],
+                  writeStarted: false,
+                  liveSupportClaimed: false,
+                  softwareClickedSave: false,
+                  softwareClickedSubmit: false,
+                  softwareClickedDelete: false
+                });
+                steps.push(`${step}_failed`);
+              }
             }
+            run.fill = mergeFillResults(fills);
             if (run.fill?.liveSupportClaimed === true) moduleClaimedSupport = true;
             if (run.fill?.softwareClickedSave === true || run.fill?.softwareClickedSubmit === true || run.fill?.softwareClickedDelete === true) {
               bannedClick = true;
@@ -926,7 +1066,7 @@ export async function runGthIntentLive(options = {}) {
             }
             adopt(buildFieldRows({
               questions: section.questions,
-              fillQuestions: FILL_QUESTIONS,
+              fillQuestions,
               fillFields: run.fill?.fields,
               readback: run.read?.readback,
               expected: expectedReadback(),
@@ -1019,8 +1159,11 @@ export async function runGthIntentLive(options = {}) {
         cancel: run.cancel
       })),
       unfilled: fields.filter((row) => row.status !== 'verified').map((row) => ({ q: row.q, reason: row.reason })),
+      fillQuestions,
+      pickerDiags: sectionRuns.flatMap((run) => (Array.isArray(run.fill?.pickerDiags) ? run.fill.pickerDiags : [])),
       limits: [
-        'Fills only 到岗日期 (el-select, exact option 一个月内), 期望工作地区 (cascader answer 北京||大兴区, input readback is the level-2 text 大兴区), and 期望薪资 (plain text 15000) by calling ResumeGthIntent.trial. The shipped writer clicks inside the cascader, including its panel 确定. This runner does not.',
+        'Fills only 到岗日期 (el-select, exact option 一个月内), 期望工作地区 (cascader answer 北京||大兴区, input readback is the level-2 text 大兴区), and 期望薪资 (plain text 15000). FIELDS is a comma list restricted to those three. Each name is its own ResumeGthIntent.trial with omitAbsent and that one answer. trial() itself stops on the first thrown picker_* and would leave later answers not_run; one answer per call is how 期望薪资 and 到岗日期 still run after the cascader aborts. The shipped writer clicks inside the cascader, including its panel 确定. This runner does not.',
+        'A picker_* abort returns pickerDiag (per-step panel found/shown, level option texts and classes, the option clicked, input before/after, whether 确定 was present or clicked, siteValid). This runner copies that object onto finalDetails.pickerDiags. The diag read does not click outside the cascader panel and never clicks 保存.',
         '期望从事职位类别, 现从事行业, 现从事职位类别, and 现薪资 are read back only. omitAbsent:true leaves a required question untouched when this profile has no answer. The product popup still requires all five before it sends GTH_INTENT_FILL.',
         '编辑 is only the one visible .title_ a.h-e-btn whose text is 编辑. After that click the 编辑 link must be gone, then the runner waits until form.el-form.sec-form contains .el-form-item.',
         '取消 is only the one visible button whose type is button and whose text is 取消 inside form.el-form.sec-form. 关闭, anchors, 保存, and 确定 are not clicked by this runner.',

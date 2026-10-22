@@ -16,7 +16,29 @@
   "anchors": {
     "before": "毕业院校",
     "after": "毕业时间",
-    "note": "个人基本信息 order in the 2026-10-23 probe is 毕业院校, then 学位, 学历, 专业名称, then 毕业时间. 教育经历 later repeats 学位, 学历, and 专业名称 after that 毕业时间 row. The basic row is the single form item strictly between the one 毕业院校 row and the one 毕业时间 row."
+    "note": "个人基本信息 order in the 2026-10-23 probe is 毕业院校, then 学位, 学历, 专业名称, then 毕业时间. Live tip cc731d69 has two 毕业院校 rows before 学位: a flat ant-select with a preexisting selected value, then input.ant-input placeholder 请填写毕业院校. Harvest labels list 毕业院校* four times, two identical captions on each row. The anchor start is that preexisting ant-select when the pair is exactly those two controls; otherwise a unique 毕业院校 row. 教育经历 later repeats 学位, 学历, and 专业名称 after 毕业时间. The basic row is the single form item strictly after the anchor start and before the one 毕业时间 row."
+  },
+  "dualSchool": {
+    "note": "Live 2026-10-23 two 毕业院校 rows on resumeOperation. Not a support claim. The select display and the anchored tokens are probed basic-row text. The text row is the harvested placeholder input. Option menus were not opened.",
+    "order": ["select", "text"],
+    "select": {
+      "label": "毕业院校",
+      "kind": "select",
+      "duplicateCaption": true,
+      "valueSample": "悉尼大学"
+    },
+    "text": {
+      "label": "毕业院校",
+      "kind": "text",
+      "duplicateCaption": true,
+      "placeholder": "请填写毕业院校",
+      "valueSample": ""
+    },
+    "anchored": {
+      "degree": "硕士",
+      "level": "硕士研究生",
+      "major": "金融学"
+    }
   },
   "text": {
     "controlClass": "ant-input",
@@ -55,7 +77,7 @@
       "kind": "text",
       "placeholder": "请填写毕业院校",
       "valueSample": "悉尼大学",
-      "controlNote": "Same-page harvest tests/fixtures/live-harvest/20261019/cms-readiness.json records an INPUT type=text placeholder 请填写毕业院校 (valueLen 28) on this resumeOperation URL. The 2026-10-23 structural list called the row a flat select only because those rows were not opened and the class list was copied from 国籍/地区. Live 2026-10-23 07:23 after the closed-select face fallback still returned control_not_supported for this row while 期望工作性质 located. The harvest labels list 毕业院校* four times and neighboring labels twice, so duplicate identical captions still name the one row. valueSample is the probed display token only."
+      "controlNote": "Same-page harvest tests/fixtures/live-harvest/20261019/cms-readiness.json records an INPUT type=text placeholder 请填写毕业院校 (valueLen 28) on this resumeOperation URL. The 2026-10-23 structural list called the row a flat select only because those rows were not opened and the class list was copied from 国籍/地区. Live 2026-10-23 07:23 after the closed-select face fallback still returned control_not_supported for this row while 期望工作性质 located. The harvest labels list 毕业院校* four times and neighboring labels twice. Identical captions on one row still name it. Live tip cc731d69 is two rows: the preexisting ant-select and this text input. See dualSchool. valueSample is the probed display token only."
     },
     {
       "key": "degree",

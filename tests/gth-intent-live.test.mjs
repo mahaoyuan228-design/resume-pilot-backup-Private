@@ -8,7 +8,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { spawnSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { JSDOM } from 'jsdom';
 import { assessGthIntentFill } from '../src/background/gth-intent-auto.mjs';
@@ -45,6 +45,7 @@ import {
   readFillFields,
   readOutDir,
   readPort,
+  readTipSha,
   runGthIntentLive
 } from '../scripts/live/gth-intent-live.mjs';
 
@@ -70,6 +71,41 @@ function closedEditorSnapshot(extra = {}) {
     ...extra
   };
 }
+
+test('tip SHA prefers Git HEAD over the deployed marker', (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gth-tip-git-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const git = (args) => execFileSync('git', args, { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+  git(['init']);
+  git(['-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.com', '-c', 'commit.gpgsign=false', 'commit', '--allow-empty', '-m', 'fixture']);
+  const head = git(['rev-parse', 'HEAD']);
+  fs.writeFileSync(path.join(root, 'TIP_SHA.txt'), 'b'.repeat(40));
+
+  assert.equal(readTipSha(root), head);
+});
+
+test('tip SHA uses the validated Dev-root marker when Git metadata is absent', (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gth-tip-dev-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const sha = '75761b0dcc0cf1b7e31dcbbad571c49b1316892b';
+  fs.writeFileSync(path.join(root, 'TIP_SHA.txt'), ` ${sha}\r\n`);
+
+  assert.equal(readTipSha(root), sha);
+});
+
+test('tip SHA retains the base tip when the deployed marker is missing, invalid, or unreadable', (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gth-tip-invalid-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const marker = path.join(root, 'TIP_SHA.txt');
+  assert.equal(readTipSha(root), BASE_TIP);
+  for (const value of ['', 'not-a-sha', '123456', 'a'.repeat(65), `${'a'.repeat(40)}\nextra`]) {
+    fs.writeFileSync(marker, value);
+    assert.equal(readTipSha(root), BASE_TIP, JSON.stringify(value));
+  }
+  fs.rmSync(marker);
+  fs.mkdirSync(marker);
+  assert.equal(readTipSha(root), BASE_TIP);
+});
 
 test('field rows verify fills against readback and leave the other four read-only', () => {
   const matched = buildFieldRows({

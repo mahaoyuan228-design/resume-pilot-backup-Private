@@ -99,7 +99,99 @@ function wireCascader(doc, id, leaf, { single = false, reveal = true } = {}) {
   });
   return stats;
 }
-function wireMonths(doc) {
+function wireModelMonths(doc, options) {
+  const panel = doc.getElementById('month-panel');
+  doc.body.append(panel);
+  const year = panel.querySelector('.el-date-picker__header-label');
+  const inputs = ['start-date', 'end-date'].map(id => doc.getElementById(id));
+  const models = new Map(inputs.map(input => [input, '']));
+  let active;
+  const stats = { open: 0, cells: 0, picks: 0, emits: 0, rollbacks: 0, anchorClicks: 0, tdClicks: 0, rootClicks: 0 };
+  const hide = () => { panel.style.display = 'none'; };
+  const rollback = () => {
+    for (const input of inputs) {
+      if (input.value !== models.get(input)) stats.rollbacks++;
+      input.value = models.get(input);
+    }
+    hide();
+  };
+  const commit = (input, answer, kind) => {
+    models.set(input, answer);
+    input.value = answer;
+    stats[kind]++;
+    const item = input.closest('.el-form-item');
+    const invalid = options.validationError || inputs.some(node => !models.get(node));
+    item.classList.toggle('is-error', invalid);
+    item.querySelector('.el-form-item__error')?.remove();
+    if (invalid) {
+      const error = doc.createElement('div');
+      error.className = 'el-form-item__error';
+      error.textContent = '请选择任职时间';
+      item.append(error);
+    }
+    hide();
+  };
+  for (const input of inputs) {
+    const picker = {
+      selectionMode: 'month',
+      get year() { return Number(year.textContent.match(/\d{4}/u)[0]); },
+      handleMonthPick(index) {
+        const answer = `${this.year}-${String(index + 1).padStart(2, '0')}`;
+        commit(input, options.mismatch ? '2001-01' : answer, 'picks');
+      },
+      $children: []
+    };
+    const editor = input.closest('.el-date-editor');
+    if (options.accept !== false) {
+      editor.__vue__ = options.emit ? {
+        userInput: '',
+        parseString(answer) { const [y, m] = answer.split('-').map(Number); return new Date(y, m - 1, 1); },
+        emitInput(date) { commit(input, `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`, 'emits'); }
+      } : { picker };
+    }
+    doc.getElementById(input.id + '-icon').addEventListener('click', () => {
+      active = input;
+      if (!panel.isConnected) doc.body.append(panel);
+      panel.__vue__ = options.accept === false || options.emit ? null : picker;
+      panel.style.display = 'block';
+      stats.open++;
+    });
+    input.addEventListener('blur', rollback);
+  }
+  for (const [selector, delta] of [['.el-icon-d-arrow-left', -1], ['.el-icon-d-arrow-right', 1]]) {
+    panel.querySelector(selector).addEventListener('click', () => { year.textContent = `${Number(year.textContent.match(/\d{4}/u)[0]) + delta} 年`; });
+  }
+  panel.querySelector('.el-month-table').addEventListener('click', event => {
+    const cell = event.target.closest('td');
+    if (!cell || !panel.contains(cell)) return;
+    if (event.target.tagName === 'A') stats.anchorClicks++;
+    if (event.target.tagName === 'TD') stats.tdClicks++;
+    if (options.tdOnly && event.target.tagName !== 'TD') return;
+    const month = MONTHS.indexOf(cell.textContent.trim()) + 1;
+    // The click paints only the DOM. Escape/blur restores the model unless
+    // the shared page-world bridge accepted this exact input first.
+    active.value = `${year.textContent.match(/\d{4}/u)[0]}-${String(month).padStart(2, '0')}`;
+    stats.cells++;
+    if (options.drift && active === inputs[0]) inputs[1].value = '1999-01';
+    if (options.remove) panel.remove();
+    if (options.close) hide();
+    if (options.dual) {
+      for (let i = 0; i < 2; i++) {
+        const extra = panel.cloneNode(true);
+        extra.removeAttribute('id');
+        extra.style.display = 'block';
+        doc.body.append(extra);
+      }
+    }
+  });
+  doc.addEventListener('keydown', event => { if (event.key === 'Escape') rollback(); });
+  doc.documentElement.addEventListener('click', event => {
+    if (event.target === doc.documentElement) { stats.rootClicks++; rollback(); }
+  });
+  return stats;
+}
+function wireMonths(doc, options = {}) {
+  if (options.model) return wireModelMonths(doc, options);
   const panel = doc.getElementById('month-panel');
   doc.body.append(panel);
   const year = panel.querySelector('.el-date-picker__header-label');
@@ -119,7 +211,7 @@ function wireMonths(doc) {
   doc.addEventListener('keydown', event => { if (event.key === 'Escape') panel.style.display = 'none'; });
   return stats;
 }
-async function boot({ single = false, reveal = true, industrySingle = false } = {}) {
+async function boot({ single = false, reveal = true, industrySingle = false, months = {} } = {}) {
   const dom = new JSDOM(`<!doctype html><head><style>input[type="checkbox"] { display:none }</style></head><body>${SECTION_TITLES.map(title =>
     `<section class="r-section"><div class="title_">${title}${title === '工作经验' ? '<a class="h-e-btn" href="javascript:;">添加</a>' : ''}</div><div class="sec-context"></div></section>`).join('')}</body>`,
   { url: 'https://hr.gtht.com/resume/edit/', pretendToBeVisual: true, runScripts: 'outside-only' });
@@ -140,7 +232,7 @@ async function boot({ single = false, reveal = true, industrySingle = false } = 
     section.append(form);
     stats.job = wireCascader(doc, 'job', '银行', { single, reveal });
     stats.industry = wireCascader(doc, 'industry', '证券/投资/基金/信托', { single: industrySingle });
-    stats.months = wireMonths(doc);
+    stats.months = wireMonths(doc, months);
     form.querySelector('#editor-cancel').addEventListener('click', () => { form.remove(); section.querySelector('.title_').append(add); });
     form.querySelector('#editor-save').addEventListener('click', () => stats.dangerous.push('save'));
   });
@@ -359,6 +451,135 @@ test('month dismissal sequence cannot borrow a wrong, hidden, ambiguous or forei
       escapeMonth(f);
       assert.throws(() => attempt(f), /refusing_forbidden_click/);
       assert.deepEqual(f.stats.dangerous, []);
+    } finally { f.close(); }
+  }
+});
+
+test('full work trial retains both painted months through model acceptance and dismissal, then fills later fields', async () => {
+  const scenarios = [
+    { name: 'connected open panel', picks: 2 },
+    { name: 'connected closed panel', close: true, picks: 2 },
+    { name: 'removed panel uses editor picker', remove: true, picks: 2 },
+    { name: 'connected panel uses editor emit', emit: true, emits: 2 },
+    { name: 'removed panel uses editor emit', remove: true, emit: true, emits: 2 },
+    { name: 'table requires a TD retry', tdOnly: true, picks: 2, tdClicks: 2 }
+  ];
+  for (const scenario of scenarios) {
+    const f = await boot({ months: { model: true, ...scenario } });
+    try {
+      const fill = await f.window.ResumeGthWorkOpen.trial(request);
+      assert.equal(fill.ok, true, JSON.stringify({ scenario: scenario.name, fill, months: f.stats.months }));
+      assert.equal(f.stats.months.picks, scenario.picks || 0, scenario.name);
+      assert.equal(f.stats.months.emits, scenario.emits || 0, scenario.name);
+      assert.equal(f.stats.months.tdClicks, scenario.tdClicks || 0, scenario.name);
+      assert.equal(f.stats.months.rollbacks, 0, scenario.name);
+      assert.equal(f.stats.months.rootClicks >= 2, true, scenario.name);
+      const models = Array.from(f.window.__gthFullResumeMonthModels(), row => ({ ...row }));
+      assert.deepEqual(models, [
+        { question: '任职时间', endpoint: 'start', answer: '2020-03', result: scenario.emit ? 'emitted' : 'picked',
+          panelConnected: !scenario.remove, value: '2020-03' },
+        { question: '任职时间', endpoint: 'end', answer: '2024-08', result: scenario.emit ? 'emitted' : 'picked',
+          panelConnected: !scenario.remove, value: '2024-08' }
+      ], scenario.name);
+      const read = f.api.read(3, work.questions);
+      assert.equal(read.readback.find(row => row.q === '任职时间').siteValidationFailed, false, scenario.name);
+      const rows = buildFieldRows(work, [{ fill }], read);
+      const tenure = rows.find(row => row.q === '任职时间');
+      assert.equal(tenure.status, 'verified', scenario.name);
+      assert.equal(tenure.reason, 'readback_matched', scenario.name);
+      assert.equal(tenure.startMonth, '2020-03', scenario.name);
+      assert.equal(tenure.endMonth, '2024-08', scenario.name);
+      if (scenario === scenarios[0]) {
+        const input = f.doc.getElementById('end-date');
+        const item = input.closest('.el-form-item');
+        const failedValidation = () => f.api.read(3, work.questions).readback.find(row => row.q === '任职时间').siteValidationFailed;
+        item.classList.add('is-validating');
+        assert.equal(failedValidation(), true);
+        item.classList.remove('is-validating');
+        input.setAttribute('aria-invalid', 'true');
+        assert.equal(failedValidation(), true);
+        input.removeAttribute('aria-invalid');
+        input.setCustomValidity('invalid range');
+        assert.equal(failedValidation(), true);
+        input.setCustomValidity('');
+        const error = f.doc.createElement('div');
+        error.className = 'el-form-item__error';
+        error.textContent = '请选择任职时间';
+        item.append(error);
+        assert.equal(failedValidation(), true);
+        error.style.display = 'none';
+        assert.equal(failedValidation(), false);
+        error.remove();
+      }
+      for (const q of ['工作地区', '职责与业绩', '公司所属行业', '下属人数', '离职原因']) {
+        assert.equal(rows.find(row => row.q === q).status, 'verified', `${scenario.name}: ${q}`);
+      }
+      assert.equal(rows.find(row => row.q === '薪资').reason, 'control_not_supported');
+      assert.equal(f.doc.getElementById('salary').value, '');
+      assert.equal(fill.liveSupportClaimed, false);
+      assert.equal(fill.softwareClickedSave, false);
+      assert.equal(fill.softwareClickedSubmit, false);
+      assert.equal(fill.softwareClickedDelete, false);
+      const cancel = await f.api.cancel(3);
+      assert.equal(cancel.closed, true, scenario.name);
+      assert.equal(cancel.forced, false, scenario.name);
+      assert.equal(f.api.state().editorFormCount, 0, scenario.name);
+      assert.equal(f.section.querySelectorAll('.sec-context > .sec-detail').length, 0, scenario.name);
+      assert.equal(f.api.clicks().every(row => row.allowed), true, JSON.stringify(f.api.clicks()));
+      assert.deepEqual(f.stats.dangerous, []);
+      assert.deepEqual(Array.from(f.api.requests()), []);
+      f.window.__gthFullResumeChromeRestore();
+      assert.equal(typeof f.window.__gthFullResumeMonthModels, 'undefined', scenario.name);
+    } finally { f.close(); }
+  }
+});
+
+test('full work model failures stop tenure and later writes while remaining discardable', async () => {
+  for (const scenario of [
+    { name: 'no picker or editor model acceptance', accept: false, reason: 'readback_mismatch' },
+    { name: 'model accepts a different value', mismatch: true, reason: 'readback_mismatch' },
+    { name: 'site rejects the complete range', validationError: true, reason: 'readback_mismatch' },
+    { name: 'other month drifts', drift: true, reason: 'control_not_supported' },
+    { name: 'multiple active month panels', dual: true, reason: 'control_not_supported' }
+  ]) {
+    const f = await boot({ months: { model: true, ...scenario } });
+    try {
+      const fill = await f.window.ResumeGthWorkOpen.trial(request);
+      assert.equal(fill.ok, false, JSON.stringify({ scenario: scenario.name, fill }));
+      assert.equal(fill.reason, scenario.reason, scenario.name);
+      assert.equal(fill.fields.find(row => row.question === '任职时间').reason, scenario.reason, scenario.name);
+      assert.equal(fill.fields.find(row => row.question === '职责与业绩').reason, 'not_run', scenario.name);
+      assert.equal(f.doc.getElementById('description').value, '', scenario.name);
+      assert.equal(f.doc.getElementById('industry').value, '', scenario.name);
+      assert.equal(f.doc.getElementById('salary').value, '', scenario.name);
+      const models = Array.from(f.window.__gthFullResumeMonthModels(), row => ({ ...row }));
+      if (scenario.accept === false) {
+        assert.equal(f.stats.months.rollbacks > 0, true, scenario.name);
+        assert.equal(f.doc.getElementById('start-date').value, '', scenario.name);
+        assert.deepEqual(models, [{ question: '任职时间', endpoint: 'start', answer: '2020-03',
+          result: 'no-vue', panelConnected: true, value: '2020-03' }], scenario.name);
+      }
+      if (scenario.mismatch) {
+        assert.deepEqual(models, [{ question: '任职时间', endpoint: 'start', answer: '2020-03',
+          result: 'mismatch', panelConnected: true, value: '2001-01' }], scenario.name);
+      }
+      if (scenario.validationError) {
+        assert.equal(f.doc.getElementById('start-date').value, '2020-03', scenario.name);
+        assert.equal(f.doc.getElementById('end-date').value, '2024-08', scenario.name);
+        assert.deepEqual(models.map(row => [row.endpoint, row.result]), [['start', 'picked'], ['end', 'picked']], scenario.name);
+        assert.equal(f.api.read(3, work.questions).readback.find(row => row.q === '任职时间').siteValidationFailed, true, scenario.name);
+      }
+      assert.equal(fill.liveSupportClaimed, false);
+      assert.equal(fill.softwareClickedSave, false);
+      assert.equal(fill.softwareClickedSubmit, false);
+      assert.equal(fill.softwareClickedDelete, false);
+      assert.equal((await f.api.cancel(3)).closed, true, scenario.name);
+      assert.equal(f.api.state().editorFormCount, 0, scenario.name);
+      assert.equal(f.api.clicks().every(row => row.allowed), true, JSON.stringify(f.api.clicks()));
+      assert.deepEqual(f.stats.dangerous, []);
+      assert.deepEqual(Array.from(f.api.requests()), []);
+      f.window.__gthFullResumeChromeRestore();
+      assert.equal(typeof f.window.__gthFullResumeMonthModels, 'undefined', scenario.name);
     } finally { f.close(); }
   }
 });

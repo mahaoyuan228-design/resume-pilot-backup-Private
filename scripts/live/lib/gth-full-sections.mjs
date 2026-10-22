@@ -125,13 +125,32 @@ export function chromeShimExpression() {
     const previous = globalThis.chrome;
     const descriptor = Object.getOwnPropertyDescriptor(globalThis, 'chrome');
     const acceptMonth = ${acceptGthMonthInPage.toString()};
+    const monthModels = [];
     const listeners = new Set();
     const runtime = {
       id: 'gth-full-resume-live-shim',
       getManifest: () => ({ background: { service_worker: 'src/background/worker.mjs' } }),
       async sendMessage(message) {
         if (message?.type === 'RESUME_PROFILE_BINDING_CHECK') return { allowed: true };
-        if (message?.type === 'GTH_MONTH_MODEL_ACCEPT') return acceptMonth({ answer: message.answer });
+        if (message?.type === 'GTH_MONTH_MODEL_ACCEPT') {
+          // Observe the shared bridge; never replace its acceptance verdict or
+          // repair a failed month by assigning input.value in the harness.
+          const inputs = [...document.querySelectorAll('[data-gth-month-role="input"]')];
+          const input = inputs.length === 1 ? inputs[0] : null;
+          const item = input?.closest('.el-form-item');
+          const question = item?.querySelector('.el-form-item__label')?.textContent.trim();
+          const known = ['出生年月', '参加工作时间', '任职时间', '在校时间'].includes(question);
+          const peers = item ? [...item.querySelectorAll('.el-date-editor--month input')] : [];
+          const month = value => /^[0-9]{4}-(0[1-9]|1[0-2])$/u.test(String(value || '').trim()) ? String(value).trim() : null;
+          const panelConnected = document.querySelectorAll('[data-gth-month-role="panel"]').length === 1;
+          const result = acceptMonth({ answer: message.answer });
+          monthModels.push({ question: known ? question : null,
+            endpoint: known && peers.length === 2 ? ['start', 'end'][peers.indexOf(input)] || null : null,
+            answer: month(message.answer), result: result.result,
+            panelConnected,
+            value: known ? month(input?.value) : null });
+          return result;
+        }
         return { allowed: false };
       },
       onMessage: {
@@ -142,9 +161,11 @@ export function chromeShimExpression() {
     const host = Object.assign({}, previous || {}, { runtime });
     globalThis.chrome = host;
     if (globalThis.chrome !== host) throw new Error('chrome_shim_unavailable');
+    globalThis.__gthFullResumeMonthModels = () => monthModels.map(row => ({ ...row }));
     globalThis.__gthFullResumeChromeRestore = () => {
       if (descriptor) Object.defineProperty(globalThis, 'chrome', descriptor);
       else delete globalThis.chrome;
+      delete globalThis.__gthFullResumeMonthModels;
       delete globalThis.__gthFullResumeChromeRestore;
     };
     return { ok: true, installed: true, monthBridge: true };

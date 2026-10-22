@@ -391,6 +391,11 @@ test('CDP runner evaluates the real page guard on one tab, intercepts requests, 
             // Current education fullTrial owns row opening rather than the
             // generic page.open used by the other product writers.
             if (section.id === 'education') await f.driver.open(section);
+            if (section.id === 'work') {
+              // A rejected bridge call must reach the combined artifact and
+              // its own fill, even when later sections make no month calls.
+              await window.chrome.runtime.sendMessage({ type: 'GTH_MONTH_MODEL_ACCEPT', answer: '2020-03' });
+            }
             if (section.id === 'skills') {
               eventSink({ method: 'Fetch.requestPaused', params: { requestId: 'lookup', request: {
                 method: 'POST', url: 'https://hr.gtht.com/interface/js/type/getsalaryunit.json?private=discard'
@@ -434,12 +439,18 @@ test('CDP runner evaluates the real page guard on one tab, intercepts requests, 
   assert.ok(evidence.sections.find((section) => section.id === 'skills').requests.some((request) => request.method === 'HEAD' && request.allowed === false));
   assert.equal(evidenceExitCode(evidence), 3);
   assert.ok(evidence.requests.every((request) => !request.url.includes('?')));
+  assert.deepEqual(JSON.parse(JSON.stringify(evidence.monthModels)), [{
+    question: null, endpoint: null, answer: '2020-03', result: 'bad-answer', panelConnected: false, value: null
+  }]);
+  assert.deepEqual(evidence.sections.find(section => section.id === 'work').fills[0].monthModels, evidence.monthModels);
+  assert.deepEqual(Array.from(evidence.sections.find(section => section.id === 'skills').fills[0].monthModels), []);
   assert.equal(evidence.liveSupportClaimed, false);
   assert.equal(window.document.querySelectorAll('form').length, 0);
   assert.equal(window.HTMLElement.prototype.click, originalClick);
   assert.equal(window.EventTarget.prototype.dispatchEvent, originalDispatch);
   assert.equal(window.HTMLFormElement.prototype.submit, originalSubmit);
   assert.equal(window.chrome, undefined);
+  assert.equal(window.__gthFullResumeMonthModels, undefined);
   assert.ok(commands.some((command) => command.method === 'Fetch.disable'));
   assert.equal(closed, true);
   assert.deepEqual(fs.readdirSync(outDir), [EVIDENCE_NAME]);

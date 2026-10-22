@@ -70,7 +70,7 @@ export async function runGthFullResumeLive(options = {}) {
   const evidence = {
     tipSha: options.tipSha || readTipSha(root), page: EDIT_PAGE,
     neverSave: true, liveSupportClaimed: false, reason: null,
-    runtimeFiles: [...RUNTIME_FILES], sections: [], fields: [], clicks: [], requests: [],
+    runtimeFiles: [...RUNTIME_FILES], sections: [], fields: [], clicks: [], requests: [], monthModels: [],
     cleanup: {}, targetId: null
   };
   let session;
@@ -85,6 +85,7 @@ export async function runGthFullResumeLive(options = {}) {
   let cdpRead = 0;
   let pageRead = 0;
   let lastClicks = [];
+  let lastMonthModels = [];
   const transportErrors = [];
   let timeoutMs = 30000;
   const send = (method, params = {}, step = method) => session.send(method, params, { timeoutMs, step });
@@ -99,13 +100,14 @@ export async function runGthFullResumeLive(options = {}) {
   };
   const page = (method, args = []) => evaluate(`globalThis.__gthFullLive.${method}(${args.map((arg) => JSON.stringify(arg)).join(',')})`, method, true);
   const readEvidence = async () => {
-    const value = await evaluate('({ clicks: globalThis.__gthFullLive.clicks(), requests: globalThis.__gthFullLive.requests() })', 'read_guard_evidence');
+    const value = await evaluate('({ clicks: globalThis.__gthFullLive.clicks(), requests: globalThis.__gthFullLive.requests(), monthModels: globalThis.__gthFullResumeMonthModels?.() || [] })', 'read_guard_evidence');
     lastClicks = value?.clicks || [];
+    lastMonthModels = value?.monthModels || [];
     const pageRequests = value?.requests || [];
     requestJournal.push(...cdpRequests.slice(cdpRead), ...pageRequests.slice(pageRead));
     cdpRead = cdpRequests.length;
     pageRead = pageRequests.length;
-    return { clicks: lastClicks.slice(), requests: requestJournal.slice() };
+    return { clicks: lastClicks.slice(), requests: requestJournal.slice(), monthModels: lastMonthModels.slice() };
   };
   try {
     const port = options.port ?? readPort(env);
@@ -230,7 +232,8 @@ export async function runGthFullResumeLive(options = {}) {
           const after = await readEvidence();
           const blockedClicks = after.clicks.slice(before.clicks.length).filter((row) => row.allowed !== true);
           const forbiddenRequests = after.requests.slice(before.requests.length).filter((row) => row.allowed === false || !isAllowedRequest(row.method, row.url));
-          fills.push({ questions: trial.questions, fill, blockedClicks, forbiddenRequests });
+          fills.push({ questions: trial.questions, fill, blockedClicks, forbiddenRequests,
+            monthModels: after.monthModels.slice(before.monthModels.length) });
         }
         return fills;
       },
@@ -286,6 +289,7 @@ export async function runGthFullResumeLive(options = {}) {
     if (evidence.cleanup.evidenceReadFailed) evidence.reason ||= 'evidence_read_failed';
     if (Object.values(evidence.cleanup).includes(false)) evidence.reason ||= 'cleanup_failed';
     evidence.clicks = lastClicks.slice();
+    evidence.monthModels = lastMonthModels.slice();
     // Preserve failures even if the page execution context disappeared.
     requestJournal.push(...cdpRequests.slice(cdpRead));
     evidence.requests = requestJournal.length ? requestJournal.slice() : [...cdpRequests];

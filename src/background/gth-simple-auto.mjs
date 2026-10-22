@@ -1,5 +1,8 @@
 // GTH 职业技能与特长 auto (mirror GTH_BASIC_AUTO). Default: readiness.
 // Fill-without-save optional. Never clicks Save/Cancel/submit.
+// Ready only with a confirmed customAnswer and one matching customFact for
+// this page. Missing values fail closed. Nothing is invented.
+// liveSupportClaimed stays false. This path does not claim the site is supported.
 // Fill ok is true only after a settled readback. A Save/submit/delete or
 // savedOnSite/submitted claim is kept and fails closed.
 import {captureProfileBinding,assertProfileBinding,canonicalProfileHash,
@@ -50,15 +53,39 @@ function probePageFunc(expectedTitles){
     ...(otherForms.length?{warning:'gth_other_section_editor_open'}:{})};
 }
 
+function matchingFact(profile,answer){
+  const facts=Array.isArray(profile?.customFacts)?profile.customFacts:[];
+  const matched=facts.filter(item=>item?.question===SECTION);
+  const fact=matched.length===1?matched[0]:null;
+  if(!fact||fact.answer!==answer||fact.sitePageUrl!==PAGE||fact.sectionName!==SECTION||fact.rowContext!=='none')return null;
+  return fact;
+}
 function skillsSource(profile){
   const answer=typeof profile?.customAnswers?.[SECTION]==='string'?profile.customAnswers[SECTION]:'';
+  const hasAnswer=!!answer.trim();
+  const fact=hasAnswer?matchingFact(profile,answer):null;
   const confirmed=Array.isArray(profile?.confirmedFields)&&profile.confirmedFields.includes(`customAnswers.${SECTION}`);
   return {
     section:SECTION,
-    hasAnswer:!!answer.trim(),
+    path:`customAnswers.${SECTION}`,
+    hasAnswer,
     answerLength:answer.trim().length,
+    factOk:!!fact,
     confirmed:confirmed===true,
-    ready:!!answer.trim()&&confirmed===true
+    ready:hasAnswer&&!!fact&&confirmed===true
+  };
+}
+function skillsFillProfile(profile){
+  const source=skillsSource(profile);
+  if(!source.ready)fail(source.hasAnswer?'profile_fact_unconfirmed':'missing_profile_value');
+  const answer=profile.customAnswers[SECTION];
+  const fact=matchingFact(profile,answer);
+  return {
+    customAnswers:{[SECTION]:answer},
+    confirmedFields:[`customAnswers.${SECTION}`],
+    customFacts:[{
+      question:SECTION,answer:fact.answer,sitePageUrl:fact.sitePageUrl,sectionName:fact.sectionName,rowContext:fact.rowContext
+    }]
   };
 }
 
@@ -145,7 +172,7 @@ export function createGthSimpleAutoRunner({api=globalThis.chrome,verifyBeforeFil
       skills:source,profileBinding:binding,profileBindingError:bindingError,
       saveAllowedByPolicy:evaluateGthSavePolicy({fromAutoPath:true}).saveAllowedByPolicy,
       savePolicy:evaluateGthSavePolicy({fromAutoPath:true}),
-      note:'Auto path does not Save/submit; skills textarea only; existing non-empty different → soft-skip'
+      note:'Auto path does not Save/submit and does not claim the site is supported. 职业技能与特长 comes only from a confirmed customAnswer plus one matching customFact. Missing values fail closed.'
     };
   }
 
@@ -156,14 +183,15 @@ export function createGthSimpleAutoRunner({api=globalThis.chrome,verifyBeforeFil
     const raw=await get('resumeProfile');
     if(await canonicalProfileHash(raw,lifecycleOptions.cryptoImpl)!==binding.profileHash)fail('profile_binding_changed');
     const source=skillsSource(raw);
-    if(!source.ready)fail(source.hasAnswer?(source.confirmed?'skills_not_ready':'profile_fact_unconfirmed'):'missing_profile_value');
+    if(!source.ready)fail(source.hasAnswer?'profile_fact_unconfirmed':'missing_profile_value');
+    const profile=skillsFillProfile(raw);
     const trusted=await get('resumeTrustedOrigins');
     if(!Array.isArray(trusted)||!trusted.includes(ORIGIN)){
       if(message.originConfirmed!==true)fail('simple_job_origin_unconfirmed');
       await withProfileBinding(api.storage.local,binding,()=>api.storage.local.set({resumeTrustedOrigins:[...(Array.isArray(trusted)?trusted:[]),ORIGIN].slice(-100)}),lifecycleOptions);
     }
     const response=await bounded(()=>dispatchBoundSource(api.storage.local,binding,()=>shippedGthSkillsFill({
-      api,tab,requestId:newRequestId(),binding,profile:raw,replaceExisting:false
+      api,tab,requestId:newRequestId(),binding,profile,replaceExisting:false
     }),lifecycleOptions));
     await assertProfileBinding(api.storage.local,binding,lifecycleOptions);
     if(!response||typeof response!=='object')fail('gth_simple_fill_no_response');
@@ -180,6 +208,8 @@ export function createGthSimpleAutoRunner({api=globalThis.chrome,verifyBeforeFil
       fields:response.fields||[],
       writeStarted:response.writeStarted===true,
       editorLeftOpen:response.editorLeftOpen===true,
+      liveSupportClaimed:false,
+      complete:false,
       ...claims
     };
     return {job,responseSummary:{ok,writeStarted:job.writeStarted,reason:job.reason,field,...claims},outcome:job.outcome};
@@ -189,7 +219,7 @@ export function createGthSimpleAutoRunner({api=globalThis.chrome,verifyBeforeFil
     const mode=['readiness','fill'].includes(message.mode)?message.mode:'readiness';
     const openIfMissing=message.openIfMissing!==false;
     const report={version:1,kind:'gth_simple_auto',mode,at:Date.now(),section:SECTION,
-      steps:[],helpNeeded:false,saveAttempted:false,writeAttempted:false};
+      steps:[],helpNeeded:false,saveAttempted:false,writeAttempted:false,liveSupportClaimed:false,complete:false};
     const found=await findGthTab(sender?.tab?.id,{openIfMissing});
     report.steps.push({find:found.kind,tabId:found.tab.id,url:found.tab.url||null});
     await focusTab(found.tab);
@@ -256,7 +286,7 @@ export function createGthSimpleAutoRunner({api=globalThis.chrome,verifyBeforeFil
       const helpUrl=error?.helpUrl||PAGE;
       const help=reason==='gth_simple_login_or_wrong_page'||reason==='gth_simple_tab_missing'||/\/login\b/i.test(String(helpUrl));
       const payload={ok:false,reason,helpNeeded:help,helpUrl,helpReason:error?.helpReason||(help?'我需要帮助！请打开已登录的国泰海通简历编辑页 https://hr.gtht.com/resume/edit/':''),
-        mode:message?.mode||'readiness',saveAttempted:false,writeAttempted:false,at:Date.now(),version:1,kind:'gth_simple_auto'};
+        mode:message?.mode||'readiness',saveAttempted:false,writeAttempted:false,liveSupportClaimed:false,complete:false,at:Date.now(),version:1,kind:'gth_simple_auto'};
       api.storage.local.set({resumeGthSimpleAutoRun:payload}).catch(()=>{});
       sendResponse(payload);
     });

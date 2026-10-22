@@ -2096,6 +2096,7 @@ test('任职时间 fails closed when the range error remains after both months',
 
 test('薪资 source is the probe text path and does not claim live support', () => {
   assert.match(workSource, /question: '薪资', key: 'salary', kind: 'salaryText'/);
+  assert.match(workSource, /stays 'control_not_supported'/);
   assert.match(workSource, /Pending live Never-Save/);
   assert.match(workSource, /liveSupportClaimed stays false/);
   assert.doesNotMatch(workSource, /已支持/);

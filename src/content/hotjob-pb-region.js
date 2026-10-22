@@ -2,6 +2,12 @@
 // 现居住地, 籍贯 (ant cascader), 期望面试地点 (ant-select allow-clear).
 // DOM is the 2026-10-23 probe: ant-row/ant-form-item, ant-select-enabled,
 // cascader-plugins-wrap, ant-select-search__field, and the single-select dropdown.
+// Live that day: the wrap can hold two .ant-select nodes that both display the
+// same value. That pair is accepted only when the displays match and are
+// non-empty; any other count or a display mismatch fails closed. A closed
+// .ant-select-search__field may have no client rect while
+// .ant-select-selection / [role=combobox] is visible. Readback uses
+// .ant-select-selection-selected-value and strips a 请选择+label placeholder.
 // Pending live Never-Save. This does not claim the site is supported.
 // liveSupportClaimed stays false. Never clicks 保存/提交/投递/删除/下一步/返回/确定.
 // Does not target hotjob-mc.
@@ -17,6 +23,9 @@
     'ant-select-dropdown-placement-bottomLeft'
   ]);
   const FORBIDDEN = /^(?:保存|提交|投递|删除|下一步|返回|确定|取消)$/u;
+  const PLACEHOLDER_PREFIX = '请选择';
+  const SELECTED_VALUE = '.ant-select-selection-selected-value';
+  const SELECT_FACE = '.ant-select-selection, .ant-select-selector, .ant-select-selection-item, .ant-select-selection-selected-value, [role="combobox"]';
   const PATH = /^\/SU[0-9A-Za-z]{8,64}\/pb\/resumeOperation\.html$/u;
 
   const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -70,50 +79,102 @@
     });
   }
 
-  function locateCascader(item) {
+  function stripPrompt(text, label) {
+    const prompt = exact(`${PLACEHOLDER_PREFIX}${label || ''}`);
+    if (text === prompt || text === PLACEHOLDER_PREFIX) return '';
+    if (label && text.startsWith(prompt)) return text.slice(prompt.length);
+    return text;
+  }
+
+  function readSelectText(select, label) {
+    const selected = [...select.querySelectorAll(SELECTED_VALUE)]
+      .filter((node) => node.closest('.ant-select') === select);
+    const texts = [...new Set(selected.map((node) => exact(node.textContent)).filter(Boolean))];
+    if (texts.length > 1) return { ok: false, value: '' };
+    if (texts.length === 1) return { ok: true, value: stripPrompt(texts[0], label) };
+    const clone = select.cloneNode(true);
+    clone.querySelectorAll('input, textarea, .ant-select-search__field, .ant-select-dropdown, .ant-select-selection__placeholder').forEach((node) => node.remove());
+    return { ok: true, value: stripPrompt(exact(clone.textContent), label) };
+  }
+
+  function selectFace(select) {
+    const faces = [...select.querySelectorAll(SELECT_FACE)]
+      .filter((node) => node.closest('.ant-select') === select
+        && !node.matches('input, textarea, .ant-select-search__field')
+        && visible(node));
+    if (!faces.length) return null;
+    return faces.find((node) => faces.every((other) => other === node || node.contains(other))) || faces[0];
+  }
+
+  function cascaderSelectOk(select) {
+    return select.classList.contains('ant-select-enabled')
+      && !select.classList.contains('ant-select-allow-clear')
+      && !select.classList.contains('ant-select-disabled');
+  }
+
+  function locateCascader(item, label) {
     const wraps = [...item.querySelectorAll('.cascader-plugins-wrap')]
       .filter((wrap) => wrap.closest('.ant-row.ant-form-item') === item);
     if (wraps.length !== 1) return { ok: false, reason: 'control_not_supported' };
     const wrap = wraps[0];
     const selects = [...wrap.querySelectorAll('.ant-select')]
       .filter((node) => node.closest('.cascader-plugins-wrap') === wrap);
-    if (selects.length !== 1) return { ok: false, reason: 'control_not_supported' };
-    const select = selects[0];
-    if (!select.classList.contains('ant-select-enabled')
-      || select.classList.contains('ant-select-allow-clear')
-      || select.classList.contains('ant-select-disabled')) {
-      return { ok: false, reason: 'control_not_supported' };
+    const found = (select) => ({ ok: true, kind: 'cascader', item, wrap, select, trigger: select });
+    if (selects.length === 1) {
+      const select = selects[0];
+      if (!cascaderSelectOk(select) || !readSelectText(select, label).ok) {
+        return { ok: false, reason: 'control_not_supported' };
+      }
+      return found(select);
     }
-    return { ok: true, kind: 'cascader', item, wrap, select, trigger: select };
+    // Live wrap has two ant-selects that display the same value (北京市 / 北京市).
+    // A pair is the field value only when both displays match. Disagreeing,
+    // empty, hidden, or extra selects stay fail-closed and are not painted.
+    if (selects.length === 2) {
+      if (selects.some((select) => !cascaderSelectOk(select) || !visible(select))) {
+        return { ok: false, reason: 'control_not_supported' };
+      }
+      const reads = selects.map((select) => readSelectText(select, label));
+      if (reads.some((read) => !read.ok) || !reads[0].value || reads[0].value !== reads[1].value) {
+        return { ok: false, reason: 'control_not_supported' };
+      }
+      return found(selects[0]);
+    }
+    return { ok: false, reason: 'control_not_supported' };
   }
 
-  function locateSelect(item) {
+  function locateSelect(item, label) {
     if (item.querySelector('.cascader-plugins-wrap')) return { ok: false, reason: 'control_not_supported' };
     const selects = [...item.querySelectorAll('.ant-select')]
       .filter((node) => node.closest('.ant-row.ant-form-item') === item);
     if (selects.length !== 1) return { ok: false, reason: 'control_not_supported' };
     const select = selects[0];
-    const triggers = [...select.querySelectorAll('.ant-select-search__field')];
+    const triggers = [...select.querySelectorAll('.ant-select-search__field')]
+      .filter((node) => node.closest('.ant-select') === select);
     if (!select.classList.contains('ant-select-enabled')
       || !select.classList.contains('ant-select-allow-clear')
       || select.classList.contains('ant-select-disabled')
-      || triggers.length !== 1) {
+      || triggers.length !== 1
+      || !readSelectText(select, label).ok) {
       return { ok: false, reason: 'control_not_supported' };
     }
-    return { ok: true, kind: 'select', item, select, trigger: triggers[0] };
+    const search = triggers[0];
+    const trigger = visible(search) ? search : (selectFace(select) || search);
+    return { ok: true, kind: 'select', item, select, trigger };
   }
 
   function locate(label) {
     if (!Object.hasOwn(LABELS, label)) return { ok: false, reason: 'label_not_allowed' };
     const items = itemsFor(label);
     if (items.length !== 1) return { ok: false, reason: 'control_not_supported' };
-    return LABELS[label] === 'cascader' ? locateCascader(items[0]) : locateSelect(items[0]);
+    const found = LABELS[label] === 'cascader' ? locateCascader(items[0], label) : locateSelect(items[0], label);
+    if (found.ok) found.label = label;
+    return found;
   }
 
   function readDisplay(found) {
-    const clone = found.select.cloneNode(true);
-    clone.querySelectorAll('input, textarea, .ant-select-search__field, .ant-select-dropdown').forEach((node) => node.remove());
-    return exact(clone.textContent);
+    const read = readSelectText(found.select, found.label);
+    return read.ok ? read.value : '';
   }
 
   function leaves(container, excludeSelect) {

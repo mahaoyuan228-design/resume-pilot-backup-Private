@@ -74,14 +74,31 @@ function radioGroup(id, label, options, name, checked, state) {
   return `<div class="${esc(probe.page.itemClass)}" data-field="${id}"><label>${esc(label)}*</label><span class="${esc(probe.page.childrenClass)}">${body}</span></div>`;
 }
 
+function selectInner(field, value, state) {
+  const live = probe.select.liveReadback;
+  if (state.ambiguousValue && field.key === 'nation') {
+    return `<span class="${esc(live.selectedValueClass)}">中国</span><span class="${esc(live.selectedValueClass)}">中国香港</span>`;
+  }
+  if (state.placeholderMash === 'class') {
+    return `<span class="${esc(live.placeholderClass)}">${esc(live.placeholderPrefix + field.label)}</span><span class="${esc(live.selectedValueClass)}" id="${field.key}-value">${esc(value)}</span>`;
+  }
+  const shown = state.placeholderMash === 'text' ? `${live.placeholderPrefix}${field.label}${value}` : value;
+  return `<span id="${field.key}-value">${esc(shown)}</span>`;
+}
+
 function selectField(field, value, state) {
+  const live = probe.select.liveReadback;
   const selectClass = state.dropAllowClear && field.key === 'nation'
     ? 'ant-select ant-select-enabled'
     : probe.select.controlClass;
   const trigger = state.dropSearch && field.key === 'nation' ? '' : `<input class="${esc(probe.select.triggerClass)}" type="text" value="">`;
   const extra = state.extraSelect && field.key === 'nation'
     ? `<div class="${esc(probe.select.controlClass)}"><span></span><input class="${esc(probe.select.triggerClass)}" type="text" value=""></div>` : '';
-  return `<div class="${esc(probe.page.itemClass)}" data-field="${field.key}"><label>${esc(field.label)}*</label><span class="${esc(probe.page.childrenClass)}"><div class="${esc(selectClass)}" id="${field.key}-select"><span id="${field.key}-value">${esc(value)}</span>${trigger}</div>${extra}</span></div>`;
+  const inner = selectInner(field, value, state);
+  const faced = (state.closedSearch || state.placeholderMash === 'class')
+    ? `<div class="${esc(live.faceClass)}" role="${esc(live.faceRole)}">${inner}</div>`
+    : inner;
+  return `<div class="${esc(probe.page.itemClass)}" data-field="${field.key}"><label>${esc(field.label)}*</label><span class="${esc(probe.page.childrenClass)}"><div class="${esc(selectClass)}" id="${field.key}-select">${faced}${trigger}</div>${extra}</span></div>`;
 }
 
 function optionsFor(field, state) {
@@ -146,7 +163,7 @@ function paintMenu(document, select, state) {
 function wire(document, state) {
   const stats = {
     open: 0, option: 0, escape: 0, forbidden: 0, file: 0, radio: 0, textInput: 0, focus: 0,
-    openClass: '', triggerClass: ''
+    openClass: '', triggerClass: '', faceClass: ''
   };
   document.addEventListener('click', (event) => {
     const button = event.target.closest('button');
@@ -167,6 +184,7 @@ function wire(document, state) {
       if (document.getElementById('select-menu').contains(event.target)) return;
       stats.open += 1;
       if (event.target.classList?.contains(probe.select.triggerClass)) stats.triggerClass = probe.select.triggerClass;
+      if (event.target.closest?.(`.${probe.select.liveReadback.faceClass}`)) stats.faceClass = probe.select.liveReadback.faceClass;
       select.classList.add(...classes(probe.select.openClass));
       stats.openClass = select.className;
       paintMenu(document, select, state);
@@ -178,7 +196,8 @@ function wire(document, state) {
     const select = document.querySelector('.ant-select.ant-select-open');
     if (!select) return;
     stats.option += 1;
-    select.querySelector('span').textContent = li.textContent.trim();
+    const slot = select.querySelector('.ant-select-selection-selected-value, [id$="-value"]') || select.querySelector('span');
+    slot.textContent = li.textContent.trim();
     closeWidgets(document);
   });
   document.addEventListener('keydown', (event) => {
@@ -195,8 +214,9 @@ function wire(document, state) {
   return stats;
 }
 
-function patch(window) {
+function patch(window, state = {}) {
   window.Element.prototype.getClientRects = function () {
+    if ((state.closedSearch || state.closedSearchBare) && this.classList?.contains(probe.select.triggerClass)) return [];
     for (let node = this; node?.nodeType === 1; node = node.parentElement) {
       if (node.hidden || node.style.display === 'none') return [];
     }
@@ -208,7 +228,7 @@ async function boot(state = {}) {
   const dom = new JSDOM(html(state), { url: state.url || PAGE, pretendToBeVisual: true, runScripts: 'dangerously' });
   const { window } = dom;
   const { document } = window;
-  patch(window);
+  patch(window, state);
   const stats = wire(document, state);
   window.eval(source);
   return { dom, window, document, stats, api: window.ResumeHotjobPbBasic };
@@ -257,6 +277,13 @@ test('source stays on the probed pb classes and does not claim support', () => {
     ...classes(probe.select.openClass),
     probe.page.rootClass,
     'ant-calendar-picker-input',
+    probe.select.liveReadback.selectedValueClass,
+    probe.select.liveReadback.placeholderClass,
+    probe.select.liveReadback.placeholderPrefix,
+    probe.select.liveReadback.faceClass,
+    '[role="combobox"]',
+    '.ant-select-selector',
+    '.ant-select-selection-item',
     TEXT.name.label,
     PHONE,
     EMAIL,
@@ -584,6 +611,8 @@ test('missing, duplicate, and drifted controls fail closed', async () => {
     [{ dropRadioClass: true }, probe.gender.label, '男'],
     [{ duplicateGenderText: true }, probe.gender.label, '男'],
     [{ dropSearch: true }, SELECTS.nation.label, '中国'],
+    [{ closedSearchBare: true }, SELECTS.nation.label, '中国'],
+    [{ ambiguousValue: true }, SELECTS.nation.label, '中国'],
     [{ dropAllowClear: true }, SELECTS.nation.label, '中国香港'],
     [{ extraSelect: true }, SELECTS.nation.label, '中国'],
     [{ badDropdown: true }, SELECTS.marriage.label, '已婚'],
@@ -610,6 +639,82 @@ test('missing, duplicate, and drifted controls fail closed', async () => {
       }
     } finally { h.dom.window.close(); }
   }
+});
+
+test('closed flat selects with a placeholder mash match the selected value and do not open', async () => {
+  const samples = Object.fromEntries(probe.select.fields.map((field) => [field.key, field.valueSample]));
+  const text = await boot({
+    closedSearch: true,
+    placeholderMash: 'text',
+    ...samples
+  });
+  try {
+    const view = text.api.inspect();
+    assert.equal(view.liveSupportClaimed, false);
+    assert.equal(view.supportClaimed, false);
+    assert.equal(view.neverSave, true);
+    for (const field of probe.select.fields) {
+      const row = view.fields.find((item) => item.label === field.label);
+      assert.equal(row.reason, 'structure_matched', field.label);
+      assert.equal(row.supported, false, field.label);
+      assert.equal(row.value, field.valueSample, field.label);
+      const filled = await text.api.fillField(field.label, ` ${field.valueSample} `);
+      assert.equal(filled.reason, 'preexisting_same_value', JSON.stringify(filled));
+      assert.equal(filled.before, field.valueSample);
+      assert.equal(filled.opened, false);
+      assert.equal(filled.saved, false);
+      assert.equal(filled.liveSupportClaimed, false);
+    }
+    assert.equal(text.stats.open, 0);
+    assert.equal(text.stats.option, 0);
+    assert.equal(text.stats.faceClass, '');
+    assert.equal(text.document.getElementById('nation-value').textContent, `${probe.select.liveReadback.placeholderPrefix}${SELECTS.nation.label}中国`);
+    unchanged(text.document, text.stats);
+  } finally { text.dom.window.close(); }
+
+  const classes = await boot({
+    closedSearch: true,
+    placeholderMash: 'class',
+    ...samples
+  });
+  try {
+    for (const field of probe.select.fields) {
+      const filled = await classes.api.fillField(field.label, field.valueSample);
+      assert.equal(filled.reason, 'preexisting_same_value', JSON.stringify(filled));
+      assert.equal(filled.before, field.valueSample);
+      assert.equal(filled.opened, false);
+    }
+    assert.equal(classes.stats.open, 0);
+    const nation = classes.document.querySelector('#nation-select .ant-select-selection-selected-value');
+    const prompt = classes.document.querySelector('#nation-select .ant-select-selection__placeholder');
+    assert.equal(nation.textContent, '中国');
+    assert.equal(prompt.textContent, `${probe.select.liveReadback.placeholderPrefix}${SELECTS.nation.label}`);
+    unchanged(classes.document, classes.stats);
+  } finally { classes.dom.window.close(); }
+});
+
+test('an empty closed flat select opens from the visible face and reads the selected value', async () => {
+  const h = await boot({ closedSearch: true, placeholderMash: 'class' });
+  try {
+    const marriage = await h.api.fillField(SELECTS.marriage.label, '已婚');
+    assert.equal(marriage.ok, true, JSON.stringify(marriage));
+    assert.equal(marriage.reason, 'readback_matched');
+    assert.equal(marriage.after, '已婚');
+    assert.equal(marriage.before, '');
+    assert.equal(marriage.opened, true);
+    assert.equal(marriage.stillOpen, 0);
+    assert.equal(marriage.liveSupportClaimed, false);
+    assert.equal(marriage.saved, false);
+    assert.equal(marriage.neverSave, true);
+    assert.equal(h.stats.open, 1);
+    assert.equal(h.stats.option, 1);
+    assert.equal(h.stats.triggerClass, '');
+    assert.equal(h.stats.faceClass, probe.select.liveReadback.faceClass);
+    assert.equal(h.document.querySelector('#marriage-select .ant-select-selection-selected-value').textContent, '已婚');
+    assert.equal(h.document.querySelector('#marriage-select .ant-select-selection__placeholder').textContent, `${probe.select.liveReadback.placeholderPrefix}${SELECTS.marriage.label}`);
+    assert.equal(h.document.getElementById('select-menu').hidden, true);
+    unchanged(h.document, h.stats);
+  } finally { h.dom.window.close(); }
 });
 
 test('a hidden page fails closed before a click or write', async () => {

@@ -42,7 +42,15 @@
       "湖南省"
     ],
     "optionsNote": "Menu text is the 现居住地 optionsSample. 籍贯 was probed as the same ant cascader pattern and the same valueSample.",
-    "cancel": "Escape"
+    "cancel": "Escape",
+    "livePair": {
+      "note": "2026-10-23 live cascader-plugins-wrap contains two .ant-select nodes and both display 北京市. Accept that pair only when both displays match and are non-empty. A different display, a hidden or disabled twin, allow-clear, or any count other than 1 or 2 fails closed.",
+      "selectCount": 2,
+      "sameDisplay": "北京市",
+      "selectedValueClass": "ant-select-selection-selected-value",
+      "placeholderClass": "ant-select-selection__placeholder",
+      "placeholderPrefix": "请选择"
+    }
   },
   "select": {
     "label": "期望面试地点（供参考，实际安排将根据笔试通过名单确定）",
@@ -52,7 +60,15 @@
     "valueSample": "北京",
     "optionsSample": ["北京"],
     "optionsNote": "This field's probed value is 北京. Dropdown class and trigger class are the 婚姻状况/政治面貌 ant-select probes on the same page. No other interview-city option text was captured.",
-    "cancel": "Escape"
+    "cancel": "Escape",
+    "liveReadback": {
+      "note": "2026-10-23 live readDisplay concatenated 请选择 plus the label plus 北京. Read .ant-select-selection-selected-value. A closed .ant-select-search__field can have no client rect while .ant-select-selection[role=combobox] is the visible face.",
+      "selectedValueClass": "ant-select-selection-selected-value",
+      "placeholderClass": "ant-select-selection__placeholder",
+      "placeholderPrefix": "请选择",
+      "faceClass": "ant-select-selection",
+      "faceRole": "combobox"
+    }
   },
   "neighbor": {
     "label": "联系地址",

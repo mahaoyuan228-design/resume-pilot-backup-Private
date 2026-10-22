@@ -30,6 +30,33 @@ function menu(options, duplicate) {
   return `<ul hidden>${rows.map((text) => `<li>${esc(text)}</li>`).join('')}</ul>`;
 }
 
+function cascaderBody(id, value, state) {
+  const live = probe.cascader.livePair;
+  if (state.ambiguousValue && id === 'residence') {
+    return `<span class="${esc(live.selectedValueClass)}">北京市</span><span class="${esc(live.selectedValueClass)}">上海市</span>`;
+  }
+  if (state.cascaderMash && (id === 'residence' || id === 'origin')) {
+    const prompt = `${live.placeholderPrefix}${id === 'origin' ? ORIGIN : RESIDENCE}`;
+    return `<span class="${esc(live.placeholderClass)}">${esc(prompt)}</span><span class="${esc(live.selectedValueClass)}" id="${id}-value">${esc(value)}</span>`;
+  }
+  return `<span id="${id}-value">${esc(value)}</span>`;
+}
+
+function twinMarkup(id, value, state) {
+  const live = probe.cascader.livePair;
+  const text = state.twinDrift && id === 'residence' ? '上海市' : value;
+  const className = [
+    probe.cascader.controlClass,
+    state.twinDisabled && id === 'residence' ? 'ant-select-disabled' : '',
+    state.twinAllowClear && id === 'residence' ? 'ant-select-allow-clear' : ''
+  ].filter(Boolean).join(' ');
+  const hidden = state.twinHidden && id === 'residence' ? ' hidden' : '';
+  const body = state.cascaderMash
+    ? `<span class="${esc(live.placeholderClass)}">${esc(live.placeholderPrefix + (id === 'origin' ? ORIGIN : RESIDENCE))}</span><span class="${esc(live.selectedValueClass)}">${esc(text)}</span>`
+    : `<span>${esc(text)}</span>`;
+  return `<div class="${esc(className)}"${hidden}>${body}</div>`;
+}
+
 function cascaderField(label, value, options, state, id) {
   const itemClass = state.dropAntRow && id === 'residence' ? 'ant-form-item' : probe.page.itemClass;
   const wrapClass = state.dropWrap && id === 'residence' ? '' : probe.cascader.menuClass;
@@ -37,10 +64,27 @@ function cascaderField(label, value, options, state, id) {
     probe.cascader.controlClass,
     state.allowClearOnCascader && id === 'residence' ? 'ant-select-allow-clear' : ''
   ].filter(Boolean).join(' ');
-  const extra = state.extraSelect && id === 'residence'
-    ? `<div class="${esc(probe.cascader.controlClass)}"><span></span></div>` : '';
+  const paired = (id === 'residence' || id === 'origin') && state.twinSelect
+    || (id === 'residence' && (state.twinDrift || state.twinDisabled || state.twinAllowClear || state.twinHidden));
+  const extra = [
+    state.extraSelect && id === 'residence' ? `<div class="${esc(probe.cascader.controlClass)}"><span></span></div>` : '',
+    paired ? twinMarkup(id, value, state) : '',
+    state.tripleSelect && id === 'residence'
+      ? `<div class="${esc(probe.cascader.controlClass)}"><span>${esc(probe.cascader.livePair.sameDisplay)}</span></div><div class="${esc(probe.cascader.controlClass)}"><span>${esc(probe.cascader.livePair.sameDisplay)}</span></div>`
+      : ''
+  ].join('');
   const labelHtml = `<label>${esc(label)}*</label>`;
-  return `<div class="${esc(itemClass)}" data-field="${id}">${labelHtml}<span class="${esc(probe.page.childrenClass)}"><span class="${esc(wrapClass)}"><div class="${esc(selectClass)}" id="${id}-select"><span id="${id}-value">${esc(value)}</span></div>${extra}${menu(options, id === 'residence' ? state.duplicateOption : '')}</span></span></div>`;
+  return `<div class="${esc(itemClass)}" data-field="${id}">${labelHtml}<span class="${esc(probe.page.childrenClass)}"><span class="${esc(wrapClass)}"><div class="${esc(selectClass)}" id="${id}-select">${cascaderBody(id, value, state)}</div>${extra}${menu(options, id === 'residence' ? state.duplicateOption : '')}</span></span></div>`;
+}
+
+function interviewValue(value, state) {
+  const live = probe.select.liveReadback;
+  if (state.placeholderMash === 'class') {
+    return `<div class="${esc(live.faceClass)}" role="${esc(live.faceRole)}"><span class="${esc(live.placeholderClass)}">${esc(live.placeholderPrefix + INTERVIEW)}</span><span class="${esc(live.selectedValueClass)}" id="interview-value">${esc(value)}</span></div>`;
+  }
+  const shown = state.placeholderMash === 'text' ? `${live.placeholderPrefix}${INTERVIEW}${value}` : value;
+  const inner = `<span id="interview-value">${esc(shown)}</span>`;
+  return state.closedSearch ? `<div class="${esc(live.faceClass)}" role="${esc(live.faceRole)}">${inner}</div>` : inner;
 }
 
 function interviewField(value, state) {
@@ -51,7 +95,7 @@ function interviewField(value, state) {
   const dropdownClass = state.badDropdown
     ? 'ant-select-dropdown ant-select-dropdown-placement-bottomLeft'
     : probe.select.dropdownClass;
-  return `<div class="${esc(probe.page.itemClass)}" data-field="interview"><label>${esc(INTERVIEW)}*</label><span class="${esc(probe.page.childrenClass)}"><div class="${esc(selectClass)}" id="interview-select"><span id="interview-value">${esc(value)}</span>${trigger}</div></span></div><div class="${esc(dropdownClass)}" id="interview-menu" hidden><ul>${probe.select.optionsSample.map((text) => `<li>${esc(text)}</li>`).join('')}</ul></div>`;
+  return `<div class="${esc(probe.page.itemClass)}" data-field="interview"><label>${esc(INTERVIEW)}*</label><span class="${esc(probe.page.childrenClass)}"><div class="${esc(selectClass)}" id="interview-select">${interviewValue(value, state)}${trigger}</div></span></div><div class="${esc(dropdownClass)}" id="interview-menu" hidden><ul>${probe.select.optionsSample.map((text) => `<li>${esc(text)}</li>`).join('')}</ul></div>`;
 }
 
 function html(state) {
@@ -83,7 +127,7 @@ function closeWidgets(document) {
 }
 
 function wire(document, state) {
-  const stats = { open: 0, option: 0, escape: 0, forbidden: 0, file: 0, openClass: '', triggerClass: '' };
+  const stats = { open: 0, option: 0, escape: 0, forbidden: 0, file: 0, openClass: '', triggerClass: '', faceClass: '' };
   document.addEventListener('click', (event) => {
     const button = event.target.closest('button');
     if (button && FORBIDDEN.includes(button.textContent.trim())) stats.forbidden += 1;
@@ -96,6 +140,7 @@ function wire(document, state) {
       if (menu && menu.contains(event.target)) return;
       stats.open += 1;
       if (event.target.classList?.contains(probe.select.triggerClass)) stats.triggerClass = probe.select.triggerClass;
+      if (event.target.closest?.(`.${probe.select.liveReadback.faceClass}`)) stats.faceClass = probe.select.liveReadback.faceClass;
       select.classList.add(...classes(probe.cascader.openClass));
       stats.openClass = select.className;
       if (menu) hide(menu, false);
@@ -105,7 +150,8 @@ function wire(document, state) {
       const li = event.target.closest('li');
       if (!li || !menu.contains(li)) return;
       stats.option += 1;
-      select.querySelector('span').textContent = li.textContent.trim();
+      const slot = select.querySelector('.ant-select-selection-selected-value, [id$="-value"]') || select.querySelector('span');
+      slot.textContent = li.textContent.trim();
       closeWidgets(document);
     });
   }
@@ -129,8 +175,9 @@ function wire(document, state) {
   return stats;
 }
 
-function patch(window) {
+function patch(window, state = {}) {
   window.Element.prototype.getClientRects = function () {
+    if (state.closedSearch && this.classList?.contains(probe.select.triggerClass)) return [];
     for (let node = this; node?.nodeType === 1; node = node.parentElement) {
       if (node.hidden || node.style.display === 'none') return [];
     }
@@ -142,7 +189,7 @@ async function boot(state = {}) {
   const dom = new JSDOM(html(state), { url: state.url || PAGE, pretendToBeVisual: true, runScripts: 'dangerously' });
   const { window } = dom;
   const { document } = window;
-  patch(window);
+  patch(window, state);
   const stats = wire(document, state);
   window.eval(source);
   return { dom, window, document, stats, api: window.ResumeHotjobPbRegion };
@@ -174,7 +221,14 @@ test('source stays on the probed pb classes and does not claim support', () => {
     ...classes(probe.select.controlClass),
     probe.select.triggerClass,
     ...classes(probe.select.dropdownClass),
-    probe.page.rootClass
+    probe.page.rootClass,
+    probe.cascader.livePair.selectedValueClass,
+    probe.cascader.livePair.placeholderClass,
+    probe.cascader.livePair.placeholderPrefix,
+    probe.select.liveReadback.faceClass,
+    '[role="combobox"]',
+    '.ant-select-selector',
+    '.ant-select-selection-item'
   ]) {
     assert.match(source, new RegExp(token.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&')));
   }
@@ -376,6 +430,12 @@ test('missing, duplicate, and drifted menus fail closed', async () => {
     [{ dropAllowClear: true }, INTERVIEW],
     [{ badDropdown: true }, INTERVIEW],
     [{ busy: true }, INTERVIEW],
+    [{ twinDrift: true }, RESIDENCE],
+    [{ twinDisabled: true }, RESIDENCE],
+    [{ twinAllowClear: true }, RESIDENCE],
+    [{ twinHidden: true }, RESIDENCE],
+    [{ tripleSelect: true }, RESIDENCE],
+    [{ ambiguousValue: true }, RESIDENCE],
     [{ dropRoot: true }, RESIDENCE],
     [{ elForm: true }, RESIDENCE],
     [{ url: 'https://wecruit.hotjob.cn/SU629dbc0c0dcad452299bc0f7/mc/deliver/operationResumer' }, RESIDENCE],
@@ -395,6 +455,123 @@ test('missing, duplicate, and drifted menus fail closed', async () => {
       }
     } finally { h.dom.window.close(); }
   }
+});
+
+test('two cascader selects that display the same value match without opening', async () => {
+  const plain = await boot({
+    twinSelect: true,
+    residence: probe.cascader.livePair.sameDisplay,
+    origin: probe.cascader.livePair.sameDisplay,
+    interview: probe.select.valueSample
+  });
+  try {
+    const view = plain.api.inspect();
+    assert.equal(view.liveSupportClaimed, false);
+    assert.equal(view.fields.find((field) => field.label === RESIDENCE).reason, 'structure_matched');
+    assert.equal(view.fields.find((field) => field.label === RESIDENCE).supported, false);
+    assert.equal(view.fields.find((field) => field.label === RESIDENCE).value, '北京市');
+    assert.equal(view.fields.find((field) => field.label === ORIGIN).value, '北京市');
+    const filled = await plain.api.fillFields({
+      [RESIDENCE]: '北京市',
+      [ORIGIN]: '北京市',
+      [INTERVIEW]: '北京'
+    });
+    assert.equal(filled.ok, true, JSON.stringify(filled.fields));
+    assert.equal(filled.fields.every((field) => field.reason === 'preexisting_same_value'), true);
+    assert.equal(filled.fields.every((field) => field.opened === false), true);
+    assert.equal(filled.liveSupportClaimed, false);
+    assert.equal(filled.saved, false);
+    assert.equal(filled.complete, false);
+    assert.equal(plain.stats.open, 0);
+    assert.equal(plain.stats.option, 0);
+    unchanged(plain.document, plain.stats);
+  } finally { plain.dom.window.close(); }
+
+  const mashed = await boot({
+    twinSelect: true,
+    cascaderMash: true,
+    placeholderMash: 'class',
+    residence: '北京市',
+    origin: '北京市',
+    interview: '北京'
+  });
+  try {
+    const residence = await mashed.api.fillField(RESIDENCE, '北京市');
+    const origin = await mashed.api.fillField(ORIGIN, '北京市');
+    const interview = await mashed.api.fillField(INTERVIEW, '北京');
+    assert.equal(residence.reason, 'preexisting_same_value', JSON.stringify(residence));
+    assert.equal(residence.before, '北京市');
+    assert.equal(residence.opened, false);
+    assert.equal(origin.before, '北京市');
+    assert.equal(origin.reason, 'preexisting_same_value');
+    assert.equal(interview.reason, 'preexisting_same_value', JSON.stringify(interview));
+    assert.equal(interview.before, '北京');
+    assert.equal(interview.opened, false);
+    assert.equal(mashed.stats.open, 0);
+    assert.equal(mashed.api.inspect().fields.find((field) => field.label === INTERVIEW).value, '北京');
+    assert.notEqual(interview.before, `请选择${INTERVIEW}北京`);
+    unchanged(mashed.document, mashed.stats);
+  } finally { mashed.dom.window.close(); }
+});
+
+test('a placeholder mash reads the selected city and a closed search field clicks the visible face', async () => {
+  const text = await boot({ placeholderMash: 'text', interview: '北京' });
+  try {
+    const interview = await text.api.fillField(INTERVIEW, '北京');
+    assert.equal(interview.reason, 'preexisting_same_value', JSON.stringify(interview));
+    assert.equal(interview.before, '北京');
+    assert.equal(interview.opened, false);
+    assert.equal(text.stats.open, 0);
+    assert.equal(text.document.getElementById('interview-value').textContent.includes('请选择'), true);
+  } finally { text.dom.window.close(); }
+
+  const painted = await boot({ cascaderMash: true });
+  try {
+    const residence = await painted.api.fillField(RESIDENCE, '上海市');
+    assert.equal(residence.reason, 'readback_matched', JSON.stringify(residence));
+    assert.equal(residence.after, '上海市');
+    assert.equal(residence.opened, true);
+    assert.equal(residence.stillOpen, 0);
+    assert.equal(painted.document.querySelector('#residence-select .ant-select-selection-selected-value').textContent, '上海市');
+    assert.equal(painted.document.querySelector('#residence-select .ant-select-selection__placeholder').textContent, `${probe.cascader.livePair.placeholderPrefix}${RESIDENCE}`);
+    unchanged(painted.document, painted.stats);
+  } finally { painted.dom.window.close(); }
+
+  const closed = await boot({ closedSearch: true });
+  try {
+    const interview = await closed.api.fillField(INTERVIEW, '北京');
+    assert.equal(interview.reason, 'readback_matched', JSON.stringify(interview));
+    assert.equal(interview.after, '北京');
+    assert.equal(interview.stillOpen, 0);
+    assert.equal(interview.liveSupportClaimed, false);
+    assert.equal(closed.stats.open, 1);
+    assert.equal(closed.stats.option, 1);
+    assert.equal(closed.stats.triggerClass, '');
+    assert.equal(closed.stats.faceClass, probe.select.liveReadback.faceClass);
+    assert.equal(closed.document.getElementById('interview-menu').hidden, true);
+    unchanged(closed.document, closed.stats);
+  } finally { closed.dom.window.close(); }
+
+  const emptyPair = await boot({ twinSelect: true });
+  try {
+    const residence = await emptyPair.api.fillField(RESIDENCE, '上海市');
+    assert.equal(residence.reason, 'control_not_supported', JSON.stringify(residence));
+    assert.equal(residence.opened, false);
+    assert.equal(emptyPair.stats.open, 0);
+    assert.equal(emptyPair.stats.option, 0);
+  } finally { emptyPair.dom.window.close(); }
+
+  const drifted = await boot({ twinSelect: true, twinDrift: true, residence: '北京市', origin: '北京市' });
+  try {
+    const residence = await drifted.api.fillField(RESIDENCE, '北京市');
+    const origin = await drifted.api.fillField(ORIGIN, '北京市');
+    assert.equal(residence.reason, 'control_not_supported', JSON.stringify(residence));
+    assert.equal(residence.opened, false);
+    assert.equal(origin.reason, 'preexisting_same_value');
+    assert.equal(drifted.stats.open, 0);
+    assert.equal(drifted.stats.option, 0);
+    assert.equal(drifted.document.getElementById('residence-value').textContent, '北京市');
+  } finally { drifted.dom.window.close(); }
 });
 
 test('a hidden page fails closed before a click', async () => {

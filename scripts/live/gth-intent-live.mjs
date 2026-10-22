@@ -147,6 +147,12 @@ export function readTipSha(root = repoRoot) {
     }).trim();
     if (/^[0-9a-f]{7,64}$/iu.test(sha)) return sha;
   } catch {
+    /* deployed Dev roots may not include Git metadata */
+  }
+  try {
+    const sha = fs.readFileSync(path.join(root, 'TIP_SHA.txt'), 'utf8').trim();
+    if (/^[0-9a-f]{7,64}$/iu.test(sha)) return sha;
+  } catch {
     /* evidence still names the base tip */
   }
   return BASE_TIP;

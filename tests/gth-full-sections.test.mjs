@@ -183,7 +183,15 @@ test('chrome shim uses the shipped page-world month accept bridge and restores o
     assert.equal(accepted.result, 'emitted');
     assert.equal(input.value, '2024-08');
     assert.equal(emitted, 1);
+    assert.deepEqual(JSON.parse(JSON.stringify(window.__gthFullResumeMonthModels())), [{
+      question: null, endpoint: null, answer: '2024-08', result: 'emitted', panelConnected: false, value: null
+    }]);
     window.__gthFullResumeChromeRestore();
     assert.equal(window.chrome, originalChrome);
+    assert.equal(window.__gthFullResumeMonthModels, undefined);
+    Object.defineProperty(window, 'chrome', { value: originalChrome, writable: false, configurable: false });
+    assert.throws(() => window.eval(chromeShimExpression()), /chrome_shim_unavailable/);
+    assert.equal(window.__gthFullResumeMonthModels, undefined);
+    assert.equal(window.__gthFullResumeChromeRestore, undefined);
   } finally { dom.window.close(); }
 });

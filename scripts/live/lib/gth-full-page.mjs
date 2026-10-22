@@ -625,7 +625,10 @@ function installGthFullLive(doc, options) {
         && !node.closest('.popover.plugin-dialog-wrap') && visible(node));
       if (controls.length === 2 && controls.every(node => node.closest('.el-date-editor--month'))) {
         const [startMonth, endMonth] = controls.map(node => String(node.value ?? ''));
-        return { q, value: `${startMonth} | ${endMonth}`, startMonth, endMonth, reason: null };
+        return { q, value: `${startMonth} | ${endMonth}`, startMonth, endMonth, reason: null,
+          siteValidationFailed: item.classList.contains('is-error') || item.classList.contains('is-validating')
+            || controls.some(node => node.getAttribute('aria-invalid') === 'true' || node.validity && !node.validity.valid)
+            || [...item.querySelectorAll('.el-form-item__error')].some(node => visible(node) && norm(node.textContent)) };
       }
       return controls.length === 1 ? { q, value: String(controls[0].value ?? ''), reason: null } : unsupported(q);
     });

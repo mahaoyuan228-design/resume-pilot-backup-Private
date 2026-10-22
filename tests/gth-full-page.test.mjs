@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
-import { buildPageExpression, isAllowedRequest, SALARY_UNIT_LOOKUP } from '../scripts/live/lib/gth-full-page.mjs';
+import { buildPageExpression, isAllowedRequest, PHOTO_SIZE_LOOKUP, SALARY_UNIT_LOOKUP } from '../scripts/live/lib/gth-full-page.mjs';
 import { SECTION_TITLES } from '../scripts/live/gth-intent-live.mjs';
 
 const PAGE = 'https://hr.gtht.com/resume/edit/';
@@ -41,17 +41,26 @@ function boot({ cancel = 'remove', delayedItems = false } = {}) {
   return { dom, window, sections, api: window.__gthFullLive, sent, nativeClick, nativeFetch };
 }
 
-test('full runner request allowlist permits only GET and the exact salary-unit lookup POST', () => {
+test('full runner request allowlist permits GET plus the exact salary-unit and photo-size lookup POSTs', () => {
   assert.equal(isAllowedRequest('GET', 'https://elsewhere.test/arbitrary'), true);
   assert.equal(isAllowedRequest('POST', `${SALARY_UNIT_LOOKUP}?cache=1`), true);
   assert.equal(isAllowedRequest('POST', '/interface/js/type/getsalaryunit.json?cache=1'), true);
+  assert.equal(isAllowedRequest('POST', `${PHOTO_SIZE_LOOKUP}?cache=1`), true);
+  assert.equal(isAllowedRequest('POST', '/interface/photo/type/getPhotoSize.json?cache=1'), true);
   for (const method of ['HEAD', 'OPTIONS', 'PUT', 'PATCH', 'DELETE']) {
     assert.equal(isAllowedRequest(method, SALARY_UNIT_LOOKUP), false, method);
+    assert.equal(isAllowedRequest(method, PHOTO_SIZE_LOOKUP), false, method);
   }
   for (const url of ['https://hr.gtht.com/api/resume/getsalaryunit.json',
     'https://evil.test/interface/js/type/getsalaryunit.json',
     `${SALARY_UNIT_LOOKUP}/`, 'https://user@hr.gtht.com/interface/js/type/getsalaryunit.json',
-    'http://hr.gtht.com/interface/js/type/getsalaryunit.json']) {
+    'http://hr.gtht.com/interface/js/type/getsalaryunit.json',
+    'https://hr.gtht.com/api/resume/save.json',
+    'https://hr.gtht.com/interface/photo/type/savePhoto.json',
+    'https://hr.gtht.com/interface/resume/submit.json',
+    'https://evil.test/interface/photo/type/getPhotoSize.json',
+    `${PHOTO_SIZE_LOOKUP}/`, 'https://user@hr.gtht.com/interface/photo/type/getPhotoSize.json',
+    'http://hr.gtht.com/interface/photo/type/getPhotoSize.json']) {
     assert.equal(isAllowedRequest('POST', url), false, url);
   }
 });
@@ -71,16 +80,18 @@ test('full page guard waits for form items and verifies physical removal on canc
   } finally { api.restore(); dom.window.close(); }
 });
 
-test('hidden or replaced forms fail cancel verification and prevent next editor opening', async () => {
+test('cancel physically removes a hidden or replacement editor before the next section opens', async () => {
   for (const mode of ['hide', 'stay']) {
     const { dom, api } = boot({ cancel: mode });
     try {
       assert.equal((await api.open(6)).ok, true);
       const cancel = await api.cancel(6);
-      assert.equal(cancel.closed, false, mode);
-      assert.equal(cancel.reason, 'editor_still_open');
-      assert.equal((await api.open(4)).reason, 'other_section_editor_open');
-      assert.equal(api.clicks().filter(row => row.kind === 'edit').length, 1);
+      assert.equal(cancel.closed, true, mode);
+      assert.equal(cancel.forced, true, mode);
+      assert.equal(api.state().editorFormCount, 0);
+      assert.equal(api.state().activeSectionIndex, null);
+      assert.equal((await api.open(4)).ok, true);
+      assert.equal((await api.cancel(4)).closed, true);
     } finally { api.restore(); dom.window.close(); }
   }
   const { dom, api, sections } = boot();
@@ -88,7 +99,9 @@ test('hidden or replaced forms fail cancel verification and prevent next editor 
     await api.open(6);
     const form = sections[6].querySelector('form');
     form.querySelector('button').addEventListener('click', () => sections[6].append(form.cloneNode(true)));
-    assert.equal((await api.cancel(6)).reason, 'editor_still_open');
+    assert.equal((await api.cancel(6)).closed, true);
+    assert.equal(sections[6].querySelector('form'), null);
+    assert.equal(api.state().editorFormCount, 0);
   } finally { api.restore(); dom.window.close(); }
 });
 
@@ -150,7 +163,7 @@ test('initial basic detection rejects unsafe cancel controls, edit links and for
   } finally { api.restore(); dom.window.close(); }
 });
 
-test('strict click allowlist blocks save, triggers and confirmation while admitting in-panel options', async () => {
+test('click allowlist admits in-panel options, date controls and 确定, and still blocks 保存', async () => {
   const { dom, window, api, sections } = boot();
   try {
     await api.open(6);
@@ -162,12 +175,29 @@ test('strict click allowlist blocks save, triggers and confirmation while admitt
     assert.throws(() => save.dispatchEvent(new window.MouseEvent('click', { bubbles: true, cancelable: true })), /refusing_forbidden_click/);
     assert.equal(dangerousClicks, 0);
     assert.throws(() => form.querySelector('input').click(), /refusing_forbidden_click/);
-    form.insertAdjacentHTML('beforeend', '<div class="el-select-dropdown el-popper"><ul><li class="el-select-dropdown__item"><span>一个月内</span></li></ul></div><div class="dialog-wrap plugin-dialog-wrap popover blue"><div class="eo-cascader-panel"><div class="eo-cascader-menu simple-tree-outer"><ul class="simple-tree-wrapper"><li class="branch"><span>大兴区</span></li></ul></div></div><div class="pop-foot plugin-dialog-pop-foot"><a class="confirm pop-btn">确定</a></div></div>');
+    const bare = window.document.createElement('div');
+    form.append(bare);
+    assert.throws(() => bare.click(), /refusing_forbidden_click/);
+    form.insertAdjacentHTML('beforeend', [
+      '<div class="el-select-dropdown el-popper"><ul><li class="el-select-dropdown__item"><span>一个月内</span></li></ul></div>',
+      '<div class="dialog-wrap plugin-dialog-wrap popover blue"><div class="eo-cascader-panel"><div class="eo-cascader-menu simple-tree-outer"><ul class="simple-tree-wrapper"><li class="branch"><span>大兴区</span><input type="checkbox"></li></ul></div></div><div class="pop-foot plugin-dialog-pop-foot"><a class="confirm pop-btn">确定</a><button type="submit">确定</button></div></div>',
+      '<div class="el-picker-panel"><button type="button" class="el-picker-panel__icon-btn"><i class="el-icon-d-arrow-left"></i></button><table class="el-date-table"><tr><td class="available"><span>15</span></td></tr></table><div class="el-picker-panel__footer"><button type="button">确定</button></div></div>',
+      '<div class="el-date-editor el-date-editor--month"><span class="el-input__prefix"><i class="el-input__icon el-icon-date"></i></span></div>'
+    ].join(''));
     form.querySelector('.el-select-dropdown__item span').click();
     form.querySelector('li.branch span').click();
-    assert.throws(() => form.querySelector('a.confirm').click(), /refusing_forbidden_click/);
-    assert.equal(api.clicks().filter(row => row.allowed && row.kind === 'picker_option').length, 2);
-    assert.equal(api.clicks().filter(row => !row.allowed).length, 4);
+    form.querySelector('li.branch input').click();
+    form.querySelector('a.confirm').click();
+    form.querySelector('.el-icon-d-arrow-left').click();
+    form.querySelector('.el-date-table span').click();
+    form.querySelector('.el-picker-panel__footer button').click();
+    form.querySelector('.el-icon-date').click();
+    assert.throws(() => form.querySelector('.pop-foot button[type="submit"]').click(), /refusing_forbidden_click/);
+    assert.equal(api.clicks().filter(row => row.allowed && row.kind === 'picker_option').length, 3);
+    assert.equal(api.clicks().filter(row => row.allowed && row.kind === 'panel_confirm').length, 2);
+    assert.equal(api.clicks().filter(row => row.allowed && row.kind === 'date_panel').length, 2);
+    assert.equal(api.clicks().filter(row => row.allowed && row.kind === 'picker_trigger').length, 1);
+    assert.equal(api.clicks().filter(row => !row.allowed && row.label === '保存').length, 2);
     form.querySelector('.el-select-dropdown').style.display = 'none';
     assert.throws(() => form.querySelector('.el-select-dropdown__item').click(), /refusing_forbidden_click/);
     await api.cancel(6);
@@ -180,6 +210,7 @@ test('fetch, XHR, beacon and direct form submits cannot send forbidden requests;
     await api.open(6);
     await window.fetch('/read');
     await window.fetch(`${SALARY_UNIT_LOOKUP}?secret=hidden`, { method: 'POST' });
+    await window.fetch(`${PHOTO_SIZE_LOOKUP}?cache=1`, { method: 'POST' });
     await assert.rejects(window.fetch('/save', { method: 'POST' }), /disallowed_non_get/);
     await assert.rejects(window.fetch(SALARY_UNIT_LOOKUP, { method: 'HEAD' }), /disallowed_non_get/);
     const xhr = new window.XMLHttpRequest();
@@ -187,7 +218,9 @@ test('fetch, XHR, beacon and direct form submits cannot send forbidden requests;
     assert.throws(() => xhr.send(), /disallowed_non_get/);
     assert.equal(window.navigator.sendBeacon('/log', 'x'), false);
     assert.throws(() => sections[6].querySelector('form').submit(), /disallowed_non_get/);
-    assert.equal(sent.length, 2);
+    assert.equal(sent.length, 3);
+    assert.equal(api.requests().some(row => row.allowed && row.url === PHOTO_SIZE_LOOKUP), true);
+    assert.equal(api.requests().some(row => row.allowed && row.url === SALARY_UNIT_LOOKUP), true);
     assert.equal(api.requests().filter(row => !row.allowed).length, 5);
     assert.equal(api.requests().some(row => row.url.includes('?')), false);
     api.restore();

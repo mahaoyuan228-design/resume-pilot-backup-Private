@@ -40,8 +40,11 @@ Attaches once to the existing https://hr.gtht.com/resume/edit/ Edge tab.
 Runs 基本信息 / 教育经历 / 工作经验 / 职业技能与特长 / 其他信息 / 求职意向.
 PORT defaults to 9239; OUTDIR defaults to the current directory.
 Writes ${EVIDENCE_NAME}. Never saves; liveSupportClaimed stays false.
-Only 编辑, 取消 and in-panel option clicks are allowed. Existing writers' other
-click attempts fail closed and are reported; later sections are still assessed.
+Allowed clicks: 编辑, 取消, in-panel options/checkboxes/radios, date-panel
+arrows and day cells, and visible in-panel 确定. 保存, 提交, and type=submit
+stay blocked. POST lookups are getsalaryunit.json and getPhotoSize.json
+(exact path, query stripped). A failed section cancels and, if the form
+remains, removes that editor before the next section rebinds its writer.
 STEP_TIMEOUT_MS defaults to 30000 (1000..120000).
 `;
 
@@ -142,17 +145,27 @@ export async function runGthFullResumeLive(options = {}) {
     const shim = await evaluate(chromeShimExpression(), 'chrome_shim');
     if (!shim?.ok) throw failure('chrome_shim_failed');
     const injectFailures = new Map();
-    for (const relative of LIVE_FILES) {
-      try {
-        const source = fs.readFileSync(path.join(root, relative), 'utf8');
-        await evaluate(`(() => { ${source}\nreturn { ok: true }; })()`, `inject_${path.basename(relative)}`);
-      } catch (error) {
-        injectFailures.set(relative, errorReason(error));
+    const bindWriters = async (section) => {
+      for (const relative of LIVE_FILES) {
+        try {
+          const source = fs.readFileSync(path.join(root, relative), 'utf8');
+          const installed = await evaluate(`(() => { ${source}\nreturn { ok: true }; })()`, `inject_${path.basename(relative)}`);
+          if (installed?.ok) injectFailures.delete(relative);
+          else injectFailures.set(relative, 'inject_failed');
+        } catch (error) {
+          injectFailures.set(relative, errorReason(error));
+        }
       }
-    }
+      const name = section?.globalName;
+      if (!/^ResumeGth[A-Za-z]+$/u.test(name || '')) throw failure('writer_not_bound');
+      const ready = await evaluate(`typeof globalThis.${name}?.trial === 'function'`, `writer_ready_${section.id}`);
+      if (ready !== true) throw failure('writer_not_bound');
+    };
     const driver = {
       state: () => page('state'),
       bringToFront: () => send('Page.bringToFront'),
+      bindWriters,
+      forceClose: (section) => page('discard', [section.sectionIndex]),
       open: (section) => { currentSection = section.id; return page('open', [section.sectionIndex]); },
       async fill(section) {
         const fills = [];

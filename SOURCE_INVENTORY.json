@@ -1,6 +1,6 @@
 {
   "version": "0.1.4.9",
-  "sumsSha256": "93e22d4b6ee9495b7ee37aff400ade003a8086e8f2556e71a8edf50d8ae78c4c",
+  "sumsSha256": "1fca6cdd99eac9405392a5c8bc4671ae89dd57c5678601f3184421288246e727",
   "inventory": [
     {
       "path": "manifest.json",
@@ -88,8 +88,8 @@
     },
     {
       "path": "src/background/worker.mjs",
-      "sha256": "757ed16ff05fbf3cc3758745ba3973f3b52a61f67f3d5dcc1d16d2b0e00c6be7",
-      "sourceSha256": "757ed16ff05fbf3cc3758745ba3973f3b52a61f67f3d5dcc1d16d2b0e00c6be7",
+      "sha256": "055aeecb3588e05cc373daf3f52fd6e0cf22945d0ffed2eef45e0ebdf6c45114",
+      "sourceSha256": "055aeecb3588e05cc373daf3f52fd6e0cf22945d0ffed2eef45e0ebdf6c45114",
       "kind": "frozen-product"
     },
     {
@@ -304,8 +304,8 @@
     },
     {
       "path": "src/content/gth-open-fill.js",
-      "sha256": "7f63dbec3b950b3367e7a28af59120b329c36903056768123e49cb5cde49f46f",
-      "sourceSha256": "7f63dbec3b950b3367e7a28af59120b329c36903056768123e49cb5cde49f46f",
+      "sha256": "4166299fadd3e13b8d8047e138f570cc2bf9c63cfa5546acf0f8654b123c0d13",
+      "sourceSha256": "4166299fadd3e13b8d8047e138f570cc2bf9c63cfa5546acf0f8654b123c0d13",
       "kind": "frozen-product"
     },
     {
@@ -328,8 +328,8 @@
     },
     {
       "path": "src/content/gth-work-fill.js",
-      "sha256": "af1595cd5e5641261c643b15b7bb9d7fd9198337e06138bc4e645ebecf214cb6",
-      "sourceSha256": "af1595cd5e5641261c643b15b7bb9d7fd9198337e06138bc4e645ebecf214cb6",
+      "sha256": "aabec43382c99bf4ea31153b9906c3a506ae6bed9b38ff7e2b051d3a19705bda",
+      "sourceSha256": "aabec43382c99bf4ea31153b9906c3a506ae6bed9b38ff7e2b051d3a19705bda",
       "kind": "frozen-product"
     },
     {
@@ -622,8 +622,8 @@
     },
     {
       "path": "src/background/gth-open-fills.mjs",
-      "sha256": "1e3349650ac1cb92ba100e87a3fffb91b45448e3612c78b0dd2f0cef2f65918e",
-      "sourceSha256": "1e3349650ac1cb92ba100e87a3fffb91b45448e3612c78b0dd2f0cef2f65918e",
+      "sha256": "9b09728eb15fa1a0b2d9b0b4c1a2bc2b64988215541320c410b158cc49934516",
+      "sourceSha256": "9b09728eb15fa1a0b2d9b0b4c1a2bc2b64988215541320c410b158cc49934516",
       "kind": "frozen-product"
     },
     {

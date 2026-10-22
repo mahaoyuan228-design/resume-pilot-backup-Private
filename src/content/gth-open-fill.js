@@ -515,10 +515,12 @@
     // removing it detaches the picker's own node and is not what makes the end month
     // commit. Two pending panels are ambiguous — do not click. A year step other than
     // ±1 fails closed. A month click that leaves the input empty is retried on the
-    // cell (the table handler reads a TD target) and then by the mounted picker's
-    // own month pick in the page world. That updates the component model, which is
-    // what remains after the panel closes. input+change is kept only when the value
-    // is still there after close. liveSupportClaimed stays false.
+    // cell (the table handler reads a TD target). If the input is still empty, the
+    // extension worker runs acceptGthMonthInPage in the page world and calls the
+    // mounted picker's handleMonthPick or the editor's emitInput. That updates the
+    // component model, which is what remains after the panel closes. No <script> is
+    // inserted, so a strict script-src cannot skip the call. input+change is kept
+    // only when the value is still there after close. liveSupportClaimed stays false.
     function monthPanelNodes() {
       return [...document.querySelectorAll('.el-picker-panel')].filter(node => node.isConnected);
     }
@@ -637,83 +639,16 @@
       const anchors = [...cell.querySelectorAll('a.cell')].filter(node => panel.contains(node) && shown(node));
       return anchors.length === 1 ? anchors[0] : null;
     }
-    // Isolated-world code cannot see the page's Vue instance. A script element
-    // runs in the page world, where the open panel's handleMonthPick (or the
-    // editor's emitInput) updates the model. A typed DOM value is not that model.
-    const PAGE_MONTH_ACCEPT = `(() => {
-      var input = document.querySelector('[data-gth-month-role="input"]');
-      var panel = document.querySelector('[data-gth-month-role="panel"]');
-      if (!input || !panel) return;
-      function report(code) { input.setAttribute('data-gth-month-result', code); }
-      try {
-        var answer = input.getAttribute('data-gth-month-answer') || '';
-        var match = /^(\\d{4})-(\\d{2})$/.exec(answer);
-        if (!match) { report('bad-answer'); return; }
-        var year = Number(match[1]);
-        var monthIndex = Number(match[2]) - 1;
-        if (monthIndex < 0 || monthIndex > 11) { report('bad-answer'); return; }
-        function yearOf(vue) {
-          if (!vue) return null;
-          if (typeof vue.year === 'number' && isFinite(vue.year)) return vue.year;
-          if (vue.date instanceof Date && !isNaN(vue.date.getTime())) return vue.date.getFullYear();
-          return null;
-        }
-        function headerYear(node) {
-          var labels = node.querySelectorAll('.el-date-picker__header-label');
-          var found = null;
-          for (var i = 0; i < labels.length; i++) {
-            var text = String(labels[i].textContent || '').replace(/\\s+/g, '');
-            var hit = /^(\\d{4})年$/.exec(text);
-            if (!hit) continue;
-            if (found != null) return null;
-            found = Number(hit[1]);
-          }
-          return found;
-        }
-        function findPick(vue, depth) {
-          if (!vue || depth > 5) return null;
-          if (typeof vue.handleMonthPick === 'function' && vue.selectionMode === 'month') return vue;
-          var kids = vue.$children || [];
-          for (var i = 0; i < kids.length; i++) {
-            var found = findPick(kids[i], depth + 1);
-            if (found) return found;
-          }
-          return null;
-        }
-        var shownYear = headerYear(panel);
-        if (shownYear != null && shownYear !== year) { report('bad-year'); return; }
-        var pick = findPick(panel.__vue__, 0);
-        var pickYear = yearOf(pick);
-        if (pick && (pickYear == null || pickYear === year)) {
-          pick.handleMonthPick(monthIndex);
-          report('picked');
-          return;
-        }
-        var editor = input.closest && input.closest('.el-date-editor');
-        var vue = editor && editor.__vue__;
-        var guard = 0;
-        while (vue && typeof vue.emitInput !== 'function' && vue.$parent && guard < 6) {
-          vue = vue.$parent;
-          guard += 1;
-        }
-        if (!vue || typeof vue.emitInput !== 'function') { report('no-vue'); return; }
-        var parsed = typeof vue.parseString === 'function' ? vue.parseString(answer) : null;
-        var date = parsed instanceof Date && !isNaN(parsed.getTime()) ? parsed : new Date(year, monthIndex, 1);
-        if (!(date instanceof Date) || isNaN(date.getTime())) { report('no-parse'); return; }
-        if (date.getFullYear() !== year || date.getMonth() !== monthIndex) { report('bad-year'); return; }
-        vue.userInput = null;
-        vue.emitInput(date);
-        report('emitted');
-      } catch (error) {
-        report('threw');
-      }
-    })();`;
+    // The fill runs in an isolated world, so it cannot see the page Vue instance.
+    // Inserting a <script> is how PR#52 reached handleMonthPick, and a strict
+    // script-src skips that element: the result attribute stays pending, input+change
+    // paints the DOM, and panel close restores the empty model. The worker instead
+    // runs acceptGthMonthInPage via chrome.scripting in world MAIN. That call is not
+    // a page script, so script-src does not apply. A typed value is still not the model.
     async function acceptMonthInPage(panel, input, answer) {
-      if (!/^\d{4}-(0[1-9]|1[0-2])$/u.test(answer)) return false;
-      const root = document.documentElement;
-      if (!root?.isConnected || !panel?.isConnected || !input?.isConnected) return false;
-      if (otherPendingPanels(panel).length) return false;
-      const script = document.createElement('script');
+      if (!/^\d{4}-(0[1-9]|1[0-2])$/u.test(answer)) return 'no';
+      if (!document.documentElement?.isConnected || !panel?.isConnected || !input?.isConnected) return 'no';
+      if (otherPendingPanels(panel).length) return 'no';
       let result = 'pending';
       try {
         await boundAction(() => {
@@ -722,16 +657,17 @@
           panel.setAttribute('data-gth-month-role', 'panel');
           input.setAttribute('data-gth-month-answer', answer);
           input.setAttribute('data-gth-month-result', 'pending');
-          script.textContent = PAGE_MONTH_ACCEPT;
-          root.appendChild(script);
-          result = input.getAttribute('data-gth-month-result') || 'pending';
           return null;
         });
+        let response = null;
+        try {
+          response = await chrome.runtime.sendMessage({ type: 'GTH_MONTH_MODEL_ACCEPT', answer });
+        } catch { response = null; }
+        result = typeof response?.result === 'string' ? response.result : 'pending';
       } catch (error) {
         if (error instanceof Stop) throw error;
         result = 'pending';
       } finally {
-        try { script.remove(); } catch { /* already gone */ }
         try {
           input.removeAttribute('data-gth-month-role');
           input.removeAttribute('data-gth-month-answer');
@@ -739,7 +675,9 @@
           panel.removeAttribute('data-gth-month-role');
         } catch { /* keep the month reason */ }
       }
-      return result === 'picked' || result === 'emitted';
+      if (result === 'picked' || result === 'emitted') return 'ok';
+      if (result === 'dual' || result === 'bad-year' || result === 'mismatch') return 'stop';
+      return 'no';
     }
     // input+change paints the DOM. Element-UI keeps it only when the picker
     // accepted it; closing the panel clears a value the model never took.
@@ -839,7 +777,11 @@
         }
         if (!matched && norm(input.value) === '' && !drifted() && !otherPendingPanels(panel).length) {
           const accepted = await acceptMonthInPage(panel, input, answer);
-          if (accepted) matched = await waitUntil(readMonth, 480);
+          if (accepted === 'stop') {
+            await dismissMonthSurfaces(company);
+            stop(otherPendingPanels(panel).length ? 'control_not_supported' : 'readback_mismatch');
+          }
+          if (accepted === 'ok') matched = await waitUntil(readMonth, 480);
         }
         if (!matched && norm(input.value) === '' && !drifted() && !otherPendingPanels(panel).length) {
           await commitMonthThroughInput(input, answer);

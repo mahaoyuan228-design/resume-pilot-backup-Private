@@ -195,6 +195,29 @@ test('a disallowed non-GET fails its section while later sections still run', as
   assert.ok(f.calls.includes('fill:other'));
 });
 
+test('physical removal after a stuck editor lets the next section bind and fill', async (t) => {
+  const f = fixture({ cancelLeavesForm: 'basic', fillThrows: 'basic' });
+  t.after(() => f.dom.window.close());
+  const binds = [];
+  f.driver.bindWriters = async (section) => { binds.push(section.id); };
+  f.driver.forceClose = async (section) => {
+    f.document.querySelectorAll('.r-section')[section.sectionIndex].querySelectorAll('form').forEach(node => node.remove());
+    f.document.querySelectorAll('.el-picker-panel,.el-select-dropdown').forEach(node => node.remove());
+  };
+  const sections = [SECTIONS[0], SECTIONS.find((section) => section.id === 'education'), SECTIONS.find((section) => section.id === 'skills')];
+  const runs = await runSections(f.driver, { sections });
+  assert.deepEqual(binds, ['basic', 'education', 'skills']);
+  assert.equal(runs[0].status, 'failed');
+  assert.equal(runs[0].cancel.forced, true);
+  assert.equal(runs[0].cancel.closed, true);
+  assert.equal(runs[1].open.ok, true);
+  assert.ok(f.calls.includes('fill:education'));
+  assert.equal(runs[2].status, 'verified');
+  assert.ok(f.calls.indexOf('cancel:basic') < f.calls.indexOf('open:education'));
+  assert.ok(f.calls.indexOf('cancel:education') < f.calls.indexOf('open:skills'));
+  assert.equal(f.document.querySelectorAll('form').length, 0);
+});
+
 test('a blocked forbidden click fails its section without stopping later section cleanup', async (t) => {
   const f = fixture({ badClick: 'skills' });
   t.after(() => f.dom.window.close());

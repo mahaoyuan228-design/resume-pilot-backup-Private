@@ -20,8 +20,8 @@ function failedFields(section, reason) {
   return section.questions.map((q) => ({ q, status: 'failed', reason, value: null }));
 }
 
-/** A failed trial never skips recording a later section. A stuck editor blocks
- * later writes until the DOM proves it is gone; it is never silently ignored. */
+/** A failed trial never skips recording a later section. Cancel, then
+ * physically remove a hidden editor, before the next section binds its writer. */
 export async function runSections(driver, { sections = SECTIONS } = {}) {
   const runs = [];
   for (const section of sections) {
@@ -39,6 +39,10 @@ export async function runSections(driver, { sections = SECTIONS } = {}) {
       if (formsRemain(state) && !(section.id === 'basic' && runs.length === 1 && state.basicInitialEditor === true)) {
         throw failure('previous_editor_still_open');
       }
+      // Re-install the shipped writers after a previous abort. Education and
+      // work use the same open-fill engine as skills and other; a fresh bind
+      // keeps a failed basic trial from leaving that engine uninstalled.
+      if (typeof driver.bindWriters === 'function') await driver.bindWriters(section);
       attemptedOpen = true;
       run.open = await driver.open(section);
       if (run.open?.reason === 'page_hidden') {
@@ -65,14 +69,22 @@ export async function runSections(driver, { sections = SECTIONS } = {}) {
         try {
           await ensureVisible(driver);
           run.cancel = await driver.cancel(section);
-          const after = await driver.state();
+          let after = await driver.state();
+          const stuck = run.cancel?.ok !== true || run.cancel?.closed !== true || formsRemain(after);
+          if (stuck && typeof driver.forceClose === 'function') {
+            await driver.forceClose(section);
+            after = await driver.state();
+            if (!formsRemain(after)) {
+              run.cancel = { ...(run.cancel || {}), ok: true, closed: true, forced: true, reason: null };
+            }
+          }
           if (run.cancel?.ok !== true || run.cancel?.closed !== true || formsRemain(after)) {
-            run.cancel = { ...run.cancel, ok: false, closed: false,
+            run.cancel = { ...(run.cancel || {}), ok: false, closed: false,
               reason: run.cancel?.reason || 'editor_still_open' };
             run.reason ||= run.cancel.reason;
           }
         } catch (error) {
-          run.cancel = { ok: false, closed: false, reason: errorReason(error) };
+          run.cancel = { ...(run.cancel || {}), ok: false, closed: false, reason: errorReason(error) };
           run.reason ||= run.cancel.reason;
         }
       } else {

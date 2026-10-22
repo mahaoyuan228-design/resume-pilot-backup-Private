@@ -482,14 +482,18 @@ export function installGthEducationLive(doc, options) {
         value = String(textInputs[0].value);
       } else if (q === '专业类别') {
         const widgets = [...item.querySelectorAll('.cascader-wrap,.professional-category')];
-        // Nested wrapper aliases describe one widget. Its innermost owner must
-        // contain the trigger and popup directly; independent wrappers remain
+        // Wrapper aliases must share one ancestor chain, but the trigger and
+        // popup can have different nested owners. Independent wrappers remain
         // ambiguous. Keep the raw wrapper count in DOM diagnostics above.
         const widget = widgets.find(node => widgets.every(other => other === node || other.contains(node)));
         const triggers = [...item.querySelectorAll('.cascader-wrap > .input-l.pointer,.professional-category > .input-l.pointer')];
         const panels = [...item.querySelectorAll('.popover.plugin-dialog-wrap')];
+        const triggerOwner = triggers[0]?.parentElement;
+        const panelOwner = panels[0]?.parentElement;
+        const nestedOwners = widgets.includes(triggerOwner) && widgets.includes(panelOwner)
+          && (triggerOwner === panelOwner || triggerOwner.contains(panelOwner) || panelOwner.contains(triggerOwner));
         if (!widget || triggers.length !== 1 || panels.length !== 1
-          || triggers[0].parentElement !== widget || panels[0].parentElement !== widget
+          || !nestedOwners
           || textInputs.length !== 1 || controls.length !== 1
           || !textInputs[0].readOnly || textInputs[0].disabled
           || !triggers[0].contains(textInputs[0]))

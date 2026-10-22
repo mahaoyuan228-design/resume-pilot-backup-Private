@@ -1,6 +1,6 @@
 # GTH 教育经历复杂控件 · Never-Save 验收入口
 
-本次 harness 修复基线：`947e318`（`cursor/expand-night-ats-f861`，含 PR #76 复杂控件 runner）。
+本次 harness 修复基线：`0e1b2b79`（`cursor/expand-night-ats-f861`，含已合并 PR #78）。
 本次交付是可试填、回读、输出 DOM 诊断的 runner；`liveSupportClaimed=false`。
 开发验证只使用离线合成 DOM / fake CDP，没有连接真机 9239，没有新的 live PASS。
 当前基线没有 `handover/GTH_EDUCATION_LIVE_TRY_2026-10-22.md`，本次未引用其未获取内容。
@@ -58,10 +58,13 @@ node scripts/live/gth-education-live.mjs
 
 2026-10-22 验收方反馈：专业类别 writer 已 `verified/readback_reapplied`，但 harness
 在嵌套 `.cascader-wrap` / `.professional-category`（`categoryCount=2`）时误报
-`category_structure_changed`。回读现按同一祖先链上的唯一控件判断：最内层 wrapper
-须直接拥有唯一 trigger 和唯一 popup，且 trigger 内只有一个可见、只读、可用的显示 input。
-独立 wrapper、trigger/popup 分属不同层、重复 trigger/popup 仍拒绝，原始 `categoryCount`
-诊断保留。修复仅经合成夹具验证，没有新增 live PASS，也不提升支持声明。
+`category_structure_changed`。验收方进一步确认：外层 `.el-form-item__content.cascader-wrap`
+直接拥有 `.dialog-wrap.plugin-dialog-wrap.popover`，内层 `.professional-category`
+直接拥有 `.input-l.pointer > input`；popup 是内层 wrapper 的兄弟节点。
+回读现允许 trigger/popup 的直接父节点均属于上述两类 wrapper，且两者相同或互相包含。
+所有 wrapper 仍须位于同一祖先链；唯一 trigger 内须只有一个可见、只读、可用的显示 input。
+互不包含的独立 sibling owners、非 widget 父节点、重复 trigger/popup 仍拒绝，原始
+`categoryCount=2` 诊断保留。修复仅经合成夹具验证，没有新增 live PASS，也不提升支持声明。
 
 输出还包括实际 `tipSha`、所选 `fillQuestions`、参数、逐项 writer 结果、点击审计、请求审计、
 取消结果，以及 `fill.activeField` / `fill.selectorStep`。所有结果保持
@@ -92,5 +95,6 @@ npm run test:live-harvest
 
 新增测试覆盖实际 shipped `fullTrial` 与 runner 守卫组合、四项复杂控件、日期单端失败/最终漂移、
 禁用学历、类别 UID/文字/链接攻击、重复选项、不支持结构、保存/提交/全局确定拒绝、字典 POST 拦截、
-取消前结构保留，以及 `categoryCount=2` 嵌套 wrapper 的完整试填/回读/取消和歧义结构拒绝。
+取消前结构保留，以及 `categoryCount=2` 嵌套 owner / sibling popup 的完整试填/回读/取消、
+反向包含的回读和独立 sibling owners 的拒绝。
 测试不会打开真机浏览器。

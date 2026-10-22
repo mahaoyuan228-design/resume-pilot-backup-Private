@@ -612,15 +612,32 @@ test('shipped engine fill writes the three basic fixtures and restores the origi
     assert.equal(readReactSignals(inputs[spec.path]).every((row) => row.value === ORIGINALS[spec.path]), true);
     assert.equal(inputCounts[spec.path], 2);
   }
-  assert.deepEqual(plain(seen.map((profile) => profile.fullName)), [FIELD_SPECS[0].fixture, ORIGINALS.fullName]);
-  assert.deepEqual(plain(seen.map((profile) => profile.phone)), [FIELD_SPECS[1].fixture, ORIGINALS.phone]);
-  assert.deepEqual(plain(seen.map((profile) => profile.email)), [FIELD_SPECS[2].fixture, ORIGINALS.email]);
-  assert.deepEqual(plain(seen.map((profile) => profile.confirmedFields)), [
-    ['fullName', 'phone', 'email'],
-    ['fullName', 'phone', 'email']
+  assert.deepEqual(plain(result.fillCalls.map((call) => call.lengths)), [
+    [{ path: 'fullName', length: FIELD_SPECS[0].fixture.length }],
+    [{ path: 'phone', length: FIELD_SPECS[1].fixture.length }],
+    [{ path: 'email', length: FIELD_SPECS[2].fixture.length }],
+    FIELD_SPECS.map((spec) => ({ path: spec.path, length: ORIGINALS[spec.path].length }))
+  ]);
+  assert.deepEqual(plain(seen.map((profile) => ({
+    confirmedFields: profile.confirmedFields,
+    fullName: profile.fullName ?? null,
+    phone: profile.phone ?? null,
+    email: profile.email ?? null
+  }))), [
+    { confirmedFields: ['fullName'], fullName: FIELD_SPECS[0].fixture, phone: null, email: null },
+    { confirmedFields: ['phone'], fullName: null, phone: FIELD_SPECS[1].fixture, email: null },
+    { confirmedFields: ['email'], fullName: null, phone: null, email: FIELD_SPECS[2].fixture },
+    {
+      confirmedFields: ['fullName', 'phone', 'email'],
+      fullName: ORIGINALS.fullName,
+      phone: ORIGINALS.phone,
+      email: ORIGINALS.email
+    }
   ]);
   assert.deepEqual(plain(blanks), [
-    ['', '', ''],
+    ['', ORIGINALS.phone, ORIGINALS.email],
+    [FIELD_SPECS[0].fixture, '', ORIGINALS.email],
+    [FIELD_SPECS[0].fixture, FIELD_SPECS[1].fixture, ''],
     ['', '', '']
   ]);
   assert.equal(window.document.getElementById('id-no').value, 'keep-id');
@@ -663,8 +680,14 @@ function happyOutcome() {
     clicks: [],
     anchorSeen: true,
     fillCalls: [
-      { index: 0, lengths: FIELD_SPECS.map((spec) => ({ path: spec.path, length: spec.fixture.length })) },
-      { index: 1, lengths: FIELD_SPECS.map((spec) => ({ path: spec.path, length: ORIGINALS[spec.path].length })) }
+      ...FIELD_SPECS.map((spec, index) => ({
+        index,
+        lengths: [{ path: spec.path, length: spec.fixture.length }]
+      })),
+      {
+        index: FIELD_SPECS.length,
+        lengths: FIELD_SPECS.map((spec) => ({ path: spec.path, length: ORIGINALS[spec.path].length }))
+      }
     ],
     productReason: 'readback_matched',
     reactVia: Object.fromEntries(FIELD_SPECS.map((spec) => [spec.path, ['value_tracker', 'memoized_props']])),
@@ -997,6 +1020,8 @@ test('help prints the PowerShell command and the runner does not claim support o
   assert.match(help.stdout, /\$env:OUTDIR='.'/);
   assert.match(help.stdout, /node scripts\/live\/cms-basic-info-live\.mjs/);
   assert.match(source, /RESUME_FILL/);
+  assert.match(source, /productFill\(\{ \[row\.spec\.path\]: options\.fixtures\[row\.spec\.path\] \}\)/);
+  assert.doesNotMatch(source, /productFill\(options\.fixtures\)/);
   assert.match(source, /__resumeQuickFillEngineListener/);
   assert.match(source, /fullName/);
   assert.match(source, /ResumeCmsSession/);

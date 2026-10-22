@@ -406,13 +406,61 @@ function monthRangeItem(start = '', end = '') {
   </div></div>`;
 }
 
-function wireMonthRange(document) {
+function wireMonthRange(document, options = {}) {
   const panel = document.getElementById('month-panel');
   document.body.appendChild(panel);
   const year = document.getElementById('month-year');
   let active = null;
-  const stats = { open: 0, cells: 0, years: 0 };
+  const LEAVE_CLASS = 'el-zoom-in-top-leave-active';
+  let leaveTimer = 0;
+  const stats = {
+    open: 0, cells: 0, years: 0,
+    leaveStarted: 0, leaveFinished: 0, leaveStillPending: false, leaveFinishedBeforeEndOpen: null,
+  };
+  const finishLeave = () => {
+    leaveTimer = 0;
+    panel.classList.remove(LEAVE_CLASS);
+    panel.style.display = 'none';
+    panel.remove();
+    stats.leaveFinished += 1;
+  };
+  // Same leave as 任职时间: dismiss keeps this shared panel pending until the
+  // transition ends. A stuck leave stays pending so the end month fail-closes.
+  const beginLeave = () => {
+    if (options.startLeaveMs == null || !panel.isConnected) {
+      if (panel.isConnected) panel.style.display = 'none';
+      return;
+    }
+    const pending = panel.style.display !== 'none' || panel.classList.contains(LEAVE_CLASS);
+    if (!pending) {
+      panel.style.display = 'none';
+      return;
+    }
+    panel.classList.add(LEAVE_CLASS);
+    panel.style.display = 'block';
+    panel.style.visibility = 'visible';
+    stats.leaveStarted += 1;
+    const view = document.defaultView;
+    if (leaveTimer) view.clearTimeout(leaveTimer);
+    leaveTimer = 0;
+    view.setTimeout(() => {
+      if (panel.isConnected && panel.classList.contains(LEAVE_CLASS)) stats.leaveStillPending = true;
+    }, 40);
+    if (Number.isFinite(options.startLeaveMs)) {
+      leaveTimer = view.setTimeout(finishLeave, options.startLeaveMs);
+    } else {
+      stats.leaveStuck = true;
+    }
+  };
   const show = (id) => {
+    if (options.startLeaveMs != null && id === 'end-date') {
+      stats.leaveFinishedBeforeEndOpen = stats.leaveFinished > 0 && !panel.classList.contains(LEAVE_CLASS);
+    }
+    if (leaveTimer) {
+      document.defaultView.clearTimeout(leaveTimer);
+      leaveTimer = 0;
+    }
+    panel.classList.remove(LEAVE_CLASS);
     active = document.getElementById(id);
     if (!panel.isConnected) document.body.appendChild(panel);
     panel.style.display = 'block';
@@ -432,12 +480,21 @@ function wireMonthRange(document) {
       const month = MONTH_NAMES.indexOf(cell.textContent.replace(/\s+/gu, '')) + 1;
       const current = Number(year.textContent.match(/\d{4}/u)[0]);
       if (active) active.value = `${current}-${String(month).padStart(2, '0')}`;
-      panel.style.display = 'none';
       stats.cells += 1;
+      if (options.startLeaveMs != null && active?.id === 'start-date') {
+        panel.style.display = 'block';
+        return;
+      }
+      panel.style.display = 'none';
     });
   }
   document.addEventListener('keydown', (event) => {
-    if (event.key === 'Escape') panel.style.display = 'none';
+    if (event.key !== 'Escape') return;
+    if (options.startLeaveMs == null) {
+      panel.style.display = 'none';
+      return;
+    }
+    beginLeave();
   });
   return stats;
 }
@@ -598,6 +655,72 @@ test('在校时间 fills the live dual month editors and 专业类别 confirms a
   assert.equal(assessGthEducationOpenFill(result).ok, true);
   assertNeverSave(clicks);
   assert.equal(clicks.filter((node) => node.id === 'editor-save' || node.id === 'editor-delete').length, 0);
+});
+
+test('在校时间 waits out a start panel leave transition before the end month', async () => {
+  const row = {
+    school: '示例大学', major: '计算机', degree: '本科', unifiedAdmissions: '是',
+    startDate: '2025-03', endDate: '2026-07', majorCategory: '经济学||金融学',
+  };
+  const html = shell('教育经历', formWrap(educationFields({ dates: monthRangeItem(), category: categoryItem() })));
+  const { dom, clicks, context } = boot(html);
+  const doc = dom.window.document;
+  wireDegree(doc);
+  wireRadio(doc);
+  const months = wireMonthRange(doc, { startLeaveMs: 200 });
+  const picker = wireCategory(doc);
+  const result = await context.ResumeGthEducationOpen.trial(request(educationProfile(row), { profileIndex: 0 }));
+  assert.equal(result.ok, true, JSON.stringify({
+    reason: result.reason, step: result.selectorStep,
+    leaveStarted: months.leaveStarted, leaveFinished: months.leaveFinished,
+    still: months.leaveStillPending, beforeEnd: months.leaveFinishedBeforeEndOpen,
+  }));
+  assert.equal(result.liveSupportClaimed, false);
+  assert.equal(`${doc.getElementById('start-date').value} | ${doc.getElementById('end-date').value}`, '2025-03 | 2026-07');
+  assert.equal(result.fields.find((field) => field.question === '在校时间').reason, 'readback_matched');
+  assert.equal(result.fields.find((field) => field.question === '在校时间').status, 'verified');
+  assert.equal(months.leaveStillPending, true);
+  assert.equal(months.leaveFinished > 0, true);
+  assert.equal(months.leaveFinishedBeforeEndOpen, true);
+  assert.equal(months.open, 2);
+  assert.equal(months.cells, 2);
+  assert.equal(doc.getElementById('month-panel').classList.contains('el-zoom-in-top-leave-active'), false);
+  assert.equal(picker.confirm, 1);
+  assert.equal(assessGthEducationOpenFill(result).ok, true);
+  assertNeverSave(clicks);
+});
+
+test('在校时间 fails closed when the start panel leave transition is still pending after 800ms', async () => {
+  const row = {
+    school: '示例大学', major: '计算机', degree: '本科', unifiedAdmissions: '是',
+    startDate: '2025-03', endDate: '2026-07', majorCategory: '经济学||金融学',
+  };
+  const html = shell('教育经历', formWrap(educationFields({ dates: monthRangeItem(), category: categoryItem() })));
+  const { dom, clicks, context } = boot(html);
+  const doc = dom.window.document;
+  wireDegree(doc);
+  wireRadio(doc);
+  const months = wireMonthRange(doc, { startLeaveMs: Infinity });
+  wireCategory(doc);
+  const result = await context.ResumeGthEducationOpen.trial(request(educationProfile(row), { profileIndex: 0 }));
+  assert.equal(result.ok, false);
+  assert.equal(result.reason, 'control_not_supported');
+  assert.equal(result.selectorStep, 'month_panel_structure_unknown');
+  assert.equal(result.fields.find((field) => field.question === '在校时间').status, 'failed');
+  assert.equal(result.fields.find((field) => field.question === '在校时间').reason, 'control_not_supported');
+  assert.equal(result.liveSupportClaimed, false);
+  assert.equal(doc.getElementById('start-date').value, '2025-03');
+  assert.equal(doc.getElementById('end-date').value, '');
+  assert.notEqual(`${doc.getElementById('start-date').value} | ${doc.getElementById('end-date').value}`, '2025-03 | 2026-07');
+  assert.equal(months.leaveStillPending, true);
+  assert.equal(months.leaveStuck, true);
+  assert.equal(months.leaveFinished, 0);
+  assert.equal(months.open, 1);
+  assert.equal(months.cells, 1);
+  assert.equal(doc.getElementById('month-panel').isConnected, true);
+  assert.equal(doc.getElementById('month-panel').classList.contains('el-zoom-in-top-leave-active'), true);
+  assert.equal(doc.getElementById('school').value, '');
+  assertNeverSave(clicks);
 });
 
 test('在校时间 continues through the required range error that appears before the end month', async () => {

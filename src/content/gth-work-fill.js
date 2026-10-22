@@ -6,11 +6,12 @@
 // The shared writer binds the .el-picker-panel that this editor's open click shows
 // (Element-UI teleports it to document.body; not closest(.el-date-editor)).
 // A quiet start panel may stay connected while the end panel is the only pending
-// one. Two pending panels and a year step other than ±1 fail closed. If the month
-// cell leaves the input empty, the extension worker accepts that month in the page
-// world (handleMonthPick / emitInput, no inserted script) so the model survives
-// panel close. A typed value that close clears fails closed. It waits out
-// el-zoom-in-top-enter*.
+// one. Two pending panels and a year step other than ±1 fail closed. A month click
+// may paint the input while the model stays empty. While that panel is still open,
+// the extension worker accepts the month in the page world (handleMonthPick /
+// emitInput, no inserted script) even if the DOM already shows the answer. picked
+// and emitted stay. dual, bad-year, mismatch, and a blank readback after close
+// fail closed. It waits out el-zoom-in-top-enter*.
 // 职位类别 and 公司所属行业 use the intent cascader: exact 一级||二级, L1 click, then L2.
 // 薪资 is an el-input/select-l hybrid with no option list in the census, so it stays
 // 'control_not_supported'. liveSupportClaimed stays false.

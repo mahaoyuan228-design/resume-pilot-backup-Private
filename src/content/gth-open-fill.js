@@ -515,12 +515,17 @@
     // removing it detaches the picker's own node and is not what makes the end month
     // commit. Two pending panels are ambiguous — do not click. A year step other than
     // ±1 fails closed. A month click that leaves the input empty is retried on the
-    // cell (the table handler reads a TD target). If the input is still empty, the
-    // extension worker runs acceptGthMonthInPage in the page world and calls the
-    // mounted picker's handleMonthPick or the editor's emitInput. That updates the
-    // component model, which is what remains after the panel closes. No <script> is
-    // inserted, so a strict script-src cannot skip the call. input+change is kept
-    // only when the value is still there after close. liveSupportClaimed stays false.
+    // cell (the table handler reads a TD target). A click can paint input.value
+    // while the Element-UI model stays empty; closing the panel then restores that
+    // empty model. While the panel is still open, the extension worker runs
+    // acceptGthMonthInPage in the page world even if the DOM already shows the
+    // answer. picked and emitted accept the model. dual, bad-year, and mismatch
+    // stop. After close, a blank or different value stops readback_mismatch. If
+    // the bridge is unavailable, a still-empty input may be typed, and a value
+    // that close clears still fails closed. The page-world call uses the mounted
+    // picker's handleMonthPick or the editor's emitInput. No <script> is inserted,
+    // so a strict script-src cannot skip the call. input+change is kept only when
+    // the value is still there after close. liveSupportClaimed stays false.
     function monthPanelNodes() {
       return [...document.querySelectorAll('.el-picker-panel')].filter(node => node.isConnected);
     }
@@ -644,7 +649,8 @@
     // script-src skips that element: the result attribute stays pending, input+change
     // paints the DOM, and panel close restores the empty model. The worker instead
     // runs acceptGthMonthInPage via chrome.scripting in world MAIN. That call is not
-    // a page script, so script-src does not apply. A typed value is still not the model.
+    // a page script, so script-src does not apply. A painted or typed value is still
+    // not the model: picked and emitted are the only acceptances.
     async function acceptMonthInPage(panel, input, answer) {
       if (!/^\d{4}-(0[1-9]|1[0-2])$/u.test(answer)) return 'no';
       if (!document.documentElement?.isConnected || !panel?.isConnected || !input?.isConnected) return 'no';
@@ -775,15 +781,27 @@
           await guardedClick(monthCell, boundAction);
           matched = await waitUntil(readMonth, 320);
         }
-        if (!matched && norm(input.value) === '' && !drifted() && !otherPendingPanels(panel).length) {
-          const accepted = await acceptMonthInPage(panel, input, answer);
-          if (accepted === 'stop') {
-            await dismissMonthSurfaces(company);
-            stop(otherPendingPanels(panel).length ? 'control_not_supported' : 'readback_mismatch');
-          }
-          if (accepted === 'ok') matched = await waitUntil(readMonth, 480);
+        if (matched?.bad === 'dual' || matched?.bad === 'drift' || drifted() || otherPendingPanels(panel).length) {
+          await dismissMonthSurfaces(company);
+          stop('control_not_supported');
         }
-        if (!matched && norm(input.value) === '' && !drifted() && !otherPendingPanels(panel).length) {
+        // DOM paint is not model acceptance. While this panel is still open, ask
+        // MAIN even if input.value already equals the answer. An empty input still
+        // asks when the panel has already closed. picked/emitted continue; dual,
+        // bad-year, and mismatch stop. An unavailable bridge does not type over a
+        // painted value.
+        const painted = norm(input.value) !== '';
+        let accepted = 'no';
+        if ((monthPanelPending(panel) || !painted) && panel.isConnected && input.isConnected) {
+          accepted = await acceptMonthInPage(panel, input, answer);
+        }
+        if (accepted === 'stop') {
+          await dismissMonthSurfaces(company);
+          stop(otherPendingPanels(panel).length ? 'control_not_supported' : 'readback_mismatch');
+        }
+        if (accepted === 'ok') {
+          matched = await waitUntil(readMonth, 480);
+        } else if (!matched && !painted && norm(input.value) === '' && !drifted() && !otherPendingPanels(panel).length) {
           await commitMonthThroughInput(input, answer);
           matched = await waitUntil(readMonth, 320);
         }

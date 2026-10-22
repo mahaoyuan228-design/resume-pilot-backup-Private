@@ -58,6 +58,7 @@ function boot(html, options = {}) {
     return original.call(this);
   };
   const listeners = new Set();
+  const bridge = { calls: 0, answers: [], seen: [] };
   const chrome = {
     runtime: {
       id: 'synthetic-extension',
@@ -65,7 +66,18 @@ function boot(html, options = {}) {
       sendMessage: async (message) => {
         if (message?.type === 'RESUME_PROFILE_BINDING_CHECK' || message?.type === 'RESUME_PAID_VERIFY') return { allowed: true };
         if (message?.type === 'GTH_MONTH_MODEL_ACCEPT') {
+          bridge.calls += 1;
+          bridge.answers.push(message.answer);
+          const markedInput = window.document.querySelector('[data-gth-month-role="input"]');
+          const markedPanel = window.document.querySelector('[data-gth-month-role="panel"]');
+          bridge.seen.push({
+            answer: message.answer,
+            value: markedInput ? markedInput.value : '',
+            panelOpen: !!markedPanel && markedPanel.style.display !== 'none' && markedPanel.style.visibility !== 'hidden',
+          });
           if (options.monthBridge === false) return { ok: false, result: 'unavailable' };
+          const forced = options.bridgeStop && options.bridgeStop[message.answer];
+          if (typeof forced === 'string') return { ok: false, result: forced };
           try {
             const result = runMonthAccept(window.document, message.answer);
             const code = result?.result || 'unavailable';
@@ -90,7 +102,7 @@ function boot(html, options = {}) {
   });
   vm.runInContext(core, context);
   vm.runInContext(workSource, context);
-  return { dom, clicks, context, listeners };
+  return { dom, clicks, context, listeners, bridge };
 }
 
 function shell(body, { edit = false, foreign = false } = {}) {
@@ -539,6 +551,7 @@ function wireRaceMonth(document, options = {}) {
     huskRemainedAfterStart: false, quietAtEndClick: null, quietAtEndOpen: [], monthPanelNodesAtEndClick: [],
     quietAfterEndShow: [], endOpenClicks: 0, endCellClicks: 0, endChangeCommits: 0, opensBesideHusk: 0, didReattachQuiet: false,
     typedChanges: 0, typedClears: 0, tableCommits: 0, anchorWalkMisses: 0, vuePicks: 0, vueEmits: 0,
+    domPaints: 0,
     panels: {},
   };
   const editors = Object.fromEntries(['start-date', 'end-date'].map((id) => {
@@ -703,6 +716,15 @@ function wireRaceMonth(document, options = {}) {
         if (editor.input.id === 'end-date') {
           stats.quietAtEndClick = others.length;
           stats.endCellClicks += 1;
+          // Live R4: the cell click paints input.value and leaves the panel open.
+          // The Element-UI model stays empty, so panel close restores it.
+          if (options.clickPaintsDom) {
+            const month = MONTH_NAMES.indexOf(cell.textContent.replace(/\s+/gu, '')) + 1;
+            const current = Number(editor.year.textContent.match(/\d{4}/u)[0]);
+            editor.input.value = `${current}-${String(month).padStart(2, '0')}`;
+            stats.domPaints += 1;
+            return;
+          }
           // Live end panel: the anchor click does not write. A TD target can.
           // input+change is not the model; close restores model and clears the rest.
           if (options.endCellNoop || (options.closeClearsTyped && !options.tablePick)) return;
@@ -833,7 +855,7 @@ function bootRace(options = {}) {
   const html = shell(formWrap(workFields({
     dates: raceMonthItem(options), industrySingle: true, industryCounter: '(0/1)',
   })));
-  const booted = boot(html, { monthBridge: options.monthBridge !== false });
+  const booted = boot(html, { monthBridge: options.monthBridge !== false, bridgeStop: options.bridgeStop });
   const doc = booted.dom.window.document;
   wireCascader(doc, 'job', { leaves: JOB_LEAVES, reveal: true });
   wireCascader(doc, 'industry', { leaves: INDUSTRY_LEAVES, reveal: true, single: true });
@@ -1036,6 +1058,117 @@ test('任职时间 fails closed when panel close clears a typed end month', asyn
   assert.equal(months.panels.start.isConnected, true);
   flags(result);
   assert.equal(forbidden(clicks).length, 0);
+});
+
+test('任职时间 keeps a painted end month only when the open panel bridge accepts the model', async () => {
+  const endSeen = (bridge, endDate) => bridge.seen.filter((row) => row.answer === endDate);
+  for (const [startDate, endDate] of [['2023-01', '2024-06'], ['2022-03', '2023-12']]) {
+    const { doc, clicks, context, months, bridge } = bootRace({
+      clickPaintsDom: true, closeClearsTyped: true, acceptVue: true,
+    });
+    const result = await context.ResumeGthWorkOpen.trial(request(workProfile({ ...ROW, startDate, endDate })));
+    const seen = endSeen(bridge, endDate);
+    assert.equal(result.ok, true, JSON.stringify({
+      startDate, endDate, reason: result.reason, step: result.selectorStep,
+      picks: months.vuePicks, paints: months.domPaints, clears: months.typedClears, seen,
+    }));
+    assert.equal(`${doc.getElementById('start-date').value} | ${doc.getElementById('end-date').value}`, `${startDate} | ${endDate}`);
+    assert.equal(result.fields.find((field) => field.question === '任职时间').reason, 'readback_matched');
+    assert.equal(result.liveSupportClaimed, false);
+    assert.equal(seen.length, 1);
+    assert.equal(seen[0].value, endDate);
+    assert.equal(seen[0].panelOpen, true);
+    assert.equal(months.domPaints, 1);
+    assert.equal(months.vuePicks, 1);
+    assert.equal(months.vueEmits, 0);
+    assert.equal(months.endChangeCommits, 0);
+    assert.equal(months.typedChanges, 0);
+    assert.equal(months.typedClears, 0);
+    assert.equal(months.tableCommits, 0);
+    assert.equal(months.endCellClicks, 1);
+    assert.equal(doc.getElementById('salary').value, '');
+    flags(result);
+    assert.equal(forbidden(clicks).length, 0);
+  }
+
+  const emitted = bootRace({ clickPaintsDom: true, closeClearsTyped: true, acceptEmit: true });
+  const emittedResult = await emitted.context.ResumeGthWorkOpen.trial(request(workProfile({ ...ROW, startDate: '2022-03', endDate: '2023-12' })));
+  const emittedSeen = endSeen(emitted.bridge, '2023-12');
+  assert.equal(emittedResult.ok, true, JSON.stringify({ reason: emittedResult.reason, step: emittedResult.selectorStep, emits: emitted.months.vueEmits }));
+  assert.equal(`${emitted.doc.getElementById('start-date').value} | ${emitted.doc.getElementById('end-date').value}`, '2022-03 | 2023-12');
+  assert.equal(emittedSeen.length, 1);
+  assert.equal(emittedSeen[0].panelOpen, true);
+  assert.equal(emittedSeen[0].value, '2023-12');
+  assert.equal(emitted.months.vueEmits, 1);
+  assert.equal(emitted.months.vuePicks, 0);
+  assert.equal(emitted.months.domPaints, 1);
+  assert.equal(emitted.months.typedClears, 0);
+  assert.equal(emittedResult.liveSupportClaimed, false);
+  assert.equal(forbidden(emitted.clicks).length, 0);
+
+  const bare = bootRace({ clickPaintsDom: true, closeClearsTyped: true });
+  const bareResult = await bare.context.ResumeGthWorkOpen.trial(request(workProfile({ ...ROW, startDate: '2023-01', endDate: '2024-06' })));
+  const bareSeen = endSeen(bare.bridge, '2024-06');
+  assert.equal(bareResult.ok, false);
+  assert.equal(bareResult.reason, 'readback_mismatch');
+  assert.equal(bareResult.selectorStep, 'month_option');
+  assert.equal(bareResult.fields.find((field) => field.question === '任职时间').reason, 'readback_mismatch');
+  assert.equal(bare.doc.getElementById('start-date').value, '2023-01');
+  assert.equal(bare.doc.getElementById('end-date').value, '');
+  assert.equal(bareSeen.length, 1);
+  assert.equal(bareSeen[0].value, '2024-06');
+  assert.equal(bareSeen[0].panelOpen, true);
+  assert.equal(bare.months.domPaints, 1);
+  assert.equal(bare.months.vuePicks, 0);
+  assert.equal(bare.months.vueEmits, 0);
+  assert.equal(bare.months.typedChanges, 0);
+  assert.equal(bare.months.endChangeCommits, 0);
+  assert.ok(bare.months.typedClears >= 1);
+  assert.equal(bareResult.fields.find((field) => field.question === '公司名称').reason, 'not_run');
+  assert.equal(bare.doc.getElementById('salary').value, '');
+  flags(bareResult);
+  assert.equal(forbidden(bare.clicks).length, 0);
+
+  const down = bootRace({ clickPaintsDom: true, closeClearsTyped: true, acceptVue: true, monthBridge: false });
+  const downResult = await down.context.ResumeGthWorkOpen.trial(request(workProfile({ ...ROW, startDate: '2023-01', endDate: '2024-06' })));
+  const downSeen = endSeen(down.bridge, '2024-06');
+  assert.equal(downResult.ok, false);
+  assert.equal(downResult.reason, 'readback_mismatch');
+  assert.equal(downResult.selectorStep, 'month_option');
+  assert.equal(down.doc.getElementById('start-date').value, '2023-01');
+  assert.equal(down.doc.getElementById('end-date').value, '');
+  assert.equal(downSeen.length, 1);
+  assert.equal(downSeen[0].panelOpen, true);
+  assert.equal(downSeen[0].value, '2024-06');
+  assert.equal(down.months.vuePicks, 0);
+  assert.equal(down.months.domPaints, 1);
+  assert.equal(down.months.typedChanges, 0);
+  assert.ok(down.months.typedClears >= 1);
+  assert.equal(downResult.liveSupportClaimed, false);
+  assert.equal(down.doc.getElementById('salary').value, '');
+  flags(downResult);
+  assert.equal(forbidden(down.clicks).length, 0);
+
+  for (const code of ['dual', 'bad-year', 'mismatch']) {
+    const stopped = bootRace({ clickPaintsDom: true, bridgeStop: { '2024-06': code } });
+    const stoppedResult = await stopped.context.ResumeGthWorkOpen.trial(request(workProfile({ ...ROW, startDate: '2023-01', endDate: '2024-06' })));
+    const stoppedSeen = endSeen(stopped.bridge, '2024-06');
+    assert.equal(stoppedResult.ok, false, code);
+    assert.equal(stoppedResult.reason, 'readback_mismatch', code);
+    assert.equal(stoppedResult.selectorStep, 'month_option', code);
+    assert.equal(stoppedResult.fields.find((field) => field.question === '任职时间').reason, 'readback_mismatch', code);
+    assert.equal(stopped.doc.getElementById('start-date').value, '2023-01', code);
+    assert.equal(stopped.doc.getElementById('end-date').value, '2024-06', code);
+    assert.equal(stoppedSeen.length, 1, code);
+    assert.equal(stoppedSeen[0].panelOpen, true, code);
+    assert.equal(stoppedSeen[0].value, '2024-06', code);
+    assert.equal(stopped.months.vuePicks, 0, code);
+    assert.equal(stopped.months.domPaints, 1, code);
+    assert.equal(stoppedResult.fields.find((field) => field.question === '公司名称').reason, 'not_run', code);
+    assert.equal(stopped.doc.getElementById('salary').value, '', code);
+    flags(stoppedResult);
+    assert.equal(forbidden(stopped.clicks).length, 0, code);
+  }
 });
 
 test('a leftover start panel or a decade year step fails closed without an empty end success', async () => {

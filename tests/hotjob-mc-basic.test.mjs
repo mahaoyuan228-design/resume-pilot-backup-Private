@@ -33,6 +33,10 @@ test('siteId and labels match live 中联 mc (姓名/移动电话/电子邮箱)'
   assert.doesNotMatch(source, /cms_basic|ResumeCitics|feishu-atsx|ResumeMoka/);
   assert.match(source, /skippedSave:\s*true/);
   assert.doesNotMatch(source, /click\(.*下一步|下一步.*\.click|保存.*\.click/);
+  assert.match(source, /待真机 Never-Save，未宣称已支持/);
+  assert.match(source, /liveSupportClaimed/);
+  assert.doesNotMatch(source, /liveSupportClaimed\s*[:=]\s*true/);
+  assert.match(source, /下一步 \/ 保存 \/ 提交 \/ 投递 \/ 删除|下一步\/保存\/提交\/投递\/删除/);
 });
 
 test('fixture mirrors live my-list-item / header-title / am-input-control', () => {

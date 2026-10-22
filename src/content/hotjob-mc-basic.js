@@ -1,5 +1,7 @@
-// Hotjob mc (antd-mobile H5) first-slice basic fill + mc-select (fill-without-save).
-// Isolated siteId: hotjob-mc. Never clicks 下一步/保存/提交. Never touches pb CMS_BASIC.
+// Hotjob mc (antd-mobile H5) first-slice basic fill + mc-select.
+// Isolated siteId: hotjob-mc. Never touches pb CMS_BASIC.
+// 待真机 Never-Save，未宣称已支持。liveSupportClaimed stays false.
+// Never clicks 下一步 / 保存 / 提交 / 投递 / 删除. Picker 确定/取消 is not a form save.
 //
 // First slice fields (live CDP 中联 SU661f… /mc/deliver/operationResumer 2026-10-18):
 //   姓名 (text) · 移动电话 (text) · 电子邮箱 (text)
@@ -8,12 +10,13 @@
 // Out of scope (same extra class but NOT flat allowlist):
 //   国籍/地区 — same mc-select-popup + 搜索 + ~199 options (search-heavy) → select_search_heavy
 //   籍贯 / 出生日期 / 英语等级 — cascader/date/picker or unverified
+// Empty values and unknown/drifted controls fail closed before any write.
 //
-// DOM contract (verified live):
+// DOM contract (verified live; do not invent a wider selector):
 //   item  = .my-list-item
 //   label = .header-title  (iconfont.icon-bitian + text)
 //   input = .am-input-control input
-//   select extra = .am-list-extra.select-am-list-extra (placeholder 请选择性别 / value + .active)
+//   select extra = .select-am-list-extra (placeholder 请选择性别 / value + .active)
 //   popup = .am-modal.mc-select-popup · options .am-list.mc-select-list .am-list-item · confirm .am-picker-popup-header-right
 //   readiness: .resume-info-title === 基本信息 && my-list-item count > 0
 (() => {
@@ -47,10 +50,30 @@
   const SELECT_OUT_OF_SCOPE = Object.freeze(['国籍/地区', '国籍', '籍贯', '出生日期', '英语等级']);
   /** Flat lists stay small; live 国籍/地区 opens ~199 rows + 搜索. */
   const FLAT_SELECT_MAX_OPTIONS = 24;
+  /** 待真机 Never-Save，未宣称已支持. */
+  const NEVER_SAVE_NOTE = '待真机 Never-Save，未宣称已支持';
+  const LIVE_SUPPORT_CLAIMED = false;
+  const FORBIDDEN_ACTIONS = Object.freeze(['下一步', '保存', '提交', '投递', '删除']);
+  const FORBIDDEN_CLICK_RE = /下一步|保存|提交|投递|删除/u;
+  const OUT_OF_SCOPE_KEYS = new Set([
+    'nationality', '国籍', '国籍/地区',
+    'nativePlace', '籍贯',
+    'birthDate', '出生日期',
+    'englishLevel', '英语等级'
+  ]);
+  const FILL_BASIC_KEYS = new Set([
+    'profile', 'profileBinding', 'allowExplicitValues',
+    'fullName', 'mobile', 'phone', 'email'
+  ]);
+  const NEVER_SAVE_KEYS = new Set([
+    ...FILL_BASIC_KEYS,
+    'gender', 'idType', '性别', '证件类型'
+  ]);
+  let forbiddenClickRefusals = 0;
   const ITEM_SEL = '.my-list-item';
   const LABEL_SEL = '.header-title';
-  const INPUT_SEL = '.am-input-control input, input[type="text"], input[type="tel"], input[type="email"], input:not([type])';
-  const EXTRA_SEL = '.select-am-list-extra, .am-list-extra';
+  const INPUT_SEL = '.am-input-control input';
+  const EXTRA_SEL = '.select-am-list-extra';
   const POPUP_SEL = '.am-modal.mc-select-popup';
   const OPTION_ROW_SEL = '.am-list.mc-select-list .am-list-item, .mc-select-list .am-list-item';
   const SEARCH_INPUT_SEL = '.mc-search-input input, input[placeholder="搜索"], input[placeholder*="搜索"]';
@@ -104,22 +127,62 @@
     return [...document.querySelectorAll(ITEM_SEL)];
   }
 
-  function findItem(wanted) {
+  function matchingItems(wanted) {
     const want = cleanLabel(wanted);
-    const hits = formItems().filter((item) => {
+    return formItems().filter((item) => {
       const label = item.querySelector(LABEL_SEL);
       return label && labelText(label) === want;
     });
+  }
+
+  /** Unique label only. Zero or many matches fail closed (no guessed item). */
+  function findItem(wanted) {
+    const hits = matchingItems(wanted);
     return hits.length === 1 ? hits[0] : null;
   }
 
+  function visibleTextLike(node) {
+    if (!node || node.disabled) return false;
+    const type = String(node.type || '').toLowerCase();
+    if (type === 'hidden' || type === 'radio' || type === 'checkbox' || type === 'file' || type === 'button' || type === 'submit') return false;
+    const style = getComputedStyle(node);
+    return style.display !== 'none' && style.visibility !== 'hidden';
+  }
+
+  function contractInputs(item) {
+    if (!item) return [];
+    return [...item.querySelectorAll(INPUT_SEL)].filter(visibleTextLike);
+  }
+
+  function strayTextInputs(item) {
+    if (!item) return [];
+    const contract = new Set(contractInputs(item));
+    return [...item.querySelectorAll('input')].filter((node) => visibleTextLike(node) && !contract.has(node));
+  }
+
+  /**
+   * Verified contract only: one .my-list-item and one .am-input-control input.
+   * Duplicate labels, missing inputs, extra inputs, or a stray input fail closed.
+   */
+  function classifyText(label) {
+    const hits = matchingItems(label);
+    if (hits.length === 0) return { label, ready: false, reason: 'item_not_found', matchCount: 0 };
+    if (hits.length !== 1) return { label, ready: false, reason: 'field_ambiguous', matchCount: hits.length };
+    const item = hits[0];
+    const inputs = contractInputs(item);
+    const stray = strayTextInputs(item);
+    if (stray.length) {
+      return { label, ready: false, reason: 'control_drift', matchCount: 1, controlCount: inputs.length, strayCount: stray.length, item };
+    }
+    if (inputs.length === 0) return { label, ready: false, reason: 'control_not_found', matchCount: 1, controlCount: 0, item };
+    if (inputs.length !== 1) return { label, ready: false, reason: 'control_ambiguous', matchCount: 1, controlCount: inputs.length, item };
+    return { label, ready: true, reason: null, matchCount: 1, controlCount: 1, item, control: inputs[0] };
+  }
+
   function textControl(item) {
-    const inputs = [...item.querySelectorAll(INPUT_SEL)].filter((node) => {
-      if (node.type === 'hidden' || node.type === 'radio' || node.type === 'checkbox' || node.type === 'file') return false;
-      if (node.disabled) return false;
-      const style = getComputedStyle(node);
-      return style.display !== 'none' && style.visibility !== 'hidden';
-    });
+    if (!item) return null;
+    if (strayTextInputs(item).length) return null;
+    const inputs = contractInputs(item);
     return inputs.length === 1 ? inputs[0] : null;
   }
 
@@ -140,22 +203,47 @@
   }
 
   async function fillText(label, value) {
-    const item = findItem(label);
-    if (!item) return { label, ok: false, reason: 'item_not_found', before: '', after: '', expected: value };
-    const control = textControl(item);
-    if (!control) return { label, ok: false, reason: 'control_not_found', before: '', after: '', expected: value };
+    const expected = norm(value);
+    if (!expected) {
+      return {
+        label,
+        ok: false,
+        reason: 'empty_value',
+        before: '',
+        after: '',
+        expected: '',
+        writeAttempted: false
+      };
+    }
+    const classified = classifyText(label);
+    if (!classified.ready) {
+      return {
+        label,
+        ok: false,
+        reason: classified.reason,
+        before: '',
+        after: '',
+        expected,
+        writeAttempted: false,
+        matchCount: classified.matchCount,
+        controlCount: classified.controlCount ?? null
+      };
+    }
+    const item = classified.item;
+    const control = classified.control;
     const before = norm(control.value);
     control.focus();
-    setNativeValue(control, String(value ?? ''));
+    setNativeValue(control, expected);
     await pause(80);
     const after = readText(item);
     return {
       label,
-      ok: after === norm(value),
-      reason: after === norm(value) ? 'matched' : 'readback_mismatch',
+      ok: after === expected,
+      reason: after === expected ? 'matched' : 'readback_mismatch',
       before,
       after,
-      expected: norm(value)
+      expected,
+      writeAttempted: true
     };
   }
 
@@ -181,21 +269,49 @@
     return /^请选择/u.test(norm(value));
   }
 
-  function selectExtra(item) {
-    if (!item) return null;
-    const nodes = [...item.querySelectorAll(EXTRA_SEL)].filter((node) => {
+  function selectExtras(item) {
+    if (!item) return [];
+    return [...item.querySelectorAll(EXTRA_SEL)].filter((node) => {
+      if (!node.classList.contains('select-am-list-extra')) return false;
       const style = getComputedStyle(node);
       return style.display !== 'none' && style.visibility !== 'hidden';
     });
-    // Prefer the select-am-list-extra class when both match.
-    const preferred = nodes.filter((n) => n.classList.contains('select-am-list-extra'));
-    const pool = preferred.length ? preferred : nodes;
-    return pool.length === 1 ? pool[0] : (pool[0] || null);
+  }
+
+  /** Exactly one verified .select-am-list-extra. Zero or many fail closed. */
+  function selectExtra(item) {
+    const pool = selectExtras(item);
+    return pool.length === 1 ? pool[0] : null;
+  }
+
+  function selectExtraReason(item) {
+    const pool = selectExtras(item);
+    if (pool.length === 0) return 'select_extra_missing';
+    if (pool.length !== 1) return 'select_extra_ambiguous';
+    return null;
+  }
+
+  function classifySelect(label) {
+    const activeLabel = cleanLabel(label);
+    const spec = SELECT_SPECS[activeLabel];
+    if (!spec) {
+      if (SELECT_OUT_OF_SCOPE.includes(activeLabel) || /^国籍/u.test(activeLabel)) {
+        return { label: activeLabel, ready: false, reason: 'select_out_of_scope_search_or_cascader' };
+      }
+      return { label: activeLabel, ready: false, reason: 'label_not_allowed' };
+    }
+    const hits = matchingItems(activeLabel);
+    if (hits.length === 0) return { label: activeLabel, ready: false, reason: 'item_not_found', matchCount: 0 };
+    if (hits.length !== 1) return { label: activeLabel, ready: false, reason: 'field_ambiguous', matchCount: hits.length };
+    const extraReason = selectExtraReason(hits[0]);
+    if (extraReason) return { label: activeLabel, ready: false, reason: extraReason, matchCount: 1, item: hits[0] };
+    return { label: activeLabel, ready: true, reason: null, matchCount: 1, item: hits[0], extra: selectExtra(hits[0]) };
   }
 
   function readSelect(item) {
+    const reason = selectExtraReason(item);
+    if (reason) return { ok: false, reason, value: '' };
     const extra = selectExtra(item);
-    if (!extra) return { ok: false, reason: 'select_extra_missing', value: '' };
     const value = norm(extra.textContent);
     return { ok: true, value, placeholder: isPlaceholderSelect(value), active: extra.classList.contains('active') };
   }
@@ -208,11 +324,28 @@
     }) || null;
   }
 
+  function forbiddenActionLabel(node) {
+    if (!node || typeof node.closest !== 'function') return '';
+    const button = node.closest('button, a, .my-button, input[type="submit"]');
+    if (!button) return '';
+    const text = norm(button.value || button.textContent || button.getAttribute('aria-label') || '');
+    if (!text || text.length > 24) return '';
+    if (FORBIDDEN_ACTIONS.includes(text) || FORBIDDEN_CLICK_RE.test(text)) return text;
+    return '';
+  }
+
+  /** Form actions are never clicked. Returns false when the click is refused. */
   function pointerClick(node) {
-    if (!node) return;
+    if (!node) return false;
+    const forbidden = forbiddenActionLabel(node);
+    if (forbidden) {
+      forbiddenClickRefusals += 1;
+      return false;
+    }
     for (const type of ['pointerdown', 'mousedown', 'mouseup', 'click']) {
       node.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, view: window, button: 0 }));
     }
+    return true;
   }
 
   function optionRows(popup) {
@@ -298,12 +431,20 @@
         sampleOptions
       };
     }
-    pointerClick(matches[0]);
+    const optionClicked = pointerClick(matches[0]);
+    if (!optionClicked) {
+      await closeSelectPopup();
+      return { ok: false, reason: 'forbidden_click', clickedOption: false, confirmed: false, sampleOptions };
+    }
     await pause(80);
     const confirm = opened.popup.querySelector(CONFIRM_SEL);
     if (!confirm) {
       await closeSelectPopup();
       return { ok: false, reason: 'select_confirm_missing', clickedOption: true, confirmed: false, sampleOptions };
+    }
+    if (forbiddenActionLabel(confirm)) {
+      await closeSelectPopup();
+      return { ok: false, reason: 'forbidden_click', clickedOption: true, confirmed: false, sampleOptions };
     }
     pointerClick(confirm);
     const started = Date.now();
@@ -326,10 +467,29 @@
     };
   }
 
-  function selectEnvelope(partial) {
+  function seal(result) {
     return {
-      ok: false,
+      ...result,
       siteId: SITE_ID,
+      saved: false,
+      skippedSave: true,
+      liveSupportClaimed: LIVE_SUPPORT_CLAIMED,
+      neverSave: true,
+      supportClaimed: false,
+      neverClickedNext: true,
+      softwareClickedNext: false,
+      softwareClickedSave: false,
+      softwareClickedSubmit: false,
+      softwareClickedDeliver: false,
+      softwareClickedDelete: false,
+      forbiddenClickRefusals,
+      note: NEVER_SAVE_NOTE
+    };
+  }
+
+  function selectEnvelope(partial) {
+    return seal({
+      ok: false,
       label: '',
       reason: 'select_failed',
       before: null,
@@ -337,16 +497,32 @@
       expected: null,
       final: null,
       restored: false,
-      saved: false,
-      skippedSave: true,
       clickedOption: false,
       confirmed: false,
       liveEdge: false,
       surface: null,
       sampleOptions: [],
-      neverClickedNext: true,
       ...partial
-    };
+    });
+  }
+
+  function requestBlock(rawValues, allowedKeys) {
+    if (!rawValues || typeof rawValues !== 'object' || Array.isArray(rawValues)) {
+      return { reason: 'profile_missing' };
+    }
+    const keys = Object.keys(rawValues);
+    const scoped = keys.filter((key) => OUT_OF_SCOPE_KEYS.has(key) || SELECT_OUT_OF_SCOPE.includes(cleanLabel(key)));
+    if (scoped.length) return { reason: 'select_out_of_scope_search_or_cascader', denied: scoped };
+    const unknown = keys.filter((key) => !allowedKeys.has(key));
+    if (unknown.length) return { reason: 'field_not_allowed', denied: unknown };
+    return null;
+  }
+
+  function readNeighbor() {
+    const neighborItem = findItem('证件号码');
+    return neighborItem
+      ? { label: '证件号码', value: readText(neighborItem) }
+      : { label: '证件号码', value: null, missing: true };
   }
 
   async function fillSelect(label, expected, options = {}) {
@@ -369,13 +545,18 @@
     }
     if (!pageAllowed(options)) return fail({ reason: 'wrong_page', href: location.href });
 
-    const item = findItem(activeLabel);
-    if (!item) return fail({ reason: 'item_not_found' });
+    let target = expected == null ? '' : norm(expected);
+    if (target && !(spec.alternates || []).includes(target)) {
+      return fail({ reason: 'select_option_not_allowed', expected: target });
+    }
+
+    const classified = classifySelect(activeLabel);
+    if (!classified.ready) return fail({ reason: classified.reason });
+    const item = classified.item;
     const beforeRead = readSelect(item);
     if (!beforeRead.ok) return fail({ reason: beforeRead.reason });
     const before = beforeRead.value;
 
-    let target = expected == null ? '' : norm(expected);
     if (!target && options.pickAlternate === true) {
       const opened = await openSelectPopup(selectExtra(item));
       if (!opened.ok) return fail({ before, reason: opened.reason });
@@ -555,9 +736,8 @@
       && !fp.loading
       && (options?.synthetic === true || fp.resumeTitleOk || foundCount >= 1)
       && foundCount >= 3;
-    return {
+    return seal({
       ok: ready,
-      siteId: SITE_ID,
       href: location.href,
       title: document.title,
       onHotjobMcPage: onHotjobMcPage(),
@@ -575,23 +755,30 @@
               ? 'labels_ready'
               : foundCount >= 1
                 ? 'labels_partial'
-                : 'labels_missing',
-      saved: false,
-      skippedSave: true
-    };
+                : 'labels_missing'
+    });
   }
 
   async function fillBasic(rawValues = {}, options = {}) {
     if (!pageAllowed(options)) {
-      return {
+      return seal({
         ok: false,
-        siteId: SITE_ID,
         reason: 'wrong_page',
         href: location.href,
         results: [],
-        saved: false,
-        skippedSave: true
-      };
+        writeAttempted: false
+      });
+    }
+    const blocked = requestBlock(rawValues, FILL_BASIC_KEYS);
+    if (blocked) {
+      return seal({
+        ok: false,
+        reason: blocked.reason,
+        denied: blocked.denied || null,
+        href: location.href,
+        results: [],
+        writeAttempted: false
+      });
     }
 
     const profile = rawValues.profile;
@@ -607,22 +794,19 @@
         email: norm(rawValues.email || '')
       };
       if (!values.fullName || !values.mobile || !values.email) {
-        return {
+        return seal({
           ok: false,
-          siteId: SITE_ID,
           reason: 'explicit_values_incomplete',
           href: location.href,
           results: [],
-          saved: false,
-          skippedSave: true
-        };
+          writeAttempted: false
+        });
       }
     } else {
       plan = planFromProfile(profile);
       if (!plan.ok) {
-        return {
+        return seal({
           ok: false,
-          siteId: SITE_ID,
           reason: plan.reason,
           href: location.href,
           title: document.title,
@@ -636,10 +820,8 @@
             path: row.path
           })),
           blockers: plan.blockers,
-          saved: false,
-          skippedSave: true,
           writeAttempted: false
-        };
+        });
       }
       values = plan.values;
     }
@@ -649,10 +831,28 @@
       ['移动电话', values.mobile],
       ['电子邮箱', values.email]
     ];
-    const snapshots = textPlan.map(([label]) => {
-      const item = findItem(label);
-      return { label, before: item ? readText(item) : '' };
-    });
+    const classified = textPlan.map(([label, value]) => ({ ...classifyText(label), expected: norm(value) }));
+    if (classified.some((row) => !row.ready)) {
+      return seal({
+        ok: false,
+        reason: 'control_drift',
+        href: location.href,
+        title: document.title,
+        writeAttempted: false,
+        profileSource: allowExplicit ? 'explicit' : 'resumeProfile',
+        results: classified.map((row) => ({
+          label: row.label,
+          ok: false,
+          reason: row.ready ? 'skipped_control_drift' : row.reason,
+          matchCount: row.matchCount ?? null,
+          controlCount: row.controlCount ?? null,
+          before: '',
+          after: '',
+          expected: row.expected
+        }))
+      });
+    }
+    const snapshots = classified.map((row) => ({ label: row.label, before: readText(row.item) }));
     const results = [];
     for (const [label, value] of textPlan) {
       results.push(await fillText(label, value));
@@ -668,18 +868,12 @@
     }
 
     // Neighbor text field must stay untouched (证件号码 on live / fixture).
-    const neighborItem = findItem('证件号码');
-    const neighbor = neighborItem
-      ? { label: '证件号码', value: readText(neighborItem) }
-      : { label: '证件号码', value: null, missing: true };
+    const neighbor = readNeighbor();
 
-    return {
+    return seal({
       ok: fillOk,
-      siteId: SITE_ID,
       href: location.href,
       title: document.title,
-      saved: false,
-      skippedSave: true,
       writeAttempted: true,
       restored: doRestore === true,
       restore,
@@ -689,7 +883,227 @@
         ? { reason: plan.reason, readyCount: plan.fields.filter((f) => f.ready).length, blockerCount: plan.blockers.length }
         : { reason: 'explicit_override' },
       results
+    });
+  }
+
+  function commitClicks() {
+    return typeof globalThis.__hotjobMcCommitClicks === 'number' ? globalThis.__hotjobMcCommitClicks : null;
+  }
+
+  /**
+   * Offline Never-Save fill: allowed text + optional 性别/证件类型.
+   * 待真机 Never-Save，未宣称已支持. Does not click 下一步/保存/提交/投递/删除.
+   * Empty values, unknown keys, 国籍/地区, and drifted controls fail closed before write.
+   */
+  async function fillNeverSave(rawValues = {}, options = {}) {
+    const commitsBefore = commitClicks();
+    const finish = (partial) => {
+      const commitsAfter = commitClicks();
+      const commitDelta = commitsBefore == null || commitsAfter == null ? 0 : commitsAfter - commitsBefore;
+      const stamped = seal({
+        href: location.href,
+        title: document.title,
+        results: [],
+        writeAttempted: false,
+        commitClicksBefore: commitsBefore,
+        commitClicksAfter: commitsAfter,
+        ...partial
+      });
+      if (commitDelta !== 0) {
+        return {
+          ...stamped,
+          ok: false,
+          reason: 'forbidden_click',
+          saved: false,
+          skippedSave: true,
+          liveSupportClaimed: false
+        };
+      }
+      return stamped;
     };
+
+    if (!pageAllowed(options)) return finish({ ok: false, reason: 'wrong_page' });
+    const blocked = requestBlock(rawValues, NEVER_SAVE_KEYS);
+    if (blocked) return finish({ ok: false, reason: blocked.reason, denied: blocked.denied || null });
+
+    const allowExplicit = rawValues.allowExplicitValues === true;
+    let textValues = null;
+    let plan = null;
+    if (allowExplicit) {
+      textValues = {
+        fullName: norm(rawValues.fullName || ''),
+        mobile: norm(rawValues.mobile || rawValues.phone || ''),
+        email: norm(rawValues.email || '')
+      };
+      if (!textValues.fullName || !textValues.mobile || !textValues.email) {
+        return finish({ ok: false, reason: 'empty_value' });
+      }
+    } else {
+      plan = planFromProfile(rawValues.profile);
+      if (!plan.ok) {
+        return finish({
+          ok: false,
+          reason: plan.reason,
+          blockers: plan.blockers,
+          results: (plan.fields || []).map((row) => ({
+            label: row.label,
+            ok: false,
+            reason: row.reason || plan.reason,
+            before: '',
+            after: '',
+            expected: row.value || '',
+            path: row.path
+          }))
+        });
+      }
+      textValues = plan.values;
+    }
+
+    const selectPlan = [];
+    const selectRequests = [
+      { keys: ['gender', '性别'], label: GENDER },
+      { keys: ['idType', '证件类型'], label: ID_TYPE }
+    ];
+    for (const spec of selectRequests) {
+      const present = spec.keys.filter((key) => Object.prototype.hasOwnProperty.call(rawValues, key));
+      if (!present.length) continue;
+      const presentValues = present.map((key) => norm(rawValues[key]));
+      if (new Set(presentValues).size !== 1) {
+        return finish({ ok: false, reason: 'field_ambiguous', label: spec.label });
+      }
+      const value = presentValues[0];
+      if (!value) return finish({ ok: false, reason: 'empty_value', label: spec.label });
+      if (!SELECT_SPECS[spec.label].alternates.includes(value)) {
+        return finish({ ok: false, reason: 'select_option_not_allowed', label: spec.label, expected: value });
+      }
+      selectPlan.push({ label: spec.label, value });
+    }
+
+    const textRows = [
+      ['姓名', textValues.fullName],
+      ['移动电话', textValues.mobile],
+      ['电子邮箱', textValues.email]
+    ].map(([label, value]) => ({ ...classifyText(label), expected: norm(value) }));
+    if (textRows.some((row) => !row.ready)) {
+      return finish({
+        ok: false,
+        reason: 'control_drift',
+        results: textRows.map((row) => ({
+          label: row.label,
+          ok: false,
+          reason: row.reason,
+          before: '',
+          after: '',
+          expected: row.expected
+        }))
+      });
+    }
+    const selectRows = selectPlan.map((row) => ({ ...classifySelect(row.label), expected: row.value }));
+    if (selectRows.some((row) => !row.ready)) {
+      return finish({
+        ok: false,
+        reason: 'control_drift',
+        results: selectRows.map((row) => ({
+          label: row.label,
+          ok: false,
+          reason: row.reason,
+          before: '',
+          after: '',
+          expected: row.expected
+        }))
+      });
+    }
+
+    const neighborBefore = readNeighbor();
+    const textSnapshots = textRows.map((row) => ({ label: row.label, before: readText(row.item) }));
+    const selectSnapshots = selectRows.map((row) => ({ label: row.label, before: readSelect(row.item).value }));
+    const selectOptions = { ...options, restore: false };
+    const results = [];
+    for (const [label, value] of [
+      ['姓名', textValues.fullName],
+      ['移动电话', textValues.mobile],
+      ['电子邮箱', textValues.email]
+    ]) {
+      results.push(await fillText(label, value));
+    }
+    for (const row of selectPlan) {
+      results.push(await fillSelect(row.label, row.value, selectOptions));
+    }
+
+    const rollback = async () => {
+      const restore = [];
+      for (const snap of textSnapshots) restore.push(await restoreText(snap.label, snap.before));
+      for (const snap of [...selectSnapshots].reverse()) {
+        const current = readSelect(findItem(snap.label));
+        if (current.ok && current.value !== snap.before && snap.before && !isPlaceholderSelect(snap.before)) {
+          restore.push(await fillSelect(snap.label, snap.before, { ...selectOptions, force: true }));
+        }
+      }
+      return restore;
+    };
+
+    if (!results.every((row) => row.ok)) {
+      const restore = await rollback();
+      return finish({
+        ok: false,
+        reason: 'readback_mismatch',
+        writeAttempted: true,
+        restored: false,
+        restore,
+        results,
+        neighbor: readNeighbor(),
+        neighborBefore
+      });
+    }
+
+    if (options.restore === true) {
+      const restore = await rollback();
+      const textBack = textSnapshots.every((snap) => readText(findItem(snap.label)) === norm(snap.before));
+      const selectBack = selectSnapshots.every((snap) => {
+        const current = readSelect(findItem(snap.label));
+        return current.ok && current.value === snap.before;
+      });
+      const neighbor = readNeighbor();
+      const ok = textBack && selectBack && neighbor.value === neighborBefore.value;
+      return finish({
+        ok,
+        reason: ok ? 'readback_matched' : 'restore_mismatch',
+        writeAttempted: true,
+        restored: ok,
+        restore,
+        results,
+        neighbor,
+        neighborBefore
+      });
+    }
+
+    const readback = {
+      姓名: readText(findItem('姓名')),
+      移动电话: readText(findItem('移动电话')),
+      电子邮箱: readText(findItem('电子邮箱'))
+    };
+    for (const row of selectPlan) readback[row.label] = readSelect(findItem(row.label)).value;
+    const neighbor = readNeighbor();
+    const textMatch = readback['姓名'] === textValues.fullName
+      && readback['移动电话'] === textValues.mobile
+      && readback['电子邮箱'] === textValues.email;
+    const selectMatch = selectPlan.every((row) => readback[row.label] === row.value);
+    const neighborOk = neighbor.value === neighborBefore.value;
+    const ok = textMatch && selectMatch && neighborOk;
+    return finish({
+      ok,
+      reason: ok ? 'readback_matched' : 'readback_mismatch',
+      writeAttempted: true,
+      restored: false,
+      results,
+      readback,
+      neighbor,
+      neighborBefore,
+      profileSource: allowExplicit ? 'explicit' : 'resumeProfile',
+      planSummary: plan
+        ? { reason: plan.reason, readyCount: plan.fields.filter((field) => field.ready).length, blockerCount: plan.blockers.length }
+        : { reason: 'explicit_override' }
+    });
   }
 
   const api = {
@@ -701,19 +1115,28 @@
     FLAT_SELECT_MAX_OPTIONS,
     GENDER,
     ID_TYPE,
+    NEVER_SAVE_NOTE,
+    LIVE_SUPPORT_CLAIMED,
+    FORBIDDEN_ACTIONS,
     popupSearchHeavy,
     ITEM_SEL,
     LABEL_SEL,
+    INPUT_SEL,
+    EXTRA_SEL,
     isHotjobMcHost,
     onHotjobMcPage,
     findItem,
     textControl,
+    classifyText,
+    classifySelect,
     selectExtra,
     readSelect,
+    pointerClick,
     fillText,
     restoreText,
     fillSelect,
     fillBasic,
+    fillNeverSave,
     probeLabels,
     probeFingerprint,
     planFromProfile,
@@ -733,6 +1156,10 @@
       }
       if (message.type === 'HOTJOB_MC_SELECT_FILL') {
         fillSelect(message.label || GENDER, message.expected, message.options || {}).then(sendResponse);
+        return true;
+      }
+      if (message.type === 'HOTJOB_MC_NEVER_SAVE_FILL') {
+        fillNeverSave(message.values || { profile: message.profile }, message.options || {}).then(sendResponse);
         return true;
       }
       return false;

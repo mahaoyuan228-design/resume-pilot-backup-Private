@@ -179,6 +179,44 @@ test('runner report requires controls scope, the full wait, and explicit Never-S
   }
 });
 
+test('successful report requires an explicit null reason even with valid suppression and clean attachments', () => {
+  for (const reason of [undefined, false, 0, '']) {
+    const artifact = schemaWitness();
+    for (const [ledger, , row] of suppressionWitnesses()) artifact.report[ledger].push(row);
+    assert.equal(validateControlsDaytimeEvidence(artifact).complete, true, 'explicit null success reason');
+    if (reason === undefined) delete artifact.report.finalDetails.reason;
+    else artifact.report.finalDetails.reason = reason;
+    const saved = JSON.parse(JSON.stringify(artifact)), before = structuredClone(saved);
+    const label = `report reason=${String(reason)}`;
+    assert.equal(runner.evidenceExitCode(saved.report), 0, 'legacy report check accepts this falsy diagnostic');
+    const result = assertIncomplete(saved, 'runner_report', label);
+    assert.equal(result.reportExitCode, 0);
+    assert.deepEqual(result.checks, CHECK_KEYS.map(key => ({ key, ok: key !== 'runner_report' })),
+      `${label}: valid suppression, timers, bytes, boundaries and restoration cannot replace the missing diagnostic`);
+    assert.deepEqual(saved, before, `${label}: validation does not repair input`);
+  }
+});
+
+test('each of the seven successful probes requires its own explicit null reason', () => {
+  for (const spec of runner.CONTROL_SPECS) {
+    const artifact = schemaWitness();
+    assert.equal(validateControlsDaytimeEvidence(artifact).complete, true, `${spec.key}: explicit null reason`);
+    for (const reason of [undefined, false, 0, '']) {
+      const malformed = structuredClone(artifact);
+      const probe = malformed.report.finalDetails.widgetProbes.find(probe => probe.key === spec.key);
+      if (reason === undefined) delete probe.reason; else probe.reason = reason;
+      const saved = JSON.parse(JSON.stringify(malformed)), before = structuredClone(saved);
+      const label = `${spec.key} reason=${String(reason)}`;
+      assert.equal(runner.evidenceExitCode(saved.report), 0, 'legacy probe check accepts this falsy diagnostic');
+      const result = assertIncomplete(saved, 'runner_report', label);
+      assert.equal(result.reportExitCode, 0);
+      assert.deepEqual(result.checks, CHECK_KEYS.map(key => ({ key, ok: key !== 'runner_report' })),
+        `${label}: counted visible probes and clean attachments cannot replace this probe diagnostic`);
+      assert.deepEqual(saved, before, `${label}: validation preserves the malformed observation`);
+    }
+  }
+});
+
 test('existing probe, traffic, suppression, readback, and restoration failures remain fatal', () => {
   const mutations = [
     ['missing degree probe', artifact => { artifact.report.finalDetails.widgetProbes = artifact.report.finalDetails.widgetProbes.filter(p => p.key !== 'degree'); }],
@@ -495,4 +533,32 @@ test('CLI keeps contradictory lookup failure evidence and nested attachment cont
   }
   assert.equal(`${result.stdout}${result.stderr}`.includes(marker), false);
   assert.equal(`${result.stdout}${result.stderr}`.includes(artifactPath), false);
+});
+
+test('CLI rejects missing report and falsy degree reasons without exposing nested observations or private filenames', t => {
+  const outDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cms-edu-evidence-reason-private-'));
+  t.after(() => {
+    assert.ok(path.resolve(outDir).startsWith(path.resolve(os.tmpdir()) + path.sep));
+    fs.rmSync(outDir, { recursive: true, force: true });
+  });
+  const marker = 'PRIVATE_REASON_OBSERVATION_MUST_NOT_BE_ECHOED';
+  const artifactPath = path.join(outDir, `${marker}.json`);
+  for (const target of ['report', 'degree']) {
+    const artifact = schemaWitness();
+    const degree = artifact.report.finalDetails.widgetProbes.find(probe => probe.key === 'degree');
+    if (target === 'report') delete artifact.report.finalDetails.reason;
+    else degree.reason = false;
+    degree.activation.privateObservations = { samples: [{ raw: [marker] }] };
+    artifact.report.fields[0].privateReadback = { original: { raw: marker } };
+    fs.writeFileSync(artifactPath, JSON.stringify(artifact), 'utf8');
+    const result = spawnSync(process.execPath, [cli, artifactPath], { cwd: root, encoding: 'utf8' });
+    assert.equal(result.status, 2, `${target}: ${result.stderr}`);
+    assert.deepEqual(JSON.parse(result.stdout), {
+      schemaVersion: EVIDENCE_SCHEMA_VERSION, complete: false,
+      checks: CHECK_KEYS.map(key => ({ key, ok: key !== 'runner_report' })),
+      reportExitCode: 0, liveSupportClaimed: false
+    });
+    assert.equal(`${result.stdout}${result.stderr}`.includes(marker), false, target);
+    assert.equal(`${result.stdout}${result.stderr}`.includes(artifactPath), false, target);
+  }
 });

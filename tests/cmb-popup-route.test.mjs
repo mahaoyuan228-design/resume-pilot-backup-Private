@@ -7,13 +7,15 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { runInNewContext } from 'node:vm';
 import {
   CMB_BASIC_SCRIPT,
   cmbBasicInjectFiles,
   isCmb,
   isCmbResumeEditPage
 } from '../src/content/cmb-profile-map.mjs';
-import { assessCmbFillReport, cmbPopupOutcome } from '../src/background/cmb-basic-auto.mjs';
+import { assessCmbFillReport, cmbPopupOutcome, isCmbTabUrl,
+  sealCmbRequestedFill } from '../src/background/cmb-basic-auto.mjs';
 
 const root = resolve(import.meta.dirname, '..');
 const popup = readFileSync(resolve(root, 'src/popup/popup.js'), 'utf8');
@@ -220,4 +222,99 @@ test('popup probe lists the resume contract and asks for help off the edit page'
   }, 'inspect');
   assert.equal(cmsPage.ok, false);
   assert.equal(cmsPage.reason, 'cmb_site_isolation');
+});
+
+test('popup refuses a fill on the login page before authorization, injection, or messaging', async () => {
+  const route = popup.slice(popup.indexOf('async function sendCmb('), popup.indexOf('async function send(type)'));
+  let calls = 0;
+  const send = runInNewContext(`(${route.trim()})`, {
+    cmbBasicInjectFiles, isCmbResumeEditPage,
+    cmbRouteMessage: (reason) => reason,
+    chrome: new Proxy({}, { get() { calls += 1; throw Error('unexpected_api'); } })
+  });
+  await assert.rejects(send('RESUME_FILL', { id: 1, url: 'https://career.cmbchina.com/login' }),
+    (error) => error.message === 'wrong_page' && error.fillNotStarted === true);
+  assert.equal(calls, 0);
+});
+
+test('popup and auto reject Never-Save attempts even when only a result row reports them', () => {
+  const body = { ok: true, siteId: 'cmb', href: PAGE, skippedSave: true,
+    writeAttempted: false, results: [{ label: '学历', path: 'educationLevel', ok: true, reason: 'matched' }] };
+  for (const key of ['softwareClickedSave', 'softwareClickedSubmit', 'softwareClickedDelete',
+    'softwareClickedNext', 'softwareClickedDeliver', 'saveAttempted', 'submitAttempted',
+    'deleteAttempted', 'nextAttempted', 'deliverAttempted', 'savedOnSite', 'submitted', 'delivered', 'saved']) {
+    for (const report of [{ ...body, [key]: true },
+      { ...body, results: [{ ...body.results[0], [key]: true }] }]) {
+      const assessed = assessCmbFillReport(report);
+      assert.equal(assessed.reason, 'cmb_save_policy_violation', key);
+      assert.equal(assessed[key], true, key);
+      assert.equal(assessed.skippedSave, false, key);
+      assert.equal(cmbPopupOutcome(report, 'fill').fillNotStarted, false, key);
+      assert.equal(cmbPopupOutcome(report, 'inspect').ok, false, key);
+    }
+  }
+});
+
+test('probe does not turn explicit failure, foreign URL, or support claim into a ready view', () => {
+  const ready = { ok: true, siteId: 'cmb', href: PAGE, skippedSave: true,
+    onCmbResumeEdit: true, labels: [] };
+  assert.equal(cmbPopupOutcome({ ...ready, ok: false, reason: 'item_ambiguous' }).reason, 'item_ambiguous');
+  assert.equal(cmbPopupOutcome({ ...ready, href: 'https://career.cmbchina.com/login' }).reason, 'wrong_page');
+  assert.equal(cmbPopupOutcome({ ...ready, href: 'https://wecruit.hotjob.cn/SU1/pb/resumeOperation.html' }).reason, 'wrong_page');
+  assert.equal(cmbPopupOutcome({ ...ready, liveSupportClaimed: true }).reason, 'cmb_live_support_unverified');
+  assert.equal(cmbPopupOutcome({ ...ready, onCmbResumeEdit: false }).ok, false);
+  const fill = { ...ready, results: [{ ok: true, label: '姓名', reason: 'matched' }], writeAttempted: false };
+  assert.equal(cmbPopupOutcome({ ...fill, href: 'https://career.cmbchina.com/login' }, 'fill').fillNotStarted, false);
+  assert.equal(cmbPopupOutcome({ ...fill, liveSupportClaimed: true }, 'fill').ok, false);
+  for (const href of ['https://user:pass@career.cmbchina.com/center/resume',
+    'https://career.cmbchina.com:444/center/resume']) assert.equal(isCmbTabUrl(href), false, href);
+});
+
+test('family row 0 result cannot suppress the requested row 1 blocker with the same label', () => {
+  const report = { ok: true, siteId: 'cmb', skippedSave: true,
+    results: [{ label: '关系类型', path: 'relationshipType', ok: true, reason: 'matched' }] };
+  const sealed = sealCmbRequestedFill(report, { blockers: [{ label: '关系类型',
+    path: 'relationshipTypeRow1', reason: 'profile_fact_unconfirmed' }] });
+  assert.equal(sealed.results.length, 2);
+  assert.equal(sealed.results[1].path, 'relationshipTypeRow1');
+  assert.equal(sealed.results[1].ok, false);
+  assert.equal(cmbPopupOutcome(sealed, 'fill').ok, false);
+});
+
+test('missing-control blockers and failed readbacks keep popup review pending even without a write claim', () => {
+  const body = { ok: true, siteId: 'cmb', href: PAGE, skippedSave: true, writeAttempted: false,
+    results: [{ label: '学历', path: 'educationLevel', ok: true, reason: 'matched' }] };
+  const missing = cmbPopupOutcome({ ...body, blockers: [{ path: 'rankingMajor', reason: 'DOM_CONTROL_MISSING' }] }, 'fill');
+  assert.equal(missing.reason, 'DOM_CONTROL_MISSING');
+  assert.equal(missing.fillNotStarted, false);
+  const mismatch = cmbPopupOutcome({ ...body, ok: false, reason: 'select_readback_mismatch',
+    results: [{ label: '学历', path: 'educationLevel', ok: false, reason: 'select_readback_mismatch' }] }, 'fill');
+  assert.equal(mismatch.fillNotStarted, false);
+});
+
+test('a completed fill requires the evidenced page and rejects explicit wrong-page flags', () => {
+  const body = { ok: true, siteId: 'cmb', href: PAGE, skippedSave: true,
+    results: [{ label: '学历', path: 'educationLevel', ok: true, reason: 'matched' }] };
+  for (const extra of [{ href: undefined }, { href: null }, { href: 42 },
+    { onCmbResumeEdit: false }, { reason: 'wrong_page' }]) {
+    const outcome = cmbPopupOutcome({ ...body, ...extra }, 'fill');
+    assert.equal(outcome.reason, 'wrong_page');
+    assert.equal(outcome.fillNotStarted, false);
+  }
+});
+
+test('sealing preserves original blocker policy evidence and nested support claims stay failed', () => {
+  const report = { ok: true, siteId: 'cmb', href: PAGE, skippedSave: true,
+    results: [{ label: '学历', path: 'educationLevel', ok: true, reason: 'matched' }],
+    blockers: [{ path: 'birthDate', saveAttempted: true, reason: 'datepicker_hint_only' }] };
+  const sealed = sealCmbRequestedFill(report, { blockers: [{ path: 'relationshipTypeRow1',
+    label: '关系类型', reason: 'profile_fact_unconfirmed' }] });
+  assert.equal(sealed.blockers.length, 2);
+  assert.equal(assessCmbFillReport(sealed).saveAttempted, true);
+  assert.equal(cmbPopupOutcome(sealed, 'fill').reason, 'cmb_save_policy_violation');
+  for (const key of ['results', 'blockers']) {
+    const nested = { ...report, blockers: [], [key]: [{ ...report.results[0], liveSupportClaimed: true }] };
+    assert.equal(cmbPopupOutcome(nested, 'fill').reason, 'cmb_live_support_unverified');
+    assert.equal(cmbPopupOutcome(nested, 'inspect').reason, 'cmb_live_support_unverified');
+  }
 });

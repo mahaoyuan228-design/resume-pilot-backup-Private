@@ -4,6 +4,7 @@ import { spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import test from 'node:test';
+import { labels, registerSelectTests } from './citics-select-never-save-helpers.mjs';
 
 const root = resolve('.');
 const source = readFileSync(resolve(root, 'src/content/citics-basic.js'), 'utf8');
@@ -32,30 +33,5 @@ test('harness rejects any label other than allowlist before CDP', () => {
   assert.match(run.stderr, /户口类型|婚姻状况|政治面貌|证件类型|民族/);
 });
 
-test('synthetic harness fill-without-save readback for 户口类型', { timeout: 120000 }, () => {
-  const run = spawnSync(process.execPath, ['scripts/auto-citics-basic.mjs', '--only', '户口类型', '--synthetic'], {
-    cwd: root,
-    encoding: 'utf8',
-    timeout: 90000
-  });
-  assert.equal(run.status, 0, run.stderr || run.stdout);
-  const evidence = JSON.parse(readFileSync(resolve(root, 'dist/auto-runs/citics-ant-select-户口类型-latest.json'), 'utf8'));
-  assert.equal(evidence.siteId, 'citics');
-  assert.equal(evidence.label, '户口类型');
-  assert.equal(evidence.ok, true);
-  assert.equal(evidence.before, '家庭户口');
-  assert.equal(evidence.after, '集体户口');
-  assert.equal(evidence.expected, '集体户口');
-  assert.equal(evidence.final, '家庭户口');
-  assert.equal(evidence.saved, false);
-  assert.equal(evidence.skippedSave, true);
-  assert.equal(evidence.skippedYidun, true);
-  assert.equal(evidence.liveEdge, false);
-  assert.equal(evidence.commitClicks, 0);
-  assert.equal(evidence.neighborsUnchanged, true);
-  assert.ok(Array.isArray(evidence.selectors));
-  assert.equal(evidence.selectors.find(row => row.selector === '.ant-select-dropdown-menu-item[role=option]')?.hit, 2);
-  assert.equal(evidence.selectors.find(row => row.selector === '.ant-select-item-option')?.hit, 0);
-  assert.equal(evidence.structure?.optionSelector, '.ant-select-dropdown-menu-item[role=option]');
-  assert.ok(evidence.checks.every(check => check.ok === true));
-});
+// Replace occupied alternate/restore smoke with entirely offline empty-only contracts.
+registerSelectTests(labels[2]);

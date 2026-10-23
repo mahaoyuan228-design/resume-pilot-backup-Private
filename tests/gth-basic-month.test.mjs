@@ -622,3 +622,154 @@ test('gender radio fills still verify blank and explicitly overwritten values', 
     });
   }
 });
+
+// Highest qualification reuses the checked-in basic editor select shell. These
+// cases stop at the opener: no new degree menu or option DOM is introduced.
+async function degreeOpenTrial({ initial = '', replaceExisting = false, mutate, refuseBinding = false } = {}, verify) {
+  const h = await boot({ replaceExisting, onlyField: 'degree' });
+  const degree = h.document.querySelector('.el-select input');
+  const select = degree.closest('.el-select');
+  const item = degree.closest('.el-form-item');
+  const form = degree.closest('form');
+  const answer = h.request.profile.education[0].degree;
+  degree.value = initial;
+  let clicks = 0, bindingChecks = 0;
+  degree.addEventListener('click', () => { clicks += 1; });
+  const sendMessage = h.window.chrome.runtime.sendMessage;
+  h.window.chrome.runtime.sendMessage = async message => {
+    if (message?.type === 'RESUME_PROFILE_BINDING_CHECK' && ++bindingChecks === 2) {
+      mutate?.({ ...h, degree, select, item, form, answer });
+      if (refuseBinding) return { allowed: false };
+    }
+    return sendMessage(message);
+  };
+  try {
+    const result = await h.window.ResumeGthBasic.trial(h.request);
+    await verify({ ...h, degree, select, item, form, answer, clicks, bindingChecks }, result);
+    assert.equal(result.complete, false);
+    assert.equal(result.liveSupportClaimed, false);
+    assert.equal(result.softwareClickedSave, false);
+    assert.equal(result.softwareClickedSubmit, false);
+    assert.equal(result.softwareClickedDelete, false);
+    assert.equal(h.window.__gthFullLive.clicks().some(row => row.allowed !== true), false);
+    assert.equal(h.window.__gthFullLive.clicks().some(row => /保存|提交|投递|删除/u.test(row.label)), false);
+    assert.equal(result.fields.some(row => row.path === 'education.0.degree' && row.status === 'verified'), false);
+    assert.equal(result.coverage.some(row => row.path === 'education.0.degree' && row.status === 'verified'), false);
+    assert.equal(result.completedFields.some(row => row.key === 'degree' && row.status === 'verified'), false);
+  } finally {
+    h.window.__gthFullLive.restore();
+    h.window.__gthFullResumeChromeRestore();
+    h.dom.window.close();
+  }
+}
+
+function assertDegreeOpenStopped(h, result) {
+  assert.equal(result.ok, false);
+  assert.equal(result.writeStarted, false);
+  assert.equal(result.activeField, 'degree');
+  assert.equal(result.selectorStep, 'degree_open');
+  assert.equal(h.bindingChecks, 2);
+  assert.equal(h.clicks, 0);
+}
+
+test('degree opener binding checks preserve applicant edits before empty fill or overwrite', async () => {
+  for (const options of [
+    { initial: '', replaceExisting: false, next: '博士' },
+    { initial: '本科', replaceExisting: true, next: '博士' },
+    { initial: '本科', replaceExisting: true, next: '' },
+    { initial: '', replaceExisting: false, next: '硕士' },
+  ]) {
+    await degreeOpenTrial({ ...options, mutate: ({ degree }) => { degree.value = options.next; } }, (h, result) => {
+      assertDegreeOpenStopped(h, result);
+      assert.equal(h.degree.value, options.next);
+    });
+  }
+});
+
+test('degree opener binding checks preserve a peer edited before the click', async () => {
+  await degreeOpenTrial({ mutate: h => { h.workInput.value = '2024-03'; } }, (h, result) => {
+    assertDegreeOpenStopped(h, result);
+    assert.equal(h.degree.value, '');
+    assert.equal(h.workInput.value, '2024-03');
+  });
+});
+
+test('degree opener binding checks refuse replaced, reparented, or rewrapped targets', async () => {
+  for (const mutate of [
+    h => { h.degree.replaceWith(h.degree.cloneNode(true)); },
+    h => { h.document.querySelectorAll('.r-section')[1].append(h.degree); },
+    h => {
+      const replacement = h.select.cloneNode(true);
+      replacement.querySelector('input').replaceWith(h.degree);
+      h.select.replaceWith(replacement);
+    },
+  ]) {
+    await degreeOpenTrial({ mutate }, (h, result) => {
+      assertDegreeOpenStopped(h, result);
+      assert.equal(h.degree.value, '');
+    });
+  }
+});
+
+test('degree opener binding checks revalidate disabled state on control and ancestors', async () => {
+  for (const target of ['degree', 'item', 'select', 'form']) {
+    for (const state of ['disabled', 'aria-disabled', 'is-disabled', 'disabled-class']) {
+      await degreeOpenTrial({ mutate: h => {
+        if (state === 'is-disabled' || state === 'disabled-class') h[target].classList.add(state === 'is-disabled' ? state : 'disabled');
+        else h[target].setAttribute(state, state === 'disabled' ? '' : 'true');
+      } }, (h, result) => {
+        assertDegreeOpenStopped(h, result);
+        assert.equal(h.degree.value, '');
+      });
+    }
+  }
+});
+
+test('degree opener binding checks revalidate hidden ancestors and readonly state', async () => {
+  for (const mutate of [
+    h => { h.select.style.display = 'none'; },
+    h => { h.item.style.display = 'none'; },
+    h => { h.form.style.display = 'none'; },
+    h => { h.degree.readOnly = false; },
+  ]) {
+    await degreeOpenTrial({ mutate }, (h, result) => {
+      assertDegreeOpenStopped(h, result);
+      assert.equal(h.degree.value, '');
+    });
+  }
+});
+
+test('degree opener binding checks refuse a menu opened during the await', async () => {
+  await degreeOpenTrial({ mutate: h => { h.panel.style.display = 'block'; } }, (h, result) => {
+    assertDegreeOpenStopped(h, result);
+    assert.equal(h.degree.value, '');
+    assert.equal(h.panel.style.display, 'block');
+  });
+});
+
+test('degree opener binding refusal before the click reports no write', async () => {
+  await degreeOpenTrial({ refuseBinding: true }, (h, result) => {
+    assertDegreeOpenStopped(h, result);
+    assert.equal(result.reason, 'profile_binding_changed');
+    assert.equal(h.degree.value, '');
+  });
+});
+
+test('degree opener still opens unchanged blank or explicitly overwritten targets', async () => {
+  for (const options of [{ initial: '', replaceExisting: false }, { initial: '本科', replaceExisting: true }]) {
+    await degreeOpenTrial({ ...options, mutate: h => {
+      // Reuse the existing month panel to stop at the writer's wrong-menu
+      // guard after a real opener click. This adds no degree dropdown evidence.
+      h.degree.addEventListener('click', () => {
+        h.panel.style.display = h.panel.style.display === 'none' ? 'block' : 'none';
+      });
+    } }, (h, result) => {
+      assert.equal(result.ok, false);
+      assert.equal(result.reason, 'basic_wrong_menu');
+      assert.equal(result.writeStarted, false);
+      assert.equal(h.clicks, 2, 'opener and existing dismissal both remain reachable');
+      assert.equal(h.degree.value, options.initial);
+      assert.equal(h.panel.style.display, 'none');
+    });
+  }
+});

@@ -52,7 +52,7 @@ test('degree and month mid-flight guards use midGuard not raw allBefore', () => 
   assert.match(source, /step\('degree_open'\)[\s\S]*?midGuard\(\)/);
   assert.match(source, /step\('month_open'\)[\s\S]*?midGuard\(\)/);
   // Raw guard(field,allBefore) must not appear inside degree option matching.
-  const degreeBlock = source.slice(source.indexOf("step('degree_open')"), source.indexOf("step('degree_close')"));
+  const degreeBlock = source.slice(source.indexOf("step('degree_option_lookup')"), source.indexOf("step('degree_close')"));
   assert.equal(/guard\(field,allBefore\)/.test(degreeBlock), false);
   assert.match(degreeBlock, /midGuard\(\)/);
 });

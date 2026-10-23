@@ -526,7 +526,18 @@
         }else if(field.kind==='eoCascader'){
           await fillResidence(selected,answer,midGuard,markWrite);
         }else{
-          let popup,chosen=false;step('degree_open');await boundAction(()=>{if(!(selected.control)?.isConnected)stop('profile_action_target_changed');return selected.control.click();});
+          const select=selected.control.closest('.el-select');
+          let popup,chosen=false;step('degree_open');await boundAction(()=>{
+            // Opening may clear the select. Preserve the exact pre-open values
+            // across the binding await; own intermediate values are not ours yet.
+            guard(field,allBefore);
+            if(selected.control.closest('.el-select')!==select)stop('profile_action_target_changed');
+            if(!visible(select)||!enabled(selected.control)||!enabled(select)
+              ||selected.control.closest('[disabled],[aria-disabled="true"],.is-disabled,.disabled,[formaction]'))
+              stop('basic_degree_structure_changed');
+            if(menus().length)stop('basic_other_menu_open');
+            return selected.control.click();
+          });
           try{
             popup=await waitFor(()=>{midGuard();const open=menus();if(open.length>1)stop('basic_menu_not_unique');return open[0]||null;});
             if(!popup.matches('.el-select-dropdown'))stop('basic_wrong_menu');

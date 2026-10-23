@@ -349,6 +349,55 @@ test('empty suppression ledgers are complete evidence without a suppression-exer
     'the returned completeness verdict does not claim which suppression paths were exercised');
 });
 
+test('the suppression retention limit applies independently to each cumulative ledger', () => {
+  const artifact = schemaWitness();
+  for (const ledger of ['suppressedAutosave', 'suppressedLookup']) {
+    const rows = suppressionWitnesses().filter(([key]) => key === ledger).map(([, , row]) => row);
+    artifact.report[ledger] = Array.from({ length: 80 }, (_, index) => ({
+      ...rows[index % rows.length], phase: index < 40 ? 'trial' : 'restore'
+    }));
+  }
+  // Completed observed timeouts do not consume suppression-ledger capacity.
+  artifact.report.finalDetails.timerSettle.observedNonFunctionTimeouts = 4;
+  const saved = JSON.parse(JSON.stringify(artifact)), before = structuredClone(saved);
+  assert.equal(runner.evidenceExitCode(saved.report), 0);
+  assert.equal(validateControlsDaytimeEvidence(saved).complete, true,
+    '80 autosave plus 80 lookup rows are valid; there is no combined 80-row cap');
+  assert.deepEqual(saved, before, 'validation does not truncate or deduplicate observations');
+  for (const key of ['pendingTimers', 'unobservableTimers']) {
+    const unsettled = structuredClone(saved);
+    unsettled.report.finalDetails.timerSettle[key] = 1;
+    const result = assertIncomplete(unsettled, 'timers', `full ledgers: ${key}=1`);
+    assert.equal(result.checks.find(check => check.key === 'runner_report').ok, true,
+      'valid suppression cannot replace actual callback settlement');
+  }
+});
+
+test('overfull cumulative suppression ledgers cannot complete even with settled timers and clean attachments', () => {
+  for (const ledger of ['suppressedAutosave', 'suppressedLookup']) {
+    const rows = suppressionWitnesses().filter(([key]) => key === ledger).map(([, , row]) => row);
+    for (const layout of ['repeated trial', 'repeated restore', 'mixed shapes and phases']) {
+      const artifact = schemaWitness();
+      artifact.report[ledger] = Array.from({ length: 81 }, (_, index) => ({
+        ...rows[layout === 'mixed shapes and phases' ? index % rows.length : 0],
+        phase: layout === 'repeated restore' || layout === 'mixed shapes and phases' && index >= 40
+          ? 'restore' : 'trial'
+      }));
+      const saved = JSON.parse(JSON.stringify(artifact)), before = structuredClone(saved);
+      const label = `${ledger}: ${layout}`;
+      assert.equal(runner.evidenceExitCode(saved.report), 0,
+        `${label}: the legacy verdict validates individual rows without the producer's retention limit`);
+      const result = assertIncomplete(saved, 'runner_report', label);
+      assert.deepEqual(result, {
+        schemaVersion: EVIDENCE_SCHEMA_VERSION, complete: false,
+        checks: CHECK_KEYS.map(key => ({ key, ok: key !== 'runner_report' })),
+        reportExitCode: 0, liveSupportClaimed: false
+      }, `${label}: zero timers, valid probes, bytes, boundaries and restoration cannot rescue overflow`);
+      assert.deepEqual(saved, before, `${label}: validation does not discard excess rows`);
+    }
+  }
+});
+
 test('malformed JSON-safe report containers fail closed even when the legacy validator throws', () => {
   for (const report of [null, [], { fields: {} }, { nonGet: {}, saveLikePost: {} },
     { finalDetails: { controls: true, recordCount: 1, rowIndex: 0 }, suppressedAutosave: [], suppressedLookup: [], fields: {} }]) {
@@ -560,5 +609,32 @@ test('CLI rejects missing report and falsy degree reasons without exposing neste
     });
     assert.equal(`${result.stdout}${result.stderr}`.includes(marker), false, target);
     assert.equal(`${result.stdout}${result.stderr}`.includes(artifactPath), false, target);
+  }
+});
+
+test('CLI rejects overfull suppression ledgers without exposing the excess row or nested timer observations', t => {
+  const outDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cms-edu-evidence-overflow-private-'));
+  t.after(() => {
+    assert.ok(path.resolve(outDir).startsWith(path.resolve(os.tmpdir()) + path.sep));
+    fs.rmSync(outDir, { recursive: true, force: true });
+  });
+  const marker = 'PRIVATE_SUPPRESSION_OVERFLOW_MUST_NOT_BE_ECHOED';
+  const artifactPath = path.join(outDir, `${marker}.json`);
+  for (const ledger of ['suppressedAutosave', 'suppressedLookup']) {
+    const artifact = schemaWitness();
+    const row = suppressionWitnesses().find(([key]) => key === ledger)[2];
+    artifact.report[ledger] = Array.from({ length: 81 }, () => structuredClone(row));
+    artifact.report[ledger][80].privateObservation = { excess: [{ raw: [marker] }] };
+    artifact.report.finalDetails.timerSettle.privateObservation = { callbacks: [{ raw: [marker] }] };
+    fs.writeFileSync(artifactPath, JSON.stringify(artifact), 'utf8');
+    const result = spawnSync(process.execPath, [cli, artifactPath], { cwd: root, encoding: 'utf8' });
+    assert.equal(result.status, 2, `${ledger}: ${result.stderr}`);
+    assert.deepEqual(JSON.parse(result.stdout), {
+      schemaVersion: EVIDENCE_SCHEMA_VERSION, complete: false,
+      checks: CHECK_KEYS.map(key => ({ key, ok: key !== 'runner_report' })),
+      reportExitCode: 0, liveSupportClaimed: false
+    });
+    assert.equal(`${result.stdout}${result.stderr}`.includes(marker), false, ledger);
+    assert.equal(`${result.stdout}${result.stderr}`.includes(artifactPath), false, ledger);
   }
 });

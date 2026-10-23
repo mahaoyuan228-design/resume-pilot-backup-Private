@@ -1,15 +1,19 @@
-// Hotjob pb (Ant Design resumeOperation) Never-Save fill for the education-history
-// row only: 学校 (flat ant-select allow-clear) and 城市 (ant cascader).
+// Hotjob pb (Ant Design resumeOperation) Never-Save fill for one education-history
+// row: 学校 (flat ant-select allow-clear), 城市 (ant cascader), then 学位, 学历,
+// 专业名称, and 专业排名.
 // Probe 2026-10-23: 学校 is ant-select ant-select-enabled ant-select-allow-clear
 // and opens a select dropdown. 城市 is ant-select ant-select-enabled, clickOpens
 // cascader, and the page text shows that city token twice.
-// These two menus were not opened. Dropdown class and ant-select-search__field
-// are the same page's flat ant-select probes. Open/focused/enabled and
+// 学位, 学历, and 专业排名 are the same allow-clear ant-select. 专业名称 is
+// input.ant-input type=text placeholder 请填写专业名称.
+// These menus were not opened. Dropdown class and ant-select-search__field are
+// the same page's flat ant-select probes. Open/focused/enabled and
 // cascader-plugins-wrap are the same page's 现居住地 cascader.
 // A closed .ant-select-search__field can have no client rect while
 // .ant-select-selection / [role=combobox] is the visible face.
 // Readback uses .ant-select-selection-selected-value and strips a 请选择+label
 // placeholder. Option text is whatever the open menu shows. Nothing is hardcoded.
+// Text comparison ignores whitespace. The written 专业名称 keeps internal spaces.
 // Cascader locate accepts one enabled ant-select, or two when both displays
 // match and are non-empty. Disagreeing, empty, hidden, disabled, allow-clear,
 // or any other count fails closed. A control outside the single wrap fails closed.
@@ -18,7 +22,12 @@
 // value and the other row is a display:none text input with no ant-select.
 // Do not write that text input. An empty select, a second select, a visible
 // text row, or any other count stays fail-closed. City still requires one form-item.
-// Basic-block 毕业院校 and the other education-history rows stay on their own labels.
+// 个人基本信息 repeats 学位, 学历, and 专业名称 with different display text.
+// Those rows are not this block. The education-history row is the single form
+// item after the one "从最高学历开始填写" hint and after the one visible
+// education 学校 select and the one 城市 cascader. A missing hint, a second
+// hint, a second school or city anchor, or a second matching row fails closed.
+// 专业描述 is an empty textarea on this row. It is not filled.
 // Pending live Never-Save. This does not claim the site is supported.
 // liveSupportClaimed and supportClaimed stay false.
 // Close is Escape. Never clicks 保存/提交/投递/删除/下一步/返回/确定.
@@ -26,11 +35,22 @@
 (() => {
   const SCHOOL = '学校';
   const CITY = '城市';
-  const ORDER = Object.freeze([SCHOOL, CITY]);
+  const DEGREE = '学位';
+  const LEVEL = '学历';
+  const MAJOR = '专业名称';
+  const RANK = '专业排名';
+  const SECTION_HINT = '从最高学历开始填写';
+  const MAJOR_PLACEHOLDER = '请填写专业名称';
+  const ORDER = Object.freeze([SCHOOL, CITY, DEGREE, LEVEL, MAJOR, RANK]);
   const KINDS = Object.freeze({
     [SCHOOL]: 'select',
-    [CITY]: 'cascader'
+    [CITY]: 'cascader',
+    [DEGREE]: 'select',
+    [LEVEL]: 'select',
+    [MAJOR]: 'text',
+    [RANK]: 'select'
   });
+  const SECTION_LABELS = new Set([DEGREE, LEVEL, MAJOR, RANK]);
   const DROPDOWN_CLASSES = Object.freeze([
     'ant-select-dropdown',
     'ant-select-dropdown--single',
@@ -51,6 +71,10 @@
     .replace(/[\u200b-\u200d\ufeff]/gu, '')
     .replace(/[\s\u00a0]+/gu, '')
     .trim();
+  const writable = (value) => String(value ?? '')
+    .normalize('NFKC')
+    .replace(/[\u200b-\u200d\ufeff]/gu, '')
+    .replace(/^[\s\u00a0]+|[\s\u00a0]+$/gu, '');
   const cleanLabel = (value) => exact(value).replace(/[＊*？?]/gu, '').replace(/[：:]+$/gu, '');
 
   function flags() {
@@ -109,6 +133,76 @@
   function itemsFor(label) {
     const want = cleanLabel(label);
     return formItems().filter((item) => labelOf(item) === want);
+  }
+
+  function follows(node, earlier) {
+    if (!node || !earlier || node === earlier) return false;
+    return (earlier.compareDocumentPosition(node) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0;
+  }
+
+  function hintTextNodes() {
+    const root = document.querySelector('.resume-operation-wrap');
+    if (!root || typeof document.createTreeWalker !== 'function') return [];
+    const needle = exact(SECTION_HINT);
+    if (!needle) return [];
+    let walker;
+    try {
+      walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+    } catch {
+      return [];
+    }
+    const hits = [];
+    let node = walker.nextNode();
+    while (node) {
+      const text = exact(node.nodeValue || '');
+      if (text.includes(needle)) {
+        const parent = node.parentElement;
+        const blocked = parent?.closest('input, textarea, select, button, .ant-select, .ant-select-dropdown, .cascader-plugins-wrap, script, style');
+        if (!blocked) hits.push(node);
+      }
+      node = walker.nextNode();
+    }
+    return hits;
+  }
+
+  function sectionSchoolAnchors(items) {
+    return items.filter((item) => {
+      if (!visible(item)) return false;
+      const selects = [...item.querySelectorAll('.ant-select')]
+        .filter((node) => node.closest('.ant-row.ant-form-item') === item);
+      if (selects.length !== 1) return false;
+      const select = selects[0];
+      return visible(select)
+        && select.classList.contains('ant-select-enabled')
+        && select.classList.contains('ant-select-allow-clear')
+        && !select.classList.contains('ant-select-disabled');
+    });
+  }
+
+  function sectionCityAnchors(items) {
+    return items.filter((item) => {
+      if (!visible(item)) return false;
+      const wraps = [...item.querySelectorAll('.cascader-plugins-wrap')]
+        .filter((wrap) => wrap.closest('.ant-row.ant-form-item') === item);
+      return wraps.length === 1;
+    });
+  }
+
+  // 学位 / 学历 / 专业名称 / 专业排名 also exist in 个人基本信息.
+  // Keep the one row after the education hint and after 学校 + 城市.
+  function sectionItems(label) {
+    const hints = hintTextNodes();
+    if (hints.length !== 1) return [];
+    const all = formItems();
+    const inSection = all.filter((item) => follows(item, hints[0]));
+    const schoolAnchors = sectionSchoolAnchors(inSection.filter((item) => labelOf(item) === SCHOOL));
+    const cityAnchors = sectionCityAnchors(inSection.filter((item) => labelOf(item) === CITY));
+    if (schoolAnchors.length !== 1 || cityAnchors.length !== 1) return [];
+    const floor = Math.max(all.indexOf(schoolAnchors[0]), all.indexOf(cityAnchors[0]));
+    const want = cleanLabel(label);
+    const matches = inSection.filter((item) => labelOf(item) === want && all.indexOf(item) > floor);
+    if (matches.length !== 1) return [];
+    return matches;
   }
 
   function stray(item, selector) {
@@ -201,7 +295,7 @@
     };
   }
 
-  function schoolTextInput(item) {
+  function plainTextInput(item) {
     if (stray(item, TEXT_STRAY).length) return null;
     const inputs = stray(item, 'input.ant-input');
     if (inputs.length !== 1) return null;
@@ -215,9 +309,18 @@
 
   // A display:none 学校 row can hold the harvested text input. It is not written.
   function hiddenTextSchool(item) {
-    const control = schoolTextInput(item);
+    const control = plainTextInput(item);
     if (!control || visible(item) || visible(control)) return false;
     return true;
+  }
+
+  function locateMajor(item) {
+    const control = plainTextInput(item);
+    if (!control || !visible(control)) return { ok: false, reason: 'control_not_supported' };
+    if (exact(control.getAttribute('placeholder') || '') !== exact(MAJOR_PLACEHOLDER)) {
+      return { ok: false, reason: 'control_not_supported' };
+    }
+    return { ok: true, kind: 'text', item, control };
   }
 
   // One 学校 row stays the flat allow-clear select, including an empty one.
@@ -238,10 +341,21 @@
 
   function locate(label) {
     if (!Object.hasOwn(KINDS, label)) return { ok: false, reason: 'label_not_allowed' };
-    const items = itemsFor(label);
-    const found = label === SCHOOL
-      ? locateSchool(items)
-      : (items.length === 1 ? locateCascader(items[0], label) : { ok: false, reason: 'control_not_supported' });
+    if (label === SCHOOL) {
+      const found = locateSchool(itemsFor(SCHOOL));
+      if (found.ok) found.label = label;
+      return found;
+    }
+    if (label === CITY) {
+      const items = itemsFor(CITY);
+      const found = items.length === 1 ? locateCascader(items[0], label) : { ok: false, reason: 'control_not_supported' };
+      if (found.ok) found.label = label;
+      return found;
+    }
+    if (!SECTION_LABELS.has(label)) return { ok: false, reason: 'label_not_allowed' };
+    const items = sectionItems(label);
+    if (items.length !== 1) return { ok: false, reason: 'control_not_supported' };
+    const found = label === MAJOR ? locateMajor(items[0]) : locateSelect(items[0], label);
     if (found.ok) found.label = label;
     return found;
   }
@@ -261,9 +375,26 @@
     return { ok: true, value: reads[0].value };
   }
 
+  function readControl(found) {
+    return exact(found.control.value);
+  }
+
   function readFound(found) {
     if (found.kind === 'cascader') return readCascader(found);
+    if (found.kind === 'text') return { ok: true, value: readControl(found) };
     return readSelect(found);
+  }
+
+  function writeText(input, value) {
+    const proto = Object.getPrototypeOf(input);
+    const desc = Object.getOwnPropertyDescriptor(proto, 'value')
+      || Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value');
+    if (!desc || typeof desc.set !== 'function') return false;
+    desc.set.call(input, value);
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+    input.dispatchEvent(new Event('blur', { bubbles: true }));
+    return true;
   }
 
   function leaves(container, excludeSelect) {
@@ -437,13 +568,40 @@
     });
   }
 
+  async function fillText(found, label, raw, want) {
+    const before = readControl(found);
+    if (!want) return refused(label, 'missing_profile_value', { before, after: before, expected: '' });
+    if (before === want) return kept(label, 'preexisting_same_value', before, want, 'verified', true);
+    if (before) return kept(label, 'existing_value', before, want, 'skipped', false);
+    if (anyOpen()) return refused(label, 'control_busy', { before, after: before, expected: want });
+    const paintedValue = writable(raw);
+    if (exact(paintedValue) !== want) {
+      return refused(label, 'control_not_supported', { before, after: before, expected: want });
+    }
+    found.control.focus();
+    if (!writeText(found.control, paintedValue)) {
+      return refused(label, 'control_not_supported', { before, after: readControl(found), expected: want });
+    }
+    const painted = await waitFor(() => readControl(found) === want);
+    const after = readControl(found);
+    if (!painted || after !== want) {
+      return refused(label, 'readback_mismatch', { before, after, expected: want, opened: false, canceled: false });
+    }
+    return result({
+      ok: true, label, status: 'verified', reason: 'readback_matched',
+      before, after, expected: want, opened: false, canceled: false, stillOpen: 0
+    });
+  }
+
   async function fillField(label, value) {
     try {
       if (document.visibilityState === 'hidden') return refused(label, 'fill_interrupted_page_hidden');
       if (!onPage()) return refused(label, 'wrong_page');
       const found = locate(label);
       if (!found.ok) return refused(label, found.reason);
+      const raw = typeof value === 'string' ? value : '';
       const want = typeof value === 'string' ? exact(value) : '';
+      if (found.kind === 'text') return await fillText(found, label, raw, want);
       return await fillMenu(found, label, want);
     } catch (error) {
       if (error?.message === 'never_save' || error?.code === 'never_save') {
@@ -462,6 +620,11 @@
       const current = readFound(found);
       if (!current.ok) return refused(label, current.reason);
       const before = current.value;
+      if (found.kind === 'text') {
+        return refused(label, 'cancel_not_applicable', {
+          before, after: before, expected: before, opened: false, canceled: false, stillOpen: 0
+        });
+      }
       if (anyOpen()) return refused(label, 'control_busy', { before, after: before });
       safeClick(found.trigger);
       const nodes = await waitFor(() => opened(found));

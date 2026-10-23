@@ -309,7 +309,19 @@
     return rollback;
   }
 
-  async function fillText(label, value) {
+  async function fillText(label, value, options = {}) {
+    if (!pageAllowed(options)) {
+      return {
+        ...NEVER_SAVE,
+        label,
+        ok: false,
+        reason: 'wrong_page',
+        before: '',
+        after: '',
+        expected: norm(value),
+        writeAttempted: false
+      };
+    }
     const row = classifyField(label);
     const original = row.control?.value;
     const neighbors = row.ready ? snapshotTextNeighbors([row.control]) : [];

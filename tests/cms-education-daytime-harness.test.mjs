@@ -300,7 +300,8 @@ async function collectFictional(t, modify = () => {}, fakeOptions = {}, drive = 
       assert.equal(runnerOptions.controls, true);
       assert.equal(runnerOptions.env.CONTROLS, '1');
       if (drive) await driveObservedSession(await runnerOptions.connectCdp('ws://127.0.0.1:9239/fictional-unit', {}));
-      fs.writeFileSync(path.join(runnerOptions.outDir, 'cms-education-live.json'), JSON.stringify(replies.report));
+      fs.writeFileSync(path.join(runnerOptions.outDir, 'cms-education-live.json'),
+        fakeOptions.reportText ?? JSON.stringify(replies.report));
       return replies.report;
     }
   });
@@ -326,6 +327,23 @@ function assertChecklistBindings(checklist, artifacts) {
         value = value[part];
       }
     }
+  }
+}
+
+function assertDiagnostic(status, expected) {
+  assert.ok(Array.isArray(status.diagnostics), 'collector emits safe incomplete-pack diagnostics');
+  assert.ok(status.diagnostics.some(row => Object.keys(expected).every(key => row[key] === expected[key])),
+    `missing diagnostic: ${JSON.stringify(expected)}`);
+}
+
+function assertSafeDiagnostics(status) {
+  assert.ok(Array.isArray(status.diagnostics));
+  for (const row of status.diagnostics) {
+    assert.deepEqual(Object.keys(row).sort(), ['file', 'key', 'path', 'reason']);
+    assert.ok(CHECKLIST.some(item => item.key === row.key), 'diagnostics use the existing seven checklist keys');
+    assert.match(row.file, /^[a-z-]+\.json$/u, 'diagnostics name fixed local artifacts only');
+    assert.match(row.path, /^[A-Za-z][A-Za-z0-9]*(?:\.[A-Za-z][A-Za-z0-9]*)*$/u);
+    assert.match(row.reason, /^[a-z_]+$/u, 'diagnostics contain safe reason codes only');
   }
 }
 
@@ -375,6 +393,7 @@ test('collector retains fictional unit observations separately from the runner r
   assert.deepEqual(status, collected.result);
   assert.equal(status.suppressionExercised.autosave, false);
   assert.equal(status.suppressionExercised.lookup, false);
+  assert.deepEqual(status.diagnostics, [], 'false, zero, and empty traffic/suppression ledgers are present observations');
 });
 
 test('missing observed steps cannot be filled from a successful-looking runner report', async t => {
@@ -383,6 +402,12 @@ test('missing observed steps cannot be filled from a successful-looking runner r
   assert.notEqual(collected.result.exitCode, 0);
   assert.equal(collected.result.observationsComplete, false);
   assert.equal(fs.existsSync(path.join(collected.outDir, 'readbacks.json')), false);
+  for (const [key, file, path] of [
+    ['bytes_clean_page', 'snapshots-before.json', 'boundary'],
+    ['restoration_neighbors', 'snapshots-after.json', 'snapshots.dom'],
+    ['cleanup', 'snapshots-after.json', 'identity']
+  ]) assertDiagnostic(collected.result, { key, file, path, reason: 'artifact_missing' });
+  assertSafeDiagnostics(collected.result);
 });
 
 test('raw DOM must actually be captured on both sides even when schema hashes match', async t => {
@@ -396,14 +421,17 @@ test('raw DOM must actually be captured on both sides even when schema hashes ma
     const filename = `snapshots-${missing}.json`;
     const retained = JSON.parse(fs.readFileSync(path.join(collected.outDir, filename), 'utf8'));
     assert.equal(Object.hasOwn(retained, 'rawDom'), false, 'missing raw observations are never synthesized');
+    for (const path of ['rawDom.educationOuterHTML', 'rawDom.neighborOuterHTML']) {
+      assertDiagnostic(collected.result, { key: 'restoration_neighbors', file: filename, path, reason: 'path_missing' });
+    }
   }
 });
 
 test('raw whitespace, attribute, and neighbor markup changes cannot hide behind equal semantic hashes', async t => {
-  for (const mutate of [
-    rawDom => { rawDom.educationOuterHTML = '<section> fictional</section>'; },
-    rawDom => { rawDom.educationOuterHTML = '<section data-unit="changed">fictional</section>'; },
-    rawDom => { rawDom.neighborOuterHTML.push('<section>fictional neighboring markup</section>'); }
+  for (const [changed, mutate] of [
+    ['educationOuterHTML', rawDom => { rawDom.educationOuterHTML = '<section> fictional</section>'; }],
+    ['educationOuterHTML', rawDom => { rawDom.educationOuterHTML = '<section data-unit="changed">fictional</section>'; }],
+    ['neighborOuterHTML', rawDom => { rawDom.neighborOuterHTML.push('<section>fictional neighboring markup</section>'); }]
   ]) {
     const collected = await collectFictional(t, replies => { mutate(replies.after.rawDom); });
     assert.equal(collected.result.schemaComplete, true);
@@ -411,6 +439,8 @@ test('raw whitespace, attribute, and neighbor markup changes cannot hide behind 
     assert.equal(collected.result.rawDomCaptured, true);
     assert.equal(collected.result.rawDomEqual, false);
     assert.notEqual(collected.result.exitCode, 0);
+    assertDiagnostic(collected.result, { key: 'restoration_neighbors', file: 'snapshots-after.json',
+      path: `rawDom.${changed}`, reason: 'raw_dom_mismatch' });
     for (const stage of ['before', 'after']) {
       const retained = JSON.parse(fs.readFileSync(path.join(collected.outDir, `snapshots-${stage}.json`), 'utf8'));
       assert.deepEqual(retained.rawDom, collected.replies[stage].rawDom, 'all raw distinctions remain reviewable');
@@ -419,16 +449,124 @@ test('raw whitespace, attribute, and neighbor markup changes cannot hide behind 
 });
 
 test('actual failed or missing readbacks stay incomplete and remain unmodified', async t => {
-  for (const mutate of [
-    replies => { replies.run.readbacks[0] = { path: replies.run.readbacks[0].path, ok: false,
-      reason: 'readback_mismatch', value: 'actual fictional mismatch' }; },
-    replies => { delete replies.run.readbacks; }
+  const privateMarker = 'fictional-private-readback-marker-must-stay-in-raw-evidence';
+  for (const [missing, mutate] of [
+    [false, replies => { replies.run.readbacks[0] = { path: replies.run.readbacks[0].path, ok: false,
+      reason: privateMarker, value: privateMarker }; }],
+    [true, replies => { delete replies.run.readbacks; }]
   ]) {
     const collected = await collectFictional(t, mutate);
     assert.equal(collected.result.complete, false);
     assert.notEqual(collected.result.exitCode, 0);
     assert.deepEqual(JSON.parse(fs.readFileSync(path.join(collected.outDir, 'readbacks.json'), 'utf8')), collected.replies.run);
+    assertDiagnostic(collected.result, { key: 'nine_readbacks', file: 'observations.json',
+      path: 'run.readbacks', reason: 'readbacks_mismatch' });
+    if (missing) assertDiagnostic(collected.result, { key: 'nine_readbacks', file: 'observations.json',
+      path: 'run.readbacks', reason: 'path_missing' });
+    assertSafeDiagnostics(collected.result);
+    assert.equal(JSON.stringify(collected.result.diagnostics).includes(privateMarker), false);
   }
+});
+
+test('incomplete-pack diagnostics distinguish terminal null from retained falsey observations', async t => {
+  const missingValue = await collectFictional(t, replies => { replies.before.snapshots.dom = null; });
+  assert.equal(missingValue.result.complete, false);
+  assertDiagnostic(missingValue.result, { key: 'restoration_neighbors', file: 'snapshots-before.json',
+    path: 'snapshots.dom', reason: 'value_null' });
+  const nullSnapshot = JSON.parse(fs.readFileSync(path.join(missingValue.outDir, 'snapshots-before.json'), 'utf8'));
+  assert.equal(nullSnapshot.snapshots.dom, null, 'diagnostics never synthesize a missing snapshot');
+
+  const emptyValue = await collectFictional(t, replies => { replies.report.suppressedAutosave = ''; });
+  assert.equal(emptyValue.result.complete, false, 'presence diagnostics do not relax the runner/validator verdict');
+  assert.equal(emptyValue.result.diagnostics.some(row => row.file === 'cms-education-live.json'
+    && row.path === 'suppressedAutosave' && ['artifact_missing', 'path_missing', 'value_null'].includes(row.reason)), false,
+  'an observed empty string is present even though it has the wrong evidence type');
+  assertSafeDiagnostics(emptyValue.result);
+});
+
+test('present but invalid raw DOM observations identify their side and field without exposing values', async t => {
+  const privateMarker = 'fictional-private-invalid-raw-dom-marker';
+  const collected = await collectFictional(t, replies => {
+    replies.before.rawDom.educationOuterHTML = '';
+    replies.after.rawDom.neighborOuterHTML = [privateMarker, null];
+  });
+  assert.equal(collected.result.schemaComplete, true, 'raw markup remains supplemental to schema version 1');
+  assert.equal(collected.result.complete, false);
+  assert.notEqual(collected.result.exitCode, 0);
+  assert.equal(collected.result.rawDomCaptured, false);
+  for (const [side, field] of [['before', 'educationOuterHTML'], ['after', 'neighborOuterHTML']]) {
+    const file = `snapshots-${side}.json`, fieldPath = `rawDom.${field}`;
+    assertDiagnostic(collected.result, { key: 'restoration_neighbors', file, path: fieldPath, reason: 'raw_dom_invalid' });
+    assert.equal(collected.result.diagnostics.some(row => row.file === file && row.path === fieldPath
+      && ['artifact_missing', 'path_missing', 'value_null'].includes(row.reason)), false,
+    'invalid observed terminal values remain present');
+    const retained = JSON.parse(fs.readFileSync(path.join(collected.outDir, file), 'utf8'));
+    assert.deepEqual(retained.rawDom, collected.replies[side].rawDom, 'invalid raw observations remain unchanged');
+  }
+  assertSafeDiagnostics(collected.result);
+  assert.equal(JSON.stringify(collected.result.diagnostics).includes(privateMarker), false);
+});
+
+test('identity mismatch diagnostics locate each supplemental flag without exposing observations', async t => {
+  for (const flag of ['hooksRestored', 'globalsRestored', 'contextUnchanged']) {
+    const collected = await collectFictional(t, replies => { replies.after.identity[flag] = false; });
+    assert.equal(collected.result.schemaComplete, true, 'full identity remains outside schema version 1');
+    assert.equal(collected.result.complete, false);
+    assert.notEqual(collected.result.exitCode, 0);
+    assertDiagnostic(collected.result, { key: 'cleanup', file: 'snapshots-after.json',
+      path: `identity.${flag}`, reason: 'identity_mismatch' });
+    const after = JSON.parse(fs.readFileSync(path.join(collected.outDir, 'snapshots-after.json'), 'utf8'));
+    assert.equal(after.identity[flag], false, 'diagnostics preserve the actual failed identity observation');
+    assertSafeDiagnostics(collected.result);
+  }
+});
+
+test('diagnostics retain every actual supplement failure after an earlier prepare mismatch', async t => {
+  const privateMarker = 'fictional-private-supplement-marker';
+  const collected = await collectFictional(t, replies => {
+    replies.prepare.identity = privateMarker;
+    replies.run.waitedMs = READBACK_WAIT_MS - 1;
+    replies.cleanup.ok = false;
+    replies.cleanup.posts = [{ url: privateMarker }];
+    replies.cleanup.clicks = [{ text: privateMarker }];
+    replies.cleanup.timerSettle = { pendingTimers: 1, unobservableTimers: 0, observedNonFunctionTimeouts: 0 };
+  });
+  assert.equal(collected.result.schemaComplete, true, 'supplement diagnostics leave the independent report verdict unchanged');
+  assert.equal(collected.result.actualTrialMatches, false);
+  assert.equal(collected.result.complete, false);
+  assert.notEqual(collected.result.exitCode, 0);
+  for (const [key, path, reason] of [
+    ['nine_readbacks', 'prepare', 'prepare_mismatch'],
+    ['nine_readbacks', 'run', 'run_mismatch'],
+    ['cleanup', 'cleanup.ok', 'cleanup_mismatch'],
+    ['suppression_traffic_clicks', 'cleanup.posts', 'cleanup_traffic_mismatch'],
+    ['suppression_traffic_clicks', 'cleanup.clicks', 'cleanup_clicks_mismatch'],
+    ['settled_callbacks', 'cleanup.timerSettle', 'timer_settle_mismatch']
+  ]) assertDiagnostic(collected.result, { key, file: 'observations.json', path, reason });
+  const observations = JSON.parse(fs.readFileSync(path.join(collected.outDir, 'observations.json'), 'utf8'));
+  assert.deepEqual(observations.prepare, collected.replies.prepare);
+  assert.deepEqual(observations.run, collected.replies.run);
+  assert.deepEqual(observations.cleanup, collected.replies.cleanup);
+  assertSafeDiagnostics(collected.result);
+  assert.equal(JSON.stringify(collected.result.diagnostics).includes(privateMarker), false);
+});
+
+test('unreadable retained report diagnostics expose a fixed reason without repairing raw output or changing its verdict', async t => {
+  const privateMarker = 'fictional-private-parser-marker';
+  const reportText = `{ malformed report ${privateMarker}`;
+  const collected = await collectFictional(t, replies => { replies.report.fields[0].status = 'failed'; }, { reportText });
+  assert.equal(collected.result.schemaComplete, false);
+  assert.equal(collected.result.complete, false, 'diagnostics preserve the existing failed in-memory collection verdict');
+  assert.notEqual(collected.result.exitCode, 0);
+  assert.equal(fs.readFileSync(path.join(collected.outDir, 'cms-education-live.json'), 'utf8'), reportText,
+    'unreadable retained output is neither repaired nor replaced from the returned report');
+  const reportDiagnostics = collected.result.diagnostics.filter(row => row.file === 'cms-education-live.json');
+  assert.ok(reportDiagnostics.length > 0);
+  assert.ok(reportDiagnostics.every(row => row.reason === 'artifact_unreadable'));
+  assertDiagnostic(collected.result, { key: 'seven_visible_probes', file: 'cms-education-live.json',
+    path: 'finalDetails.widgetProbes', reason: 'artifact_unreadable' });
+  assertSafeDiagnostics(collected.result);
+  assert.equal(JSON.stringify(collected.result.diagnostics).includes(privateMarker), false);
 });
 
 test('a failed runner verdict stays failed even when capture and cleanup succeed', async t => {
@@ -470,6 +608,7 @@ test('shipped runner and observed connector write one same-session pack using on
   assert.equal(report.finalDetails.cleanupOk, true);
   assert.equal(report.fields.length, 9);
   assert.equal(report.neverSave, true); assert.equal(report.liveSupportClaimed, false);
+  assert.deepEqual(collected.result.diagnostics, []);
   const steps = collected.raw.calls.map(call => call.step);
   assert.ok(steps.indexOf('fetch_enable') < steps.indexOf('capture_before_create'));
   assert.ok(steps.indexOf('capture_before') < steps.indexOf('install_live'));
@@ -489,6 +628,10 @@ test('shipped runner still disables Fetch and closes after supplemental after-ca
   assert.ok(collected.raw.calls.some(call => call.step === 'capture_release'));
   assert.equal(collected.raw.calls.at(-1).method, 'close');
   assert.deepEqual(collected.result.errors, ['capture_after_failed']);
+  assertDiagnostic(collected.result, { key: 'cleanup', file: 'snapshots-after.json',
+    path: 'identity', reason: 'artifact_missing' });
+  assert.equal(fs.existsSync(path.join(collected.outDir, 'snapshots-after.json')), false);
+  assertSafeDiagnostics(collected.result);
 });
 
 test('cleanup protocol failure releases only capture state and preserves dirty-page interception', async t => {
@@ -502,4 +645,9 @@ test('cleanup protocol failure releases only capture state and preserves dirty-p
   assert.equal(collected.raw.calls.some(call => call.step === 'capture_after'), false);
   assert.equal(collected.raw.calls.filter(call => call.step === 'capture_release').length, 1);
   assert.equal(collected.raw.calls.at(-1).method, 'close');
+  assertDiagnostic(collected.result, { key: 'cleanup', file: 'snapshots-after.json',
+    path: 'identity', reason: 'artifact_missing' });
+  assert.equal(fs.existsSync(path.join(collected.outDir, 'snapshots-after.json')), false);
+  assert.equal(fs.existsSync(path.join(collected.outDir, 'cleanup.json')), false);
+  assertSafeDiagnostics(collected.result);
 });

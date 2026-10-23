@@ -216,28 +216,94 @@ function snapshotHashes(capture) {
   return hashes;
 }
 
-function observedTrialMatches(state, report, rowIndex) {
+function observedTrialChecks(state, report, rowIndex) {
   const { prepare, run, cleanup } = state;
   const specs = fieldSpecsForRow(rowIndex, true);
-  return prepare?.ok === true && prepare.rowIndex === rowIndex
-    && prepare.recordCount === report?.finalDetails?.recordCount
-    && Array.isArray(prepare.identities) && prepare.identities.length === prepare.recordCount
-    && prepare.identity === prepare.identities[rowIndex]
-    && run?.ok === true && run.rowIndex === rowIndex && run.recordCount === prepare.recordCount
-    && run.liveSupportClaimed === false && run.restored === true && run.pageLeftAsFound === true
-    && run.otherChanged === false && Number.isFinite(run.waitedMs) && run.waitedMs >= READBACK_WAIT_MS
-    && Array.isArray(run.readbacks) && run.readbacks.length === specs.length
-    && specs.every(spec => {
-      const rows = run.readbacks.filter(row => row?.path === spec.path);
-      return rows.length === 1 && rows[0].ok === true && rows[0].reason === 'readback_matched'
-        && JSON.stringify(rows[0].value) === JSON.stringify(spec.fixture);
-    })
-    && cleanup?.ok === true && Array.isArray(cleanup.posts) && cleanup.posts.length === 0
-    && Array.isArray(cleanup.clicks) && cleanup.clicks.length === 0
-    && ['pendingTimers', 'unobservableTimers', 'observedNonFunctionTimeouts'].every(key =>
-      Number.isSafeInteger(cleanup.timerSettle?.[key]) && cleanup.timerSettle[key] >= 0
-      && cleanup.timerSettle[key] === report.finalDetails.timerSettle?.[key])
-    && cleanup.timerSettle.pendingTimers === 0 && cleanup.timerSettle.unobservableTimers === 0;
+  // Keep the existing completion predicates, but retain which actual reply failed.
+  return [
+    { key: 'nine_readbacks', path: 'prepare', reason: 'prepare_mismatch',
+      ok: prepare?.ok === true && prepare.rowIndex === rowIndex
+        && prepare.recordCount === report?.finalDetails?.recordCount
+        && Array.isArray(prepare.identities) && prepare.identities.length === prepare.recordCount
+        && prepare.identity === prepare.identities[rowIndex] },
+    { key: 'nine_readbacks', path: 'run', reason: 'run_mismatch',
+      ok: run?.ok === true && run.rowIndex === rowIndex && run.recordCount === prepare?.recordCount
+        && run.liveSupportClaimed === false && run.restored === true && run.pageLeftAsFound === true
+        && run.otherChanged === false && Number.isFinite(run.waitedMs) && run.waitedMs >= READBACK_WAIT_MS },
+    { key: 'nine_readbacks', path: 'run.readbacks', reason: 'readbacks_mismatch',
+      ok: Array.isArray(run?.readbacks) && run.readbacks.length === specs.length
+        && specs.every(spec => {
+          const rows = run.readbacks.filter(row => row?.path === spec.path);
+          return rows.length === 1 && rows[0].ok === true && rows[0].reason === 'readback_matched'
+            && JSON.stringify(rows[0].value) === JSON.stringify(spec.fixture);
+        }) },
+    { key: 'cleanup', path: 'cleanup.ok', reason: 'cleanup_mismatch', ok: cleanup?.ok === true },
+    { key: 'suppression_traffic_clicks', path: 'cleanup.posts', reason: 'cleanup_traffic_mismatch',
+      ok: Array.isArray(cleanup?.posts) && cleanup.posts.length === 0 },
+    { key: 'suppression_traffic_clicks', path: 'cleanup.clicks', reason: 'cleanup_clicks_mismatch',
+      ok: Array.isArray(cleanup?.clicks) && cleanup.clicks.length === 0 },
+    { key: 'settled_callbacks', path: 'cleanup.timerSettle', reason: 'timer_settle_mismatch',
+      ok: ['pendingTimers', 'unobservableTimers', 'observedNonFunctionTimeouts'].every(key =>
+        Number.isSafeInteger(cleanup?.timerSettle?.[key]) && cleanup.timerSettle[key] >= 0
+        && cleanup.timerSettle[key] === report?.finalDetails?.timerSettle?.[key])
+        && cleanup.timerSettle.pendingTimers === 0 && cleanup.timerSettle.unobservableTimers === 0 }
+  ].map(check => ({ ...check, file: 'observations.json' }));
+}
+
+function collectionDiagnostics(outDir, status, trialChecks, state) {
+  const diagnostics = [];
+  const artifacts = new Map([['collector-status.json', { value: status }]]);
+  for (const row of CHECKLIST) for (const { file, path: fieldPath } of row.bindings) {
+    if (!artifacts.has(file)) {
+      const filename = path.join(outDir, file);
+      let artifact;
+      try { artifact = { value: JSON.parse(fs.readFileSync(filename, 'utf8')) }; }
+      catch (error) { artifact = { reason: error?.code === 'ENOENT' ? 'artifact_missing' : 'artifact_unreadable' }; }
+      artifacts.set(file, artifact);
+    }
+    const artifact = artifacts.get(file);
+    let value = artifact.value, reason = artifact.reason;
+    if (!reason) {
+      for (const part of fieldPath.split('.')) {
+        if (value === null || typeof value !== 'object' || !Object.hasOwn(value, part)) {
+          reason = 'path_missing'; break;
+        }
+        value = value[part];
+      }
+      if (!reason && value === null) reason = 'value_null';
+    }
+    if (reason) diagnostics.push({ key: row.key, file, path: fieldPath, reason });
+  }
+  for (const { ok, ...failure } of trialChecks) if (!ok) diagnostics.push(failure);
+  for (const flag of ['hooksRestored', 'globalsRestored', 'contextUnchanged']) {
+    if (status.identity?.[flag] !== true) diagnostics.push({ key: 'cleanup', file: 'snapshots-after.json',
+      path: `identity.${flag}`, reason: 'identity_mismatch' });
+  }
+  for (const side of ['before', 'after']) {
+    const raw = state[side]?.rawDom;
+    if (!object(raw)) continue; // Missing paths/null values are already located above.
+    for (const field of ['educationOuterHTML', 'neighborOuterHTML']) {
+      if (!Object.hasOwn(raw, field) || raw[field] === null) continue;
+      const valid = field === 'educationOuterHTML'
+        ? typeof raw[field] === 'string' && raw[field].length > 0
+        : Array.isArray(raw[field]) && raw[field].every(html => typeof html === 'string');
+      if (!valid) diagnostics.push({ key: 'restoration_neighbors', file: `snapshots-${side}.json`,
+        path: `rawDom.${field}`, reason: 'raw_dom_invalid' });
+    }
+  }
+  if (status.rawDomCaptured && !status.rawDomEqual) {
+    for (const field of ['educationOuterHTML', 'neighborOuterHTML']) {
+      if (JSON.stringify(state.before.rawDom[field]) !== JSON.stringify(state.after.rawDom[field])) {
+        diagnostics.push({ key: 'restoration_neighbors', file: 'snapshots-after.json',
+          path: `rawDom.${field}`, reason: 'raw_dom_mismatch' });
+      }
+    }
+  }
+  if (status.errors.length) diagnostics.push({ key: 'cleanup', file: 'collector-status.json',
+    path: 'errors', reason: 'collector_errors' });
+  // Values and parser/protocol messages never enter this availability/supplement report.
+  // Presence is not a passing predicate; validation.json retains the schema verdict.
+  return diagnostics;
 }
 
 export async function collectDaytimeHarness(options = {}) {
@@ -278,7 +344,8 @@ export async function collectDaytimeHarness(options = {}) {
   const identity = state.after?.identity ?? null;
   const identityOk = identity?.hooksRestored === true && identity?.globalsRestored === true && identity?.contextUnchanged === true;
   const observed = ['before', 'after', 'prepare', 'run', 'cleanup'].every(key => object(state[key]));
-  const actualTrialMatches = observedTrialMatches(state, report, rowIndex);
+  const trialChecks = observedTrialChecks(state, report, rowIndex);
+  const actualTrialMatches = trialChecks.every(check => check.ok);
   const rawDomCaptured = [state.before?.rawDom, state.after?.rawDom].every(raw => object(raw)
     && typeof raw.educationOuterHTML === 'string' && raw.educationOuterHTML.length > 0
     && Array.isArray(raw.neighborOuterHTML) && raw.neighborOuterHTML.every(html => typeof html === 'string'));
@@ -295,6 +362,7 @@ export async function collectDaytimeHarness(options = {}) {
     } };
   writeJson(outDir, 'evidence-pack.json', pack);
   writeJson(outDir, 'validation.json', validation);
+  status.diagnostics = collectionDiagnostics(outDir, status, trialChecks, state);
   writeJson(outDir, 'collector-status.json', status);
   return status;
 }

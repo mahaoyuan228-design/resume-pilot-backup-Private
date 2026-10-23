@@ -22,6 +22,7 @@ import * as runner from '../scripts/live/cms-education-live.mjs';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const PAGE = 'https://wecruit.hotjob.cn/SU629dbc0c0dcad452299bc0f7/pb/resumeOperation.html';
 const AUTOSAVE = 'https://wecruit.hotjob.cn/wecruit/resume/info/edit/SU629dbc0c0dcad452299bc0f7';
+const HOUSEKEEPING_AUTOSAVE = `${AUTOSAVE}?iSaJAx=isAjax&request_locale=zh_CN`;
 const LOOKUP = 'https://wecruit.hotjob.cn/wecruit/dic/fuzzyMatchDic';
 const HOUSEKEEPING_LOOKUP = `${LOOKUP}?iSaJAx=isAjax&request_locale=zh_CN&t=1792759070926`;
 const plain = value => JSON.parse(JSON.stringify(value));
@@ -40,7 +41,7 @@ for (const [before, after] of [
   fixture = fixture.replaceAll(before, after);
 }
 
-async function setup(t, { install = true, beforeInstall, schoolLookup, lookupClassifier, onSchoolOpen, emptyDegree = false, controlOriginals = {}, openerMode, delayedHiddenClose = false, previousWidgetControls } = {}) {
+async function setup(t, { install = true, beforeInstall, schoolLookup, lookupClassifier, controlAutosaveClassifier, onSchoolOpen, emptyDegree = false, controlOriginals = {}, openerMode, delayedHiddenClose = false, previousWidgetControls } = {}) {
   const dom = new JSDOM(fixture, { url: PAGE, runScripts: 'dangerously', pretendToBeVisual: true,
     beforeParse(window) {
       window.structuredClone = structuredClone;
@@ -215,6 +216,11 @@ async function setup(t, { install = true, beforeInstall, schoolLookup, lookupCla
       const declaration = `const isSchoolLookup = ${runner.isSchoolLookup.toString()};`;
       assert.equal(expression.split(declaration).length, 2);
       expression = expression.replace(declaration, `const isSchoolLookup = ${lookupClassifier.toString()};`);
+    }
+    if (controlAutosaveClassifier) {
+      const declaration = `const isEducationControlAutosave = ${runner.isEducationControlAutosave.toString()};`;
+      assert.equal(expression.split(declaration).length, 2);
+      expression = expression.replace(declaration, `const isEducationControlAutosave = ${controlAutosaveClassifier.toString()};`);
     }
     const installed = window.eval(expression);
     assert.equal(installed.ok, true, JSON.stringify(installed));
@@ -502,7 +508,9 @@ test('fake CDP refuses orphaned prior guards before injection or activation and 
 });
 
 test('fake CDP controls host reports exact restored proof and validates separate lookup suppression', async t => {
-  const h = await setup(t, { install: false, onSchoolOpen: ({ xhr }) => xhr(HOUSEKEEPING_LOOKUP) }), before = h.readProof();
+  const h = await setup(t, { install: false, onSchoolOpen: ({ xhr }) => {
+    xhr(HOUSEKEEPING_LOOKUP); xhr(HOUSEKEEPING_AUTOSAVE);
+  } }), before = h.readProof();
   const outDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cms-education-controls-'));
   t.after(() => {
     const resolved = path.resolve(outDir), parent = path.resolve(os.tmpdir()) + path.sep;
@@ -521,6 +529,17 @@ test('fake CDP controls host reports exact restored proof and validates separate
   assert.equal(evidence.finalDetails.widgetClickCount, 8); assert.equal(evidence.finalDetails.clickCount, 0);
   assert.ok(evidence.suppressedLookup.length > 0); assert.deepEqual(evidence.nonGet, []);
   assert.ok(evidence.suppressedLookup.some(row => row.url === HOUSEKEEPING_LOOKUP), 'host validation preserves the bounded harvested housekeeping query');
+  const controlAutosave = evidence.suppressedAutosave.find(row => row.url === HOUSEKEEPING_AUTOSAVE);
+  assert.deepEqual(controlAutosave, { method: 'POST', url: HOUSEKEEPING_AUTOSAVE, via: 'xhr',
+    blockedBeforeSend: true, phase: 'trial', controlKey: 'school' });
+  for (const controlKey of [undefined, 'major', 'academicDegree']) {
+    const invalid = structuredClone(evidence);
+    invalid.suppressedAutosave.find(row => row.url === HOUSEKEEPING_AUTOSAVE).controlKey = controlKey;
+    assert.equal(runner.evidenceExitCode(invalid), 2, 'queried suppression requires an evidenced owned control');
+  }
+  const invalidAutosave = structuredClone(evidence);
+  invalidAutosave.suppressedAutosave.find(row => row.url === HOUSEKEEPING_AUTOSAVE).url += '&private=1';
+  assert.equal(runner.evidenceExitCode(invalidAutosave), 2);
   assert.deepEqual(h.readProof(), before); assert.equal(h.native.sends, 0); assert.equal(h.native.forbidden, 0);
   const missing = structuredClone(evidence); delete missing.suppressedLookup;
   assert.equal(runner.evidenceExitCode(missing), 2);
@@ -740,4 +759,232 @@ test('queried lookup captured native abort failure is fatal and never reaches na
   assert.deepEqual(plain(h.api.posts()), [{ method: 'POST', url: LOOKUP, via: 'xhr' }]);
   assertLookupNeverSave(h, before, result);
   assert.equal((await h.api.cleanup()).ok, true);
+});
+
+// R4 evidence: harvest-summary.json networkPassive records this exact queried
+// info/edit URL as XHR; isolated-open-summary.json repeats it with label 学历.
+// The isolated menu did not open and its per-field network slice is empty.
+// These fictional callbacks test ownership boundaries, not live event timing.
+function controlSurface(h, key) {
+  const spec = runner.CONTROL_SPECS.find(spec => spec.key === key);
+  return h.document.getElementById(`14_${spec.wrapper}_0`)
+    .querySelector(spec.kind === 'date' ? 'input.ant-calendar-picker-input' : '.ant-select-selection');
+}
+
+function afterDegreeProbe(h, callback) {
+  const adapters = h.window.ResumeCmsEducationMultiAdapters;
+  h.window.ResumeCmsEducationMultiAdapters = Object.freeze({ ...adapters, select: async (...args) => {
+    const result = await adapters.select(...args);
+    if (args[2].key === 'degree') callback();
+    return result;
+  } });
+}
+
+test('control autosave classifier accepts only the separately harvested two-parameter endpoint', () => {
+  for (const url of [HOUSEKEEPING_AUTOSAVE, `${AUTOSAVE}?request_locale=zh_CN&iSaJAx=isAjax`,
+    '/wecruit/resume/info/edit/SU629dbc0c0dcad452299bc0f7?iSaJAx=isAjax&request_locale=zh_CN']) {
+    assert.equal(runner.isEducationControlAutosave({ method: 'POST', url }), true, url);
+    assert.equal(runner.isEducationAutosave({ method: 'POST', url }), false, 'default text classifier stays queryless');
+  }
+  for (const query of ['', 'iSaJAx=isAjax', 'request_locale=zh_CN',
+    'iSaJAx=isAjax&request_locale=zh_CN&iSaJAx=isAjax', 'iSaJAx=isAjax&request_locale=zh_CN&private=1',
+    'iSaJAx=isAjax&request_locale=zh_CN&t=1792759070926',
+    'iSaJAx=wrong&request_locale=zh_CN', 'iSaJAx=isAjax&request_locale=en_US']) {
+    assert.equal(runner.isEducationControlAutosave({ method: 'POST', url: `${AUTOSAVE}?${query}` }), false, query);
+  }
+  for (const url of [HOUSEKEEPING_AUTOSAVE.replace('SU629dbc0c0dcad452299bc0f7', 'other-tenant'),
+    HOUSEKEEPING_AUTOSAVE.replace('https:', 'http:'), HOUSEKEEPING_AUTOSAVE.replace('hotjob.cn', 'fixture.invalid'),
+    HOUSEKEEPING_AUTOSAVE.replace('https://', 'https://user:secret@'), `${HOUSEKEEPING_AUTOSAVE}#private`,
+    HOUSEKEEPING_AUTOSAVE.replace('/info/edit/', '/info/delete/')]) {
+    assert.equal(runner.isEducationControlAutosave({ method: 'POST', url }), false, url);
+  }
+  for (const method of ['GET', 'HEAD', 'OPTIONS', 'PUT', 'DELETE', '']) {
+    assert.equal(runner.isEducationControlAutosave({ method, url: HOUSEKEEPING_AUTOSAVE }), false, method);
+  }
+});
+
+test('tip queryless behavior reproduces a fatal queried autosave during degree activity', async t => {
+  const h = await setup(t, { controlAutosaveClassifier: () => false }), before = h.readProof();
+  controlSurface(h, 'degree').addEventListener('click', () => h.xhr(HOUSEKEEPING_AUTOSAVE), { once: true });
+  const prepared = h.api.prepare(); assert.equal(prepared.ok, true);
+  const result = await h.api.run(await runner.createLivePlan(plain(prepared.identities), 0, true));
+  assertClosedSchoolProbe(h);
+  assert.equal(result.ok, false); assert.equal(result.reason, 'non_get_request');
+  assert.deepEqual(plain(h.api.posts()), [{ method: 'POST', url: AUTOSAVE, via: 'xhr' }]);
+  assert.ok(h.api.suppressedAutosave().every(row => row.url !== HOUSEKEEPING_AUTOSAVE));
+  assertLookupNeverSave(h, before, result);
+  assert.equal(result.restored, true); assert.equal((await h.api.cleanup()).ok, true);
+});
+
+for (const key of ['school', 'degree']) test(`owned ${key} queried autosave aborts before send with exact evidence and restoration`, async t => {
+  let request, overrideCalls = 0;
+  const aborted = [];
+  const h = await setup(t, { beforeInstall: ({ window }) => {
+    const abort = window.XMLHttpRequest.prototype.abort;
+    window.XMLHttpRequest.prototype.abort = function () { aborted.push(this); return abort.call(this); };
+  } }), before = h.readProof();
+  controlSurface(h, key).addEventListener('click', () => {
+    request = new h.window.XMLHttpRequest(); request.open('POST', HOUSEKEEPING_AUTOSAVE);
+    request.abort = () => overrideCalls++;
+    request.send('private-control-autosave-body');
+  }, { once: true });
+  const prepared = h.api.prepare(); assert.equal(prepared.ok, true);
+  const result = await h.api.run(await runner.createLivePlan(plain(prepared.identities), 0, true));
+  assert.equal(result.ok, true, JSON.stringify(result));
+  assert.equal(overrideCalls, 0); assert.equal(aborted.filter(item => item === request).length, 1);
+  assert.deepEqual(plain(h.api.suppressedAutosave()).filter(row => row.url === HOUSEKEEPING_AUTOSAVE), [
+    { method: 'POST', url: HOUSEKEEPING_AUTOSAVE, via: 'xhr', blockedBeforeSend: true, phase: 'trial', controlKey: key }
+  ]);
+  assert.deepEqual(plain(h.api.posts()), []); assertLookupNeverSave(h, before, result);
+  assert.equal(result.restored, true); assert.equal(result.pageLeftAsFound, true);
+  assert.equal((await h.api.cleanup()).ok, true);
+  assert.equal(JSON.stringify(result).includes('private-control-autosave-body'), false);
+});
+
+for (const timing of ['before-install', 'before-arm', 'armed-outside-control', 'different-control', 'sent-after-control']) {
+  test(`queried autosave ${timing} remains fatal despite a matching endpoint`, async t => {
+    let request;
+    const open = window => { request = new window.XMLHttpRequest(); request.open('POST', HOUSEKEEPING_AUTOSAVE); };
+    const h = await setup(t, { beforeInstall: ({ window }) => { if (timing === 'before-install') open(window); } });
+    if (timing === 'before-arm') open(h.window);
+    if (timing === 'different-control') controlSurface(h, 'school').addEventListener('click', () => open(h.window), { once: true });
+    if (timing === 'sent-after-control') controlSurface(h, 'degree').addEventListener('click', () => open(h.window), { once: true });
+    const before = h.readProof(), prepared = h.api.prepare(); assert.equal(prepared.ok, true);
+    if (timing === 'armed-outside-control' || timing === 'sent-after-control') {
+      const controller = h.window.ResumeCmsEducationMulti;
+      h.window.ResumeCmsEducationMulti = Object.freeze({ ...controller, run(plan, services) {
+        if (timing === 'armed-outside-control') open(h.window);
+        return controller.run(plan, { ...services, adapters: { ...services.adapters, select: async (...args) => {
+          const result = await services.adapters.select(...args);
+          if (timing === 'sent-after-control' && args[2].key === 'degree') request.send('private-late-autosave-body');
+          return result;
+        } } });
+      } });
+    }
+    if (timing !== 'sent-after-control') afterDegreeProbe(h, () => request.send('private-unowned-autosave-body'));
+    const result = await h.api.run(await runner.createLivePlan(plain(prepared.identities), 0, true));
+    assertClosedSchoolProbe(h);
+    assert.equal(result.ok, false); assert.equal(result.reason, 'non_get_request');
+    assert.ok(h.api.suppressedAutosave().every(row => row.url !== HOUSEKEEPING_AUTOSAVE));
+    assert.deepEqual(plain(h.api.posts()), [timing === 'before-install'
+      ? { method: 'UNKNOWN', url: 'https://wecruit.hotjob.cn/', via: 'xhr' }
+      : { method: 'POST', url: AUTOSAVE, via: 'xhr' }]);
+    assertLookupNeverSave(h, before, result); assert.equal(result.restored, true);
+    assert.equal((await h.api.cleanup()).ok, true);
+  });
+}
+
+test('queried autosave is not authorized by other captured control kinds or text mode', async t => {
+  for (const key of ['academicDegree', 'startDate', 'endDate', 'region', 'gradeRank', 'major']) {
+    const h = await setup(t, { install: key !== 'major' }), before = h.readProof();
+    if (key === 'major') {
+      h.window.eval(runner.buildPageExpression(root));
+      for (const file of runner.LIVE_FILES) h.window.eval(fs.readFileSync(path.join(root, file), 'utf8'));
+      h.api = h.window.__cmsEducationLive;
+      h.textInputs.major.addEventListener('input', () => h.xhr(HOUSEKEEPING_AUTOSAVE), { once: true });
+    } else controlSurface(h, key).addEventListener('click', () => h.xhr(HOUSEKEEPING_AUTOSAVE), { once: true });
+    const prepared = h.api.prepare(); assert.equal(prepared.ok, true, key);
+    const result = await h.api.run(await runner.createLivePlan(plain(prepared.identities), 0, key !== 'major'));
+    assert.equal(result.ok, false, key); assert.equal(result.reason, 'non_get_request', key);
+    assert.ok(h.api.suppressedAutosave().every(row => row.url !== HOUSEKEEPING_AUTOSAVE), key);
+    assertLookupNeverSave(h, before, result); assert.equal(result.restored, true, key);
+    assert.equal((await h.api.cleanup()).ok, true, key);
+  }
+});
+
+test('owned queried autosave native abort failure retains guards and cannot report success', async t => {
+  let request, aborts = 0;
+  const h = await setup(t, { beforeInstall: ({ window }) => {
+    const abort = window.XMLHttpRequest.prototype.abort;
+    window.XMLHttpRequest.prototype.abort = function () {
+      if (this === request) { aborts++; throw new Error('fixture_native_abort_failed'); }
+      return abort.call(this);
+    };
+  } }), before = h.readProof();
+  controlSurface(h, 'degree').addEventListener('click', () => {
+    request = new h.window.XMLHttpRequest(); request.open('POST', HOUSEKEEPING_AUTOSAVE); request.send('private-abort-body');
+  }, { once: true });
+  const prepared = h.api.prepare(); assert.equal(prepared.ok, true);
+  const result = await h.api.run(await runner.createLivePlan(plain(prepared.identities), 0, true));
+  assert.equal(result.ok, false); assert.equal(result.reason, 'autosave_abort_failed');
+  assert.equal(aborts, 1);
+  assert.deepEqual(plain(h.api.suppressedAutosave()).filter(row => row.url === HOUSEKEEPING_AUTOSAVE), [
+    { method: 'POST', url: HOUSEKEEPING_AUTOSAVE, via: 'xhr', blockedBeforeSend: true, phase: 'trial', controlKey: 'degree', abortFailed: true }
+  ]);
+  assertLookupNeverSave(h, before, result);
+  const cleanup = await h.api.cleanup(); assert.equal(cleanup.ok, false);
+  assert.equal(h.window.__cmsEducationLive, h.api, 'failed abort retains the owned page guards');
+  assert.equal(h.native.sends, 0);
+});
+
+test('trial-opened queried autosave cannot gain authorization in a later restore invocation of the same control', async t => {
+  let request, restoreSends = 0;
+  const h = await setup(t), before = h.readProof(), degree = controlSurface(h, 'degree');
+  degree.addEventListener('click', () => {
+    request = new h.window.XMLHttpRequest(); request.open('POST', HOUSEKEEPING_AUTOSAVE);
+  }, { once: true });
+  degree.addEventListener('keydown', event => {
+    if (event.key === 'Escape' && request) { restoreSends++; request.send('private-prior-invocation-body'); }
+  }, { once: true });
+  const controls = h.window.ResumeCmsEducationMultiWidgetControls;
+  h.window.ResumeCmsEducationMultiWidgetControls = Object.freeze({ ...controls, activateSurface(surface, ...args) {
+    const activated = controls.activateSurface(surface, ...args);
+    // Leave this test's owned menu open so the trial must enter restore-close.
+    if (surface === degree && activated) throw new Error('fixture_stop_after_degree_open');
+    return activated;
+  } });
+  const prepared = h.api.prepare(); assert.equal(prepared.ok, true);
+  const result = await h.api.run(await runner.createLivePlan(plain(prepared.identities), 0, true));
+  assert.equal(restoreSends, 1); assert.equal(result.ok, false); assert.equal(result.reason, 'non_get_request');
+  assert.ok(h.api.suppressedAutosave().every(row => row.url !== HOUSEKEEPING_AUTOSAVE));
+  assert.deepEqual(plain(h.api.posts()), [{ method: 'POST', url: AUTOSAVE, via: 'xhr' }]);
+  assertLookupNeverSave(h, before, result); assert.equal(result.restored, true);
+  assert.equal((await h.api.cleanup()).ok, true);
+});
+
+for (const via of ['fetch', 'beacon']) test(`matching queried autosave via ${via} remains fatal during owned degree activity`, async t => {
+  const h = await setup(t, { beforeInstall: ({ window }) => { window.navigator.sendBeacon = () => { throw new Error('native_beacon_called'); }; } });
+  const before = h.readProof();
+  afterDegreeProbe(h, () => {
+    if (via === 'fetch') h.window.fetch(HOUSEKEEPING_AUTOSAVE, { method: 'POST', body: 'private-fetch-body' }).catch(() => {});
+    else h.window.navigator.sendBeacon(HOUSEKEEPING_AUTOSAVE, 'private-beacon-body');
+  });
+  const prepared = h.api.prepare(); assert.equal(prepared.ok, true);
+  const result = await h.api.run(await runner.createLivePlan(plain(prepared.identities), 0, true));
+  assert.equal(result.ok, false); assert.equal(result.reason, 'non_get_request');
+  assert.deepEqual(plain(h.api.posts()), [{ method: 'POST', url: AUTOSAVE, via }]);
+  assertLookupNeverSave(h, before, result); assert.equal(result.restored, true);
+  assert.equal((await h.api.cleanup()).ok, true);
+});
+
+test('fake CDP-observed queried autosave remains fatal even alongside a valid page suppression', async t => {
+  let emit;
+  const h = await setup(t, { install: false }), before = h.readProof(), blocked = [];
+  controlSurface(h, 'degree').addEventListener('click', () => {
+    h.xhr(HOUSEKEEPING_AUTOSAVE);
+    emit({ method: 'Fetch.requestPaused', params: { requestId: 'escaped-offline-request',
+      request: { method: 'POST', url: HOUSEKEEPING_AUTOSAVE } } });
+  }, { once: true });
+  const outDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cms-education-control-autosave-'));
+  t.after(() => {
+    assert.ok(path.resolve(outDir).startsWith(path.resolve(os.tmpdir()) + path.sep));
+    fs.rmSync(outDir, { recursive: true, force: true });
+  });
+  const evidence = await runner.runCmsEducationLive({ controls: true, repoRoot: root, outDir, tipSha: runner.BASE_TIP,
+    getJson: async () => [{ id: 'control-autosave-offline', type: 'page', url: PAGE,
+      webSocketDebuggerUrl: 'ws://127.0.0.1:9239/devtools/page/control-autosave-offline' }],
+    connectCdp: async (_url, options) => {
+      emit = options.onEvent;
+      return { close() {}, async send(method, params) {
+        if (method === 'Fetch.failRequest') blocked.push(params.requestId);
+        if (method !== 'Runtime.evaluate') return {};
+        return { result: { value: plain(await h.window.eval(params.expression)) } };
+      } };
+    }
+  });
+  assert.equal(evidence.finalDetails.exitCode, 3); assert.equal(evidence.finalDetails.reason, 'non_get_request');
+  assert.deepEqual(blocked, ['escaped-offline-request']);
+  assert.ok(evidence.suppressedAutosave.some(row => row.url === HOUSEKEEPING_AUTOSAVE && row.controlKey === 'degree'));
+  assert.equal(evidence.nonGet.length, 1); assert.equal(evidence.liveSupportClaimed, false);
+  assert.deepEqual(h.readProof(), before); assert.equal(h.native.sends, 0); assert.equal(h.native.forbidden, 0);
 });

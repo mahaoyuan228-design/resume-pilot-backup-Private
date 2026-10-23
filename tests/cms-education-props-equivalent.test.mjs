@@ -6,7 +6,8 @@ import {dirname,join,resolve} from 'node:path';
 import {fileURLToPath,pathToFileURL} from 'node:url';
 import vm from 'node:vm';
 const home=dirname(fileURLToPath(import.meta.url)),target=resolve('src/content/cms-education-serialization.mjs');
-const sourceSHA=createHash('sha256').update(await readFile(target)).digest('hex');
+// Git may check JavaScript out with CRLF on Windows. Pin the logical source.
+const sourceSHA=createHash('sha256').update((await readFile(target,'utf8')).replace(/\r\n/gu,'\n')).digest('hex');
 assert.equal(sourceSHA,'63262cde73ca31e38774718540a0ed3c0972dcbc212ecf461f5de2e69d1c9e87');
 globalThis.fetch=()=>{throw Error('offline_only');};
 const {readCmsEducationSerialization:reader}=await import(pathToFileURL(target));

@@ -7,7 +7,8 @@ import { resolve } from 'node:path';
 import test from 'node:test';
 
 const target = resolve('src/content/cms-education-multi-select.js');
-const source = await readFile(target, 'utf8');
+// Ignore checkout-only CRLF differences while keeping the logical source pin.
+const source = (await readFile(target, 'utf8')).replace(/\r\n/gu, '\n');
 const sha = createHash('sha256').update(source).digest('hex');
 assert.equal(sha, '8dc03eb69c9aed0d90025f94985e7debf3457cc7f51c038f3b90b8b2b5f708fe');
 

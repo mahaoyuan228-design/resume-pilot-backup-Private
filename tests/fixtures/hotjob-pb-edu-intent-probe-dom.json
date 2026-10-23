@@ -19,7 +19,7 @@
     "note": "个人基本信息 order in the 2026-10-23 probe is 毕业院校, then 学位, 学历, 专业名称, then 毕业时间. Live tip cc731d69 has two 毕业院校 rows before 学位: a flat ant-select with a preexisting selected value, then input.ant-input placeholder 请填写毕业院校. Harvest labels list 毕业院校* four times, two identical captions on each row. The anchor start is that preexisting ant-select when the pair is exactly those two controls; otherwise a unique 毕业院校 row. 教育经历 later repeats 学位, 学历, and 专业名称 after 毕业时间. The basic row is the single form item strictly after the anchor start and before the one 毕业时间 row."
   },
   "dualSchool": {
-    "note": "Live 2026-10-23 two 毕业院校 rows on resumeOperation. Not a support claim. The select display and the anchored tokens are probed basic-row text. The text row is the harvested placeholder input. Option menus were not opened.",
+    "note": "Live 2026-10-23 two 毕业院校 rows on resumeOperation. Not a support claim. The select display and the anchored tokens are probed basic-row text. The text row is the harvested placeholder input. Option menus were not opened. Live 2026-10-23 ~07:56 Asia/Shanghai: that text partner can be present with vis=false while the ant-select already shows the school. Accept that select alone and keep the anchor window. Still not a support claim.",
     "order": ["select", "text"],
     "select": {
       "label": "毕业院校",

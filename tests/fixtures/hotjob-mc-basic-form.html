@@ -26,7 +26,8 @@
   <p class="note">Offline fixture mirroring live 中联 mc antd-mobile DOM
     (<code>.my-list-item</code> / <code>.header-title</code> / <code>.am-input-control input</code> /
     <code>.select-am-list-extra</code> + <code>.am-modal.mc-select-popup</code>).
-    siteId <code>hotjob-mc</code>. Selects: 性别 · 证件类型. Never click 下一步/保存/提交/投递/删除.
+    siteId <code>hotjob-mc</code>. Selects: 性别 · 证件类型. Text slice: 身高 · 体重 (exact probe placeholders; offline only).
+    Never click 下一步/上一步/保存/提交/投递/删除/确认.
     待真机 Never-Save，未宣称已支持.</p>
   <div class="am-list">
 
@@ -94,8 +95,64 @@
       </div>
     </div>
 
+
+    <div class="my-list-item" id="height-row">
+      <div class="header-title">身高</div>
+      <div class="input-item">
+        <div class="am-list-item am-input-item am-list-item-middle">
+          <div class="am-list-line">
+            <div class="am-input-control"><input placeholder="请填写身高(cm)" type="text" value=""></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="my-list-item" id="weight-row">
+      <div class="header-title">体重</div>
+      <div class="input-item">
+        <div class="am-list-item am-input-item am-list-item-middle">
+          <div class="am-list-line">
+            <div class="am-input-control"><input placeholder="请填写体重(kg)" type="text" value=""></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
   </div>
-  <button type="button" class="my-button" id="next-btn">下一步</button>
+  <!-- Alternative preexisting rows stay inert until an offline test replaces the empty rows. -->
+  <template id="preexisting-height-weight-rows">
+
+    <div class="my-list-item" id="preexisting-height-row">
+      <div class="header-title">身高</div>
+      <div class="input-item">
+        <div class="am-list-item am-input-item am-list-item-middle">
+          <div class="am-list-line">
+            <div class="am-input-control"><input placeholder="请填写身高(cm)" type="text" value="172"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="my-list-item" id="preexisting-weight-row">
+      <div class="header-title">体重</div>
+      <div class="input-item">
+        <div class="am-list-item am-input-item am-list-item-middle">
+          <div class="am-list-line">
+            <div class="am-input-control"><input placeholder="请填写体重(kg)" type="text" value="65"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </template>
+  <div id="forbidden-form-actions">
+    <button type="button" class="my-button" id="next-btn">下一步</button>
+    <button type="button" id="save-btn">保存</button>
+    <button type="button" id="submit-btn">提交</button>
+    <button type="button" id="deliver-btn">投递</button>
+    <button type="button" id="delete-btn">删除</button>
+    <button type="button" id="back-btn">上一步</button>
+    <button type="button" id="confirm-btn">确认</button>
+  </div>
 
   <div class="am-modal-wrap am-modal-wrap-popup" id="mc-select-popup-wrap">
     <div class="am-modal mc-select-popup am-modal-popup am-modal-popup-slide-up" role="document">
@@ -119,10 +176,14 @@
   <script>
     (function () {
       window.__hotjobMcCommitClicks = 0;
+      window.__hotjobMcForbiddenClicks = [];
       document.addEventListener('click', function (event) {
-        var node = event.target.closest('button, a, .my-button');
+        var node = event.target.closest('button, a, .my-button, .am-picker-popup-header-right');
         var text = (node && node.textContent || '').replace(/\s+/g, '');
-        if (node && /下一步|保存|提交|投递|删除/.test(text)) window.__hotjobMcCommitClicks += 1;
+        if (node && /下一步|上一步|返回|保存|提交|投递|删除|确认/.test(text)) window.__hotjobMcCommitClicks += 1;
+        if (node && /下一步|上一步|返回|保存|提交|投递|删除|确认|确定/.test(text)) {
+          window.__hotjobMcForbiddenClicks.push(text);
+        }
       }, true);
 
       var OPTIONS = {

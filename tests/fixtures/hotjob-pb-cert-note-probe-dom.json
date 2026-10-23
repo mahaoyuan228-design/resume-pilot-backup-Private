@@ -1,0 +1,103 @@
+{
+  "source": "Structural excerpt from existing 2026-10-23 probe fixtures at base 3fd7a99d. No new DOM or applicant prose. Regression sentinels are synthetic.",
+  "evidence": [
+    "tests/fixtures/hotjob-pb-contact-eval-probe-dom.json#neighbors.certNote",
+    "tests/fixtures/hotjob-pb-certs-probe-dom.json#neighbors.certNote"
+  ],
+  "page": {
+    "hostname": "wecruit.hotjob.cn",
+    "pathPattern": "/SU[0-9A-Za-z]{8,64}/pb/resumeOperation.html",
+    "samplePath": "/SU629dbc0c0dcad452299bc0f7/pb/resumeOperation.html",
+    "rootClass": "resume-operation-wrap",
+    "contentClass": "resume-content-wrap",
+    "childrenClass": "ant-form-item-children",
+    "itemClass": "ant-row ant-form-item",
+    "hasAntDesign": true,
+    "hasElForm": false,
+    "buttonLabels": [
+      "保存",
+      "返回"
+    ],
+    "forbiddenButtons": [
+      "保存",
+      "提交",
+      "投递",
+      "删除",
+      "下一步",
+      "返回",
+      "确定"
+    ]
+  },
+  "textarea": {
+    "controlClass": "ant-input",
+    "controlTag": "textarea"
+  },
+  "menu": {
+    "dropdownClass": "ant-select-dropdown ant-select-dropdown--single ant-select-dropdown-placement-bottomLeft",
+    "openClass": "ant-select ant-select-open ant-select-focused ant-select-enabled",
+    "cancel": "Escape",
+    "note": "联系地址 and 评价内容 do not open a menu. The dropdown class is the same page's flat ant-select probe so an already-open menu can be left with Escape. No option text is included."
+  },
+  "field": {
+    "label": "说明（通过科目）",
+    "controlClass": "ant-input",
+    "controlTag": "textarea",
+    "placeholder": "请填写说明（通过科目）"
+  },
+  "neighbors": {
+    "name": {
+      "label": "姓名",
+      "controlClass": "ant-input",
+      "placeholder": "请填写姓名",
+      "token": "NEIGHBOR_NAME"
+    },
+    "majorNote": {
+      "label": "专业描述",
+      "controlClass": "ant-input",
+      "controlTag": "textarea",
+      "placeholder": "请填写专业描述",
+      "token": "NEIGHBOR_MAJOR"
+    },
+    "workNote": {
+      "label": "工作描述",
+      "controlClass": "ant-input",
+      "controlTag": "textarea",
+      "placeholder": "请填写工作描述",
+      "proseOmitted": "Probe valueSample for 工作描述 is applicant prose and is not stored."
+    },
+    "residence": {
+      "label": "现居住地",
+      "controlClass": "ant-select ant-select-enabled",
+      "menuClass": "cascader-plugins-wrap",
+      "token": "北京市"
+    },
+    "birth": {
+      "label": "出生日期",
+      "controlClass": "ant-calendar-picker-input ant-input",
+      "token": "READONLY_BIRTH"
+    },
+    "obey": {
+      "label": "期望工作地是否服从分配",
+      "controlClass": "ant-radio-input",
+      "inputType": "radio",
+      "options": [
+        "是",
+        "否"
+      ]
+    },
+    "research": {
+      "label": "如应聘研究发展中心行业研究类岗位请勾选（建议仅勾选3~5项）",
+      "controlClass": "ant-checkbox-input",
+      "inputType": "checkbox"
+    },
+    "photo": {
+      "label": "照片",
+      "itemClass": "ant-row ant-form-item formItem41"
+    },
+    "degree": {
+      "label": "学位",
+      "controlClass": "ant-select ant-select-enabled ant-select-allow-clear",
+      "token": "学士"
+    }
+  }
+}

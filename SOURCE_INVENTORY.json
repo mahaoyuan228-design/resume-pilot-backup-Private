@@ -1,6 +1,6 @@
 {
   "version": "0.1.4.9",
-  "sumsSha256": "6f7a263ce65052615e6fafa6af97ccf75881c0268691fb9464a2ae2bba2b6684",
+  "sumsSha256": "55eb27483f880c4c1344cd02900300a1cf65c551e03081cd34d57bab4de00227",
   "inventory": [
     {
       "path": "manifest.json",
@@ -10,8 +10,8 @@
     },
     {
       "path": "src/background/basic-task-runner.mjs",
-      "sha256": "6f1d599d1149293481151e4c3afcd5a1dd0bb485ca8d28717b8c1ff7d2317a65",
-      "sourceSha256": "6f1d599d1149293481151e4c3afcd5a1dd0bb485ca8d28717b8c1ff7d2317a65",
+      "sha256": "854262a3a860b44175236b2913139a68246d14579e7322573963d0e4baa91eca",
+      "sourceSha256": "854262a3a860b44175236b2913139a68246d14579e7322573963d0e4baa91eca",
       "kind": "frozen-product"
     },
     {

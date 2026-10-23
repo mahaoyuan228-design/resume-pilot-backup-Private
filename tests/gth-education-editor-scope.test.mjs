@@ -40,8 +40,8 @@ test('probe still scopes eduForms; other sections warn', () => {
 test('gth-other / gth-simple formsOf are section-scoped', () => {
   assert.match(other, /const formsOf = sections => \[\.\.\.sections\[6\]\.querySelectorAll\('form'\)\]/);
   assert.match(simple, /const formsOf = sections => \[\.\.\.sections\[4\]\.querySelectorAll\('form'\)\]/);
-  assert.match(other, /ResumeGthOtherSectionRevision=3/);
-  assert.match(simple, /ResumeGthSimpleSectionRevision=3/);
+  assert.match(other, /ResumeGthOtherSectionRevision=5/);
+  assert.match(simple, /ResumeGthSimpleSectionRevision=5/);
 });
 
 console.log(JSON.stringify({

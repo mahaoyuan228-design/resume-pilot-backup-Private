@@ -479,6 +479,83 @@ test('an existing value without replaceExisting fails before any write', async (
   assert.equal(forbidden(clicks).length, 0);
 });
 
+test('a preceding category confirmation cannot authorize overwriting newly occupied tenure', async () => {
+  const { dom, clicks, context } = boot(shell(formWrap(workFields({ industrySingle: true, industryCounter: '(0/1)' }))));
+  const doc = dom.window.document;
+  const stats = wire(doc, { industrySingle: true });
+  // Reuse the existing picker and month controls; this is an offline event-order case.
+  doc.getElementById('job-confirm').addEventListener('click', () => {
+    doc.getElementById('start-date').value = '2019-01';
+    doc.getElementById('end-date').value = '2019-09';
+  });
+  const result = await context.ResumeGthWorkOpen.trial(request(workProfile(ROW)));
+  assert.equal(result.ok, false);
+  assert.equal(result.reason, 'other_values_changed');
+  assert.equal(doc.getElementById('start-date').value, '2019-01');
+  assert.equal(doc.getElementById('end-date').value, '2019-09');
+  assert.equal(stats.months.open, 0);
+  assert.equal(stats.months.cells, 0);
+  assert.equal(result.fields.find(field => field.question === '任职时间').status, 'failed');
+  assert.equal(doc.getElementById('position').value, '');
+  flags(result);
+  assert.equal(forbidden(clicks).length, 0);
+  dom.window.close();
+});
+
+test('a same-value work plan rechecks the live value and target before verification', async () => {
+  for (const replaceNode of [false, true]) {
+    const { dom, clicks, context } = boot(shell(formWrap(workFields({ position: ROW.position, industrySingle: true, industryCounter: '(0/1)' }))));
+    const doc = dom.window.document;
+    wire(doc, { industrySingle: true });
+    doc.getElementById('job-confirm').addEventListener('click', () => {
+      const input = doc.getElementById('position');
+      if (replaceNode) input.replaceWith(input.cloneNode(true));
+      else input.value = 'Unexpected position';
+    });
+    const result = await context.ResumeGthWorkOpen.trial(request(workProfile(ROW)));
+    assert.equal(result.ok, false);
+    assert.equal(result.reason, 'readback_mismatch');
+    assert.equal(result.fields.find(field => field.question === '职位名称').status, 'failed');
+    assert.equal(doc.getElementById('position').value, replaceNode ? ROW.position : 'Unexpected position');
+    flags(result);
+    assert.equal(forbidden(clicks).length, 0);
+    dom.window.close();
+  }
+});
+
+test('final work readback downgrades a previously verified category when a later event changes it', async () => {
+  const { dom, clicks, context } = boot(shell(formWrap(workFields({ industrySingle: true, industryCounter: '(0/1)' }))));
+  const doc = dom.window.document;
+  wire(doc, { industrySingle: true });
+  doc.getElementById('industry').addEventListener('change', () => { doc.getElementById('job').value = 'Unexpected category'; });
+  const result = await context.ResumeGthWorkOpen.trial(request(workProfile(ROW)));
+  assert.equal(result.ok, false);
+  assert.equal(result.reason, 'readback_mismatch');
+  assert.equal(result.fields.find(field => field.question === '职位类别').status, 'failed');
+  assert.equal(result.fields.find(field => field.question === '职位类别').reason, 'readback_mismatch');
+  assert.equal(result.fields.find(field => field.question === '离职原因').status, 'verified');
+  assert.equal(doc.getElementById('job').value, 'Unexpected category');
+  flags(result);
+  assert.equal(forbidden(clicks).length, 0);
+  dom.window.close();
+});
+
+test('a complex work picker cannot silently change a skipped salary control', async () => {
+  const { dom, clicks, context } = boot(shell(formWrap(workFields())));
+  const doc = dom.window.document;
+  const stats = wire(doc);
+  doc.getElementById('job-confirm').addEventListener('click', () => { doc.getElementById('salary').value = '9900'; });
+  const result = await context.ResumeGthWorkOpen.trial(request(workProfile(ROW)));
+  assert.equal(result.ok, false);
+  assert.equal(result.reason, 'other_values_changed');
+  assert.equal(doc.getElementById('salary').value, '9900');
+  assert.equal(stats.months.open, 0);
+  assert.equal(doc.getElementById('position').value, '');
+  flags(result);
+  assert.equal(forbidden(clicks).length, 0);
+  dom.window.close();
+});
+
 test('a missing level-2 menu cancels and leaves later fields not_run', async () => {
   const html = shell(formWrap(workFields()));
   const { dom, clicks, context } = boot(html);

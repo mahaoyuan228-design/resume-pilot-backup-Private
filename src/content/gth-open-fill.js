@@ -302,6 +302,14 @@
     if (field.placeholder && target.input.getAttribute('placeholder') !== field.placeholder) stop('rank_placeholder_changed');
     return target;
   }
+  function sameTarget(before, current) {
+    if (!current || current.unsupported || before.item !== current.item) return false;
+    const sameNodes = (left = [], right = []) => left.length === right.length && left.every((node, index) => node === right[index]);
+    if (!sameNodes(before.controls, current.controls)) return false;
+    if (!sameNodes(before.editors, current.editors) || !sameNodes(before.triggers, current.triggers)) return false;
+    return ['input', 'widget', 'trigger', 'wrap'].every(key => before[key] === current[key])
+      && (!before.panel || before.panel === current.panel);
+  }
   function shapeOk(field, answer) {
     if (typeof answer !== 'string') return false;
     if (field.kind === 'unsupported') return answer.trim() !== '';
@@ -1320,6 +1328,7 @@
         state.progress.completedFields.push({ question: field.question, status, reason });
       };
       let attempted = spec.fields;
+      let verifyCompleted = () => {};
       try {
         await checkBinding();
         if (typeof request?.requestId !== 'string' || !/^[A-Za-z0-9-]{10,100}$/u.test(request.requestId)
@@ -1371,12 +1380,59 @@
               : decide(target, field, answer, request.replaceExisting)
           });
         }
+        // Empty-profile fields remain untouched throughout complex picker work.
+        // Snapshot their existing controls now, before another field can change them.
+        const preserved = plans.filter(plan => ['skip', 'occupied'].includes(plan.decision.action))
+          .map(plan => ({ field: plan.field, item: plan.target.item, values: JSON.stringify(valueRows(plan.target.item)) }));
+        const guard = () => {
+          if (performance.timeOrigin !== origin || outside(page(spec), spec) !== otherBefore) stop('other_values_changed');
+          const live = page(spec);
+          if (openForm(live, spec) !== form || otherForms(live, spec).length) stop('other_values_changed');
+          for (const held of preserved) {
+            const item = requireItem(form, held.field.question);
+            if (item !== held.item || JSON.stringify(valueRows(item)) !== held.values) stop('other_values_changed');
+          }
+        };
+        const currentTarget = plan => {
+          const current = targetOf(form, plan.field);
+          if (!sameTarget(plan.verifiedTarget || plan.target, current)) stop('readback_mismatch');
+          return current;
+        };
+        const verifyPlan = plan => {
+          guard();
+          const current = currentTarget(plan);
+          const answer = answers[plan.field.question];
+          let matched;
+          if (plan.field.kind === 'monthRange') {
+            matched = norm(current.inputs[0].value) === answer.start && norm(current.inputs[1].value) === answer.end;
+          } else if (plan.field.kind === 'cascader') {
+            matched = cascaderDecision(current, answer, false).action === 'same';
+          } else if (plan.field.kind === 'picker') {
+            matched = norm(current.input.value) === answer.leaf;
+          } else if (plan.field.kind === 'radio') {
+            matched = current.read() === answer.value;
+          } else {
+            matched = (plan.field.kind === 'select' ? norm(current.input.value) : current.input.value) === answer.value;
+          }
+          if (!matched) stop('readback_mismatch');
+          if (!current.controls.every(control => siteValid(current.item, control))) stop('site_validation_failed');
+        };
+        verifyCompleted = () => {
+          for (const plan of plans) {
+            if (!result.fields.some(row => row.question === plan.field.question && row.status === 'verified')) continue;
+            try { verifyPlan(plan); }
+            catch (error) { record(plan.field, 'failed', error instanceof Stop ? error.code : 'fill_failed'); }
+          }
+        };
         const blocked = plans.find(plan => plan.decision.action === 'fail');
         if (blocked) {
           for (const plan of plans) {
             if (plan.decision.action === 'skip') continue;
             if (plan.decision.action === 'fail') record(plan.field, 'failed', plan.decision.reason);
-            else if (plan.decision.action === 'same') record(plan.field, 'verified', 'preexisting_same_value');
+            else if (plan.decision.action === 'same') {
+              try { verifyPlan(plan); record(plan.field, 'verified', 'preexisting_same_value'); }
+              catch (error) { record(plan.field, 'failed', error instanceof Stop ? error.code : 'fill_failed'); }
+            }
             else record(plan.field, 'failed', 'blocked_by_unsettled_field');
           }
         } else {
@@ -1387,16 +1443,22 @@
             state.progress.activeField = plan.field.question;
             const answer = answers[plan.field.question];
             if (plan.decision.action === 'same') {
+              verifyPlan(plan);
               record(plan.field, 'verified', 'preexisting_same_value');
               continue;
             }
-            const guard = () => {
-              if (performance.timeOrigin !== origin || outside(page(spec), spec) !== otherBefore) stop('other_values_changed');
-              const live = page(spec);
-              if (openForm(live, spec) !== form || otherForms(live, spec).length) stop('other_values_changed');
-            };
+            guard();
+            currentTarget(plan);
             if (plan.field.kind === 'monthRange') {
+              const existing = plan.target.inputs.map(node => norm(node.value)).join(' | ');
+              if (existing !== plan.decision.existing) stop('other_values_changed');
               const outcome = await fillMonthRange(plan.target, answer, markWrite, guard);
+              // Only this writer may replace its own month inputs while committing.
+              // Later plans and the final readback bind to those accepted live inputs.
+              const accepted = targetOf(form, plan.field);
+              if (accepted.unsupported || accepted.item !== plan.target.item
+                || accepted.editors.some((editor, index) => editor !== plan.target.editors[index])) stop('readback_mismatch');
+              plan.verifiedTarget = accepted;
               record(plan.field, outcome.status, outcome.reason);
               continue;
             }
@@ -1453,6 +1515,7 @@
             record(plan.field, 'verified', existing === '' ? 'readback_matched' : 'readback_reapplied');
           }
         }
+        verifyCompleted();
         const primary = result.fields.find(row => row.status !== 'verified' && row.reason !== 'blocked_by_unsettled_field')
           || result.fields.find(row => row.status !== 'verified');
         const outcome = !primary && result.fields.some(row => row.reason === 'readback_matched' || row.reason === 'readback_reapplied')
@@ -1467,6 +1530,7 @@
       } catch (error) {
         const reason = error instanceof Stop ? error.code : 'fill_failed';
         const active = state.progress?.activeField || null;
+        verifyCompleted();
         for (const field of attempted) {
           if (result.fields.some(row => row.question === field.question)) continue;
           record(field, 'failed', field.question === active ? reason : 'not_run');

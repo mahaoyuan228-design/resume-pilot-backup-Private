@@ -5,7 +5,7 @@
 // This file does not claim the site is supported. Never clicks 保存 / 提交 /
 // 投递 / 删除. The editor is left open.
 (() => {
-  if (globalThis.ResumeGthSimpleSection && globalThis.ResumeGthSimpleSectionRevision===3) return;
+  if (globalThis.ResumeGthSimpleSection && globalThis.ResumeGthSimpleSectionRevision===5) return;
 
   const PAGE = 'https://hr.gtht.com/resume/edit/';
   const TITLES = ['基本信息', '教育经历', '求职意向', '工作经验',
@@ -17,6 +17,12 @@
   const visible = node => !!node?.getClientRects().length
     && getComputedStyle(node).display !== 'none'
     && getComputedStyle(node).visibility !== 'hidden';
+  const safeEditLink = node => {
+    const href = node?.getAttribute('href');
+    return !!node && !node.disabled
+      && !node.closest('[disabled],[aria-disabled="true"],.is-disabled,.disabled,[formaction]')
+      && (!href || /^(#|javascript:(?:;|void\(0\)))$/iu.test(href));
+  };
   let busy = false;
 
   class Stop extends Error {
@@ -128,10 +134,24 @@
         stop('editor_structure_changed');
       const outsideBefore = otherSections(sections);
       if (!forms.length) {
-        const links = [...sections[4].querySelectorAll('.title_ a.h-e-btn')]
+        const section = sections[4];
+        const editLinks = root => [...root.querySelectorAll('.title_ a.h-e-btn')]
           .filter(node => norm(node.textContent) === '编辑' && visible(node));
-        if (links.length !== 1) stop('edit_link_not_unique');
-        await boundAction(()=>{if(!(links[0])?.isConnected)stop('profile_action_target_changed');return links[0].click();});
+        const links = editLinks(section);
+        if (links.length !== 1 || !safeEditLink(links[0])
+          || links[0].closest('.title_') !== section.querySelector('.title_')) stop('edit_link_not_unique');
+        const editTitle = links[0].closest('.title_');
+        const editHref = links[0].getAttribute('href');
+        await boundAction(() => {
+          const current = requirePage(timeOrigin);
+          const currentLinks = editLinks(current[4]);
+          if (current[4] !== section || formsOf(current).length || otherSections(current) !== outsideBefore
+            || currentLinks.length !== 1 || currentLinks[0] !== links[0] || !links[0].isConnected
+            || !safeEditLink(links[0]) || links[0].getAttribute('href') !== editHref
+            || links[0].closest('.title_') !== editTitle || current[4].querySelector('.title_') !== editTitle)
+            stop('profile_action_target_changed');
+          return links[0].click();
+        });
         const deadline = Date.now() + 4000;
         do {
           await pause(60);
@@ -149,51 +169,82 @@
       const first = targetOf(form);
       const { item, control } = first;
       const existing = control.value;
+      const otherBefore = otherFormValues(form, control);
       if (existing !== '') {
-        await checkBinding();result.ok = true;
+        await checkBinding();
+        sections = requirePage(timeOrigin);
+        const latest = targetOf(form);
+        if (formsOf(sections).length !== 1 || formsOf(sections)[0] !== form || !form.isConnected
+          || latest.item !== item || latest.control !== control || latest.control.value !== existing
+          || otherFormValues(form, control) !== otherBefore || otherSections(sections) !== outsideBefore)
+          stop('original_value_changed');
+        if (existing === answer && !validationClear(latest.item, latest.control)) stop('site_validation_failed');
+        result.ok = true;
         result.fields = [fieldRow(existing === answer ? 'verified' : 'skipped',
           existing === answer ? 'preexisting_same_value' : 'existing_value')];
         return result;
       }
       if (control.maxLength >= 0 && answer.length > control.maxLength)
         stop('value_too_long');
-      const otherBefore = otherFormValues(form, control);
       await pause(80);
       sections = requirePage(timeOrigin);
+      const stable = targetOf(form);
       if (formsOf(sections).length !== 1 || formsOf(sections)[0] !== form
-        || !form.isConnected || targetOf(form).control !== control
+        || !form.isConnected || stable.item !== item || stable.control !== control
         || control.value !== '' || otherFormValues(form, control) !== otherBefore
         || otherSections(sections) !== outsideBefore)
         stop('original_value_changed');
-      result.writeStarted = true;
       const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set;
       if (!setter) stop('native_setter_missing');
-      await boundAction(()=>{if(!(control)?.isConnected)stop('profile_action_target_changed');return setter.call(control, answer);});
-      requirePage(timeOrigin);
-      await boundAction(()=>{if(!(control)?.isConnected)stop('profile_action_target_changed');return control.dispatchEvent(new Event('input', { bubbles: true }));});
-      requirePage(timeOrigin);
-      await boundAction(()=>{if(!(control)?.isConnected)stop('profile_action_target_changed');return control.dispatchEvent(new Event('change', { bubbles: true }));});
+      const guardAction = expected => {
+        const currentSections = requirePage(timeOrigin);
+        const latest = targetOf(form);
+        if (formsOf(currentSections).length !== 1 || formsOf(currentSections)[0] !== form
+          || !form.isConnected || !currentSections[4].contains(form)
+          || latest.item !== item || latest.control !== control || control.value !== expected
+          || otherFormValues(form, control) !== otherBefore || otherSections(currentSections) !== outsideBefore)
+          stop(result.writeStarted ? 'other_values_changed' : 'original_value_changed');
+      };
+      await boundAction(() => {
+        guardAction('');
+        if (control.maxLength >= 0 && answer.length > control.maxLength) stop('value_too_long');
+        result.writeStarted = true;
+        return setter.call(control, answer);
+      });
+      await boundAction(() => {
+        guardAction(answer);
+        return control.dispatchEvent(new Event('input', { bubbles: true }));
+      });
+      await boundAction(() => {
+        guardAction(answer);
+        return control.dispatchEvent(new Event('change', { bubbles: true }));
+      });
       await pause(250);
-      sections = requirePage(timeOrigin);
-      if (formsOf(sections).length !== 1 || formsOf(sections)[0] !== form
-        || !form.isConnected || !sections[4].contains(form)) stop('editor_changed_after_fill');
-      const latest = targetOf(form);
-      if (latest.control !== control || otherFormValues(form, control) !== otherBefore
-        || otherSections(sections) !== outsideBefore) stop('other_values_changed');
-      if (control.value !== answer) stop('readback_mismatch');
-      if (!validationClear(latest.item, control)) stop('site_validation_failed');
-      await checkBinding();result.ok = true;
+      const verifyReadback = () => {
+        const currentSections = requirePage(timeOrigin);
+        if (formsOf(currentSections).length !== 1 || formsOf(currentSections)[0] !== form
+          || !form.isConnected || !currentSections[4].contains(form)) stop('editor_changed_after_fill');
+        const latest = targetOf(form);
+        if (latest.item !== item || latest.control !== control || otherFormValues(form, control) !== otherBefore
+          || otherSections(currentSections) !== outsideBefore) stop('other_values_changed');
+        if (latest.control.value !== answer) stop('readback_mismatch');
+        if (!validationClear(latest.item, latest.control)) stop('site_validation_failed');
+      };
+      verifyReadback();
+      await checkBinding();
+      verifyReadback();
+      result.ok = true;
       result.fields = [fieldRow('verified', 'readback_matched')];
       return result;
     } catch (error) {
       result.reason = error instanceof Stop ? error.code : 'fill_failed';
-      result.fields = [fieldRow(result.writeStarted ? 'failed' : 'skipped', result.reason)];
+      result.fields = [fieldRow(result.writeStarted || result.reason === 'site_validation_failed' ? 'failed' : 'skipped', result.reason)];
       return result;
     } finally {
       busy = false;activeBinding=null;
     }
   }
 
-  globalThis.ResumeGthSimpleSectionRevision=3;
+  globalThis.ResumeGthSimpleSectionRevision=5;
   globalThis.ResumeGthSimpleSection = Object.freeze({ fill });
 })();

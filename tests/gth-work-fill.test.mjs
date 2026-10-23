@@ -66,7 +66,9 @@ function boot(html, options = {}) {
       id: 'synthetic-extension',
       getManifest: () => ({ background: { service_worker: 'src/background/worker.mjs' } }),
       sendMessage: async (message) => {
-        if (message?.type === 'RESUME_PROFILE_BINDING_CHECK' || message?.type === 'RESUME_PAID_VERIFY') return { allowed: true };
+        if (message?.type === 'RESUME_PROFILE_BINDING_CHECK') return options.bindingCheck
+          ? options.bindingCheck(message, window.document) : { allowed: true };
+        if (message?.type === 'RESUME_PAID_VERIFY') return { allowed: true };
         if (message?.type === 'GTH_MONTH_MODEL_ACCEPT') {
           bridge.calls += 1;
           bridge.answers.push(message.answer);
@@ -2447,4 +2449,170 @@ test('empty work extras do not change an internship source hash', async () => {
   const kept = normalizeProfile({ experience: [{ ...base, jobCategory: '金融/保险||银行' }] });
   assert.equal(kept.experience[0].jobCategory, '金融/保险||银行');
   assert.equal(Object.hasOwn(normalizeProfile({ experience: [base] }).experience[0], 'jobCategory'), false);
+});
+
+function matchingWorkValues(extra = {}) {
+  return {
+    position: ROW.position, organization: ROW.organization, description: ROW.description,
+    job: '银行', industry: '证券/投资/基金/信托', start: ROW.startDate, end: ROW.endDate,
+    area: ROW.workArea, intro: ROW.companyIntro, department: ROW.department,
+    report: ROW.reportTo, reports: ROW.subordinateCount, leave: ROW.leaveReason,
+    jobCounter: '(1/5)', industryCounter: '(1/1)', industrySingle: true, ...extra,
+  };
+}
+
+function workStatus(fixture, supplied) {
+  const listener = [...fixture.listeners][0];
+  return new Promise(resolve => listener({ type: 'GTH_WORK_FILL_STATUS',
+    requestId: supplied.requestId, profileBinding: binding }, { id: 'synthetic-extension' }, resolve));
+}
+
+test('matching native work text requires current site validation before a no-write receipt', async () => {
+  const f = boot(shell(formWrap(workFields(matchingWorkValues()))));
+  try {
+    const doc = f.dom.window.document;
+    doc.getElementById('position').closest('.el-form-item').classList.add('is-error');
+    const result = await f.context.ResumeGthWorkOpen.trial(request(workProfile(ROW)));
+    assert.equal(result.ok, false);
+    flags(result);
+    assert.equal(result.writeStarted, false);
+    assert.equal(result.fields.find(row => row.question === '职位名称').status, 'failed');
+    assert.equal(result.fields.find(row => row.question === '职位名称').reason, 'site_validation_failed');
+    assert.equal(doc.getElementById('position').value, ROW.position);
+    assert.equal(forbidden(f.clicks).length, 0);
+  } finally { f.dom.window.close(); }
+});
+
+test('earlier work actions cannot borrow a changed preexisting native text receipt', async () => {
+  const f = boot(shell(formWrap(workFields(matchingWorkValues({ start: '', end: '' })))));
+  try {
+    const doc = f.dom.window.document;
+    wire(doc, { industrySingle: true });
+    doc.getElementById('start-date-icon').addEventListener('click', () => {
+      doc.getElementById('position').value = '页面新职位';
+    });
+    const result = await f.context.ResumeGthWorkOpen.trial(request(workProfile(ROW), { replaceExisting: true }));
+    assert.equal(result.ok, false);
+    flags(result);
+    assert.equal(result.fields.find(row => row.question === '职位名称').status, 'failed');
+    assert.equal(doc.getElementById('position').value, '页面新职位');
+    assert.equal(result.liveSupportClaimed, false);
+    assert.equal(forbidden(f.clicks).length, 0);
+  } finally { f.dom.window.close(); }
+});
+
+test('later work failure downgrades a stale native receipt in fields, coverage and status', async () => {
+  const f = boot(shell(formWrap(workFields(matchingWorkValues({ leave: '' })))));
+  try {
+    const doc = f.dom.window.document;
+    const supplied = request(workProfile(ROW));
+    doc.getElementById('leave').addEventListener('input', () => {
+      doc.getElementById('position').value = '页面新职位';
+    });
+    const result = await f.context.ResumeGthWorkOpen.trial(supplied);
+    assert.equal(result.ok, false);
+    flags(result);
+    assert.equal(result.writeStarted, true);
+    assert.equal(result.fields.find(row => row.question === '职位名称').status, 'failed');
+    assert.equal(result.coverage.find(row => row.question === '职位名称').status, 'failed');
+    assert.equal(result.completedFields.find(row => row.question === '职位名称').status, 'failed');
+    const status = await workStatus(f, supplied);
+    assert.equal(status.data.outcome, 'unknown');
+    assert.equal(status.data.writeStarted, true);
+    assert.equal(status.data.completedFields.find(row => row.question === '职位名称').status, 'failed');
+    assert.equal(doc.getElementById('position').value, '页面新职位');
+    assert.equal(forbidden(f.clicks).length, 0);
+  } finally { f.dom.window.close(); }
+});
+
+test('all-same work receipts revalidate after final binding and after a later status binding await', async () => {
+  for (const stage of ['final', 'status']) {
+    let checks = 0;
+    let mutate = stage === 'final';
+    const f = boot(shell(formWrap(workFields(matchingWorkValues()))), {
+      bindingCheck(message, doc) {
+        checks += 1;
+        if (mutate && checks > 1) {
+          mutate = false;
+          const input = doc.getElementById('position');
+          input.replaceWith(input.cloneNode(true));
+        }
+        return { allowed: true };
+      },
+    });
+    try {
+      const supplied = request(workProfile(ROW));
+      const result = await f.context.ResumeGthWorkOpen.trial(supplied);
+      flags(result);
+      if (stage === 'final') {
+        assert.equal(result.ok, false);
+        assert.equal(result.fields.find(row => row.question === '职位名称').status, 'failed');
+      } else {
+        assert.equal(result.ok, true, JSON.stringify(result));
+        assert.equal(result.fields.every(row => row.reason === 'preexisting_same_value'), true);
+        mutate = true;
+        const status = await workStatus(f, supplied);
+        assert.equal(status.data.outcome, 'failed_before_write');
+        assert.equal(status.data.completedFields.find(row => row.question === '职位名称').status, 'failed');
+        assert.equal(status.data.writeStarted, false);
+      }
+      assert.equal(result.writeStarted, false);
+      assert.equal(f.dom.window.document.getElementById('position').value, ROW.position);
+      assert.equal(forbidden(f.clicks).length, 0);
+    } finally { f.dom.window.close(); }
+  }
+});
+
+test('retained multiline work textarea receipt fails status readback after binding drift', async () => {
+  const description = '第一行职责\n第二行业绩';
+  let changeOnCheck = false;
+  const f = boot(shell(formWrap(workFields(matchingWorkValues({ description })))), {
+    bindingCheck(message, doc) {
+      if (changeOnCheck) {
+        changeOnCheck = false;
+        doc.getElementById('description').value = '页面新增职责\n保留原页面内容';
+      }
+      return { allowed: true };
+    },
+  });
+  try {
+    const supplied = request(workProfile({ ...ROW, description }));
+    const result = await f.context.ResumeGthWorkOpen.trial(supplied);
+    assert.equal(result.ok, true, JSON.stringify(result));
+    flags(result);
+    assert.equal(result.writeStarted, false);
+    assert.equal(result.fields.find(row => row.question === '职责与业绩').reason, 'preexisting_same_value');
+    changeOnCheck = true;
+    const status = await workStatus(f, supplied);
+    assert.equal(status.ok, true);
+    assert.equal(status.data.outcome, 'failed_before_write');
+    assert.equal(status.data.writeStarted, false);
+    assert.equal(status.data.completedFields.find(row => row.question === '职责与业绩').status, 'failed');
+    assert.equal(f.dom.window.document.getElementById('description').value, '页面新增职责\n保留原页面内容');
+    assert.equal(forbidden(f.clicks).length, 0);
+  } finally { f.dom.window.close(); }
+});
+
+test('work final binding refusal invalidates retained native receipts without starting a write', async () => {
+  let checks = 0;
+  const f = boot(shell(formWrap(workFields(matchingWorkValues()))), {
+    bindingCheck() { checks += 1; return { allowed: checks === 1 }; },
+  });
+  try {
+    const supplied = request(workProfile(ROW));
+    const result = await f.context.ResumeGthWorkOpen.trial(supplied);
+    assert.equal(result.ok, false);
+    flags(result);
+    assert.equal(result.reason, 'profile_binding_changed');
+    assert.equal(result.writeStarted, false);
+    assert.equal(result.fields.find(row => row.question === '职位名称').status, 'failed');
+    assert.equal(result.fields.find(row => row.question === '职责与业绩').status, 'failed');
+    assert.equal(result.completedFields.some(row => row.question === '职位名称' && row.status === 'verified'), false);
+    const status = await workStatus(f, supplied);
+    assert.equal(status.ok, false);
+    assert.equal(status.data.writeStarted, false);
+    assert.equal(status.data.completedFields.find(row => row.question === '职位名称').status, 'failed');
+    assert.equal(f.dom.window.document.getElementById('position').value, ROW.position);
+    assert.equal(forbidden(f.clicks).length, 0);
+  } finally { f.dom.window.close(); }
 });

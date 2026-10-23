@@ -480,6 +480,53 @@
     }
     const state = { busy: false, last: null, progress: null };
     let activeBinding = null, lastBinding = null;
+    let activeReceipts = null, lastReceipts = null;
+    const retainedText = field => spec.revalidatePreexistingText === true && spec.fact === 'experience'
+      && (field.kind === 'text' || field.kind === 'textarea');
+    // Only work native text that was already the confirmed answer gets a
+    // retained receipt. A no-write decision must stay bound to that same
+    // editor, item and control while other fields or binding checks settle.
+    function revalidateReceipts(receipts, forcedReason = null) {
+      if (!receipts?.entries.length) return null;
+      let editorCurrent = false;
+      try {
+        const sections = page(spec);
+        editorCurrent = performance.timeOrigin === receipts.origin
+          && openForm(sections, spec) === receipts.form && otherForms(sections, spec).length === 0
+          && outside(sections, spec) === receipts.otherBefore;
+      } catch { /* a changed editor cannot retain a receipt */ }
+      for (const entry of receipts.entries) {
+        let current = false;
+        try {
+          const target = targetOf(receipts.form, entry.field);
+          current = editorCurrent && target.item === entry.item && target.input === entry.input
+            && target.input.isConnected && target.input.closest('form') === receipts.form
+            && shown(target.input) && !target.input.disabled && !target.input.readOnly
+            && target.input.value === entry.answer && siteValid(target.item, target.input);
+        } catch { /* missing, ambiguous or replaced native controls fail closed */ }
+        if (forcedReason || !current || entry.failed) {
+          entry.failed = true;
+          receipts.failure ||= forcedReason || 'work_preexisting_receipt_changed';
+          receipts.record(entry.field, 'failed', forcedReason || receipts.failure);
+        }
+      }
+      if (receipts.failure) {
+        receipts.result.supportedComplete = false;
+        receipts.result.operableComplete = false;
+        receipts.result.complete = false;
+        if (state.last?.requestId === receipts.requestId) {
+          state.last.outcome = receipts.result.writeStarted ? 'unknown' : 'failed_before_write';
+          state.last.info = { ...state.last.info, reason: state.last.info.reason || receipts.failure,
+            completedFields: receipts.result.fields.map(({ question, status, reason }) => ({ question, status, reason })),
+            writeStarted: receipts.result.writeStarted };
+        }
+      }
+      return receipts.failure || null;
+    }
+    function requireReceipts(receipts = activeReceipts) {
+      const reason = revalidateReceipts(receipts);
+      if (reason) stop(reason);
+    }
     async function checkBinding(binding = activeBinding) {
       if (binding?.version !== 1 || typeof binding.epoch !== 'string' || !(/^[a-f0-9]{64}$/u.test(binding.profileHash || ''))) stop('profile_binding_required');
       let response;
@@ -489,6 +536,7 @@
     async function boundAction(action) {
       await checkBinding();
       if (location.href !== PAGE || document.visibilityState !== 'visible') stop('profile_action_page_changed');
+      requireReceipts();
       return action();
     }
     const step = value => { if (state.progress) state.progress.selectorStep = value; };
@@ -1354,6 +1402,8 @@
       const result = baseResult(spec, request, {});
       if (state.busy) return { ...result, ok: false, reason: 'fill_in_progress' };
       state.busy = true;
+      activeReceipts = null;
+      lastReceipts = null;
       activeBinding = request?.profileBinding;
       lastBinding = activeBinding;
       state.progress = { requestId: request?.requestId, activeField: null, selectorStep: 'request_validation', completedFields: [], writeStarted: false };
@@ -1412,12 +1462,20 @@
             plans.push({ field, target, decision: { action: 'skip' } });
             continue;
           }
-          plans.push({
-            field, target,
-            decision: field.kind === 'cascader'
-              ? cascaderDecision(target, answer, request.replaceExisting)
-              : decide(target, field, answer, request.replaceExisting)
-          });
+          const decision = field.kind === 'cascader'
+            ? cascaderDecision(target, answer, request.replaceExisting)
+            : decide(target, field, answer, request.replaceExisting);
+          if (retainedText(field) && decision.action === 'same' && !siteValid(target.item, target.input))
+            Object.assign(decision, { action: 'fail', reason: 'site_validation_failed' });
+          plans.push({ field, target, decision });
+        }
+        const entries = plans.filter(plan => retainedText(plan.field) && plan.decision.action === 'same')
+          .map(plan => ({ field: plan.field, item: plan.target.item, input: plan.target.input,
+            answer: answers[plan.field.question].value, failed: false }));
+        if (entries.length) {
+          activeReceipts = { requestId: request.requestId, entries, form, origin, otherBefore, result, record, failure: null };
+          lastReceipts = activeReceipts;
+          requireReceipts();
         }
         const blocked = plans.find(plan => plan.decision.action === 'fail');
         if (blocked) {
@@ -1435,10 +1493,12 @@
             state.progress.activeField = plan.field.question;
             const answer = answers[plan.field.question];
             if (plan.decision.action === 'same') {
+              requireReceipts();
               record(plan.field, 'verified', 'preexisting_same_value');
               continue;
             }
             const guard = () => {
+              requireReceipts();
               if (performance.timeOrigin !== origin || outside(page(spec), spec) !== otherBefore) stop('other_values_changed');
               const live = page(spec);
               if (openForm(live, spec) !== form || otherForms(live, spec).length) stop('other_values_changed');
@@ -1501,6 +1561,10 @@
             record(plan.field, 'verified', existing === '' ? 'readback_matched' : 'readback_reapplied');
           }
         }
+        if (activeReceipts) {
+          await checkBinding();
+          requireReceipts();
+        }
         const primary = result.fields.find(row => row.status !== 'verified' && row.reason !== 'blocked_by_unsettled_field')
           || result.fields.find(row => row.status !== 'verified');
         const outcome = !primary && result.fields.some(row => row.reason === 'readback_matched' || row.reason === 'readback_reapplied')
@@ -1514,6 +1578,7 @@
         return finish(spec, request, result, attempted, info);
       } catch (error) {
         const reason = error instanceof Stop ? error.code : 'fill_failed';
+        revalidateReceipts(activeReceipts, reason === 'profile_binding_changed' || reason === 'profile_binding_required' ? reason : null);
         const active = state.progress?.activeField || null;
         for (const field of attempted) {
           if (result.fields.some(row => row.question === field.question)) continue;
@@ -1526,6 +1591,7 @@
       } finally {
         state.busy = false;
         activeBinding = null;
+        activeReceipts = null;
       }
     }
     const listener = (message, sender, sendResponse) => {
@@ -1534,12 +1600,22 @@
           if (sender?.id !== chrome.runtime.id) { sendResponse({ ok: false, error: 'profile_wrong_sender', writeStarted: false }); return; }
           if (message.profileBinding) await checkBinding(message.profileBinding);
           await checkBinding(lastBinding || activeBinding);
+          const receipts = lastReceipts?.requestId === message.requestId ? lastReceipts : null;
+          revalidateReceipts(receipts);
           const running = state.busy && state.progress?.requestId === message.requestId;
           const last = state.last?.requestId === message.requestId ? state.last : null;
           const outcome = last?.outcome || 'unknown';
           sendResponse({ ok: true, data: { requestId: message.requestId, state: running ? 'running' : 'settled', outcome,
             ...(running ? { writeStarted: state.progress.writeStarted === true } : last?.info || { writeStarted: false }) } });
-        })().catch(() => sendResponse({ ok: false, error: 'profile_binding_changed', data: { requestId: message?.requestId, state: 'settled', outcome: 'unknown' } }));
+        })().catch(() => {
+          const receipts = lastReceipts?.requestId === message?.requestId ? lastReceipts : null;
+          revalidateReceipts(receipts, 'profile_binding_changed');
+          sendResponse({ ok: false, error: 'profile_binding_changed', data: {
+            requestId: message?.requestId, state: 'settled', outcome: 'unknown',
+            ...(receipts ? { writeStarted: receipts.result.writeStarted,
+              completedFields: receipts.result.fields.map(({ question, status, reason }) => ({ question, status, reason })) } : {})
+          } });
+        });
         return true;
       }
       if (message?.type !== spec.messageType) return;

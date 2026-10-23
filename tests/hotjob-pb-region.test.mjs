@@ -584,3 +584,196 @@ test('a hidden page fails closed before a click', async () => {
     assert.equal(row.liveSupportClaimed, false);
   } finally { h.dom.window.close(); }
 });
+
+test('hidden, mixed, outside-wrap, and outside-root controls fail before a click', async () => {
+  const cases = [
+    ['hidden residence', RESIDENCE, (document) => { document.getElementById('residence-select').hidden = true; }],
+    ['hidden interview', INTERVIEW, (document) => { document.getElementById('interview-select').hidden = true; }],
+    ['mixed residence input', RESIDENCE, (document) => {
+      document.querySelector('[data-field="residence"]').append(document.getElementById('address').cloneNode(true));
+    }],
+    ['mixed interview input', INTERVIEW, (document) => {
+      document.querySelector('[data-field="interview"]').append(document.getElementById('address').cloneNode(true));
+    }],
+    ['outside-wrap select', RESIDENCE, (document) => {
+      document.querySelector('[data-field="residence"]').append(document.getElementById('residence-select').cloneNode(true));
+    }],
+    ['outside-root residence', RESIDENCE, (document) => { document.body.append(document.querySelector('[data-field="residence"]')); }],
+    ['outside-root interview', INTERVIEW, (document) => { document.body.append(document.querySelector('[data-field="interview"]')); }],
+    ['duplicate root', RESIDENCE, (document) => {
+      document.body.append(document.querySelector(`.${probe.page.rootClass}`).cloneNode(false));
+    }]
+  ];
+  for (const [name, label, mutate] of cases) {
+    const h = await boot();
+    try {
+      mutate(h.document);
+      const row = await h.api.fillField(label, label === INTERVIEW ? probe.select.valueSample : probe.cascader.valueSample);
+      assert.equal(row.ok, false, JSON.stringify({ name, row }));
+      assert.ok(['control_not_supported', 'wrong_page'].includes(row.reason), JSON.stringify({ name, row }));
+      assert.equal(row.liveSupportClaimed, false);
+      assert.equal(h.stats.open, 0, name);
+      assert.equal(h.stats.option, 0, name);
+      assert.equal(h.document.getElementById('residence-value').textContent, '', name);
+      assert.equal(h.document.getElementById('interview-value').textContent, '', name);
+      unchanged(h.document, h.stats);
+    } finally { h.dom.window.close(); }
+  }
+});
+
+test('actionable region options are never clicked and Escape closes their menu', async () => {
+  for (const label of [RESIDENCE, INTERVIEW]) {
+    for (const kind of ['forbidden button', 'submit button', 'link']) {
+      const h = await boot();
+      try {
+        const menu = label === INTERVIEW
+          ? h.document.getElementById('interview-menu')
+          : h.document.querySelector('[data-field="residence"] ul');
+        const capturedValue = label === INTERVIEW ? probe.select.valueSample : probe.cascader.valueSample;
+        const li = [...menu.querySelectorAll('li')].find((node) => node.textContent === capturedValue);
+        const action = h.document.createElement(kind === 'link' ? 'a' : 'button');
+        action.textContent = kind === 'forbidden button' ? FORBIDDEN[0]
+          : capturedValue;
+        if (kind === 'link') action.href = '#';
+        else action.type = kind === 'submit button' ? 'submit' : 'button';
+        li.replaceChildren(action);
+        let actionClicks = 0;
+        action.addEventListener('click', (event) => { actionClicks += 1; event.preventDefault(); });
+        const row = await h.api.fillField(label, action.textContent);
+        assert.equal(row.reason, 'never_save', JSON.stringify({ label, kind, row }));
+        assert.equal(row.ok, false);
+        assert.equal(row.opened, true);
+        assert.equal(row.canceled, true);
+        assert.equal(row.stillOpen, 0);
+        assert.equal(actionClicks, 0);
+        assert.equal(h.stats.option, 0);
+        assert.equal(h.stats.forbidden, 0);
+        assert.ok(h.stats.escape > 0);
+        assert.equal(h.document.querySelectorAll('.ant-select-open').length, 0);
+        assert.equal(menu.hidden, true);
+        unchanged(h.document, h.stats);
+      } finally { h.dom.window.close(); }
+    }
+  }
+});
+
+test('region rows moved, hidden, disabled, or replaced during open are not selected', async () => {
+  for (const label of [RESIDENCE, INTERVIEW]) {
+    for (const drift of ['moved', 'hidden', 'disabled', 'replaced', 'root replaced']) {
+      const h = await boot();
+      try {
+        const id = label === INTERVIEW ? 'interview' : 'residence';
+        const item = h.document.querySelector(`[data-field="${id}"]`);
+        const select = h.document.getElementById(`${id}-select`);
+        select.addEventListener('click', () => {
+          if (drift === 'moved') h.document.body.append(item);
+          if (drift === 'hidden') select.hidden = true;
+          if (drift === 'disabled') select.classList.add('ant-select-disabled');
+          if (drift === 'replaced') item.replaceWith(item.cloneNode(true));
+          if (drift === 'root replaced') {
+            const root = h.document.querySelector(`.${probe.page.rootClass}`);
+            const replacement = root.cloneNode(false);
+            root.replaceWith(replacement);
+            replacement.append(...root.childNodes);
+          }
+        }, { once: true });
+        const row = await h.api.fillField(label, label === INTERVIEW ? probe.select.valueSample : probe.cascader.valueSample);
+        assert.equal(row.ok, false, JSON.stringify({ label, drift, row }));
+        assert.equal(row.reason, 'control_not_supported');
+        assert.equal(row.opened, true);
+        assert.equal(row.canceled, true);
+        assert.equal(row.stillOpen, 0);
+        assert.equal(h.stats.option, 0);
+        assert.ok(h.stats.escape > 0);
+        assert.equal(h.document.querySelectorAll('.ant-select-open').length, 0);
+        assert.equal(select.querySelector('[id$="-value"]').textContent, '');
+        unchanged(h.document, h.stats);
+      } finally { h.dom.window.close(); }
+    }
+  }
+});
+
+test('a region row moved after selection is never reported as verified', async () => {
+  for (const label of [RESIDENCE, INTERVIEW]) {
+    const h = await boot();
+    try {
+      const id = label === INTERVIEW ? 'interview' : 'residence';
+      const item = h.document.querySelector(`[data-field="${id}"]`);
+      const menu = label === INTERVIEW
+        ? h.document.getElementById('interview-menu')
+        : item.querySelector('ul');
+      menu.addEventListener('click', () => { h.document.body.append(item); }, { once: true });
+      const row = await h.api.fillField(label, label === INTERVIEW ? probe.select.valueSample : probe.cascader.valueSample);
+      assert.equal(row.ok, false, JSON.stringify({ label, row }));
+      assert.equal(row.status, 'failed');
+      assert.equal(row.reason, 'control_not_supported');
+      assert.equal(row.canceled, true);
+      assert.equal(row.stillOpen, 0);
+      assert.equal(row.liveSupportClaimed, false);
+      assert.equal(h.stats.option, 1);
+      assert.ok(h.stats.escape > 0);
+      unchanged(h.document, h.stats);
+    } finally { h.dom.window.close(); }
+  }
+});
+
+test('region readback revalidates ownership after Escape cleanup', async () => {
+  for (const label of [RESIDENCE, INTERVIEW]) {
+    const h = await boot();
+    try {
+      const id = label === INTERVIEW ? 'interview' : 'residence';
+      const item = h.document.querySelector(`[data-field="${id}"]`);
+      const select = h.document.getElementById(`${id}-select`);
+      const menu = label === INTERVIEW
+        ? h.document.getElementById('interview-menu')
+        : item.querySelector('ul');
+      menu.addEventListener('click', () => {
+        select.classList.add(...classes(probe.cascader.openClass));
+        hide(menu, false);
+      }, { once: true });
+      h.document.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape') h.document.body.append(item);
+      });
+      const row = await h.api.fillField(label, label === INTERVIEW ? probe.select.valueSample : probe.cascader.valueSample);
+      assert.equal(row.ok, false, JSON.stringify({ label, row }));
+      assert.equal(row.status, 'failed');
+      assert.equal(row.reason, 'control_not_supported');
+      assert.equal(row.canceled, true);
+      assert.equal(row.stillOpen, 0);
+      assert.equal(row.liveSupportClaimed, false);
+      assert.equal(h.stats.option, 1);
+      assert.ok(h.stats.escape > 0);
+      assert.equal(menu.hidden, true);
+      unchanged(h.document, h.stats);
+    } finally { h.dom.window.close(); }
+  }
+});
+
+test('region options moved out of the menu during the open await are never clicked', async () => {
+  for (const label of [RESIDENCE, INTERVIEW]) {
+    const h = await boot();
+    try {
+      const id = label === INTERVIEW ? 'interview' : 'residence';
+      const select = h.document.getElementById(`${id}-select`);
+      const menu = label === INTERVIEW
+        ? h.document.getElementById('interview-menu')
+        : h.document.querySelector('[data-field="residence"] ul');
+      const value = label === INTERVIEW ? probe.select.valueSample : probe.cascader.valueSample;
+      const option = [...menu.querySelectorAll('li')].find((node) => node.textContent === value);
+      let movedOptionClicks = 0;
+      option.addEventListener('click', () => { movedOptionClicks += 1; });
+      select.addEventListener('click', () => {
+        h.window.queueMicrotask(() => { h.document.body.append(option); });
+      }, { once: true });
+      const row = await h.api.fillField(label, value);
+      assert.equal(row.ok, false, JSON.stringify({ label, row }));
+      assert.equal(movedOptionClicks, 0, label);
+      assert.equal(h.stats.option, 0);
+      assert.equal(row.canceled, true);
+      assert.equal(row.stillOpen, 0);
+      assert.ok(h.stats.escape > 0);
+      assert.equal(h.document.getElementById(`${id}-value`).textContent, '');
+      unchanged(h.document, h.stats);
+    } finally { h.dom.window.close(); }
+  }
+});

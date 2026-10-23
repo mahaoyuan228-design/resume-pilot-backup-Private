@@ -54,6 +54,7 @@ function assertFailClosed(decision) {
   assert.equal(decision.schema, CMB_RANKINGMAJOR_GATE_SCHEMA);
   assert.equal(decision.field, 'RankingMajor');
   assert.equal(decision.supported, false);
+  assert.equal(decision.liveSupportClaimed, false);
   assert.equal(decision.liveFillClaimed, false);
   assert.equal(decision.fillAllowed, false);
   assert.equal(decision.wireAllowed, false);
@@ -73,7 +74,7 @@ function assertFailClosed(decision) {
 test('offline fixture documents the recorded DOM_CONTROL_MISSING gate', () => {
   const recorded = withoutNote(load('offline.json'));
   const decision = assessCmbRankingMajor(null);
-  assert.deepEqual(decision, recorded);
+  assert.deepEqual(decision, { ...recorded, liveSupportClaimed: false });
   assert.deepEqual(decision, { ...CMB_RANKINGMAJOR_OFFLINE_GATE });
   assert.equal(decision.verdict, CMB_RANKINGMAJOR_RECORDED_VERDICT);
   assert.equal(decision.verdict, DOM_CONTROL_MISSING);
@@ -142,6 +143,7 @@ test('harvest packets classify without inventing a selector', () => {
   assert.equal(wired.fillAllowed, false);
   assert.equal(wired.saveAllowed, false);
   assert.equal(wired.supported, false);
+  assert.equal(wired.liveSupportClaimed, false);
   assert.equal(wired.wireAllowed, false);
   assert.equal(wired.requiresInteractionKnife, true);
   assert.equal(String(wired.observedId).startsWith('#'), false);

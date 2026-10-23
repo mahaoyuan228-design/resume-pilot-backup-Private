@@ -18,7 +18,18 @@
 
   const HOST = "careers.citics.com";
   const PATH = "/my/jl";
-  const TEXT_LABELS = ["姓", "名", "证件号码", "手机", "电子邮箱", "确认邮箱"];
+  // Labels/control kinds recorded in dist/site-probes/citics-field-map-20261018.json.
+  // Pinyin components are independent confirmed facts; never transliterate a name.
+  const OPTIONAL_TEXT_FIELDS = [
+    { label: '姓（拼音）', key: 'lastNamePinyin', section: '个人信息' },
+    { label: '名（拼音）', key: 'firstNamePinyin', section: '个人信息' },
+    { label: '联系地址', key: 'address', section: '个人信息' },
+    { label: '邮编', key: 'postalCode', section: '个人信息' },
+    { label: '微信', key: 'wechat', section: '联系方式' },
+    { label: '紧急联系人', key: 'emergencyContact', section: '联系方式' },
+    { label: '紧急联系人手机', key: 'emergencyContactPhone', section: '联系方式' }
+  ];
+  const TEXT_LABELS = ["姓", "名", "证件号码", "手机", "电子邮箱", "确认邮箱", ...OPTIONAL_TEXT_FIELDS.map((row) => row.label)];
   const RADIO_LABEL = "性别";
   const MARITAL = '婚姻状况';
   const POLITICAL = '政治面貌';
@@ -167,15 +178,99 @@
     return { ok: true, item: items[0], label: wanted };
   }
 
+  function basicEnvelope(partial = {}) {
+    return { siteId: 'citics', writeAttempted: false, neighborsUnchanged: true, ...partial,
+      saved: false, skippedSave: true, skippedYidun: true, saveAllowed: false,
+      liveSupportClaimed: false, supportClaimed: false, neverSave: true, leftUnsaved: true,
+      softwareClickedSave: false, softwareClickedSubmit: false, softwareClickedNext: false,
+      softwareClickedDeliver: false, softwareClickedDelete: false };
+  }
+
+  function basicPageStopReason(options) {
+    if (!pageAllowed(options)) return 'wrong_page';
+    return document.hidden === true || document.visibilityState === 'hidden' ? 'page_hidden' : null;
+  }
+
+  function optionalAnswerScopeReason(profile, spec, answer) {
+    if (profile.customFacts != null && !Array.isArray(profile.customFacts)) return 'invalid_profile_value';
+    const peers = Array.isArray(profile.customFacts) ? profile.customFacts.filter((row) =>
+      typeof row?.question === 'string' && cleanLabel(row.question) === cleanLabel(spec.label)) : [];
+    if (peers.length > 1) return 'profile_value_ambiguous';
+    if (peers.length === 0) return null; // Legacy unscoped customAnswers profile.
+    const fact = peers[0];
+    if (typeof fact.answer !== 'string' || norm(fact.answer) !== answer) return 'profile_value_ambiguous';
+    const scope = ['sitePageUrl', 'sectionName', 'rowContext'].map((key) =>
+      fact[key] == null ? '' : (typeof fact[key] === 'string' ? fact[key].trim() : null));
+    if (scope.every((value) => value === '')) return null;
+    if (scope[0] !== `https://${HOST}${PATH}` || scope[1] !== spec.section
+      || !['none', 'single'].includes(scope[2])) return 'question_scope_mismatch';
+    return null;
+  }
+
+  function basicVisible(node) {
+    if (!visible(node)) return false;
+    for (let current = node; current instanceof Element; current = current.parentElement) {
+      const style = getComputedStyle(current);
+      if (current.hidden || current.hasAttribute('inert') || current.getAttribute('aria-hidden') === 'true'
+        || style.display === 'none' || style.visibility === 'hidden' || style.visibility === 'collapse'
+        || Number.parseFloat(style.opacity) === 0) return false;
+    }
+    return true;
+  }
+
+  function basicWritable(node) {
+    return !!node && !node.disabled && !node.readOnly && !node.matches(':disabled')
+      && !node.closest('[aria-disabled="true"], [aria-readonly="true"], [inert]');
+  }
+
   function textControl(item) {
-    const inputs = [...item.querySelectorAll("input.ant-input, input[type='text'], input[type='tel'], input[type='email'], input:not([type])")]
-      .filter((node) => {
-        if (node.type === "hidden" || node.type === "radio" || node.type === "checkbox") return false;
-        if (node.closest(".ant-select") || node.closest(".ant-picker") || node.closest(".ant-radio")) return false;
-        const style = getComputedStyle(node);
-        return style.display !== "none" && style.visibility !== "hidden" && !node.disabled;
-      });
-    return inputs.length === 1 ? inputs[0] : null;
+    if (!item) return null;
+    const inputs = [...item.querySelectorAll('input')].filter((node) =>
+      node.closest('.ant-form-item') === item && ['text', 'tel', 'email'].includes(node.type)
+      && !node.closest('.ant-select, .ant-picker, .ant-radio') && basicVisible(node));
+    return inputs.length === 1 && basicWritable(inputs[0]) ? inputs[0] : null;
+  }
+
+  // Native values and checked state matter as much as neighboring Ant readback.
+  // Keep element identities so replacing/removing a neighboring control also fails closed.
+  function snapshotBasicNeighbors(activeItem) {
+    const native = [...document.querySelectorAll('input, textarea, select')]
+      .filter((node) => !activeItem.contains(node)).map((node) => ({
+        node, value: node.value, checked: node.checked, selectedIndex: node.selectedIndex
+      }));
+    const selects = [...document.querySelectorAll('.ant-select')]
+      .filter((node) => !activeItem.contains(node)).map((node) => ({
+        node, value: [...node.querySelectorAll('.ant-select-selection-selected-value, .ant-select-selection-item')]
+          .map((value) => norm(value.textContent || value.getAttribute('title') || '')).join('\u0000')
+      }));
+    return [...native, ...selects];
+  }
+
+  function basicNeighborsUnchanged(before, activeItem) {
+    const after = snapshotBasicNeighbors(activeItem);
+    return before.length === after.length && before.every((row, index) => {
+      const next = after[index];
+      return row.node === next.node && row.value === next.value && row.checked === next.checked
+        && row.selectedIndex === next.selectedIndex;
+    });
+  }
+
+  function basicClickSafe(node) {
+    return node instanceof Element
+      && !node.closest('button, a, [type="submit"], [type="button"], [role="button"], .yidun_cover-frame, .yidun_popup, .yidun_modal, .yidun_panel, iframe')
+      && !/保存|提交|暂存|下一步|投递|递交|删除|save|submit|next|deliver|delete/iu.test(norm(node.textContent));
+  }
+
+  function basicRadioAvailable(row) {
+    if (!row.control.isConnected || !basicWritable(row.control) || !basicVisible(row.wrap || row.control)) return false;
+    // Ant hides its native radio with opacity:0; its visible wrapper is the click target.
+    // A hidden/display:none native input or ancestor still must fail closed.
+    for (let node = row.control; node && node !== row.wrap; node = node.parentElement) {
+      const style = getComputedStyle(node);
+      if (node.hidden || node.getAttribute('aria-hidden') === 'true' || style.display === 'none'
+        || style.visibility === 'hidden' || style.visibility === 'collapse') return false;
+    }
+    return true;
   }
 
   function setNativeValue(input, value) {
@@ -194,33 +289,42 @@
     return control ? norm(control.value) : "";
   }
 
-  async function fillText(label, value) {
+  async function fillText(label, value, options = {}) {
+    const expected = norm(value);
+    const result = (partial) => basicEnvelope({ label, ok: false, before: '', after: '', expected, ...partial });
+    if (!expected) return result({ reason: 'expected_required' });
     const item = findItem(label);
-    if (!item) return { label, ok: false, reason: "item_not_found", before: "", after: "", expected: value };
+    if (!item) return result({ reason: 'item_not_found' });
     const control = textControl(item);
-    if (!control) return { label, ok: false, reason: "control_not_found", before: "", after: "", expected: value };
+    if (!control) return result({ reason: 'control_not_found' });
     const before = norm(control.value);
+    if (before) return result({ ok: true, reason: before === expected ? 'preexisting_same_value' : 'occupied_skip', before, after: before });
+    const neighbors = snapshotBasicNeighbors(item);
     control.focus();
-    setNativeValue(control, String(value ?? ""));
+    const occupied = norm(control.value);
+    if (findItem(label) !== item) return result({ reason: 'control_changed', before, after: occupied });
+    if (!basicNeighborsUnchanged(neighbors, item)) return result({ reason: 'neighbor_changed', before, after: occupied, neighborsUnchanged: false });
+    if (occupied) return result({ ok: true, reason: 'occupied_skip', before: occupied, after: occupied, neighborsUnchanged: true });
+    if (textControl(item) !== control) return result({ reason: 'control_changed', before, after: occupied });
+    const pageStop = basicPageStopReason(options);
+    if (pageStop) return result({ reason: pageStop, before, after: occupied });
+    if (yidunCovering()) return result({ reason: 'yidun_visible', before, after: occupied });
+    setNativeValue(control, expected);
     await pause(80);
-    const after = readText(item);
-    return {
-      label,
-      ok: after === norm(value),
-      reason: after === norm(value) ? "matched" : "readback_mismatch",
-      before,
-      after,
-      expected: norm(value)
-    };
+    const after = findItem(label) === item ? readText(item) : '';
+    const neighborsUnchanged = basicNeighborsUnchanged(neighbors, item);
+    return result({ ok: after === expected && neighborsUnchanged,
+      reason: !neighborsUnchanged ? 'neighbor_changed' : (after === expected ? 'matched' : 'readback_mismatch'),
+      before, after, writeAttempted: true, neighborCount: neighbors.length, neighborsUnchanged });
   }
 
   function genderOptions(item) {
-    const radios = [...item.querySelectorAll("input[type='radio']")];
+    const radios = [...item.querySelectorAll("input[type='radio']")].filter((node) => node.closest('.ant-form-item') === item);
     return radios.map((control) => {
       const wrap = control.closest("label.ant-radio-wrapper, .ant-radio-wrapper, label");
       const text = norm(wrap?.textContent || "");
       return { control, wrap, text };
-    }).filter((row) => row.text === "男" || row.text === "女");
+    });
   }
 
   function readGender(item) {
@@ -228,31 +332,36 @@
     return checked[0]?.text || "";
   }
 
-  async function fillGender(value) {
+  async function fillGender(value, options = {}) {
     const want = norm(value);
+    const result = (partial) => basicEnvelope({ label: RADIO_LABEL, ok: false, before: '', after: '', expected: want, ...partial });
     const item = findItem(RADIO_LABEL);
-    if (!item) return { label: RADIO_LABEL, ok: false, reason: "item_not_found", before: "", after: "", expected: want };
-    const options = genderOptions(item);
-    if (options.length < 2) {
-      return { label: RADIO_LABEL, ok: false, reason: "radio_structure_changed", before: readGender(item), after: readGender(item), expected: want };
-    }
+    if (!item) return result({ reason: 'item_not_found' });
+    const radios = genderOptions(item);
     const before = readGender(item);
-    const target = options.find((row) => row.text === want);
-    if (!target) {
-      return { label: RADIO_LABEL, ok: false, reason: "option_not_found", before, after: before, expected: want };
+    if (radios.length !== 2 || radios.filter((row) => row.text === '男').length !== 1
+      || radios.filter((row) => row.text === '女').length !== 1) {
+      return result({ reason: 'radio_structure_changed', before, after: before });
     }
+    if (before) return result({ ok: true, reason: before === want ? 'preexisting_same_value' : 'occupied_skip', before, after: before });
+    const target = radios.find((row) => row.text === want);
+    if (!target) return result({ reason: 'option_not_found', before, after: before });
+    if (radios.some((row) => !basicRadioAvailable(row))) {
+      return result({ reason: 'radio_control_unavailable', before, after: before });
+    }
+    if (!basicClickSafe(target.wrap || target.control)) return result({ reason: 'commit_or_yidun_target', before, after: before });
+    const pageStop = basicPageStopReason(options);
+    if (pageStop) return result({ reason: pageStop, before, after: before });
+    if (yidunCovering()) return result({ reason: 'yidun_visible', before, after: before });
+    const neighbors = snapshotBasicNeighbors(item);
     if (target.wrap) target.wrap.click();
     else target.control.click();
     await pause(100);
-    const after = readGender(item);
-    return {
-      label: RADIO_LABEL,
-      ok: after === want,
-      reason: after === want ? "matched" : "readback_mismatch",
-      before,
-      after,
-      expected: want
-    };
+    const after = findItem(RADIO_LABEL) === item && item.isConnected ? readGender(item) : '';
+    const neighborsUnchanged = basicNeighborsUnchanged(neighbors, item);
+    return result({ ok: after === want && neighborsUnchanged,
+      reason: !neighborsUnchanged ? 'neighbor_changed' : (after === want ? 'matched' : 'readback_mismatch'),
+      before, after, writeAttempted: true, neighborCount: neighbors.length, neighborsUnchanged });
   }
 
   function splitName(fullName) {
@@ -281,13 +390,15 @@
       };
     }
     const confirmed = new Set(profile.confirmedFields.filter((path) => typeof path === "string"));
-    const split = splitName(profile.fullName || "");
+    const profileText = (key) => typeof profile[key] === 'string' ? norm(profile[key]) : '';
+    const invalidType = (key) => profile[key] != null && typeof profile[key] !== 'string';
+    const split = splitName(profileText('fullName'));
     const lastName = split.lastName;
     const firstName = split.firstName;
-    const idNumber = norm(profile.identityNumber || "");
-    const mobile = norm(profile.phone || "");
-    const email = norm(profile.email || "");
-    const genderRaw = norm(profile.gender || "");
+    const idNumber = profileText('identityNumber');
+    const mobile = profileText('phone');
+    const email = profileText('email');
+    const genderRaw = profileText('gender');
 
     const core = [
       { label: "姓", path: "fullName", value: lastName },
@@ -298,17 +409,40 @@
       { label: "确认邮箱", path: "email", value: email }
     ].map((row) => {
       let reason = null;
-      if (!row.value) reason = "missing_profile_value";
+      if (invalidType(row.path)) reason = 'invalid_profile_value';
+      else if (!row.value) reason = "missing_profile_value";
       else if (!confirmed.has(row.path)) reason = "profile_fact_unconfirmed";
       return { ...row, ready: reason === null, reason };
     });
 
     const fields = [...core];
-    if (genderRaw) {
+    if (genderRaw || invalidType('gender')) {
       let reason = null;
-      if (!confirmed.has("gender")) reason = "profile_fact_unconfirmed";
+      if (invalidType('gender')) reason = 'invalid_profile_value';
+      else if (!confirmed.has("gender")) reason = "profile_fact_unconfirmed";
       else if (genderRaw !== "男" && genderRaw !== "女") reason = "invalid_profile_value";
       fields.push({ label: RADIO_LABEL, path: "gender", value: genderRaw, ready: reason === null, reason });
+    }
+    for (const spec of OPTIONAL_TEXT_FIELDS) {
+      const directRaw = profile[spec.key];
+      const answerRaw = profile.customAnswers && typeof profile.customAnswers === 'object' && !Array.isArray(profile.customAnswers)
+        ? profile.customAnswers[spec.label] : undefined;
+      const directInvalid = directRaw != null && typeof directRaw !== 'string';
+      const answerInvalid = answerRaw != null && typeof answerRaw !== 'string';
+      const direct = typeof directRaw === 'string' ? norm(directRaw) : '';
+      const answer = typeof answerRaw === 'string' ? norm(answerRaw) : '';
+      if (!direct && !answer && !directInvalid && !answerInvalid) continue;
+      const answerPath = `customAnswers.${spec.label}`;
+      const directReady = !!direct && confirmed.has(spec.key);
+      const answerReady = !!answer && confirmed.has(answerPath);
+      const path = directReady || (!answerReady && (direct || directInvalid)) ? spec.key : answerPath;
+      const value = path === spec.key ? direct : answer;
+      let reason = null;
+      if (directInvalid || answerInvalid) reason = 'invalid_profile_value';
+      else if (directReady && answerReady && direct !== answer) reason = 'profile_value_ambiguous';
+      else if (path === answerPath) reason = optionalAnswerScopeReason(profile, spec, answer);
+      if (!reason && !confirmed.has(path)) reason = 'profile_fact_unconfirmed';
+      fields.push({ label: spec.label, key: spec.key, path, value, ready: reason === null, reason });
     }
 
     const blockers = fields.filter((row) => !row.ready);
@@ -326,7 +460,8 @@
         mobile,
         email,
         confirmEmail: email,
-        gender: fields.find((row) => row.label === RADIO_LABEL && row.ready)?.value || ""
+        gender: fields.find((row) => row.label === RADIO_LABEL && row.ready)?.value || "",
+        ...Object.fromEntries(fields.filter((row) => row.key && row.ready).map((row) => [row.key, row.value]))
       },
       fields,
       blockers: fields.filter((row) => !row.ready)
@@ -823,6 +958,9 @@
   }
 
   async function fillBasic(rawValues = {}, options = {}) {
+    if (!rawValues || typeof rawValues !== 'object' || Array.isArray(rawValues)) {
+      return basicEnvelope({ ok: false, reason: 'invalid_fill_values', results: [] });
+    }
     // Select-only shapes: { '婚姻状况'|'政治面貌'|'户口类型'|'证件类型'|'民族': '…' } — route without touching text/radio path.
     if (rawValues && typeof rawValues === 'object' && !Array.isArray(rawValues)
       && !rawValues.profile && rawValues.allowExplicitValues !== true
@@ -839,8 +977,12 @@
       }
     }
 
-    if (!isCiticsResumeEditPage() && options?.synthetic !== true) {
-      return { ok: false, siteId: "citics", reason: "wrong_page", href: location.href, results: [], saved: false, skippedSave: true };
+    const pageStop = basicPageStopReason(options);
+    if (pageStop) return basicEnvelope({ ok: false, reason: pageStop, href: location.href, results: [] });
+    if (!(await assertPaidGate())) return basicEnvelope({ ok: false, reason: 'license_required', results: [] });
+    if (yidunCovering()) return basicEnvelope({ ok: false, reason: 'yidun_visible', results: [] });
+    if (['marital', MARITAL].some((key) => rawValues[key] != null && typeof rawValues[key] !== 'string')) {
+      return basicEnvelope({ ok: false, reason: 'invalid_fill_values', results: [] });
     }
 
     const profile = rawValues.profile;
@@ -850,6 +992,10 @@
 
     if (allowExplicit && (rawValues.lastName || rawValues.firstName || rawValues.idNumber || rawValues.mobile || rawValues.email)) {
       // Explicit CDP/dev override only when flagged — never default path.
+      const explicitKeys = ['lastName', 'firstName', 'idNumber', 'mobile', 'email', 'confirmEmail', 'gender', 'marital', MARITAL];
+      if (explicitKeys.some((key) => rawValues[key] != null && typeof rawValues[key] !== 'string')) {
+        return basicEnvelope({ ok: false, reason: 'invalid_explicit_value', results: [] });
+      }
       values = {
         lastName: norm(rawValues.lastName || ""),
         firstName: norm(rawValues.firstName || ""),
@@ -861,7 +1007,7 @@
         marital: norm(rawValues.marital || rawValues[MARITAL] || "")
       };
       if (!values.lastName || !values.firstName || !values.idNumber || !values.mobile || !values.email) {
-        return {
+        return basicEnvelope({
           ok: false,
           siteId: "citics",
           reason: "explicit_values_incomplete",
@@ -870,18 +1016,18 @@
           saved: false,
           skippedSave: true,
           skippedYidun: true
-        };
+        });
       }
     } else {
       plan = planFromProfile(profile);
       if (!plan.ok) {
-        return {
+        return basicEnvelope({
           ok: false,
           siteId: "citics",
           reason: plan.reason,
           href: location.href,
           title: document.title,
-          results: (plan.fields || []).map((row) => ({
+          results: (plan.fields || []).map((row) => basicEnvelope({
             label: row.label,
             ok: false,
             reason: row.reason || plan.reason,
@@ -895,7 +1041,7 @@
           skippedSave: true,
           skippedYidun: true,
           writeAttempted: false
-        };
+        });
       }
       values = { ...plan.values, marital: norm(rawValues.marital || rawValues[MARITAL] || "") };
     }
@@ -906,16 +1052,25 @@
       ["证件号码", values.idNumber],
       ["手机", values.mobile],
       ["电子邮箱", values.email],
-      ["确认邮箱", values.confirmEmail || values.email]
+      ["确认邮箱", values.confirmEmail || values.email],
+      ...OPTIONAL_TEXT_FIELDS.filter((row) => norm(values[row.key])).map((row) => [row.label, values[row.key]])
     ];
     const results = [];
     for (const [label, value] of textPlan) {
-      results.push(await fillText(label, value));
+      const stopped = basicPageStopReason(options);
+      if (stopped || yidunCovering()) {
+        results.push(basicEnvelope({ label, ok: false, reason: stopped || 'yidun_visible' }));
+        break;
+      }
+      const result = await fillText(label, value, options);
+      results.push(result);
+      if (['neighbor_changed', 'control_changed', 'wrong_page', 'page_hidden', 'yidun_visible'].includes(result.reason)) break;
     }
-    if (norm(values.gender) && (values.gender === "男" || values.gender === "女")) {
-      results.push(await fillGender(values.gender));
+    const safeToContinue = results.every((row) => !['neighbor_changed', 'control_changed', 'wrong_page', 'page_hidden', 'yidun_visible'].includes(row.reason));
+    if (safeToContinue && norm(values.gender) && (values.gender === "男" || values.gender === "女")) {
+      results.push(await fillGender(values.gender, options));
     }
-    if (norm(values.marital)) {
+    if (safeToContinue && results.every((row) => row.reason !== 'neighbor_changed') && norm(values.marital)) {
       const selectResult = await fillSelect(MARITAL, values.marital, options);
       results.push({
         label: MARITAL,
@@ -928,7 +1083,7 @@
       });
     }
     const ok = results.every((row) => row.ok);
-    return {
+    return basicEnvelope({
       ok,
       siteId: "citics",
       href: location.href,
@@ -936,13 +1091,14 @@
       saved: false,
       skippedSave: true,
       skippedYidun: true,
-      writeAttempted: true,
+      writeAttempted: results.some((row) => row.writeAttempted === true || row.select?.clickedOption === true),
       profileSource: allowExplicit ? "explicit" : "resumeProfile",
       planSummary: plan
         ? { reason: plan.reason, readyCount: plan.fields.filter((f) => f.ready).length, blockerCount: plan.blockers.length }
         : { reason: "explicit_override" },
+      blockers: plan?.blockers || [],
       results
-    };
+    });
   }
 
   async function probeLabels() {
@@ -952,7 +1108,7 @@
       const control = item.ok ? selectControl(item.item) : null;
       selectProbe[label] = { item, control };
     }
-    return {
+    return basicEnvelope({
       ok: isCiticsResumeEditPage(),
       href: location.href,
       title: document.title,
@@ -968,11 +1124,12 @@
           selectValue: isSelect && probe?.control?.ok ? probe.control.read.value : undefined
         };
       })
-    };
+    });
   }
 
   const api = {
     siteId: "citics",
+    liveSupportClaimed: false,
     MARITAL,
     POLITICAL,
     HUKOU_TYPE,

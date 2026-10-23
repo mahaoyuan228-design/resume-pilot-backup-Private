@@ -8,6 +8,8 @@
 // .ant-select-search__field may have no client rect while
 // .ant-select-selection / [role=combobox] is visible. Readback uses
 // .ant-select-selection-selected-value and strips a 请选择+label placeholder.
+// Controls must belong to the single visible resume wrapper and one form row.
+// Hidden or mixed controls and actionable option ancestors fail closed.
 // Pending live Never-Save. This does not claim the site is supported.
 // liveSupportClaimed stays false. Never clicks 保存/提交/投递/删除/下一步/返回/确定.
 // Does not target hotjob-mc.
@@ -64,7 +66,8 @@
     if (url.protocol !== 'https:' || url.hostname !== 'wecruit.hotjob.cn') return false;
     if (!PATH.test(url.pathname)) return false;
     if (document.querySelector('.el-form, .el-form-item, .my-list-item')) return false;
-    return !!document.querySelector('.resume-operation-wrap');
+    const roots = [...document.querySelectorAll('.resume-operation-wrap')];
+    return roots.length === 1 && visible(roots[0]);
   }
 
   function ownedLabels(item) {
@@ -73,7 +76,8 @@
 
   function itemsFor(label) {
     const want = cleanLabel(label);
-    return [...document.querySelectorAll('.ant-row.ant-form-item')].filter((item) => {
+    const root = document.querySelector('.resume-operation-wrap');
+    return [...root.querySelectorAll('.ant-row.ant-form-item')].filter((item) => {
       const labels = ownedLabels(item);
       return labels.length === 1 && cleanLabel(labels[0].textContent) === want;
     });
@@ -112,17 +116,31 @@
       && !select.classList.contains('ant-select-disabled');
   }
 
+  function stray(item, selector) {
+    return [...item.querySelectorAll(selector)]
+      .filter((node) => node.closest('.ant-row.ant-form-item') === item);
+  }
+
+  function mixedControls(item) {
+    return stray(item, 'input.ant-input, textarea, input[type="radio"], input[type="checkbox"], input[type="file"], .ant-calendar-picker-input').length > 0;
+  }
+
   function locateCascader(item, label) {
+    if (mixedControls(item)) return { ok: false, reason: 'control_not_supported' };
     const wraps = [...item.querySelectorAll('.cascader-plugins-wrap')]
       .filter((wrap) => wrap.closest('.ant-row.ant-form-item') === item);
     if (wraps.length !== 1) return { ok: false, reason: 'control_not_supported' };
     const wrap = wraps[0];
     const selects = [...wrap.querySelectorAll('.ant-select')]
-      .filter((node) => node.closest('.cascader-plugins-wrap') === wrap);
-    const found = (select) => ({ ok: true, kind: 'cascader', item, wrap, select, trigger: select });
+      .filter((node) => node.closest('.cascader-plugins-wrap') === wrap
+        && node.closest('.ant-row.ant-form-item') === item);
+    if (stray(item, '.ant-select').some((select) => !wrap.contains(select))) {
+      return { ok: false, reason: 'control_not_supported' };
+    }
+    const found = (select) => ({ ok: true, kind: 'cascader', item, wrap, select, selects, trigger: select });
     if (selects.length === 1) {
       const select = selects[0];
-      if (!cascaderSelectOk(select) || !readSelectText(select, label).ok) {
+      if (!cascaderSelectOk(select) || !visible(select) || !readSelectText(select, label).ok) {
         return { ok: false, reason: 'control_not_supported' };
       }
       return found(select);
@@ -144,6 +162,7 @@
   }
 
   function locateSelect(item, label) {
+    if (mixedControls(item)) return { ok: false, reason: 'control_not_supported' };
     if (item.querySelector('.cascader-plugins-wrap')) return { ok: false, reason: 'control_not_supported' };
     const selects = [...item.querySelectorAll('.ant-select')]
       .filter((node) => node.closest('.ant-row.ant-form-item') === item);
@@ -155,11 +174,13 @@
       || !select.classList.contains('ant-select-allow-clear')
       || select.classList.contains('ant-select-disabled')
       || triggers.length !== 1
+      || !visible(select)
       || !readSelectText(select, label).ok) {
       return { ok: false, reason: 'control_not_supported' };
     }
     const search = triggers[0];
-    const trigger = visible(search) ? search : (selectFace(select) || search);
+    const trigger = visible(search) ? search : selectFace(select);
+    if (!trigger) return { ok: false, reason: 'control_not_supported' };
     return { ok: true, kind: 'select', item, select, trigger };
   }
 
@@ -168,11 +189,38 @@
     const items = itemsFor(label);
     if (items.length !== 1) return { ok: false, reason: 'control_not_supported' };
     const found = LABELS[label] === 'cascader' ? locateCascader(items[0], label) : locateSelect(items[0], label);
-    if (found.ok) found.label = label;
+    if (found.ok) {
+      found.label = label;
+      found.root = document.querySelector('.resume-operation-wrap');
+    }
     return found;
   }
 
+  function invalidFound(found) {
+    if (document.visibilityState === 'hidden') return 'fill_interrupted_page_hidden';
+    if (!onPage()) return 'wrong_page';
+    const current = locate(found.label);
+    if (!current.ok) return current.reason;
+    if (current.root !== found.root || current.kind !== found.kind || current.item !== found.item
+      || current.select !== found.select || current.wrap !== found.wrap
+      || !found.trigger.isConnected
+      || found.trigger.closest('.resume-operation-wrap') !== found.root
+      || (found.trigger !== found.select && !found.select.contains(found.trigger))) {
+      return 'control_not_supported';
+    }
+    if (found.kind === 'cascader' && (current.selects.length !== found.selects.length
+      || current.selects.some((select, index) => select !== found.selects[index]))) {
+      return 'control_not_supported';
+    }
+    return '';
+  }
+
   function readDisplay(found) {
+    if (found.kind === 'cascader') {
+      const reads = found.selects.map((select) => readSelectText(select, found.label));
+      if (reads.some((read) => !read.ok || read.value !== reads[0].value)) return '';
+      return reads[0].value;
+    }
     const read = readSelectText(found.select, found.label);
     return read.ok ? read.value : '';
   }
@@ -215,6 +263,17 @@
     return nodes;
   }
 
+  function optionOwned(found, node) {
+    if (!visible(node)) return false;
+    if (found.kind === 'cascader') {
+      if (node.closest('.cascader-plugins-wrap') !== found.wrap || node.closest('.ant-select')) return false;
+    } else {
+      const menus = visibleDropdowns();
+      if (menus.length !== 1 || node.closest('.ant-select-dropdown') !== menus[0]) return false;
+    }
+    return opened(found)?.includes(node) === true;
+  }
+
   function dispatchEscape(target) {
     if (!target?.dispatchEvent) return;
     const event = new KeyboardEvent('keydown', {
@@ -239,7 +298,7 @@
   function safeClick(node) {
     const button = node.closest?.('button, a, [type="submit"]');
     const label = exact((button || node).textContent || '');
-    if (button && FORBIDDEN.test(label)) {
+    if (button || FORBIDDEN.test(label)) {
       const error = Error('never_save');
       error.code = 'never_save';
       throw error;
@@ -295,7 +354,16 @@
           stillOpen: closed ? 0 : 1
         });
       }
-      const matches = nodes.filter((node) => exact(node.textContent) === want);
+      const invalidBeforeClick = invalidFound(found);
+      if (invalidBeforeClick) {
+        const closed = await closeMenus(found);
+        return refused(label, invalidBeforeClick, {
+          before, after: readDisplay(found), expected: want, opened: true, canceled: true,
+          stillOpen: closed && !anyOpen() ? 0 : 1
+        });
+      }
+      // Opening awaits a promise; a captured leaf may have moved meanwhile.
+      const matches = (opened(found) || []).filter((node) => exact(node.textContent) === want);
       if (matches.length !== 1) {
         const closed = await closeMenus(found);
         const after = readDisplay(found);
@@ -307,15 +375,29 @@
             : 'menu_cleanup_failed')
         });
       }
+      if (!optionOwned(found, matches[0])) {
+        const closed = await closeMenus(found);
+        return refused(label, 'control_not_supported', {
+          before, after: readDisplay(found), expected: want, opened: true, canceled: true,
+          stillOpen: closed && !anyOpen() ? 0 : 1
+        });
+      }
       safeClick(matches[0]);
-      const painted = await waitFor(() => readDisplay(found) === want && !anyOpen());
-      if (!painted) {
+      let invalidDuringReadback = '';
+      const painted = await waitFor(() => {
+        invalidDuringReadback = invalidFound(found);
+        return invalidDuringReadback || (readDisplay(found) === want && !anyOpen());
+      });
+      const invalidAfterClick = invalidDuringReadback || invalidFound(found);
+      if (!painted || invalidAfterClick) {
         const closed = await closeMenus(found);
         const after = readDisplay(found);
         const open = anyOpen();
-        return refused(label, after === want && !open ? 'readback_matched' : (open || !closed ? 'menu_cleanup_failed' : 'readback_mismatch'), {
-          ok: after === want && !open,
-          status: after === want && !open ? 'verified' : 'failed',
+        const invalidAfterCleanup = invalidAfterClick || invalidFound(found);
+        const verified = !invalidAfterCleanup && after === want && !open;
+        return refused(label, invalidAfterCleanup || (verified ? 'readback_matched' : (open || !closed ? 'menu_cleanup_failed' : 'readback_mismatch')), {
+          ok: verified,
+          status: verified ? 'verified' : 'failed',
           before, after, expected: want, opened: true, canceled: true, stillOpen: open ? 1 : 0
         });
       }
@@ -324,7 +406,11 @@
         before, after: want, expected: want, opened: true, canceled: false, stillOpen: 0
       });
     } catch (error) {
-      if (error?.message === 'never_save') return refused(label, 'never_save');
+      if (error?.message === 'never_save') {
+        const wasOpen = anyOpen();
+        const closed = await closeMenus();
+        return refused(label, 'never_save', { opened: wasOpen, canceled: true, stillOpen: closed && !anyOpen() ? 0 : 1 });
+      }
       return refused(label, 'control_error');
     }
   }
@@ -345,14 +431,19 @@
       const closed = await closeMenus(found);
       const after = readDisplay(found);
       const open = anyOpen();
-      const ok = closed && !open && after === before;
+      const invalidAfterClose = invalidFound(found);
+      const ok = !invalidAfterClose && closed && !open && after === before;
       return result({
         ok, label, status: ok ? 'verified' : 'failed',
-        reason: after !== before ? 'readback_mismatch' : (ok ? 'menu_closed' : 'menu_cleanup_failed'),
+        reason: invalidAfterClose || (after !== before ? 'readback_mismatch' : (ok ? 'menu_closed' : 'menu_cleanup_failed')),
         before, after, expected: before, opened: true, canceled: true, stillOpen: open ? 1 : 0
       });
     } catch (error) {
-      if (error?.message === 'never_save') return refused(label, 'never_save');
+      if (error?.message === 'never_save') {
+        const wasOpen = anyOpen();
+        const closed = await closeMenus();
+        return refused(label, 'never_save', { opened: wasOpen, canceled: true, stillOpen: closed && !anyOpen() ? 0 : 1 });
+      }
       return refused(label, 'control_error');
     }
   }

@@ -1,0 +1,25 @@
+{
+  "source": "Synthetic offline regression fixture. Existing observed single-row field tokens are repeated five times. The saved live report corroborates only the same-label form-item count; it does not capture each repeated row's DOM, order, grouping, identity, or value.",
+  "liveDomCaptured": false,
+  "liveSupportClaimed": false,
+  "neverSave": true,
+  "evidence": [
+    "tests/fixtures/hotjob-pb-cert-note-probe-dom.json#field",
+    "tests/fixtures/hotjob-pb-cert-note-probe-dom.json#page",
+    "_temp-scripts/hotjob-pb-live-d378fe89/HOTJOB_PB_LIVE_111_112_d378fe89_RESULT_2026-10-23.md#DOM probe (observed only): same-label items=5; count only"
+  ],
+  "field": {
+    "label": "说明（通过科目）",
+    "controlTag": "textarea",
+    "controlClass": "ant-input",
+    "placeholder": "请填写说明（通过科目）"
+  },
+  "rowCount": 5,
+  "rows": [
+    { "value": "KEEP_SYNTHETIC_ROW_0" },
+    { "value": "" },
+    { "value": "" },
+    { "value": "KEEP_SYNTHETIC_ROW_3" },
+    { "value": "" }
+  ]
+}

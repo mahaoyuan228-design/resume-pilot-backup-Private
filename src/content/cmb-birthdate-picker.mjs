@@ -17,7 +17,7 @@ const CMB_BIRTHDATE_FILL_FAIL_REASONS = Object.freeze([
   'birthdate_cell_disabled',
   'birthdate_readback_mismatch'
 ]);
-const BIRTH_DATE_RE = /^(\d{4})[-/](\d{2})[-/](\d{2})$/u;
+const BIRTH_DATE_RE = /^(\d{4})([-/])(\d{2})\2(\d{2})$/u;
 const MONTH_NAME_TO_NUMBER = Object.freeze({
   jan: 1, feb: 2, mar: 3, apr: 4, may: 5, jun: 6,
   jul: 7, aug: 8, sep: 9, oct: 10, nov: 11, dec: 12
@@ -37,10 +37,10 @@ function parseCmbBirthDate(raw) {
   const match = text.match(BIRTH_DATE_RE);
   if (!match) return { ok: false, reason: 'birthdate_unparseable', iso: '' };
   const year = Number(match[1]);
-  const month = Number(match[2]);
-  const day = Number(match[3]);
+  const month = Number(match[3]);
+  const day = Number(match[4]);
   if (year < 1900 || year > 2100) return { ok: false, reason: 'birthdate_unparseable', iso: '' };
-  const iso = `${match[1]}-${match[2]}-${match[3]}`;
+  const iso = `${match[1]}-${match[3]}-${match[4]}`;
   const stamp = new Date(Date.UTC(year, month - 1, day));
   if (stamp.getUTCFullYear() !== year || stamp.getUTCMonth() !== month - 1 || stamp.getUTCDate() !== day) {
     return { ok: false, reason: 'birthdate_unparseable', iso: '' };
@@ -61,23 +61,50 @@ function saveLikeText(el) {
   if (!el) return '';
   const aria = typeof el.getAttribute === 'function' ? (el.getAttribute('aria-label') || '') : '';
   const value = el.tagName === 'INPUT' || el.tagName === 'BUTTON' ? String(el.value || '') : '';
-  return `${el.textContent || ''} ${value} ${aria}`.replace(/\s+/gu, '');
+  return pickerNorm(`${el.textContent || ''} ${value} ${aria}`);
 }
 
 function isSaveLike(el) {
-  return /保存|提交|删除|投递/u.test(saveLikeText(el));
+  const text = saveLikeText(el);
+  if (/保存|提交|删除|投递|下一步|下一页|\b(?:save|submit|delete|deliver)\b/iu.test(text)) return true;
+  return [el?.textContent, el?.getAttribute?.('aria-label'), el?.value]
+    .some((value) => /^next(?:step|page)?$/iu.test(pickerNorm(value).replace(/\s+/gu, '')));
+}
+
+function pickerNodeUnavailable(el) {
+  if (!el || el.isConnected === false) return true;
+  for (let node = el; node; node = node.parentElement) {
+    if (node.disabled === true || node.getAttribute?.('aria-disabled') === 'true') return true;
+    if (node.hasAttribute?.('hidden') || node.hasAttribute?.('inert') || node.getAttribute?.('aria-hidden') === 'true') return true;
+    const style = node.ownerDocument?.defaultView?.getComputedStyle?.(node) || node.style;
+    if (style?.display === 'none' || style?.visibility === 'hidden' || style?.visibility === 'collapse') return true;
+  }
+  return false;
 }
 
 function isUnsafeClick(el) {
-  if (!el || isSaveLike(el)) return true;
-  const button = typeof el.closest === 'function' ? el.closest('button') : null;
-  if (button) {
-    const type = String(button.getAttribute('type') || '').toLowerCase();
-    if (type !== 'button') return true;
+  if (pickerNodeUnavailable(el) || isSaveLike(el)) return true;
+  for (let node = el; node; node = node.parentElement) {
+    if (node.tagName === 'A' && node.hasAttribute('href')) return true;
+    if (node.tagName === 'LABEL' && node.control) {
+      const control = node.control;
+      const type = String(control.getAttribute('type') || '').toLowerCase();
+      if (!node.contains(control) || control.tagName === 'BUTTON'
+          || ['submit', 'image', 'button', 'reset', 'file'].includes(type)
+          || pickerNodeUnavailable(control) || isSaveLike(control)) return true;
+      // A label can activate its associated control after a descendant click.
+      // Only a direct control click or the validated radio wrapper may do so.
+      if (node !== el && control !== el && !control.contains(el)) return true;
+    }
+    if (node.tagName === 'BUTTON') {
+      const type = String(node.getAttribute('type') || '').toLowerCase();
+      if (type !== 'button' || isSaveLike(node)) return true;
+    }
+    if (node.getAttribute?.('role') === 'button' && isSaveLike(node)) return true;
   }
   if (el.tagName === 'INPUT') {
     const type = String(el.getAttribute('type') || 'text').toLowerCase();
-    if (type === 'submit' || type === 'image' || type === 'button') return true;
+    if (['submit', 'image', 'button', 'reset', 'file', 'hidden'].includes(type)) return true;
   }
   return false;
 }
@@ -90,7 +117,9 @@ function dispatchMouse(doc, el, type) {
 function pressPicker(doc, el) {
   if (isUnsafeClick(el)) return false;
   dispatchMouse(doc, el, 'mousedown');
+  if (isUnsafeClick(el)) return false;
   dispatchMouse(doc, el, 'mouseup');
+  if (isUnsafeClick(el)) return false;
   if (typeof el.click === 'function') el.click();
   return true;
 }
@@ -113,10 +142,7 @@ function visibleDropdowns(doc) {
   return [...doc.querySelectorAll('.ant-picker-dropdown')].filter((node) => {
     if (!node || !node.classList) return false;
     if (node.classList.contains('ant-picker-dropdown-hidden')) return false;
-    if (typeof node.hasAttribute === 'function' && node.hasAttribute('hidden')) return false;
-    if (node.style && node.style.display === 'none') return false;
-    if (node.style && node.style.visibility === 'hidden') return false;
-    return true;
+    return !pickerNodeUnavailable(node);
   });
 }
 
@@ -124,24 +150,40 @@ function singlePanel(doc) {
   const open = visibleDropdowns(doc);
   if (open.length === 0) return { ok: false, reason: 'birthdate_panel_missing' };
   if (open.length > 1) return { ok: false, reason: 'birthdate_panel_multiple' };
-  return { ok: true, panel: open[0] };
+  const panels = pickerNodes(open[0], '.ant-picker-panel');
+  if (panels.length > 1) return { ok: false, reason: 'birthdate_panel_multiple' };
+  const panel = panels[0] || open[0];
+  const modes = pickerNodes(panel, '.ant-picker-decade-panel, .ant-picker-year-panel, .ant-picker-month-panel, .ant-picker-date-panel');
+  if (modes.length > 1) return { ok: false, reason: 'birthdate_panel_multiple' };
+  return { ok: true, panel: modes[0] || panel };
+}
+
+function pickerNodes(panel, selector) {
+  return [...panel.querySelectorAll(selector)].filter((node) => !pickerNodeUnavailable(node));
+}
+
+function singlePickerNode(panel, selector) {
+  const nodes = pickerNodes(panel, selector);
+  return nodes.length === 1 ? nodes[0] : null;
 }
 
 function cellsByTitle(panel, title) {
-  return [...panel.querySelectorAll('.ant-picker-cell')].filter((cell) => cell.getAttribute('title') === title);
+  return pickerNodes(panel, '.ant-picker-cell').filter((cell) => cell.getAttribute('title') === title);
 }
 
 function clickCell(doc, cell) {
   if (!cell) return 'missing';
   if (cell.classList.contains('ant-picker-cell-disabled')) return 'disabled';
-  const inner = cell.querySelector('.ant-picker-cell-inner');
+  const inners = pickerNodes(cell, '.ant-picker-cell-inner');
+  if (inners.length > 1) return 'unsafe';
+  const inner = inners[0];
   const target = inner || cell;
   if (isUnsafeClick(target)) return 'unsafe';
   return pressPicker(doc, target) ? 'clicked' : 'unsafe';
 }
 
 function readHeaderYear(panel) {
-  const button = panel.querySelector('.ant-picker-year-btn');
+  const button = singlePickerNode(panel, '.ant-picker-year-btn');
   if (!button) return null;
   const match = pickerNorm(button.textContent).match(/^(\d{4})(?:年)?$/u);
   if (!match) return null;
@@ -150,7 +192,7 @@ function readHeaderYear(panel) {
 }
 
 function readHeaderMonth(panel) {
-  const button = panel.querySelector('.ant-picker-month-btn');
+  const button = singlePickerNode(panel, '.ant-picker-month-btn');
   if (!button) return null;
   const text = pickerNorm(button.textContent);
   const numeric = text.match(/^(\d{1,2})\s*月$/u);
@@ -163,20 +205,20 @@ function readHeaderMonth(panel) {
 }
 
 function visibleYears(panel) {
-  return [...panel.querySelectorAll('.ant-picker-cell')]
+  return pickerNodes(panel, '.ant-picker-cell')
     .map((cell) => cell.getAttribute('title') || '')
     .filter((title) => /^\d{4}$/u.test(title))
     .map((title) => Number(title));
 }
 
 function panelMode(panel) {
-  if (panel.querySelector('.ant-picker-decade-panel')) return 'decade';
-  if (panel.querySelector('.ant-picker-year-panel')) return 'year';
-  if (panel.querySelector('.ant-picker-month-panel')) return 'month';
-  if (panel.querySelector('.ant-picker-date-panel')) return 'date';
-  if (panel.querySelector('.ant-picker-year-btn') && panel.querySelector('.ant-picker-month-btn')) return 'date';
-  if (panel.querySelector('.ant-picker-decade-btn')) return 'year';
-  const titles = [...panel.querySelectorAll('.ant-picker-cell')].map((cell) => cell.getAttribute('title') || '');
+  if (panel.matches('.ant-picker-decade-panel')) return 'decade';
+  if (panel.matches('.ant-picker-year-panel')) return 'year';
+  if (panel.matches('.ant-picker-month-panel')) return 'month';
+  if (panel.matches('.ant-picker-date-panel')) return 'date';
+  if (singlePickerNode(panel, '.ant-picker-year-btn') && singlePickerNode(panel, '.ant-picker-month-btn')) return 'date';
+  if (singlePickerNode(panel, '.ant-picker-decade-btn')) return 'year';
+  const titles = pickerNodes(panel, '.ant-picker-cell').map((cell) => cell.getAttribute('title') || '');
   if (titles.some((title) => /^\d{4}-\d{2}-\d{2}$/u.test(title))) return 'date';
   if (titles.some((title) => /^\d{4}-\d{2}$/u.test(title))) return 'month';
   if (titles.some((title) => /^\d{4}$/u.test(title))) return 'year';
@@ -184,7 +226,7 @@ function panelMode(panel) {
 }
 
 function panelSignature(panel) {
-  const titles = [...panel.querySelectorAll('.ant-picker-cell')]
+  const titles = pickerNodes(panel, '.ant-picker-cell')
     .map((cell) => cell.getAttribute('title') || '')
     .join(',');
   return [
@@ -239,6 +281,8 @@ async function openBirthDatePanel(doc, input, wait) {
 async function driveBirthDatePanel(doc, parsed, wait) {
   let previousSig = '';
   for (let step = 0; step < PICKER_STEP_LIMIT; step += 1) {
+    const target = assessCmbBirthDatePickerTarget(doc);
+    if (!target.ok) return { ok: false, reason: target.reason };
     const located = singlePanel(doc);
     if (!located.ok) return located;
     const panel = located.panel;
@@ -261,14 +305,14 @@ async function driveBirthDatePanel(doc, parsed, wait) {
       const month = readHeaderMonth(panel);
       if (year == null || month == null) return { ok: false, reason: 'birthdate_panel_missing' };
       if (year !== parsed.year) {
-        const button = panel.querySelector('.ant-picker-year-btn');
+        const button = singlePickerNode(panel, '.ant-picker-year-btn');
         if (!button || !pressPicker(doc, button)) return { ok: false, reason: 'birthdate_panel_missing' };
         const changed = await waitForPanelChange(doc, signature, wait);
         if (!changed.ok) return changed;
         continue;
       }
       if (month !== parsed.month) {
-        const button = panel.querySelector('.ant-picker-month-btn');
+        const button = singlePickerNode(panel, '.ant-picker-month-btn');
         if (!button || !pressPicker(doc, button)) return { ok: false, reason: 'birthdate_panel_missing' };
         const changed = await waitForPanelChange(doc, signature, wait);
         if (!changed.ok) return changed;
@@ -291,8 +335,8 @@ async function driveBirthDatePanel(doc, parsed, wait) {
         continue;
       }
       const button = parsed.year < Math.min(...years)
-        ? panel.querySelector('.ant-picker-header-super-prev-btn')
-        : panel.querySelector('.ant-picker-header-super-next-btn');
+        ? singlePickerNode(panel, '.ant-picker-header-super-prev-btn')
+        : singlePickerNode(panel, '.ant-picker-header-super-next-btn');
       if (!button || !pressPicker(doc, button)) return { ok: false, reason: 'birthdate_panel_missing' };
       const changed = await waitForPanelChange(doc, signature, wait);
       if (!changed.ok) return changed;
@@ -311,7 +355,7 @@ async function driveBirthDatePanel(doc, parsed, wait) {
       continue;
     }
     const headerYear = readHeaderYear(panel);
-    const yearButton = panel.querySelector('.ant-picker-year-btn');
+    const yearButton = singlePickerNode(panel, '.ant-picker-year-btn');
     if (yearButton && headerYear != null && headerYear !== parsed.year) {
       if (!pressPicker(doc, yearButton)) return { ok: false, reason: 'birthdate_panel_missing' };
       const changed = await waitForPanelChange(doc, signature, wait);
@@ -338,7 +382,8 @@ function assessCmbBirthDatePickerTarget(doc) {
     return { ...classifyCmbBirthDatePickerTarget({ count: 0, input: false }), ok: false, node: null };
   }
   const nodes = [...doc.querySelectorAll(`[id="${CMB_BIRTHDATE_INPUT_ID}"]`)];
-  const input = nodes.length === 1 && nodes[0].tagName === 'INPUT';
+  const input = nodes.length === 1 && nodes[0].tagName === 'INPUT'
+    && nodes[0].type === 'text' && !isUnsafeClick(nodes[0]);
   const classified = classifyCmbBirthDatePickerTarget({ count: nodes.length, input });
   return {
     ...classified,
@@ -398,26 +443,46 @@ async function fillCmbBirthDatePicker(doc, rawDate, options = {}) {
     });
   }
   await wait();
-  const afterPick = normalizeCmbBirthDateValue(input.value);
+  const pickedTarget = assessCmbBirthDatePickerTarget(doc);
+  if (!pickedTarget.ok) {
+    pressEscape(doc, input);
+    return closedPickerResult({
+      reason: pickedTarget.reason,
+      expected: parsed.iso,
+      before,
+      writeAttempted: true
+    });
+  }
+  const pickedInput = pickedTarget.node;
+  const afterPick = normalizeCmbBirthDateValue(pickedInput.value);
   if (afterPick !== parsed.iso) {
     pressEscape(doc, input);
     return closedPickerResult({
       reason: 'birthdate_readback_mismatch',
       expected: parsed.iso,
       before,
-      after: pickerNorm(input.value),
+      after: pickerNorm(pickedInput.value),
       writeAttempted: true
     });
   }
   const stillOpen = singlePanel(doc);
-  if (stillOpen.ok) pressEscape(doc, input);
-  const after = normalizeCmbBirthDateValue(input.value);
+  if (stillOpen.ok) pressEscape(doc, pickedInput);
+  const verifiedTarget = assessCmbBirthDatePickerTarget(doc);
+  if (!verifiedTarget.ok) {
+    return closedPickerResult({
+      reason: verifiedTarget.reason,
+      expected: parsed.iso,
+      before,
+      writeAttempted: true
+    });
+  }
+  const after = normalizeCmbBirthDateValue(verifiedTarget.node.value);
   if (after !== parsed.iso) {
     return closedPickerResult({
       reason: 'birthdate_readback_mismatch',
       expected: parsed.iso,
       before,
-      after: pickerNorm(input.value),
+      after: pickerNorm(verifiedTarget.node.value),
       writeAttempted: true
     });
   }

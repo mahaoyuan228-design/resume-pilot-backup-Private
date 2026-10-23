@@ -530,8 +530,10 @@ function happyAnswers(overrides = {}) {
       identities: [JSON.stringify(['14_53_0', '14_55_0'])] },
     education_run: happyOutcome(),
     read_posts: [],
+    read_suppressed_autosave: [],
     read_clicks: [],
-    cleanup: { ok: true, posts: overrides.read_posts || [], clicks: overrides.read_clicks || [] },
+    cleanup: { ok: true, posts: overrides.read_posts || [], clicks: overrides.read_clicks || [],
+      suppressedAutosave: overrides.read_suppressed_autosave || [] },
     ...overrides
   };
 }
@@ -704,7 +706,7 @@ test('failed request interception and failed guard reads cannot produce successf
     assert.notEqual(evidence.finalDetails.exitCode, 0);
     assert.ok(calls.some(call => call.method === command));
   }
-  for (const step of ['read_posts', 'read_clicks']) {
+  for (const step of ['read_posts', 'read_suppressed_autosave', 'read_clicks']) {
     const { evidence } = await runFake(t, { answers: happyAnswers({ [step]: new Error('guard unavailable') }) });
     assert.notEqual(evidence.finalDetails.exitCode, 0);
   }
@@ -713,7 +715,7 @@ test('failed request interception and failed guard reads cannot produce successf
 test('cleanup cannot erase a forbidden click already observed by the host', async t => {
   const { evidence } = await runFake(t, { answers: happyAnswers({
     read_clicks: [{ type: 'click', label: '保存' }],
-    cleanup: { ok: true, posts: [], clicks: [] }
+    cleanup: { ok: true, posts: [], clicks: [], suppressedAutosave: [] }
   }) });
   assert.equal(evidence.finalDetails.exitCode, 3);
   assert.ok(evidence.finalDetails.clickCount > 0);

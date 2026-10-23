@@ -28,10 +28,11 @@ import {
 
 export { readPort, readOutDir, readStepTimeout, classifyCmsTabUrl, selectCmsResumeTarget };
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
-export const BASE_TIP = '947e318e42c8f3b3dcb52111848989d3280ce0bc';
+export const BASE_TIP = '31074f62a6ed8a7c2fc95b96eb28ac828dc726e0';
 export const DEFAULT_PORT = 9239;
 export const EVIDENCE_NAME = 'cms-education-live.json';
 export const READBACK_WAIT_MS = 500;
+export const AUTOSAVE_SETTLE_TIMEOUT_MS = 2000;
 export const POWERSHELL = "$env:PORT='9239'; $env:OUTDIR=Join-Path ([Environment]::GetFolderPath('Desktop')) 'ResumeQuickFill-Dev\\_temp-scripts'; node scripts/live/cms-education-live.mjs";
 export const FIELD_SPECS = Object.freeze([
   Object.freeze({ key: 'major', q: '专业名称', path: 'education.0.major', fixture: '金融学' }),
@@ -46,7 +47,9 @@ Never-Save trial. Attach to the already-open baseline 招商 CMS resume tab usin
 Select one existing education row with ROW_INDEX; 专业名称 and 专业描述 only.
 All other rows are bound with no ready facts and must remain unchanged.
 Supports 1–30 existing rows (the shipped planner's limit); never adds rows.
-No navigation, login, Add, clicks, 保存/提交/投递, or non-GET requests.
+No navigation, login, Add, clicks, 保存/提交/投递, or non-GET transmission.
+Only the evidenced education XHR autosave is suppressed before native send;
+its attempts are logged separately. All other non-GET attempts fail.
 Close menus first and leave the tab alone during the trial. Originals are
 restored and verified. liveSupportClaimed remains false; no live-site claim.
 
@@ -72,6 +75,34 @@ export function fieldSpecsForRow(rowIndex = 0) {
 
 export function isNonGetMethod(method) {
   return String(method ?? '').toUpperCase() !== 'GET';
+}
+
+// The 9242 evidence identifies this XHR endpoint only. Derive its tenant from
+// the already-supported page; this is not permission for other CMS tenants.
+export function isEducationAutosave(request, page = CMS_BASELINE_PAGE) {
+  if (String(request?.method ?? '').toUpperCase() !== 'POST' || typeof request?.url !== 'string') return false;
+  try {
+    const baseline = new URL(page);
+    const url = new URL(request.url, baseline);
+    const tenant = baseline.pathname.split('/')[1];
+    return !!tenant && url.origin === baseline.origin && !url.username && !url.password && !url.search && !url.hash
+      && url.pathname === `/wecruit/resume/info/edit/${tenant}`;
+  } catch { return false; }
+}
+
+function validSuppressedAutosave(row) {
+  return isEducationAutosave(row) && row.via === 'xhr' && row.blockedBeforeSend === true
+    && ['trial', 'restore'].includes(row.phase);
+}
+
+function mergeObservations(...logs) {
+  const merged = new Map();
+  for (const log of logs) {
+    const counts = new Map();
+    for (const row of log) { const key = JSON.stringify(row); counts.set(key, (counts.get(key) || 0) + 1); }
+    for (const [key, count] of counts) merged.set(key, Math.max(count, merged.get(key) || 0));
+  }
+  return [...merged].flatMap(([key, count]) => Array.from({ length: count }, () => JSON.parse(key)));
 }
 
 export function assertLoopback(url, port) {
@@ -132,7 +163,9 @@ export function buildPageExpression(root = repoRoot, rowIndex = 0) {
     const FIELD_SPECS = ${JSON.stringify(fieldSpecsForRow(rowIndex))};
     const ROW_INDEX = ${rowIndex};
     const READBACK_WAIT_MS = ${READBACK_WAIT_MS};
+    const AUTOSAVE_SETTLE_TIMEOUT_MS = ${AUTOSAVE_SETTLE_TIMEOUT_MS};
     const isNonGetMethod = ${isNonGetMethod.toString()};
+    const isEducationAutosave = ${isEducationAutosave.toString()};
     const redactUrl = ${redactUrl.toString()};
     return (${installEducationTrial.toString()})(globalThis, ${JSON.stringify(CMS_BASELINE_PAGE)},
       readCmsEducationSerialization, verifyEducationSerialization);
@@ -148,7 +181,11 @@ function installEducationTrial(view, page, readSerialization, verifySerializatio
   if (previous.some(({ descriptor }) => descriptor && !descriptor.configurable)) return { ok: false, reason: 'product_globals_not_replaceable' };
   const removers = [];
   const posts = [];
+  const suppressedAutosave = [];
   const clicks = [];
+  let autosavePhase = null;
+  const pendingTimers = new Set();
+  let untrackedTimer = false;
   let prepared = null;
   let running = null;
   let settled = false;
@@ -156,7 +193,9 @@ function installEducationTrial(view, page, readSerialization, verifySerializatio
   let activePlan = null;
   const stable = (value) => JSON.stringify(value, (_key, item) => item && typeof item === 'object' && !Array.isArray(item)
     ? Object.fromEntries(Object.keys(item).sort().map((key) => [key, item[key]])) : item);
-  const wait = (ms) => new Promise((resolve) => view.setTimeout(resolve, ms));
+  // Harness waits must not count as page callbacks waiting to settle.
+  const nativeSetTimeout = view.setTimeout;
+  const wait = (ms) => new Promise((resolve) => nativeSetTimeout.call(view, resolve, ms));
   const fail = (reason) => { throw new Error(reason); };
   const safeReason = (error) => /^[a-z0-9_]+$/u.test(error?.message || '') ? error.message : 'control_error';
   function patch(object, key, replacement) {
@@ -175,6 +214,28 @@ function installEducationTrial(view, page, readSerialization, verifySerializatio
   const onClick = (event) => { event.preventDefault(); event.stopImmediatePropagation(); clickNote(event.target); };
   const onSubmit = (event) => { event.preventDefault(); event.stopImmediatePropagation(); clickNote(event.target, 'submit'); };
   try {
+    for (const [schedule, cancel, repeating] of [['setTimeout', 'clearTimeout', false], ['setInterval', 'clearInterval', true]]) {
+      const originalSchedule = view[schedule], originalCancel = view[cancel];
+      patch(view, schedule, function (callback, delay, ...args) {
+        if (!autosavePhase) return originalSchedule.call(this, callback, delay, ...args);
+        // String callbacks cannot be wrapped without evaluating site code here.
+        if (typeof callback !== 'function') {
+          untrackedTimer = true;
+          return originalSchedule.call(this, callback, delay, ...args);
+        }
+        let handle;
+        handle = originalSchedule.call(this, function (...values) {
+          try { return callback.apply(this, values); }
+          finally { if (!repeating) pendingTimers.delete(handle); }
+        }, delay, ...args);
+        pendingTimers.add(handle);
+        return handle;
+      });
+      patch(view, cancel, function (handle) {
+        originalCancel.call(this, handle);
+        pendingTimers.delete(handle);
+      });
+    }
     patch(view.HTMLElement.prototype, 'click', function () { clickNote(this); });
     doc.addEventListener('click', onClick, true);
     doc.addEventListener('submit', onSubmit, true);
@@ -198,13 +259,26 @@ function installEducationTrial(view, page, readSerialization, verifySerializatio
       const metadata = new WeakMap();
       const open = xhr.open, send = xhr.send;
       patch(xhr, 'open', function (method, url, ...rest) {
-        metadata.set(this, { method, url });
-        return open.call(this, method, url, ...rest);
+        const result = open.call(this, method, url, ...rest);
+        metadata.set(this, { method, url, openedDuringTrial: !!autosavePhase });
+        return result;
       });
       patch(xhr, 'send', function (...args) {
         const request = metadata.get(this);
         // Unknown requests may have been opened before the guard was installed.
         if (!request || isNonGetMethod(request.method)) {
+          // Only the evidenced autosave may continue local verification. Abort
+          // before logging success of the block; never invoke native send or
+          // synthesize an HTTP success/save response. All other attempts fail.
+          if (autosavePhase && request?.openedDuringTrial && isEducationAutosave(request, page)) {
+            try { this.abort(); }
+            catch (error) { note(request.method, request.url, 'xhr'); throw error; }
+            if (suppressedAutosave.length < 80) suppressedAutosave.push({
+              method: 'POST', url: new URL(request.url, page).href, via: 'xhr',
+              blockedBeforeSend: true, phase: autosavePhase
+            });
+            return undefined;
+          }
           note(request?.method, request?.url, 'xhr');
           this.abort();
           return undefined;
@@ -242,6 +316,18 @@ function installEducationTrial(view, page, readSerialization, verifySerializatio
     if (aborted) fail('trial_aborted');
     if (clicks.length) fail('click_not_allowed');
     if (posts.length) fail('non_get_request');
+  }
+  async function settleCallbacks() {
+    const deadline = view.performance.now() + AUTOSAVE_SETTLE_TIMEOUT_MS;
+    // Include a quiet turn for promise continuations and nested callbacks. Do
+    // not cancel or discard site timers: an unresolved callback fails cleanup.
+    do {
+      await wait(pendingTimers.size ? 25 : 0);
+      pageCheck();
+      if (untrackedTimer) fail('autosave_callbacks_unverifiable');
+      if (!pendingTimers.size) return;
+    } while (view.performance.now() < deadline);
+    fail('autosave_callbacks_pending');
   }
   function readProof() {
     const proof = readSerialization();
@@ -330,11 +416,21 @@ function installEducationTrial(view, page, readSerialization, verifySerializatio
   }
 
   async function restore() {
+    autosavePhase = 'restore';
     pageCheck();
     if (prepared.originals.every(({ spec, value }) => locate(spec).value === value)
       && proofSnapshot(readProof()) === prepared.proof
       && outsideSnapshot(targetInputs()) === prepared.others) {
-      return { ok: true, via: 'not_needed', otherChanged: false };
+      let drainError = null;
+      try { await settleCallbacks(); } catch (error) { drainError = error; }
+      if (prepared.originals.every(({ spec, value }) => locate(spec).value === value)
+        && proofSnapshot(readProof()) === prepared.proof
+        && outsideSnapshot(targetInputs()) === prepared.others) {
+        if (drainError) throw drainError;
+        return { ok: true, via: 'not_needed', otherChanged: false };
+      }
+      // A callback may dirty a previously restored field before the drain
+      // times out. Still apply native restoration before reporting failure.
     }
     let changed = false;
     for (const original of prepared.originals) {
@@ -351,6 +447,7 @@ function installEducationTrial(view, page, readSerialization, verifySerializatio
       input.blur();
     }
     await wait(READBACK_WAIT_MS);
+    await settleCallbacks();
     pageCheck();
     const domMatch = prepared.originals.every(({ spec, value }) => locate(spec).value === value);
     const propsMatch = proofSnapshot(readProof()) === prepared.proof;
@@ -393,17 +490,19 @@ function installEducationTrial(view, page, readSerialization, verifySerializatio
         return true;
       };
       writeStarted = true;
+      autosavePhase = 'trial';
       const product = await view.ResumeCmsEducationMulti.run(plan, {
         verifyBeforeWrite: check,
         checkOwner: (owner) => check() && stable(owner) === stable(plan.ownerBinding),
         checkSource: (index, hash) => check() && Number.isInteger(index) && index >= 0
           && index < plan.records.length && hash === plan.records[index].sourceSnapshotHash,
-        readSerialization: async () => { await wait(READBACK_WAIT_MS); check(); return readProof(); },
+        readSerialization: async () => { await wait(READBACK_WAIT_MS); await settleCallbacks(); check(); return readProof(); },
         verifySerialization
         // No school/select/date/region adapters: they cannot be clicked.
       });
       result.productReason = /^[a-z0-9_]+$/u.test(product?.reason || '') ? product.reason : 'product_failed';
       await wait(READBACK_WAIT_MS);
+      await settleCallbacks();
       safetyCheck();
       const proof = readProof();
       const verified = verifySerialization(plan, product.bindings || [], proof);
@@ -446,17 +545,28 @@ function installEducationTrial(view, page, readSerialization, verifySerializatio
       return running;
     },
     posts: () => posts.slice(),
+    suppressedAutosave: () => suppressedAutosave.slice(),
     clicks: () => clicks.slice(),
     async cleanup() {
       aborted = true;
       if (running && !settled) await running;
+      // Reverify after callbacks drain. On failure leave the page guards in
+      // place; the host must not claim the page was left as found.
+      try {
+        if (autosavePhase) {
+          if (!(await restore()).ok) fail('restore_failed');
+        } else await settleCallbacks();
+      } catch (error) {
+        return { ok: false, reason: safeReason(error), posts: posts.slice(), clicks: clicks.slice(),
+          suppressedAutosave: suppressedAutosave.slice() };
+      }
       for (const remove of [...removers].reverse()) remove();
       for (const { key, descriptor } of previous) {
         if (descriptor) Object.defineProperty(view, key, descriptor);
         else delete view[key];
       }
       if (view.__cmsEducationLive === api) delete view.__cmsEducationLive;
-      return { ok: true, posts: posts.slice(), clicks: clicks.slice() };
+      return { ok: true, posts: posts.slice(), clicks: clicks.slice(), suppressedAutosave: suppressedAutosave.slice() };
     }
   };
   view.__cmsEducationLive = api;
@@ -480,6 +590,7 @@ export function evidenceExitCode(evidence) {
   const specs = fieldSpecsForRow(details.rowIndex);
   const fields = evidence?.fields || [];
   const ok = evidence?.neverSave === true && evidence.liveSupportClaimed === false
+    && Array.isArray(evidence.suppressedAutosave) && evidence.suppressedAutosave.every(validSuppressedAutosave)
     && details.liveSupportClaimed === false && details.moduleClaimedSupport === false
     && !details.reason && details.restored === true && details.pageLeftAsFound === true
     && details.cleanupOk === true && details.otherChanged === false
@@ -511,6 +622,7 @@ export async function runCmsEducationLive(options = {}) {
   let reason = null;
   let outcome = null;
   let clicks = [];
+  let suppressedAutosave = [];
   let installed = false;
   let fetchEnabled = false;
   let cleanupOk = false;
@@ -521,6 +633,12 @@ export async function runCmsEducationLive(options = {}) {
   const safeReason = (value, fallback) => typeof value === 'string' && /^[a-z0-9_]+$/u.test(value) ? value : fallback;
   const recordTraffic = (request, via) => {
     if (trafficRows.length < 160 && isNonGetMethod(request?.method)) trafficRows.push({ method: request?.method, url: request?.url, via });
+  };
+  const readSuppression = (rows) => {
+    if (!Array.isArray(rows) || rows.length > 80 || !rows.every(validSuppressedAutosave)) throw new Error('autosave_guard_invalid');
+    return rows.map(({ method, url, via, blockedBeforeSend, phase }) => ({
+      method: method.toUpperCase(), url: new URL(url, CMS_BASELINE_PAGE).href, via, blockedBeforeSend, phase
+    }));
   };
   const send = async (method, params, step) => {
     const reply = await session.send(method, params, { timeoutMs: stepTimeoutMs, step });
@@ -617,25 +735,20 @@ export async function runCmsEducationLive(options = {}) {
         const posts = await evaluate('globalThis.__cmsEducationLive.posts()', 'read_posts');
         if (!Array.isArray(posts)) throw new Error('traffic_read_failed');
         trafficRows.push(...posts);
+        suppressedAutosave = readSuppression(await evaluate('globalThis.__cmsEducationLive.suppressedAutosave()', 'read_suppressed_autosave'));
         const observed = await evaluate('globalThis.__cmsEducationLive.clicks()', 'read_clicks');
         if (!Array.isArray(observed)) throw new Error('click_read_failed');
         clicks = observed;
       } catch { reason ||= 'guard_read_failed'; }
       try {
         const cleanup = await evaluate('globalThis.__cmsEducationLive.cleanup()', 'cleanup', true);
+        if (Array.isArray(cleanup?.posts)) trafficRows.push(...cleanup.posts);
+        if (Array.isArray(cleanup?.clicks)) clicks = mergeObservations(clicks, cleanup.clicks);
+        // Even unsuccessful cleanup can report late blocked attempts. Preserve
+        // them without permitting them to excuse any observed network traffic.
+        suppressedAutosave = mergeObservations(suppressedAutosave, readSuppression(cleanup?.suppressedAutosave));
         cleanupOk = cleanup?.ok === true && Array.isArray(cleanup.posts) && Array.isArray(cleanup.clicks);
-        if (cleanupOk) {
-          trafficRows.push(...cleanup.posts);
-          // Never discard a click already observed in an earlier reply.
-          const merged = new Map();
-          for (const log of [clicks, cleanup.clicks]) {
-            const counts = new Map();
-            for (const row of log) { const key = JSON.stringify(row); counts.set(key, (counts.get(key) || 0) + 1); }
-            for (const [key, count] of counts) merged.set(key, Math.max(count, merged.get(key) || 0));
-          }
-          clicks = [...merged].flatMap(([key, count]) => Array.from({ length: count }, () => JSON.parse(key)));
-        }
-        else reason ||= 'cleanup_failed';
+        if (!cleanupOk) reason ||= safeReason(cleanup?.reason, 'cleanup_failed');
       } catch { reason ||= 'cleanup_failed'; }
     }
     // Never disable interception until page execution/restore has settled.
@@ -667,12 +780,13 @@ export async function runCmsEducationLive(options = {}) {
     status: 'verified', reason: 'readback_matched', value: specs[index].fixture
   });
   const evidence = {
-    tipSha, neverSave: true, liveSupportClaimed: false, fields, ...traffic,
+    tipSha, neverSave: true, liveSupportClaimed: false, fields, ...traffic, suppressedAutosave,
     finalDetails: {
       baseTip: BASE_TIP, port, rowIndex, recordCount, href, tabAction, reason, steps,
       neverSave: true, liveSupportClaimed: false, moduleClaimedSupport: false,
       clickCount: clicks.length, bannedClick: clickDecision.banned === true,
-      cleanupOk, restored: outcome?.restored === true, pageLeftAsFound: outcome?.pageLeftAsFound === true,
+      cleanupOk, restored: outcome?.restored === true,
+      pageLeftAsFound: cleanupOk && outcome?.pageLeftAsFound === true,
       restoreVia: outcome ? 'native_events' : null, otherChanged: outcome?.otherChanged === true,
       waitedMs: Number(outcome?.waitedMs) || 0, productReason: safeReason(outcome?.productReason, null),
       limits: [
@@ -681,7 +795,10 @@ export async function runCmsEducationLive(options = {}) {
         `Only education.${rowIndex}.major and education.${rowIndex}.majorDescription are confirmed. No widget adapters are injected.`,
         'Trial writes use ResumeCmsEducationMulti.run and its native text writer; DOM and shipped React serialization proof must match.',
         'Cleanup uses native setters, input/change, and real focus/blur to preserve exact original text, including empty strings. Original values and proof stay in the page.',
-        'All clicks and form submissions are blocked. Every non-GET, including HEAD/OPTIONS, fails; CDP interception is mandatory.',
+        'All clicks and form submissions are blocked. Only the evidenced XHR POST opened during trial/restore is aborted before native send and logged as suppressedAutosave. No HTTP success response is synthesized.',
+        'Every other non-GET attempt, including HEAD/OPTIONS or any CDP-observed request, fails; CDP interception is mandatory and never allows non-GET transmission.',
+        'Tracked page timeouts drain under the guards; an uncleared interval or unresolved callback fails cleanup and retains page hooks. Original DOM and serialization are reverified before hooks are removed.',
+        'This bounded trial does not prove absence of arbitrary future callbacks through previously captured APIs, workers, or later asynchronous responses.',
         'If CDP disconnects or times out, cleanup may be unverifiable. Evidence fails and does not claim the page was restored.'
       ],
       path: filePath

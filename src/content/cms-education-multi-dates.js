@@ -4,7 +4,7 @@
   async function checkProfileWrite(){const context=globalThis.ResumeProfileWriteContext;if(context)await context.check();}
 
 
-  // Four exact CMS calendar scopes share the verified calendar interaction.
+  // Exact CMS calendar scopes share the offline-tested calendar interaction.
   // The caller must bind one confirmed full date to its only section row. A
   // month-only fact is never expanded to an invented day, including trials.
   // All value changes go through actual calendar choices, never input.value.
@@ -139,6 +139,90 @@
     return dates.length && dates.every((date) => date === dates[0]) ? dates[0] : null;
   }
 
+  // 2026-10-23 materials: field-{start,end}-time-open-isolated.json.
+  // Only the day grid and previous/next year/month header links were harvested.
+  // The harvested education path never opens year/month selector panels.
+  function harvestedDayPanel(portal) {
+    if (oneVisible(portal, ".ant-calendar-year-panel")
+      || oneVisible(portal, ".ant-calendar-month-panel")) return null;
+    return oneVisible(portal, ".ant-calendar-date-panel");
+  }
+
+  function hasHarvestedHeader(portal) {
+    const panel = harvestedDayPanel(portal);
+    // A partially missing captured header must still fail closed in this path.
+    // BUTTON headers belong to the older isolated fictional fixture.
+    return panel && [...panel.querySelectorAll(".ant-calendar-header a.ant-calendar-year-select,.ant-calendar-header a.ant-calendar-month-select")].some(visible);
+  }
+
+  function harvestedMonth(panel) {
+    if (!panel) return null;
+    const year = oneVisible(panel, ".ant-calendar-header .ant-calendar-year-select");
+    const month = oneVisible(panel, ".ant-calendar-header .ant-calendar-month-select");
+    const y = /^\s*(\d{4})年?\s*$/u.exec(year?.textContent || "");
+    const m = /^\s*(\d{1,2})月?\s*$/u.exec(month?.textContent || "");
+    if (!y || !m || Number(m[1]) < 1 || Number(m[1]) > 12) return null;
+    return Number(y[1]) * 12 + Number(m[1]) - 1;
+  }
+
+  async function fillHarvestedEducationCalendar(portal, targetDate, locate, deadline, initialValue) {
+    const targetMonth = Number(targetDate.slice(0, 4)) * 12 + Number(targetDate.slice(5, 7)) - 1;
+    const unchanged = () => {
+      const input = locate();
+      return input && input.value === initialValue && input.readOnly && enabled(input)
+        && openPortals().length === 1 && openPortals()[0] === portal;
+    };
+    for (let step = 0; step < 240 && Date.now() <= deadline; step += 1) {
+      if (!unchanged()) return { decision: { status: "failed", reason: "field_changed" }, clickedDay: false };
+      const panel = harvestedDayPanel(portal);
+      if (!panel) return { decision: { status: "skipped", reason: "day_panel_missing" }, clickedDay: false };
+      const candidates = [...panel.querySelectorAll(".ant-calendar-cell > .ant-calendar-date")]
+        .filter(cell => visible(cell) && parseFullDate(cell) === targetDate);
+      if (candidates.length) {
+        if (candidates.length !== 1) return { decision: { status: "skipped", reason: "ambiguous_day" }, clickedDay: false };
+        const day = candidates[0];
+        if (!enabled(day)) return { decision: { status: "skipped", reason: "disabled_day" }, clickedDay: false };
+        requireVisibleFillPage();
+        await checkProfileWrite();
+        const currentCandidates = [...panel.querySelectorAll(".ant-calendar-cell > .ant-calendar-date")]
+          .filter(cell => visible(cell) && parseFullDate(cell) === targetDate);
+        if (!unchanged() || harvestedDayPanel(portal) !== panel || !day.isConnected
+          || currentCandidates.length !== 1 || currentCandidates[0] !== day
+          || !visible(day) || !enabled(day) || parseFullDate(day) !== targetDate)
+          return { decision: { status: "failed", reason: "field_changed" }, clickedDay: false };
+        day.click();
+        await checkProfileWrite();
+        const readback = await waitUntil(() => locate()?.value === targetDate, STEP_MS, deadline);
+        return { decision: readback
+          ? { status: "verified", reason: initialValue === targetDate ? "reapplied" : "readback_matched" }
+          : { status: "failed", reason: "readback_mismatch" }, clickedDay: true };
+      }
+      const currentMonth = harvestedMonth(panel);
+      if (currentMonth === null) return { decision: { status: "skipped", reason: "calendar_header_unrecognized" }, clickedDay: false };
+      if (currentMonth === targetMonth) return { decision: { status: "skipped", reason: "day_not_found" }, clickedDay: false };
+      const delta = targetMonth - currentMonth;
+      const direction = delta < 0 ? "prev" : "next";
+      const unit = Math.abs(delta) >= 12 ? "year" : "month";
+      const expectedMonth = currentMonth + (delta < 0 ? -1 : 1) * (unit === "year" ? 12 : 1);
+      const selector = `.ant-calendar-header .ant-calendar-${direction}-${unit}-btn`;
+      const control = oneVisible(panel, selector);
+      if (!enabled(control)) return { decision: { status: "skipped", reason: "calendar_navigation_missing" }, clickedDay: false };
+      requireVisibleFillPage();
+      await checkProfileWrite();
+      if (!unchanged() || harvestedDayPanel(portal) !== panel || harvestedMonth(panel) !== currentMonth
+        || oneVisible(panel, selector) !== control || !enabled(control))
+        return { decision: { status: "failed", reason: "field_changed" }, clickedDay: false };
+      control.click();
+      await checkProfileWrite();
+      const moved = await waitUntil(() => {
+        const displayed = harvestedMonth(harvestedDayPanel(portal));
+        return displayed !== null && displayed !== currentMonth ? displayed : null;
+      }, STEP_MS, deadline);
+      if (moved !== expectedMonth) return { decision: { status: "failed", reason: "calendar_navigation_mismatch" }, clickedDay: false };
+    }
+    return { decision: { status: "skipped", reason: "calendar_navigation_limit" }, clickedDay: false };
+  }
+
   async function closePortal(locate, deadline) {
     if (openPortals().length === 0) return true;
     const input = locate();
@@ -213,7 +297,10 @@
     let decision = { status: "failed", reason: "control_error" };
     try {
       requireVisibleFillPage();
-      await checkProfileWrite(); input.click();await checkProfileWrite();
+      await checkProfileWrite();
+      if (locate() !== input || input.value !== initialValue || !input.readOnly || !enabled(input))
+        return { status: "failed", reason: "field_changed" };
+      input.click();await checkProfileWrite();
       const portal = await waitUntil(() => openPortals().length === 1 && openPortals()[0], STEP_MS, deadline);
       if (!portal) {
         // A framework can still have a timer queued to mount the portal.
@@ -229,6 +316,10 @@
         decision = { status: "failed", reason: "portal_not_open" };
       } else if (openPortals().length !== 1 || locate() == null) {
         decision = { status: "failed", reason: "field_changed" };
+      } else if (binding.collection === "education" && hasHarvestedHeader(portal)) {
+        const result = await fillHarvestedEducationCalendar(portal, targetDate, locate, deadline, initialValue);
+        decision = result.decision;
+        clickedDay = result.clickedDay;
       } else {
         const targetYear = Number(targetDate.slice(0, 4));
         const targetMonth = Number(targetDate.slice(5, 7));
@@ -338,6 +429,6 @@
     return decision;
   }
 
-  globalThis.ResumeCmsMultiEducationDates=Object.freeze({implementationRevision:3,fillEducationDate:(input,value,binding)=>fillEducationDate(input,value,{...binding,collection:'education'})});
+  globalThis.ResumeCmsMultiEducationDates=Object.freeze({implementationRevision:4,fillEducationDate:(input,value,binding)=>fillEducationDate(input,value,{...binding,collection:'education'})});
   globalThis.ResumeCmsInternshipDates=Object.freeze({implementationRevision:1,fillDate:(input,value,binding)=>fillEducationDate(input,value,{...binding,collection:'experience'})});
 })();

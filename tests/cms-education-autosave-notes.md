@@ -1,5 +1,7 @@
 # CMS education Never-Save autosave handling
 
+This records the PR #172 text-only baseline. The default trial still follows that path. The later `CONTROLS=1` probes, harvested adapters, exact-original preflight, and additional limits are documented in [cms-education-harvest-notes.md](cms-education-harvest-notes.md).
+
 This change uses task option B in `scripts/live/cms-education-live.mjs`. It permits local text verification and restoration after blocking the evidenced autosave attempt. It does not save the fixture values or simulate a successful save response.
 
 ## Evidence boundary
@@ -31,4 +33,4 @@ Offline tests use fictional fixtures and fake CDP; they are not evidence of a ne
 
 Validation: all 98 tests in `tests/cms-education*.test.mjs` pass. The additional basic-info regression suite passes 18/18 with an external, test-only loader normalizing its existing Windows URL-path conversion and CRLF-sensitive source-string assertion. The unmodified basic-info test command fails on those platform assumptions in this checkout; its test, runner, matcher, session module, and engine are unchanged. The loader changes no product code or repository file.
 
-Only 专业名称 and 专业描述 are exercised. 学校、学历、学位、开始时间、结束时间、城市、专业排名 remain `skipped/control_not_supported`. No new control adapters or tenant support are introduced.
+In the default text-only mode, only 专业名称 and 专业描述 are exercised. 学校、学历、学位、开始时间、结束时间、城市、专业排名 remain `skipped/control_not_supported`. PR #172 introduced no new control adapters or tenant support.

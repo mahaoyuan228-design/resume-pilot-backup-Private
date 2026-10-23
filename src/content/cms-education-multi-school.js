@@ -119,7 +119,7 @@
       || opened[0] !== current.selection.closest(".ant-select")) return null;
     const linkedId = current.selection.getAttribute("aria-controls");
     const linked = linkedId && document.getElementById(linkedId);
-    if (linked && !menus[0].contains(linked)) return null;
+    if (!linkedId || !linked || !menus[0].contains(linked)) return null;
     return { ...current, menu: menus[0] };
   }
 
@@ -247,9 +247,38 @@
     let openedByThisCall = false;
     let selectedByThisCall = false;
     let decision = { status: "failed", reason: "control_error" };
+    // The harvested school menu can already contain the exact catalog LI on
+    // open. Use that observed path before requesting a fuzzy search. Both paths
+    // still require a stable owned menu and the captured answer to be unchanged.
+    const stableState = async (query, minimumWait) => {
+      const started = performance.now();
+      let lastSignature = null, lastMenu = null, stable = 0;
+      for (let i = 0; i < 60; i += 1) {
+        requireVisiblePage();
+        const live = uniqueOpenMenu(baseline);
+        if (!live) throw new Error("menu_changed");
+        if (selectedText(live.selection) !== existing) throw new Error("unexpected_value");
+        if (live.search.value !== query) throw new Error("search_changed");
+        const state = candidateState(live.menu, desired, desiredOptionText, query);
+        stable = live.menu === lastMenu && state.signature === lastSignature && !state.busy ? stable + 1 : 0;
+        lastSignature = state.signature;
+        lastMenu = live.menu;
+        if (performance.now() - started >= minimumWait && stable >= 3) return state;
+        await pause(80);
+      }
+      throw new Error("menu_not_stable");
+    };
     try {
       requireVisiblePage();
-      await checkProfileWrite(); initial.selection.click();
+      await checkProfileWrite(); requireVisiblePage();
+      const beforeOpen = locate(baseline);
+      if (!beforeOpen || beforeOpen.selection !== initial.selection || beforeOpen.search !== initial.search)
+        return {status:'failed',reason:'field_changed'};
+      if (selectedText(beforeOpen.selection) !== existing) return {status:'failed',reason:'unexpected_value'};
+      if (beforeOpen.search.value !== '' || visible(beforeOpen.search)
+        || openMenus().length || openSelects().length || otherOverlays().length)
+        return {status:'skipped',reason:'control_busy'};
+      beforeOpen.selection.click();
       openedByThisCall = true;
       let opened = null;
       for (let i = 0; i < 35; i += 1) {
@@ -261,114 +290,115 @@
       if (!opened || !visible(opened.search) || opened.search.value !== "")
         decision = { status: "failed", reason: "search_not_open" };
       else {
-        opened.search.focus();
-        if (document.activeElement !== opened.search)
-          decision = { status: "failed", reason: "search_focus_failed" };
-        else {
-          let trusted = false;
-          const watch = (event) => { trusted ||= event.isTrusted; };
-          opened.search.addEventListener("input", watch);
-          await checkProfileWrite(); const inserted = document.execCommand("insertText", false, searchText);
-          opened.search.removeEventListener("input", watch);
-          if (!inserted || !trusted || opened.search.value !== searchText)
-            decision = { status: "failed", reason: "trusted_search_unavailable" };
+        const onOpen = await stableState('', 300);
+        // Create-school labels remain refused; only a unique exact catalog LI
+        // from the linked menu can bypass search.
+        let state = onOpen.candidateKind === 'exact_catalog_option' && onOpen.exact.length ? onOpen : null;
+        let query = '';
+        if (!state) {
+          opened.search.focus();
+          if (document.activeElement !== opened.search)
+            decision = { status: "failed", reason: "search_focus_failed" };
           else {
-            const started = performance.now();
-            let lastSignature = null;
-            let stable = 0;
-            let candidate = null,candidateKind=null;
-            for (let i = 0; i < 60; i += 1) {
-              requireVisiblePage();
-              const live = uniqueOpenMenu(baseline);
-              if (!live) { decision = { status: "failed", reason: "menu_changed" }; break; }
-              if (live.search.value !== searchText) {
-                decision = { status: "failed", reason: "search_changed" }; break;
-              }
-              const state = candidateState(live.menu, desired,desiredOptionText,searchText);
-              stable = state.signature === lastSignature && !state.busy ? stable + 1 : 0;
-              lastSignature = state.signature;
-              if (performance.now() - started >= 900 && stable >= 3) {
-                if (state.exact.length !== 1) decision = {
-                  status: "skipped",
-                  reason: state.exact.length ? "ambiguous_option" : "option_not_found",
-                  ...(state.exact.length ? {} : {
-                    searchText,
-                    desiredOptionText,
-                    visibleOptionCount: state.visibleOptionCount,
-                    createTemplatePresent: !!state.createTemplatePresent,
-                    sampleOptions: state.sampleOptions || [],
-                    candidateOptions: state.candidateOptions || [],
-                    rowWasEmpty: !existing,
-                    hint: !existing && state.createTemplatePresent
-                      ? "empty_row_create_template_not_used"
-                      : (state.createTemplatePresent
-                        ? "create_template_seen_but_not_sole_enabled_match"
-                        : "no_catalog_or_create_match")
-                  })
-                };
-                else {
-                  candidate=state.exact[0];candidateKind=state.candidateKind;
-                  // Narrow ship: never sole-create (Sydney empty-row create template).
-                  // Catalog exact LI still allowed; create template always soft-skip.
-                  if (candidateKind === 'explicit_create_school') {
-                    decision = {
-                      status: 'skipped',
-                      reason: 'option_not_found',
-                      searchText,
-                      desiredOptionText,
-                      visibleOptionCount: state.visibleOptionCount,
-                      createTemplatePresent: true,
-                      sampleOptions: state.sampleOptions || [],
-                      candidateOptions: state.candidateOptions || [],
-                      rowWasEmpty: !existing,
-                      hint: 'sole_create_refused_by_policy'
-                    };
-                    candidate = null;
-                    candidateKind = null;
-                  }
-                }
-                break;
-              }
-              await pause(80);
+            await checkProfileWrite(); requireVisiblePage();
+            const beforeSearch = uniqueOpenMenu(baseline);
+            if (!beforeSearch || beforeSearch.selection !== opened.selection || beforeSearch.search !== opened.search
+              || selectedText(beforeSearch.selection) !== existing || beforeSearch.search.value !== ''
+              || document.activeElement !== beforeSearch.search) throw new Error('field_changed');
+            let trusted = false;
+            const watch = (event) => { trusted ||= event.isTrusted; };
+            opened.search.addEventListener("input", watch);
+            let inserted;
+            try { inserted = document.execCommand("insertText", false, searchText); }
+            finally { opened.search.removeEventListener("input", watch); }
+            if (!inserted || !trusted || opened.search.value !== searchText)
+              decision = { status: "failed", reason: "trusted_search_unavailable" };
+            else {
+              state = await stableState(searchText, 900);
+              query = searchText;
             }
-            if (candidate) {
-              requireVisiblePage();
-              const live = uniqueOpenMenu(baseline);
-              const currentState=live&&candidateState(live.menu,desired,desiredOptionText,searchText);
-              const current=currentState?.exact;
-              if (!live || !candidate.isConnected || current?.length !== 1
-                || current[0] !== candidate || !live.menu.contains(candidate)
-                || currentState.candidateKind!==candidateKind
-                || live.search.value !== searchText || candidate.tagName !== "LI"
-                || candidate.getAttribute("role") !== "option")
-                decision = { status: "failed", reason: "candidate_changed" };
-              else {
-                await checkProfileWrite(); candidate.click();
-                selectedByThisCall = true;
-                let readback = false;
-                for (let i = 0; i < 30; i += 1) {
-                  requireVisiblePage();
-                  const selected = locate(baseline);
-                  if (selected && schoolDisplayMatches(selectedText(selected.selection), desiredOptionText)) {
-                    readback = true;
-                    break;
-                  }
-                  await pause(40);
-                }
-                decision = readback
-                  ? { status: "verified", reason: reapplying ? "reapplied" : "readback_matched",
-                    ...(candidateKind==='explicit_create_school'?{candidateKind}:{}) }
-                  : { status: "failed", reason: "readback_mismatch" };
-              }
-            } else if (decision.reason === "control_error") {
-              decision = { status: "failed", reason: "menu_not_stable" };
+          }
+        }
+        if (state) {
+          let candidate = null,candidateKind=null;
+          if (state.exact.length !== 1) decision = {
+            status: "skipped",
+            reason: state.exact.length ? "ambiguous_option" : "option_not_found",
+            ...(state.exact.length ? {} : {
+              searchText,
+              desiredOptionText,
+              visibleOptionCount: state.visibleOptionCount,
+              createTemplatePresent: !!state.createTemplatePresent,
+              sampleOptions: state.sampleOptions || [],
+              candidateOptions: state.candidateOptions || [],
+              rowWasEmpty: !existing,
+              hint: !existing && state.createTemplatePresent
+                ? "empty_row_create_template_not_used"
+                : (state.createTemplatePresent
+                  ? "create_template_seen_but_not_sole_enabled_match"
+                  : "no_catalog_or_create_match")
+            })
+          };
+          else {
+            candidate=state.exact[0];candidateKind=state.candidateKind;
+            // Narrow ship: never sole-create (Sydney empty-row create template).
+            // Catalog exact LI still allowed; create template always soft-skip.
+            if (candidateKind === 'explicit_create_school') {
+              decision = {
+                status: 'skipped',
+                reason: 'option_not_found',
+                searchText,
+                desiredOptionText,
+                visibleOptionCount: state.visibleOptionCount,
+                createTemplatePresent: true,
+                sampleOptions: state.sampleOptions || [],
+                candidateOptions: state.candidateOptions || [],
+                rowWasEmpty: !existing,
+                hint: 'sole_create_refused_by_policy'
+              };
+              candidate = null;
+              candidateKind = null;
             }
+          }
+          if (candidate) {
+            requireVisiblePage();
+            await checkProfileWrite(); requireVisiblePage();
+            const live = uniqueOpenMenu(baseline);
+            const currentState=live&&candidateState(live.menu,desired,desiredOptionText,query);
+            const current=currentState?.exact;
+            if (!live || !candidate.isConnected || current?.length !== 1
+              || current[0] !== candidate || !live.menu.contains(candidate)
+              || currentState.candidateKind!==candidateKind || currentState.busy
+              || selectedText(live.selection) !== existing
+              || live.search.value !== query || candidate.tagName !== "LI"
+              || candidate.getAttribute("role") !== "option")
+              decision = { status: "failed", reason: "candidate_changed" };
+            else {
+              candidate.click();
+              selectedByThisCall = true;
+              let readback = false;
+              for (let i = 0; i < 30; i += 1) {
+                requireVisiblePage();
+                const selected = locate(baseline);
+                if (selected && schoolDisplayMatches(selectedText(selected.selection), desiredOptionText)) {
+                  readback = true;
+                  break;
+                }
+                await pause(40);
+              }
+              decision = readback
+                ? { status: "verified", reason: reapplying ? "reapplied" : "readback_matched",
+                  ...(candidateKind==='explicit_create_school'?{candidateKind}:{}) }
+                : { status: "failed", reason: "readback_mismatch" };
+            }
+          } else if (decision.reason === "control_error") {
+            decision = { status: "failed", reason: "menu_not_stable" };
           }
         }
       }
     } catch (error) { if(/^profile_[a-z_]+$/u.test(error?.message||''))throw error;
       decision = { status: "failed", reason: error?.message === "fill_interrupted_page_hidden"
-        ? "fill_interrupted_page_hidden" : "control_error" };
+        ? "fill_interrupted_page_hidden" : ['field_changed','unexpected_value','menu_changed','search_changed','menu_not_stable'].includes(error?.message) ? error.message : "control_error" };
     }
     if (openedByThisCall && document.visibilityState === "visible") {
       for (let i = 0; i < 20 && openMenus().length; i += 1) await pause(40);
@@ -398,5 +428,5 @@
     return decision;
   }
 
-  globalThis.ResumeCmsMultiSchoolSearch = Object.freeze({implementationRevision:7, fillSchool, schoolDisplayMatches });
+  globalThis.ResumeCmsMultiSchoolSearch = Object.freeze({implementationRevision:8, fillSchool, schoolDisplayMatches });
 })();

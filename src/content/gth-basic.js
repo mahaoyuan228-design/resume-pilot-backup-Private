@@ -422,9 +422,17 @@
         if(field.kind==='text'){
           if(selected.control.maxLength>=0&&answer.value.length>selected.control.maxLength)stop('basic_value_too_long');
           const setter=Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value')?.set;
-          if(!setter)stop('native_setter_missing');step('text_input_events');markWrite();
-          await boundAction(()=>{if(!(selected.control)?.isConnected)stop('profile_action_target_changed');return setter.call(selected.control,answer.value);});await boundAction(()=>{if(!(selected.control)?.isConnected)stop('profile_action_target_changed');return selected.control.dispatchEvent(new Event('input',{bubbles:true}));});
-          await boundAction(()=>{if(!(selected.control)?.isConnected)stop('profile_action_target_changed');return selected.control.dispatchEvent(new Event('change',{bubbles:true}));});
+          if(!setter)stop('native_setter_missing');step('text_input_events');
+          // Binding checks yield to the page. Recheck the exact value inside
+          // each action so an applicant edit cannot be overwritten or emitted.
+          const textGuard=expectedOwn=>{
+            guard(field,allBefore,{allowOwnIntermediate:true,existing,untouched});
+            if(selected.read()!==expectedOwn)stop('basic_other_values_changed');
+            if(selected.control.maxLength>=0&&answer.value.length>selected.control.maxLength)stop('basic_value_too_long');
+          };
+          await boundAction(()=>{textGuard(existing);markWrite();return setter.call(selected.control,answer.value);});
+          await boundAction(()=>{textGuard(answer.value);return selected.control.dispatchEvent(new Event('input',{bubbles:true}));});
+          await boundAction(()=>{textGuard(answer.value);return selected.control.dispatchEvent(new Event('change',{bubbles:true}));});
         }else if(field.kind==='radio'){
           const option=selected.options.find(option=>option.text===answer.value);
           if(!option||!enabled(option.control)||!enabled(option.label))stop('basic_gender_option_disabled');

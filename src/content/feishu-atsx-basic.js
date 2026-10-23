@@ -28,6 +28,7 @@
     .trim();
   const cleanLabel = (value) => norm(value).replace(/^\*\s*/u, '').replace(/\s*\*$/u, '').replace(/[：:]\s*$/u, '').trim();
   const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+  const seal = (result) => ({ ...result, saved: false, skippedSave: true, liveSupportClaimed: false });
 
   function isFeishuAtsxHost(hostname = location.hostname) {
     const host = String(hostname || '').toLowerCase();
@@ -84,10 +85,19 @@
 
   function visibleTextInputs(item) {
     return [...item.querySelectorAll(INPUT_SEL)].filter((node) => {
-      if (node.type === 'hidden' || node.type === 'radio' || node.type === 'checkbox') return false;
-      if (node.disabled) return false;
-      const style = getComputedStyle(node);
-      return style.display !== 'none' && style.visibility !== 'hidden';
+      if (!['text', 'tel', 'email'].includes(node.type)) return false;
+      if (!node.isConnected || node.matches(':disabled') || node.readOnly) return false;
+      for (let ancestor = node; ancestor; ancestor = ancestor.parentElement) {
+        if (ancestor.hidden || ancestor.hasAttribute('inert')
+          || ancestor.getAttribute('aria-hidden') === 'true'
+          || ancestor.getAttribute('aria-disabled') === 'true'
+          || ancestor.getAttribute('aria-readonly') === 'true') return false;
+        const style = getComputedStyle(ancestor);
+        if (style.display === 'none' || style.visibility === 'hidden'
+          || style.visibility === 'collapse' || style.contentVisibility === 'hidden'
+          || Number.parseFloat(style.opacity) === 0) return false;
+      }
+      return true;
     });
   }
 
@@ -143,10 +153,46 @@
     return control ? norm(control.value) : '';
   }
 
-  async function fillText(label, value) {
+  async function rollbackText(snapshots) {
+    const restored = [];
+    for (const snap of [...snapshots].reverse()) {
+      if (!snap.control.isConnected) {
+        restored.push({ label: snap.label, ok: false, reason: 'rollback_control_changed' });
+        continue;
+      }
+      if (snap.control.value === snap.before) {
+        restored.push({ label: snap.label, ok: true, reason: 'already_restored' });
+        continue;
+      }
+      // A reactive or user edit owns its new value. Only undo our own exact write.
+      if (snap.control.value !== snap.expected) {
+        restored.push({ label: snap.label, ok: false, reason: 'rollback_skipped_value_changed' });
+        continue;
+      }
+      setNativeValue(snap.control, snap.before);
+      await pause(80);
+      restored.push({ label: snap.label, ok: snap.control.value === snap.before, reason: 'rollback_readback' });
+    }
+    for (const row of restored) {
+      const snap = snapshots.find((candidate) => candidate.label === row.label);
+      row.ok = snap.control.isConnected && snap.control.value === snap.before;
+      row.after = snap.control.value;
+    }
+    return restored;
+  }
+
+  async function fillText(label, value, options = {}) {
+    const expected = norm(value);
+    if (!pageAllowed(options) || !TEXT_LABELS.includes(label) || !expected) {
+      return seal({
+        label, ok: false,
+        reason: !pageAllowed(options) ? 'wrong_page' : !TEXT_LABELS.includes(label) ? 'label_not_allowed' : 'empty_value',
+        before: '', after: '', expected, writeAttempted: false
+      });
+    }
     const row = classifyField(label);
     if (!row.ready) {
-      return {
+      return seal({
         label,
         ok: false,
         reason: row.reason,
@@ -154,24 +200,43 @@
         controlCount: row.controlCount ?? null,
         before: '',
         after: '',
-        expected: norm(value)
-      };
+        expected,
+        writeAttempted: false
+      });
     }
-    const item = row.item;
     const control = row.control;
     const before = norm(control.value);
+    // The fixture has empty text values, with no text sentinel contract.
+    // Prompt-looking strings and actual placeholder text in value are occupied too.
+    if (String(control.value).trim() !== '') {
+      return seal({ label, ok: true, reason: 'skipped_existing', before, after: before, expected, writeAttempted: false });
+    }
+    const snapshot = { label, control, before: control.value, expected: String(value ?? '') };
     control.focus();
-    setNativeValue(control, String(value ?? ''));
+    const focused = classifyField(label);
+    if (!focused.ready || focused.control !== control) {
+      return seal({ label, ok: false, reason: 'control_changed', before, after: norm(control.value), expected, writeAttempted: false });
+    }
+    if (String(control.value).trim() !== '') {
+      return seal({ label, ok: true, reason: 'skipped_existing', before, after: norm(control.value), expected, writeAttempted: false });
+    }
+    setNativeValue(control, snapshot.expected);
     await pause(80);
-    const after = readText(item);
-    return {
+    const current = classifyField(label);
+    const after = current.ready ? norm(current.control.value) : norm(control.value);
+    const ok = current.ready && current.control === control && after === expected;
+    const restore = ok ? [] : await rollbackText([snapshot]);
+    return seal({
       label,
-      ok: after === norm(value),
-      reason: after === norm(value) ? 'matched' : 'readback_mismatch',
+      ok,
+      reason: ok ? 'matched' : 'readback_mismatch',
       before,
       after,
-      expected: norm(value)
-    };
+      expected,
+      writeAttempted: true,
+      restored: restore.length > 0 && restore.every((entry) => entry.ok),
+      restore
+    });
   }
 
   function planFromProfile(profile) {
@@ -264,12 +329,13 @@
             : fp.looksAtsx
               ? 'atsx_shell_no_form_dom'
               : 'labels_missing',
+      liveSupportClaimed: false,
       saved: false,
       skippedSave: true
     };
   }
 
-  async function fillBasic(rawValues = {}, options = {}) {
+  async function fillBasicUnsealed(rawValues = {}, options = {}) {
     if (!pageAllowed(options)) {
       return {
         ok: false,
@@ -277,6 +343,7 @@
         reason: 'wrong_page',
         href: location.href,
         results: [],
+        writeAttempted: false,
         saved: false,
         skippedSave: true
       };
@@ -300,6 +367,7 @@
           reason: 'explicit_values_incomplete',
           href: location.href,
           results: [],
+          writeAttempted: false,
           saved: false,
           skippedSave: true
         };
@@ -360,19 +428,51 @@
         }))
       };
     }
+    const snapshots = classified.map((row) => ({
+      label: row.label, control: row.control, before: row.control.value, expected: row.expected
+    }));
     const results = [];
+    let failed = false;
     for (const [label, value] of textPlan) {
-      results.push(await fillText(label, value));
+      if (failed) {
+        results.push({ label, ok: false, reason: 'skipped_previous_failure', writeAttempted: false, expected: norm(value) });
+        continue;
+      }
+      const snap = snapshots.find((row) => row.label === label);
+      const current = classifyField(label);
+      if (!current.ready || current.control !== snap.control) {
+        results.push({ label, ok: false, reason: 'control_changed', writeAttempted: false, expected: norm(value) });
+        failed = true;
+        continue;
+      }
+      const result = await fillText(label, value, options);
+      results.push(result);
+      failed = !result.ok;
+    }
+    // Later field events can replace an earlier successful readback.
+    for (const result of results.filter((row) => row.writeAttempted && row.ok)) {
+      const current = classifyField(result.label);
+      const snap = snapshots.find((row) => row.label === result.label);
+      if (!current.ready || current.control !== snap.control || norm(current.control.value) !== result.expected) {
+        result.ok = false;
+        result.reason = 'readback_mismatch';
+        result.after = current.ready ? norm(current.control.value) : norm(snap.control.value);
+      }
     }
     const ok = results.every((row) => row.ok);
+    const attempted = snapshots.filter((snap) => results.find((row) => row.label === snap.label)?.writeAttempted);
+    const restore = ok ? [] : await rollbackText(attempted);
     return {
       ok,
+      reason: ok ? 'readback_matched' : 'readback_mismatch',
       siteId: SITE_ID,
       href: location.href,
       title: document.title,
       saved: false,
       skippedSave: true,
-      writeAttempted: true,
+      writeAttempted: attempted.length > 0,
+      restored: restore.length > 0 && restore.every((row) => row.ok),
+      restore,
       profileSource: allowExplicit ? 'explicit' : 'resumeProfile',
       planSummary: plan
         ? { reason: plan.reason, readyCount: plan.fields.filter((f) => f.ready).length, blockerCount: plan.blockers.length }
@@ -381,8 +481,13 @@
     };
   }
 
+  async function fillBasic(rawValues = {}, options = {}) {
+    return seal(await fillBasicUnsealed(rawValues, options));
+  }
+
   const api = {
     siteId: SITE_ID,
+    liveSupportClaimed: false,
     TEXT_LABELS,
     ITEM_SEL,
     isFeishuAtsxHost,

@@ -70,6 +70,20 @@ function fixture(options = {}) {
 
   document.body.insertAdjacentHTML('beforeend', `<div class="el-picker-panel el-date-picker" id="month-popup" style="display:none"><div class="el-date-picker__header"><i class="el-icon-d-arrow-left"></i><span class="el-date-picker__header-label">2024 年</span><i class="el-icon-d-arrow-right"></i></div><table class="el-month-table"><tbody><tr>${MONTHS.map(name => `<td><div><a class="cell">${name}</a></div></td>`).join('')}</tr></tbody></table></div>`);
   const monthPopup = document.getElementById('month-popup');
+  for (const cell of monthPopup.querySelectorAll('td')) {
+    const anchor = cell.querySelector('a.cell');
+    if (options.monthAnchor === 'missing') anchor.remove();
+    if (options.monthAnchor === 'duplicate') cell.insertAdjacentHTML('beforeend', '<a class="cell"></a>');
+    if (options.monthAnchor === 'hidden') anchor.style.visibility = 'hidden';
+    if (options.monthAnchor === 'disabled') anchor.classList.add('disabled');
+    if (options.monthAnchor === 'is-disabled') anchor.classList.add('is-disabled');
+    if (options.monthAnchor === 'aria-disabled') anchor.setAttribute('aria-disabled', 'true');
+    if (options.monthAnchor === 'navigating') anchor.setAttribute('href', 'https://example.invalid/next');
+    if (options.monthAnchor === 'javascript') anchor.setAttribute('href', 'javascript:window.monthUnsafeAction=true');
+    if (options.monthAnchor === 'target') anchor.setAttribute('target', '_blank');
+    if (options.monthAnchor === 'download') anchor.setAttribute('download', 'month');
+    if (options.disabledMonthCell) cell.classList.add('disabled');
+  }
   const year = monthPopup.querySelector('.el-date-picker__header-label');
   const monthPicks = [];
   let activeMonth;
@@ -83,7 +97,12 @@ function fixture(options = {}) {
     monthPopup.querySelector(selector).addEventListener('click', () => { year.textContent = `${Number(year.textContent.match(/\d{4}/u)[0]) + step} 年`; });
   }
   for (const [index, cell] of [...monthPopup.querySelectorAll('td')].entries()) {
-    cell.addEventListener('click', () => {
+    if (options.disableAfterAnchor) cell.querySelector('a.cell')?.addEventListener('click', () => {
+      (options.disableAfterAnchor === 'anchor' ? cell.querySelector('a.cell') : cell).classList.add('disabled');
+    });
+    const clickTarget = options.monthHandler === 'anchor' ? cell.querySelector('a.cell') : cell;
+    clickTarget?.addEventListener('click', event => {
+      if (options.monthHandler === 'td-only' && event.target !== cell) return;
       activeMonth.value = `${year.textContent.match(/\d{4}/u)[0]}-${String(index + 1).padStart(2, '0')}`;
       monthPicks.push(activeMonth.id);
       monthPopup.style.display = 'none';
@@ -152,6 +171,124 @@ test('moving an existing date range later picks the end before the start', async
   assert.equal(result.ok, true, result.reason);
   assert.deepEqual(page.monthPicks, ['end', 'start']);
 });
+
+for (const monthHandler of ['anchor', 'td-only']) {
+  test(`education months support the existing ${monthHandler} click handler without saving`, async t => {
+    const page = fixture({ monthHandler }); t.after(() => page.dom.window.close());
+    const result = await page.run({ startDate: '2020-09', endDate: '2024-06' });
+    assert.equal(result.ok, true, result.reason);
+    assert.deepEqual(page.monthPicks, ['start', 'end']);
+    assert.equal(page.clicks.filter(node => node.matches('a.cell')).length, 2);
+    assert.equal(page.clicks.filter(node => node.matches('.el-month-table td')).length,
+      monthHandler === 'td-only' ? 2 : 0);
+    assert.equal(page.document.getElementById('start').value, '2020-09');
+    assert.equal(page.document.getElementById('end').value, '2024-06');
+    assert.equal(result.liveSupportClaimed, false);
+    assert.equal(result.softwareClickedSave, false);
+    assert.equal(page.saveCount(), 0);
+  });
+}
+
+for (const monthAnchor of ['missing', 'duplicate', 'hidden', 'disabled', 'is-disabled', 'aria-disabled']) {
+  test(`education months reject a ${monthAnchor} month anchor before choosing`, async t => {
+    const page = fixture({ monthAnchor }); t.after(() => page.dom.window.close());
+    const result = await page.run({ startDate: '2020-09', endDate: '2024-06' });
+    assert.equal(result.ok, false);
+    assert.equal(result.reason, ['disabled', 'is-disabled', 'aria-disabled'].includes(monthAnchor)
+      ? 'education_option_disabled' : 'education_month_option_unknown');
+    assert.equal(result.writeStarted, false);
+    assert.deepEqual(page.monthPicks, []);
+    assert.equal(page.clicks.some(node => node.matches('.el-month-table td,.el-month-table a.cell')), false);
+    assert.equal(page.saveCount(), 0);
+  });
+}
+
+test('education months reject a disabled month cell even when its anchor is enabled', async t => {
+  const page = fixture({ disabledMonthCell: true }); t.after(() => page.dom.window.close());
+  const result = await page.run({ startDate: '2020-09', endDate: '2024-06' });
+  assert.equal(result.ok, false);
+  assert.equal(result.reason, 'education_option_disabled');
+  assert.equal(result.writeStarted, false);
+  assert.deepEqual(page.monthPicks, []);
+  assert.equal(page.saveCount(), 0);
+});
+
+for (const monthAnchor of ['navigating', 'javascript', 'target', 'download']) {
+  test(`education months reject a ${monthAnchor} anchor before clicking it`, async t => {
+    const page = fixture({ monthAnchor }); t.after(() => page.dom.window.close());
+    const result = await page.run({ startDate: '2020-09', endDate: '2024-06' });
+    assert.equal(result.ok, false);
+    assert.equal(result.reason, 'education_month_option_unknown');
+    assert.equal(result.writeStarted, false);
+    assert.deepEqual(page.monthPicks, []);
+    assert.equal(page.clicks.some(node => node.matches('.el-month-table td,.el-month-table a.cell')), false);
+    assert.equal(page.window.monthUnsafeAction, undefined);
+    assert.equal(result.liveSupportClaimed, false);
+    assert.equal(page.saveCount(), 0);
+  });
+}
+
+for (const disableAfterAnchor of ['cell', 'anchor']) {
+  test(`education month TD fallback rejects a newly disabled ${disableAfterAnchor}`, async t => {
+    const page = fixture({ monthHandler: 'td-only', disableAfterAnchor }); t.after(() => page.dom.window.close());
+    const result = await page.run({ startDate: '2020-09', endDate: '2024-06' });
+    assert.equal(result.ok, false);
+    assert.equal(result.reason, 'education_option_disabled');
+    assert.deepEqual(page.monthPicks, []);
+    assert.equal(page.clicks.filter(node => node.matches('a.cell')).length, 1);
+    assert.equal(page.clicks.some(node => node.matches('.el-month-table td')), false);
+    assert.equal(page.document.getElementById('start').value, '');
+    assert.equal(result.liveSupportClaimed, false);
+    assert.equal(page.saveCount(), 0);
+  });
+}
+
+test('education month anchor safety is rechecked after the profile-binding await', async t => {
+  const page = fixture(); t.after(() => page.dom.window.close());
+  let changed = false;
+  page.window.chrome.runtime.sendMessage = async message => {
+    const popup = page.document.getElementById('month-popup');
+    if (!changed && popup.style.display === 'block') {
+      popup.querySelectorAll('a.cell')[8].setAttribute('href', 'javascript:window.monthUnsafeAction=true');
+      changed = true;
+    }
+    return { allowed: message.type === 'RESUME_PROFILE_BINDING_CHECK' };
+  };
+  const result = await page.run({ startDate: '2024-09', endDate: '2024-12' });
+  assert.equal(changed, true);
+  assert.equal(result.ok, false);
+  assert.equal(result.reason, 'education_month_option_unknown');
+  assert.deepEqual(page.monthPicks, []);
+  assert.equal(page.clicks.some(node => node.matches('.el-month-table td,.el-month-table a.cell')), false);
+  assert.equal(page.window.monthUnsafeAction, undefined);
+  assert.equal(page.saveCount(), 0);
+});
+
+for (const changedTarget of ['outside-section', 'applicant-field']) {
+  test(`category overwrite stops when ${changedTarget} drifts during search`, async t => {
+    const page = fixture({ category: '经济学' }); t.after(() => page.dom.window.close());
+    page.document.querySelector('.search-input').addEventListener('input', () => {
+      if (changedTarget === 'outside-section') page.document.querySelector('.r-section').append('unexpected-drift');
+      else page.document.getElementById('school').value = 'unexpected-drift';
+    });
+    const result = await page.run({ school: '复旦大学', majorCategory: '金融学' });
+    assert.equal(result.ok, false);
+    assert.equal(result.reason, 'original_value_changed');
+    assert.equal(result.writeStarted, true);
+    assert.equal(result.fields.some(row => row.reason === 'education_category_overwrite_guard'), false);
+    assert.equal(result.fields.some(row => row.question === '专业类别' && row.status === 'verified'), false);
+    if (changedTarget === 'applicant-field') {
+      const school = result.fields.find(row => row.question === '毕业学校');
+      assert.equal(school.status, 'failed');
+      assert.equal(school.reason, 'readback_mismatch');
+      assert.deepEqual({ ...result.completedFields.find(row => row.key === 'school') },
+        { key: 'school', status: 'failed', reason: 'readback_mismatch' });
+    }
+    assert.equal(result.liveSupportClaimed, false);
+    assert.equal(result.softwareClickedSave, false);
+    assert.equal(page.saveCount(), 0);
+  });
+}
 
 test('unconfirmed date half is skipped and cannot become a verified range', async t => {
   const page = fixture(); t.after(() => page.dom.window.close());

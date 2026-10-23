@@ -7,35 +7,52 @@
   // former and can also be replaced on an element. The caller still owns the
   // row/value guards and must observe a visible linked overlay after this one
   // activation. Expanded ARIA or a hidden captured menu is never proof of open.
-  function activateSurface(surface,validate){
+  function activateSurface(surface,validate,report=()=>{}){
     const view=surface?.ownerDocument?.defaultView;
-    if(!view||typeof validate!=='function')return false;
+    const events=[];
+    const note=(stage,reason=null)=>report({stage,reason,events:events.slice()});
+    if(!view||typeof validate!=='function'){note('preflight','surface_unavailable');return false;}
     const wrapper=surface.closest('[id^="14_"]'),section=surface.closest('.form-cell[id="14"]');
-    const current=()=>{
-      if(validate()!==surface||!surface.isConnected||!wrapper||!section
-        ||surface.closest('[id^="14_"]')!==wrapper||surface.closest('.form-cell[id="14"]')!==section
-        ||!surface.getClientRects().length||surface.closest('[hidden],[aria-hidden="true"]')
-        ||view.getComputedStyle(surface).display==='none'||view.getComputedStyle(surface).visibility==='hidden')return false;
-      if(surface.matches('.ant-select-selection[role="combobox"]')){
-        const select=surface.closest('.ant-select');
-        return !!select&&!select.classList.contains('ant-select-disabled')&&surface.getAttribute('aria-disabled')!=='true';
+    const isSelect=surface.matches('.ant-select-selection[role="combobox"]'),owner=surface.getAttribute('aria-controls');
+    const current=(stage,rebind=false)=>{
+      note(stage);
+      const candidate=validate();
+      const refuse=reason=>{note(stage,reason);return false;};
+      if(!candidate)return refuse('validation_rejected');
+      if(candidate!==surface&&!rebind)return refuse('surface_changed');
+      if(!wrapper||!section||candidate.ownerDocument!==surface.ownerDocument
+        ||candidate.closest('[id^="14_"]')!==wrapper||candidate.closest('.form-cell[id="14"]')!==section
+        ||candidate.getAttribute('aria-controls')!==owner)return refuse('binding_changed');
+      if(!candidate.isConnected||!candidate.getClientRects().length||candidate.closest('[hidden],[aria-hidden="true"]')
+        ||view.getComputedStyle(candidate).display==='none'||view.getComputedStyle(candidate).visibility==='hidden')return refuse('surface_hidden');
+      if(isSelect){
+        const select=candidate.closest('.ant-select');
+        if(!candidate.matches('.ant-select-selection[role="combobox"]')||!select
+          ||select.classList.contains('ant-select-disabled')||candidate.getAttribute('aria-disabled')==='true')return refuse('surface_disabled');
+      }else if(!candidate.matches('input.ant-calendar-picker-input[readonly]')
+        ||!candidate.readOnly||candidate.disabled||!candidate.closest('.ant-calendar-picker')){
+        return refuse('surface_disabled');
       }
-      return surface.matches('input.ant-calendar-picker-input[readonly]')
-        &&surface.readOnly&&!surface.disabled&&!!surface.closest('.ant-calendar-picker');
+      surface=candidate;
+      return true;
     };
-    if(!current())return false;
+    if(!current('preflight'))return false;
     surface.scrollIntoView?.({block:'center',inline:'nearest',behavior:'instant'});
-    if(!current())return false;
+    // Scroll/focus can synchronously replace the opener. Before any mouse
+    // event, reacquire only the caller-validated surface in the same captured
+    // wrapper/section with the same aria owner. Never retarget a partial press.
+    if(!current('scroll',true))return false;
     surface.focus({preventScroll:true});
-    if(!current())return false;
+    if(!current('focus',true))return false;
     const rect=surface.getBoundingClientRect(),clientX=Number.isFinite(rect.left+rect.width/2)?rect.left+rect.width/2:0,
       clientY=Number.isFinite(rect.top+rect.height/2)?rect.top+rect.height/2:0;
     for(const type of ['mousedown','mouseup','click']){
-      if(!current())return false;
+      if(!current(type))return false;
       surface.dispatchEvent(new view.MouseEvent(type,{bubbles:true,cancelable:true,view,
         button:0,buttons:type==='mousedown'?1:0,detail:1,clientX,clientY}));
+      events.push(type);
     }
-    return current();
+    return current('complete');
   }
   globalThis.ResumeCmsEducationMultiWidgetControls=Object.freeze({activateSurface});
   globalThis.ResumeCmsEducationMultiAdapters=Object.freeze({

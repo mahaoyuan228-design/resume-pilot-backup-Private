@@ -10,7 +10,7 @@ import vm from 'node:vm';
 import test from 'node:test';
 
 const target = resolve('src/content/cms-education-serialization.mjs');
-const sourceBytes = await readFile(target);
+const sourceBytes = (await readFile(target, 'utf8')).replace(/\r\n/gu, '\n');
 const sourceSHA = createHash('sha256').update(sourceBytes).digest('hex');
 assert.equal(
   sourceSHA,

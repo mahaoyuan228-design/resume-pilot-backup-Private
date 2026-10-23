@@ -736,3 +736,386 @@ test('a hidden page fails closed before a click', async () => {
     unchanged(h.document, h.stats);
   } finally { h.dom.window.close(); }
 });
+
+// These are negative mutations of the captured fixture, not additional supported
+// page layouts, certificate choices, or live-site evidence.
+function neverSaved(row, stats) {
+  assert.equal(row.liveSupportClaimed, false);
+  assert.equal(row.supportClaimed, false);
+  assert.equal(row.neverSave, true);
+  assert.equal(row.saved, false);
+  assert.equal(row.softwareClickedSave, false);
+  assert.equal(row.softwareClickedSubmit, false);
+  assert.equal(row.softwareClickedDeliver, false);
+  assert.equal(row.softwareClickedDelete, false);
+  assert.equal(row.softwareClickedNext, false);
+  assert.equal(stats.forbidden, 0);
+  assert.equal(stats.button, 0);
+}
+
+const OWNERSHIP_MUTATIONS = {
+  'matching row outside the only wrapper': (h) => {
+    h.document.body.append(h.document.querySelector('[data-field="securities"]'));
+  },
+  'second empty wrapper': (h) => {
+    const extra = h.document.createElement('div');
+    extra.className = probe.page.rootClass;
+    h.document.body.append(extra);
+  },
+  'nested wrapper': (h) => {
+    const inner = h.document.createElement('div');
+    inner.className = probe.page.rootClass;
+    h.document.querySelector(`.${probe.page.rootClass}`).append(inner);
+  },
+  'hidden wrapper': (h) => {
+    h.document.querySelector(`.${probe.page.rootClass}`).hidden = true;
+  },
+  'hidden form item with visible-looking control': (h) => {
+    h.document.querySelector('[data-field="securities"]').style.visibility = 'hidden';
+  },
+  'disabled search input': (h) => {
+    h.document.querySelector('#securities-select input').disabled = true;
+  },
+  'readonly search input': (h) => {
+    h.document.querySelector('#securities-select input').readOnly = true;
+  }
+};
+
+for (const [name, mutate] of Object.entries(OWNERSHIP_MUTATIONS)) {
+  for (const operation of ['fill', 'cancel']) {
+    test(`${operation} refuses ${name} before any click`, async () => {
+      const h = await boot();
+      try {
+        mutate(h);
+        const inspection = h.api.inspect().fields.find((field) => field.label === FIELD.securities.label);
+        assert.notEqual(inspection?.reason, 'structure_matched');
+        const row = operation === 'fill'
+          ? await h.api.fillField(FIELD.securities.label, FIELD.securities.valueSample)
+          : await h.api.cancelField(FIELD.securities.label);
+        assert.equal(row.ok, false, JSON.stringify(row));
+        assert.equal(h.stats.open, 0);
+        assert.equal(h.stats.option, 0);
+        neverSaved(row, h.stats);
+        unchanged(h.document, h.stats);
+      } finally { h.dom.window.close(); }
+    });
+  }
+}
+
+const OPEN_MUTATIONS = {
+  'row moved outside wrapper': (h, select) => h.document.body.append(select.closest('.ant-form-item')),
+  'select moved outside its row': (h, select) => h.document.querySelector(`.${probe.page.rootClass}`).append(select),
+  'row replaced by an identical clone': (_h, select) => {
+    const item = select.closest('.ant-form-item');
+    item.replaceWith(item.cloneNode(true));
+  },
+  'root replaced by an identical clone': (h) => {
+    const root = h.document.querySelector(`.${probe.page.rootClass}`);
+    root.replaceWith(root.cloneNode(true));
+  },
+  'label changed': (_h, select) => { select.closest('.ant-form-item').querySelector('label').textContent = FIELD.cpa.label; },
+  'row hidden': (_h, select) => { select.closest('.ant-form-item').hidden = true; },
+  'select disabled': (_h, select) => { select.classList.add('ant-select-disabled'); },
+  'search replaced': (_h, select) => {
+    const search = select.querySelector('input');
+    search.replaceWith(search.cloneNode(true));
+  },
+  'search disabled': (_h, select) => { select.querySelector('input').disabled = true; },
+  'page hidden': (h) => {
+    Object.defineProperty(h.document, 'visibilityState', { configurable: true, get: () => 'hidden' });
+  },
+  'same PB path with another resume query': (h) => { h.window.history.replaceState({}, '', '?resumeId=changed'); },
+  'second wrapper inserted': (h) => {
+    const root = h.document.createElement('div');
+    root.className = probe.page.rootClass;
+    h.document.body.append(root);
+  },
+  'mixed textarea inserted': (h, select) => {
+    const textarea = h.document.createElement('textarea');
+    textarea.className = probe.neighbors.certNote.controlClass;
+    select.parentElement.append(textarea);
+  }
+};
+
+for (const [name, mutate] of Object.entries(OPEN_MUTATIONS)) {
+  for (const operation of ['fill', 'cancel']) {
+    test(`${operation} stops after opening when ${name}`, async () => {
+      const h = await boot();
+      try {
+        const select = h.document.getElementById('securities-select');
+        const display = h.document.getElementById('securities-value');
+        select.addEventListener('click', () => mutate(h, select), { once: true });
+        const row = operation === 'fill'
+          ? await h.api.fillField(FIELD.securities.label, FIELD.securities.valueSample)
+          : await h.api.cancelField(FIELD.securities.label);
+        assert.equal(row.ok, false, JSON.stringify(row));
+        assert.equal(h.stats.open, 1);
+        assert.equal(h.stats.option, 0);
+        assert.equal(display.textContent, '');
+        assert.equal(h.document.getElementById('select-menu').hidden, true);
+        assert.equal(row.stillOpen, 0);
+        neverSaved(row, h.stats);
+        unchanged(h.document, h.stats);
+      } finally { h.dom.window.close(); }
+    });
+  }
+}
+
+for (const occupied of [FIELD.securities.valueSample, FIELD.english.valueSample]) {
+  test(`an intervening display edit (${occupied}) is preserved without clicking an option`, async () => {
+    const h = await boot();
+    try {
+      const display = h.document.getElementById('securities-value');
+      h.document.getElementById('securities-select').addEventListener('click', () => {
+        display.textContent = occupied;
+      }, { once: true });
+      const row = await h.api.fillField(FIELD.securities.label, FIELD.securities.valueSample);
+      assert.equal(row.ok, false, JSON.stringify(row));
+      assert.equal(display.textContent, occupied);
+      assert.equal(h.stats.option, 0);
+      assert.equal(row.stillOpen, 0);
+      neverSaved(row, h.stats);
+      unchanged(h.document, h.stats);
+    } finally { h.dom.window.close(); }
+  });
+}
+
+const OPTION_MUTATIONS = {
+  'option detached': (_h, option) => option.remove(),
+  'option replaced': (_h, option) => option.replaceWith(option.cloneNode(true)),
+  'option moved outside dropdown': (h, option) => h.document.body.append(option),
+  'option hidden': (_h, option) => { option.hidden = true; },
+  'option text changed': (_h, option) => { option.textContent = FIELD.english.valueSample; },
+  'dropdown replaced': (h) => {
+    const menu = h.document.getElementById('select-menu');
+    menu.replaceWith(menu.cloneNode(true));
+  }
+};
+
+for (const [name, mutate] of Object.entries(OPTION_MUTATIONS)) {
+  test(`an option captured before await is not clicked after ${name}`, async () => {
+    const h = await boot();
+    try {
+      let staleClicks = 0;
+      h.document.getElementById('securities-select').addEventListener('click', () => {
+        const option = h.document.querySelector('#select-options li');
+        option.addEventListener('click', () => { staleClicks += 1; });
+        h.window.queueMicrotask(() => mutate(h, option));
+      }, { once: true });
+      const row = await h.api.fillField(FIELD.securities.label, FIELD.securities.valueSample);
+      assert.equal(row.ok, false, JSON.stringify(row));
+      assert.equal(staleClicks, 0);
+      assert.equal(h.stats.option, 0);
+      assert.equal(h.document.getElementById('securities-value').textContent, '');
+      assert.equal(row.stillOpen, 0);
+      neverSaved(row, h.stats);
+      unchanged(h.document, h.stats);
+    } finally { h.dom.window.close(); }
+  });
+}
+
+for (const operation of ['fill', 'cancel']) {
+  test(`${operation} preserves a menu that was already busy`, async () => {
+    const h = await boot({ busy: true });
+    try {
+      const row = operation === 'fill'
+        ? await h.api.fillField(FIELD.securities.label, FIELD.securities.valueSample)
+        : await h.api.cancelField(FIELD.securities.label);
+      assert.equal(row.reason, 'control_busy');
+      assert.equal(h.stats.open, 0);
+      assert.equal(h.stats.option, 0);
+      assert.equal(h.stats.escape, 0);
+      assert.equal(h.document.getElementById('select-menu').hidden, false);
+      neverSaved(row, h.stats);
+      unchanged(h.document, h.stats);
+    } finally { h.dom.window.close(); }
+  });
+}
+
+for (const mutate of ['row', 'URL', 'visibility']) {
+  test(`a painted value cannot verify after option click changes ${mutate}`, async () => {
+    const h = await boot();
+    try {
+      h.document.getElementById('select-menu').addEventListener('click', () => {
+        if (mutate === 'row') h.document.body.append(h.document.querySelector('[data-field="securities"]'));
+        if (mutate === 'URL') h.window.history.replaceState({}, '', '?resumeId=changed');
+        if (mutate === 'visibility') {
+          Object.defineProperty(h.document, 'visibilityState', { configurable: true, get: () => 'hidden' });
+        }
+      }, { once: true });
+      const row = await h.api.fillField(FIELD.securities.label, FIELD.securities.valueSample);
+      assert.equal(h.stats.option, 1);
+      assert.equal(row.ok, false, JSON.stringify(row));
+      assert.notEqual(row.status, 'verified');
+      assert.equal(row.stillOpen, 0);
+      neverSaved(row, h.stats);
+      unchanged(h.document, h.stats);
+    } finally { h.dom.window.close(); }
+  });
+}
+
+test('cancel on an initially hidden page does not open or Escape a menu', async () => {
+  const h = await boot();
+  try {
+    Object.defineProperty(h.document, 'visibilityState', { configurable: true, get: () => 'hidden' });
+    const row = await h.api.cancelField(FIELD.securities.label);
+    assert.equal(row.ok, false);
+    assert.equal(row.reason, 'fill_interrupted_page_hidden');
+    assert.equal(h.stats.open, 0);
+    assert.equal(h.stats.option, 0);
+    assert.equal(h.stats.escape, 0);
+    neverSaved(row, h.stats);
+    unchanged(h.document, h.stats);
+  } finally { h.dom.window.close(); }
+});
+
+for (const operation of ['fill', 'cancel']) {
+  test(`${operation} rejects replacing the visible face while the original search remains`, async () => {
+    const h = await boot({ closedSearch: true });
+    try {
+      const select = h.document.getElementById('securities-select');
+      select.addEventListener('click', () => {
+        const face = select.querySelector(`.${LIVE.faceClass}`);
+        face.replaceWith(face.cloneNode(true));
+      }, { once: true });
+      const row = operation === 'fill'
+        ? await h.api.fillField(FIELD.securities.label, FIELD.securities.valueSample)
+        : await h.api.cancelField(FIELD.securities.label);
+      assert.equal(row.ok, false, JSON.stringify(row));
+      assert.equal(h.stats.open, 1);
+      assert.equal(h.stats.option, 0);
+      assert.equal(row.stillOpen, 0);
+      assert.equal(h.document.getElementById('securities-value').textContent, '');
+      neverSaved(row, h.stats);
+      unchanged(h.document, h.stats);
+    } finally { h.dom.window.close(); }
+  });
+}
+
+test('cancel cannot verify when Escape changes the resume URL', async () => {
+  const h = await boot();
+  try {
+    h.document.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape') h.window.history.replaceState({}, '', '?resumeId=changed');
+    }, { once: true });
+    const row = await h.api.cancelField(FIELD.securities.label);
+    assert.equal(row.ok, false, JSON.stringify(row));
+    assert.notEqual(row.status, 'verified');
+    assert.equal(h.stats.open, 1);
+    assert.equal(h.stats.option, 0);
+    assert.equal(row.stillOpen, 0);
+    neverSaved(row, h.stats);
+    unchanged(h.document, h.stats);
+  } finally { h.dom.window.close(); }
+});
+
+test('a second open select after await cannot redirect the option into an occupied neighbor', async () => {
+  const h = await boot({ rank: FIELD.rank.valueSample });
+  try {
+    h.document.getElementById('securities-select').addEventListener('click', () => {
+      h.window.queueMicrotask(() => {
+        h.document.getElementById('rank-select').classList.add('ant-select-open', 'ant-select-focused');
+      });
+    }, { once: true });
+    const row = await h.api.fillField(FIELD.securities.label, FIELD.securities.valueSample);
+    assert.equal(row.ok, false, JSON.stringify(row));
+    assert.equal(h.stats.option, 0);
+    assert.equal(h.document.getElementById('rank-value').textContent, FIELD.rank.valueSample);
+    assert.equal(h.document.getElementById('securities-value').textContent, '');
+    assert.equal(row.stillOpen, 0);
+    neverSaved(row, h.stats);
+    unchanged(h.document, h.stats);
+  } finally { h.dom.window.close(); }
+});
+
+for (const context of ['URL', 'root', 'visibility']) {
+  test(`fillFields pins the original ${context} for the entire batch`, async () => {
+    const h = await boot();
+    try {
+      h.document.getElementById('rank-select').addEventListener('click', () => {
+        if (context === 'URL') h.window.history.replaceState({}, '', '?resumeId=changed');
+        if (context === 'root') {
+          const root = h.document.querySelector(`.${probe.page.rootClass}`);
+          root.replaceWith(root.cloneNode(true));
+        }
+        if (context === 'visibility') {
+          Object.defineProperty(h.document, 'visibilityState', { configurable: true, get: () => 'hidden' });
+        }
+      }, { once: true });
+      const result = await h.api.fillFields(PROFILE);
+      assert.equal(result.ok, false);
+      assert.equal(result.fields.length, probe.select.fields.length);
+      assert.equal(result.fields.every((field) => field.ok === false), true);
+      assert.equal(h.stats.open, 1);
+      assert.equal(h.stats.option, 0);
+      for (const field of CAPTURED) assert.equal(h.document.getElementById(`${field.key}-value`).textContent, '');
+      neverSaved(result, h.stats);
+      unchanged(h.document, h.stats);
+    } finally { h.dom.window.close(); }
+  });
+}
+
+for (const context of ['URL', 'visibility']) {
+  test(`fillFields stays interrupted when Escape restores ${context}`, async () => {
+    const h = await boot();
+    try {
+      let hidden = false;
+      Object.defineProperty(h.document, 'visibilityState', { configurable: true, get: () => hidden ? 'hidden' : 'visible' });
+      h.document.getElementById('rank-select').addEventListener('click', () => {
+        if (context === 'URL') h.window.history.replaceState({}, '', '?resumeId=changed');
+        else hidden = true;
+      }, { once: true });
+      h.document.addEventListener('keydown', (event) => {
+        if (event.key !== 'Escape') return;
+        if (context === 'URL') h.window.history.replaceState({}, '', PAGE);
+        else hidden = false;
+      });
+      const result = await h.api.fillFields(PROFILE);
+      assert.equal(result.ok, false);
+      assert.equal(result.fields.length, probe.select.fields.length);
+      assert.equal(result.fields.every((field) => field.ok === false), true);
+      assert.equal(h.stats.open, 1);
+      assert.equal(h.stats.option, 0);
+      neverSaved(result, h.stats);
+      unchanged(h.document, h.stats);
+    } finally { h.dom.window.close(); }
+  });
+}
+
+for (const target of ['nested checkbox', 'external checkbox', 'external Save button']) {
+  test(`an option label cannot activate a ${target}`, async () => {
+    const h = await boot();
+    try {
+      let associated;
+      h.document.getElementById('securities-select').addEventListener('click', () => {
+        const option = h.document.querySelector('#select-options li');
+        const label = h.document.createElement('label');
+        const span = h.document.createElement('span');
+        span.textContent = option.textContent;
+        if (target === 'nested checkbox') {
+          associated = h.document.createElement('input');
+          associated.type = probe.neighbors.research.inputType;
+          associated.className = probe.neighbors.research.controlClass;
+          label.append(associated);
+        } else if (target === 'external checkbox') {
+          associated = h.document.getElementById('research');
+          label.htmlFor = associated.id;
+        } else {
+          associated = [...h.document.querySelectorAll('button')].find((button) => button.textContent === probe.page.buttonLabels[0]);
+          associated.id = 'captured-save';
+          label.htmlFor = associated.id;
+        }
+        label.append(span);
+        option.replaceChildren(label);
+      }, { once: true });
+      const row = await h.api.fillField(FIELD.securities.label, FIELD.securities.valueSample);
+      assert.equal(row.ok, false, JSON.stringify(row));
+      assert.equal(h.stats.option, 0);
+      assert.equal(h.stats.checkbox, 0);
+      if (target !== 'external Save button') assert.equal(associated.checked, false);
+      assert.equal(row.stillOpen, 0);
+      neverSaved(row, h.stats);
+      unchanged(h.document, h.stats);
+    } finally { h.dom.window.close(); }
+  });
+}

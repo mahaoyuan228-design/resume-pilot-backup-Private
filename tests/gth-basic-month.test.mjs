@@ -52,7 +52,7 @@ async function boot(options = {}) {
   const workInput = document.getElementById('work-start');
   const panel = document.getElementById('panel');
   const year = document.getElementById('year');
-  const stats = { anchors: 0, cells: 0, accepted: 0, dismissed: 0, years: 0, opened: [], acceptedFields: [] };
+  const stats = { anchors: 0, cells: 0, accepted: 0, dismissed: 0, years: 0, opened: [], acceptedFields: [], finalMutations: 0 };
   const models = new Map([[input, input.value], [workInput, workInput.value]]);
   let activeInput = input;
   const desired = month => `${year.textContent.match(/\d{4}/u)[0]}-${String(month + 1).padStart(2, '0')}`;
@@ -109,6 +109,21 @@ async function boot(options = {}) {
   });
   window.eval(buildPageExpression({ waitTimeoutMs: 30, pollMs: 1 }));
   window.eval(chromeShimExpression());
+  if (options.finalReadbackMutation) {
+    const sendMessage = window.chrome.runtime.sendMessage;
+    window.chrome.runtime.sendMessage = async message => {
+      // The closing action has completed and removed the bridge markers. The
+      // next binding await is the writer's final one before returning success.
+      if (message?.type === 'RESUME_PROFILE_BINDING_CHECK' && stats.dismissed > 0
+        && panel.style.display === 'none' && !document.querySelector('[data-gth-month-role]') && !stats.finalMutations) {
+        stats.finalMutations += 1;
+        if (options.finalReadbackMutation === 'value') input.value = '2001-01';
+        else if (options.finalReadbackMutation === 'validation') input.setAttribute('aria-invalid', 'true');
+        else document.querySelectorAll('.r-section')[1].appendChild(document.createElement('form'));
+      }
+      return sendMessage(message);
+    };
+  }
   window.eval(source);
   assert.equal((await window.__gthFullLive.open(0)).ok, true);
   const request = {
@@ -119,6 +134,22 @@ async function boot(options = {}) {
   if (options.workStart !== undefined) {
     request.profile.workStart = options.workStart;
     if (options.confirmWorkStart !== false) request.profile.confirmedFields.push('workStart');
+  }
+  if (options.onlyField) {
+    const fields = {
+      fullName: [document.getElementById('name'), '旧姓名', 'fullName'],
+      gender: [document.querySelector('input[type="radio"]:checked'), '女', 'gender'],
+      birthDate: [input, request.profile.birthDate, 'birthDate'],
+      degree: [document.querySelector('.el-select input'), '硕士', 'education.0.degree'],
+      workStart: [workInput, request.profile.workStart, 'workStart'],
+    };
+    const [control, value, path] = fields[options.onlyField];
+    request.profile = { education: [{}], confirmedFields: [path] };
+    if (options.onlyField === 'degree') request.profile.education[0].degree = value;
+    else request.profile[options.onlyField] = value;
+    if (options.validation === 'aria-invalid') control.setAttribute('aria-invalid', 'true');
+    else if (options.validation === 'native-invalid') control.setCustomValidity('Invalid month');
+    else if (options.validation) control.closest('.el-form-item').classList.add(options.validation);
   }
   return { dom, window, document, input, workInput, panel, stats, request };
 }
@@ -218,6 +249,57 @@ test('preexisting matching month verifies without reopening or model acceptance'
     assert.equal(h.stats.accepted, 0);
     assertNameGender(h, result);
   });
+});
+
+test('matching basic facts with site validation failures are never verified', async () => {
+  // Reuse the probed month controls and the validation states already exercised
+  // by the GTH work/education fixtures. Matching DOM text is insufficient.
+  for (const [onlyField, question] of [['fullName', '姓名'], ['gender', '性别'], ['birthDate', '出生年月'],
+    ['degree', '最高学历'], ['workStart', '参加工作时间']]) {
+    for (const validation of ['is-error', 'is-validating', 'aria-invalid', 'native-invalid']) {
+      await run({ onlyField, validation, initial: '1998-06', workStart: '2022-09' }, (h, result) => {
+        assert.equal(result.ok, false, `${question}: ${validation}`);
+        assert.equal(result.reason, 'basic_site_validation_failed');
+        assert.equal(result.activeField, onlyField);
+        assert.equal(result.writeStarted, false);
+        assert.equal(result.fields.some(row => row.question === question && row.status === 'verified'), false);
+        assert.deepEqual(h.stats.opened, []);
+        assert.equal(h.stats.accepted, 0);
+        assert.equal(h.input.value, '1998-06');
+        assert.equal(h.workInput.value, '2022-09');
+      });
+    }
+  }
+});
+
+test('valid matching text, radio, select, and month facts remain verified without reopening', async () => {
+  for (const [onlyField, question] of [['fullName', '姓名'], ['gender', '性别'], ['birthDate', '出生年月'],
+    ['degree', '最高学历'], ['workStart', '参加工作时间']]) {
+    await run({ onlyField, initial: '1998-06', workStart: '2022-09' }, (h, result) => {
+      assert.equal(result.ok, true, JSON.stringify(result));
+      assert.equal(result.fields.find(row => row.question === question).reason, 'preexisting_same_value');
+      assert.equal(result.writeStarted, false);
+      assert.deepEqual(h.stats.opened, []);
+      assert.equal(h.stats.accepted, 0);
+    });
+  }
+});
+
+test('a verified birth month changed during the final binding await cannot return success', async () => {
+  for (const finalReadbackMutation of ['value', 'validation', 'foreign-editor']) {
+    await run({ onlyField: 'birthDate', finalReadbackMutation }, (h, result) => {
+      assert.equal(h.stats.finalMutations, 1);
+      assert.equal(h.stats.accepted, 1);
+      assert.equal(result.ok, false);
+      assert.equal(result.reason, 'basic_other_values_changed');
+      assert.equal(result.writeStarted, true);
+      assert.equal(result.supportedComplete, false);
+      assert.equal(result.operableComplete, false);
+      assert.equal(result.fields.some(row => row.status === 'verified'), false);
+      assert.equal(result.coverage.some(row => row.status === 'verified'), false);
+      assert.equal(result.completedFields.some(row => row.status === 'verified'), false);
+    });
+  }
 });
 
 

@@ -77,11 +77,18 @@ function valueLooksLikeSelector(value) {
   return /[#.\[\]>~+]|\bxpath\b|\bcss\b/i.test(value);
 }
 
-function hasSmuggledSelector(value, depth = 0) {
-  if (depth > 4 || !isPlainObject(value)) return false;
-  for (const [key, inner] of Object.entries(value)) {
-    if (keyLooksLikeSelector(key)) return true;
-    if (isPlainObject(inner) && hasSmuggledSelector(inner, depth + 1)) return true;
+function hasSmuggledSelector(value) {
+  const pending = [value];
+  const seen = new Set();
+  while (pending.length > 0) {
+    const current = pending.pop();
+    if (current == null || typeof current !== 'object') continue;
+    if (seen.has(current)) return true;
+    seen.add(current);
+    for (const [key, inner] of Object.entries(current)) {
+      if (keyLooksLikeSelector(key)) return true;
+      if (inner != null && typeof inner === 'object') pending.push(inner);
+    }
   }
   return false;
 }
@@ -113,6 +120,7 @@ function closed(partial) {
     gate: partial.gate,
     reason: partial.reason,
     supported: false,
+    liveSupportClaimed: false,
     liveFillClaimed: false,
     fillAllowed: false,
     saveAllowed: false,
@@ -196,7 +204,8 @@ function classify(harvest) {
     });
   }
   const actions = isPlainObject(harvest.actions) ? harvest.actions : {};
-  if (actions.saveAttempted === true || actions.submitAttempted === true) {
+  if (['saveAttempted', 'submitAttempted', 'nextAttempted', 'deliverAttempted', 'deleteAttempted']
+    .some((key) => actions[key] === true)) {
     return closed({
       harvestLanded: true,
       verdict: DATEPICKER_HINT_ONLY,
@@ -317,6 +326,7 @@ export function birthDateObservedFacts(decision) {
     fillAllowed: false,
     saveAllowed: false,
     supported: false,
+    liveSupportClaimed: false,
     liveFillClaimed: false
   };
 }
@@ -369,6 +379,7 @@ export function lockCmbBirthDateHintPlan(plan, probe = createCmbBirthDateSavePro
     writeAttempted: false,
     calendarClicked: false,
     supported: false,
+    liveSupportClaimed: false,
     liveFillClaimed: false,
     selector: null,
     hintOnly: row?.reason === DATEPICKER_HINT_ONLY,

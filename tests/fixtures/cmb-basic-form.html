@@ -583,5 +583,22 @@
 
     <footer class="footer">Copyright © 2023 招商银行 版权所有 · CSS-confirmed fixture · never Save</footer>
   </div>
+  <script>
+    // Explicitly synthetic fixture behavior. This is not harvested live CMB code.
+    // Production fill must only click and inspect the state accepted by the page.
+    window.__cmbSyntheticSelectClick = (event) => {
+      const option = event.target.closest('[role="option"]');
+      if (!option) return;
+      const root = option.closest('.ant-select');
+      if (!root) return;
+      const shown = root.querySelector('.ant-select-selection-item');
+      for (const sibling of root.querySelectorAll('[role="option"]')) {
+        sibling.setAttribute('aria-selected', sibling === option ? 'true' : 'false');
+      }
+      shown.textContent = option.textContent;
+      shown.setAttribute('data-code', option.getAttribute('data-code'));
+    };
+    document.addEventListener('click', window.__cmbSyntheticSelectClick);
+  </script>
 </body>
 </html>

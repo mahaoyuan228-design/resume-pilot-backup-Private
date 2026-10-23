@@ -9,9 +9,11 @@ import { buildPageExpression } from '../scripts/live/lib/gth-full-page.mjs';
 import { chromeShimExpression } from '../scripts/live/lib/gth-full-sections.mjs';
 import {
   basicCoverage,
+  basicCandidate,
   gthRequestedFillBlocksComplete,
   planGthBasicCoverage,
   sealGthJobCoverage,
+  validResponse,
 } from '../src/background/basic-task-runner.mjs';
 
 const source = readFileSync(new URL('../src/content/gth-basic.js', import.meta.url), 'utf8');
@@ -78,7 +80,7 @@ function wire(document, options) {
     event.preventDefault();
     stats.confirm += 1;
     const chip = panel.querySelector('.selected-view-data > li p');
-    if (chip && input) input.value = chip.textContent.trim();
+    if (chip && input && !options.refuseReadback) input.value = chip.textContent.trim();
     panel.style.display = 'none';
   });
   document.getElementById('city-cancel')?.addEventListener('click', (event) => {
@@ -262,7 +264,7 @@ test('missing and unconfirmed residence facts do not open the menu', async () =>
   });
 });
 
-test('an echoed residence row still does not complete or claim support', () => {
+test('settled residence coverage survives sealing while photo prevents completion', () => {
   assert.equal(source.includes('已支持'), false);
   assert.match(source, /liveSupportClaimed:false/);
   assert.match(source, /kind:'eoCascader'/);
@@ -281,8 +283,84 @@ test('an echoed residence row still does not complete or claim support', () => {
   assert.equal(plan.blocked, true);
   assert.equal(gthRequestedFillBlocksComplete(plan), true);
   const sealed = sealGthJobCoverage(echoed, plan);
-  assert.equal(sealed.find((row) => row.key === 'currentCity').supported, false);
-  assert.equal(sealed.find((row) => row.key === 'currentCity').status, 'failed');
-  assert.notEqual(sealed.find((row) => row.key === 'currentCity').reason, 'readback_matched');
+  assert.equal(sealed.find((row) => row.key === 'currentCity').supported, true);
+  assert.equal(sealed.find((row) => row.key === 'currentCity').status, 'verified');
+  assert.equal(sealed.find((row) => row.key === 'currentCity').reason, 'readback_matched');
+  assert.equal(sealed.find((row) => row.key === 'photo').status, 'failed');
+  assert.equal(sealed.find((row) => row.key === 'photo').reason, 'control_not_supported');
   assert.equal(JSON.stringify(plan).includes('已支持'), false);
+});
+
+test('scoped province candidate fills empty only, reads back, and preserves neighbors', async () => {
+  await run({ replaceExisting: false }, async (h, initial) => {
+    // Run again from an empty residence using the candidate projection consumed
+    // by both background entry points. Other basic values remain occupied.
+    h.input.value = '';
+    h.panel.querySelector('.selected-view-data').innerHTML = '';
+    const source = {
+      education: [{ degree: '硕士' }],
+      customFacts: [{ question: '现居住地', answer: '上海', sitePageUrl: PAGE, sectionName: '基本信息', rowContext: 'single' }],
+      customAnswers: { 现居住地: '上海' },
+      confirmedFields: ['education.0.degree', 'customAnswers.现居住地'],
+    };
+    const request = { ...h.request, requestId: 'scoped-residence-0001', profile: basicCandidate(source, 0).profile };
+    const neighbor = h.document.querySelectorAll('.r-section')[1];
+    neighbor.insertAdjacentHTML('beforeend', '<input type="text" value="education neighbor"><p>Keep this education record</p>');
+    const outsideBefore = neighbor.outerHTML;
+    const values = () => [...h.document.querySelector('form').querySelectorAll('input,select,textarea')]
+      .filter(node => node !== h.input && !h.panel.contains(node))
+      .map(node => [node.type, node.value, node.checked]);
+    const before = values();
+    const result = await h.window.ResumeGthBasic.trial(request);
+    assert.equal(initial.ok, true);
+    assert.equal(result.ok, true, result.reason);
+    assert.equal(result.fields.find(row => row.question === '现居住地').reason, 'readback_matched');
+    assert.equal(h.input.value, '上海');
+    assert.deepEqual(values(), before);
+    assert.equal(neighbor.outerHTML, outsideBefore);
+    assert.equal(validResponse(result, 0), true, 'real content response satisfies the planner contract');
+    const sealed = sealGthJobCoverage(basicCoverage(result, 0), planGthBasicCoverage(source, { fillRequested: true }));
+    assert.equal(sealed.find(row => row.key === 'currentCity').status, 'verified');
+    assert.equal(sealed.find(row => row.key === 'photo').supported, false);
+    assert.equal(result.complete, false);
+    assert.equal(result.liveSupportClaimed, false);
+    assert.equal(result.softwareClickedSave, false);
+    assert.equal(result.softwareClickedSubmit, false);
+    assert.equal(result.softwareClickedDelete, false);
+
+    h.input.value = '北京';
+    const beforeOccupied = h.stats.open;
+    const occupied = await h.window.ResumeGthBasic.trial({ ...request, requestId: 'scoped-residence-0002' });
+    assert.equal(occupied.ok, true, occupied.reason);
+    assert.equal(occupied.fields.find(row => row.question === '现居住地').reason, 'existing_value');
+    assert.equal(h.input.value, '北京');
+    assert.equal(h.stats.open, beforeOccupied);
+    assert.deepEqual(values(), before);
+    assert.equal(neighbor.outerHTML, outsideBefore);
+    assert.equal(validResponse(occupied, 0), true);
+  });
+});
+
+test('a closed province menu without matching readback cannot be verified', async () => {
+  await run({ replaceExisting: false, refuseReadback: true }, (h, result) => {
+    assert.equal(result.ok, false);
+    assert.equal(result.reason, 'basic_readback_mismatch');
+    assert.equal(h.input.value, '');
+    assert.equal(h.stats.confirm, 1);
+    assert.equal(result.fields.some(row => row.question === '现居住地' && row.status === 'verified'), false);
+    assert.equal(validResponse(result, 0), false);
+  });
+});
+
+test('residence response rejects mismatched path, duplicate row, or live support claim', async () => {
+  await run({ replaceExisting: false }, (_h, result) => {
+    assert.equal(validResponse(result, 0), true);
+    const wrongPath = structuredClone(result);
+    wrongPath.fields.find(row => row.question === '现居住地').path = 'desiredCities.0';
+    assert.equal(validResponse(wrongPath, 0), false);
+    const duplicate = structuredClone(result);
+    duplicate.fields.push({ ...duplicate.fields.find(row => row.question === '现居住地') });
+    assert.equal(validResponse(duplicate, 0), false);
+    assert.equal(validResponse({ ...result, liveSupportClaimed: true }, 0), false);
+  });
 });

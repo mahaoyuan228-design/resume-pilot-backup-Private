@@ -5,6 +5,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { isDeepStrictEqual } from 'node:util';
 import { connectCdp, getJson } from '../tools/live-harvest/cdp-client.mjs';
 import { runCmsEducationLive, readPort, readRowIndex, readStepTimeout, fieldSpecsForRow, READBACK_WAIT_MS } from './live/cms-education-live.mjs';
 import { EVIDENCE_SCHEMA_VERSION, REVIEWED_FILES, validateControlsDaytimeEvidence } from './validate-cms-education-controls-evidence.mjs';
@@ -16,6 +17,8 @@ const sha256 = value => crypto.createHash('sha256').update(value).digest('hex');
 const fail = code => { throw Object.assign(new Error(code), { code }); };
 const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 const writeJson = (dir, name, value) => fs.writeFileSync(path.join(dir, name), `${JSON.stringify(value, null, 2)}\n`, { encoding: 'utf8', flag: 'wx', mode: 0o600 });
+const OBSERVATION_FILES = Object.freeze({ before: 'snapshots-before.json', after: 'snapshots-after.json',
+  prepare: 'prepare.json', run: 'readbacks.json', cleanup: 'cleanup.json' });
 
 export const CHECKLIST = Object.freeze([
   { key: 'bytes_clean_page', bindings: [
@@ -250,9 +253,27 @@ function observedTrialChecks(state, report, rowIndex) {
   ].map(check => ({ ...check, file: 'observations.json' }));
 }
 
-function collectionDiagnostics(outDir, status, trialChecks, state) {
+function retainedArtifactChecks(outDir, state, report) {
+  return Object.entries({ ...OBSERVATION_FILES, report: 'cms-education-live.json' }).map(([name, file]) => {
+    let value, reason;
+    try { value = JSON.parse(fs.readFileSync(path.join(outDir, file), 'utf8')); }
+    catch (error) { reason = error?.code === 'ENOENT' ? 'artifact_missing' : 'artifact_unreadable'; }
+    if (!reason) {
+      const actual = name === 'report' ? report : state[name];
+      try {
+        // Match the actual JSON-persisted representation, independent of formatting/key order.
+        if (!object(actual) || !isDeepStrictEqual(value, JSON.parse(JSON.stringify(actual)))) reason = 'artifact_mismatch';
+      } catch { reason = 'artifact_mismatch'; }
+    }
+    return { name, file, value, reason, matches: !reason };
+  });
+}
+
+function collectionDiagnostics(outDir, status, trialChecks, state, retainedChecks) {
   const diagnostics = [];
-  const artifacts = new Map([['collector-status.json', { value: status }]]);
+  const artifacts = new Map([['collector-status.json', { value: status }],
+    ...retainedChecks.map(check => [check.file, { value: check.value,
+      reason: ['artifact_missing', 'artifact_unreadable'].includes(check.reason) ? check.reason : undefined }])]);
   for (const row of CHECKLIST) for (const { file, path: fieldPath } of row.bindings) {
     if (!artifacts.has(file)) {
       const filename = path.join(outDir, file);
@@ -274,6 +295,11 @@ function collectionDiagnostics(outDir, status, trialChecks, state) {
     }
     if (reason) diagnostics.push({ key: row.key, file, path: fieldPath, reason });
   }
+  for (const check of retainedChecks) if (!check.matches) diagnostics.push({
+    key: ['before', 'after'].includes(check.name) ? 'restoration_neighbors'
+      : ['prepare', 'run'].includes(check.name) ? 'nine_readbacks' : 'cleanup',
+    file: 'collector-status.json', path: `retainedArtifactsMatch.${check.name}`, reason: check.reason
+  });
   for (const { ok, ...failure } of trialChecks) if (!ok) diagnostics.push(failure);
   for (const flag of ['hooksRestored', 'globalsRestored', 'contextUnchanged']) {
     if (status.identity?.[flag] !== true) diagnostics.push({ key: 'cleanup', file: 'snapshots-after.json',
@@ -317,8 +343,7 @@ export async function collectDaytimeHarness(options = {}) {
   const captureExpression = buildDaytimeCaptureExpression(options.machineRoot);
   const outDir = newOutputDirectory(options.outDir);
   const state = { before: null, after: null, prepare: null, run: null, cleanup: null, steps: [], errors: [] };
-  state.persist = (key, value) => writeJson(outDir, ({ before: 'snapshots-before.json', after: 'snapshots-after.json',
-    prepare: 'prepare.json', run: 'readbacks.json', cleanup: 'cleanup.json' })[key], value);
+  state.persist = (key, value) => writeJson(outDir, OBSERVATION_FILES[key], value);
   writeJson(outDir, 'checklist.json', CHECKLIST);
   writeJson(outDir, 'reviewed-bytes.json', reviewedBytes);
   writeJson(outDir, 'collector-start.json', { mode: 'collect', neverSave: true, liveSupportClaimed: false,
@@ -335,6 +360,8 @@ export async function collectDaytimeHarness(options = {}) {
   // An operator sync or other edit during the trial cannot retain byte approval.
   try { approvedBytes(options.approvedManifest, options.machineRoot); }
   catch { state.errors.push('reviewed_bytes_changed'); }
+  const retainedChecks = retainedArtifactChecks(outDir, state, report);
+  const retainedArtifactsMatch = Object.fromEntries(retainedChecks.map(({ name, matches }) => [name, matches]));
   const { persist: _persist, ...observations } = state;
   writeJson(outDir, 'observations.json', observations);
   const pack = { schemaVersion: EVIDENCE_SCHEMA_VERSION, neverSave: true, liveSupportClaimed: false,
@@ -351,18 +378,19 @@ export async function collectDaytimeHarness(options = {}) {
     && Array.isArray(raw.neighborOuterHTML) && raw.neighborOuterHTML.every(html => typeof html === 'string'));
   const rawDomEqual = rawDomCaptured && state.before.rawDom.educationOuterHTML === state.after.rawDom.educationOuterHTML
     && JSON.stringify(state.before.rawDom.neighborOuterHTML) === JSON.stringify(state.after.rawDom.neighborOuterHTML);
-  const complete = validation.complete && identityOk && observed && actualTrialMatches && rawDomEqual && state.errors.length === 0;
+  const complete = validation.complete && identityOk && observed && actualTrialMatches && rawDomEqual
+    && retainedChecks.every(check => check.matches) && state.errors.length === 0;
   const exitCode = complete ? 0 : [1, 3].includes(validation.reportExitCode) ? validation.reportExitCode : 2;
   const status = { mode: 'collect', exitCode, complete, neverSave: true, liveSupportClaimed: false,
     schemaComplete: validation.complete, identity, observationsComplete: observed, actualTrialMatches,
-    rawDomCaptured, rawDomEqual, errors: state.errors,
+    rawDomCaptured, rawDomEqual, retainedArtifactsMatch, errors: state.errors,
     reviewRequired: true, suppressionExercised: {
       autosave: Array.isArray(report?.suppressedAutosave) && report.suppressedAutosave.length > 0,
       lookup: Array.isArray(report?.suppressedLookup) && report.suppressedLookup.length > 0
     } };
   writeJson(outDir, 'evidence-pack.json', pack);
   writeJson(outDir, 'validation.json', validation);
-  status.diagnostics = collectionDiagnostics(outDir, status, trialChecks, state);
+  status.diagnostics = collectionDiagnostics(outDir, status, trialChecks, state, retainedChecks);
   writeJson(outDir, 'collector-status.json', status);
   return status;
 }

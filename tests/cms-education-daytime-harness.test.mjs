@@ -300,8 +300,10 @@ async function collectFictional(t, modify = () => {}, fakeOptions = {}, drive = 
       assert.equal(runnerOptions.controls, true);
       assert.equal(runnerOptions.env.CONTROLS, '1');
       if (drive) await driveObservedSession(await runnerOptions.connectCdp('ws://127.0.0.1:9239/fictional-unit', {}));
-      fs.writeFileSync(path.join(runnerOptions.outDir, 'cms-education-live.json'),
-        fakeOptions.reportText ?? JSON.stringify(replies.report));
+      if (!fakeOptions.omitReport) fs.writeFileSync(path.join(runnerOptions.outDir, 'cms-education-live.json'),
+        typeof fakeOptions.reportText === 'function' ? fakeOptions.reportText(replies.report)
+          : fakeOptions.reportText ?? JSON.stringify(replies.report));
+      fakeOptions.afterPersist?.(runnerOptions.outDir);
       return replies.report;
     }
   });
@@ -569,6 +571,84 @@ test('unreadable retained report diagnostics expose a fixed reason without repai
   assert.equal(JSON.stringify(collected.result.diagnostics).includes(privateMarker), false);
 });
 
+test('missing, unreadable, or disagreeing retained reports cannot borrow a successful returned report', async t => {
+  const privateMarker = 'fictional-private-retained-report-marker';
+  for (const [name, fakeOptions, availabilityReason] of [
+    ['missing', { omitReport: true }, 'artifact_missing'],
+    ['unreadable', { reportText: `{ malformed ${privateMarker}` }, 'artifact_unreadable'],
+    ['disagreeing', { reportText: report => {
+      const retained = structuredClone(report);
+      retained.fields[0].status = 'failed';
+      retained.fields[0].reason = privateMarker;
+      return JSON.stringify(retained);
+    } }, null]
+  ]) await t.test(name, async t => {
+    const collected = await collectFictional(t, () => {}, fakeOptions);
+    assert.equal(collected.result.schemaComplete, true, 'schema still validates the actual returned report');
+    assert.equal(collected.result.actualTrialMatches, true);
+    assert.equal(collected.result.complete, false, 'collection requires the retained runner report to agree');
+    assert.equal(collected.result.exitCode, 2);
+    assert.equal(collected.result.retainedArtifactsMatch.report, false);
+    assertDiagnostic(collected.result, { key: 'cleanup', file: 'collector-status.json',
+      path: 'retainedArtifactsMatch.report', reason: availabilityReason || 'artifact_mismatch' });
+    if (availabilityReason) assertDiagnostic(collected.result, { key: 'nine_readbacks',
+      file: 'cms-education-live.json', path: 'fields', reason: availabilityReason });
+    const reportFile = path.join(collected.outDir, 'cms-education-live.json');
+    if (fakeOptions.omitReport) assert.equal(fs.existsSync(reportFile), false, 'missing output is never synthesized');
+    else assert.equal(fs.readFileSync(reportFile, 'utf8'), typeof fakeOptions.reportText === 'function'
+      ? fakeOptions.reportText(collected.replies.report) : fakeOptions.reportText, 'retained output is never repaired');
+    const pack = JSON.parse(fs.readFileSync(path.join(collected.outDir, 'evidence-pack.json'), 'utf8'));
+    assert.deepEqual(pack.report, collected.replies.report, 'actual returned observations remain unchanged');
+    assertSafeDiagnostics(collected.result);
+    assert.equal(JSON.stringify(collected.result.diagnostics).includes(privateMarker), false);
+    assert.equal(collected.result.neverSave, true);
+    assert.equal(collected.result.liveSupportClaimed, false);
+  });
+});
+
+test('retained report comparison ignores JSON formatting and object key order', async t => {
+  const collected = await collectFictional(t, () => {}, { reportText: report => JSON.stringify(report,
+    (_key, value) => value && typeof value === 'object' && !Array.isArray(value)
+      ? Object.fromEntries(Object.entries(value).reverse()) : value, 4) + '\n' });
+  assert.deepEqual(collected.result.retainedArtifactsMatch,
+    { before: true, after: true, prepare: true, run: true, cleanup: true, report: true });
+  assert.equal(collected.result.complete, true, 'fictional formatting control is not live evidence');
+  assert.equal(collected.result.exitCode, 0);
+  assert.deepEqual(collected.result.diagnostics, []);
+});
+
+test('each saved original capture must still agree with its actual reply at collection finalization', async t => {
+  const privateMarker = 'fictional-private-retained-capture-marker';
+  for (const [name, filename, key] of [
+    ['before', 'snapshots-before.json', 'restoration_neighbors'],
+    ['after', 'snapshots-after.json', 'restoration_neighbors'],
+    ['prepare', 'prepare.json', 'nine_readbacks'],
+    ['run', 'readbacks.json', 'nine_readbacks'],
+    ['cleanup', 'cleanup.json', 'cleanup']
+  ]) await t.test(name, async t => {
+    let changedText;
+    const collected = await collectFictional(t, () => {}, { afterPersist: outDir => {
+      const filenameOnDisk = path.join(outDir, filename);
+      const retained = JSON.parse(fs.readFileSync(filenameOnDisk, 'utf8'));
+      retained.fictionalRetainedChange = privateMarker;
+      changedText = JSON.stringify(retained);
+      fs.writeFileSync(filenameOnDisk, changedText);
+    } });
+    assert.equal(collected.result.schemaComplete, true);
+    assert.equal(collected.result.actualTrialMatches, true);
+    assert.equal(collected.result.complete, false);
+    assert.equal(collected.result.exitCode, 2);
+    assert.equal(collected.result.retainedArtifactsMatch[name], false);
+    assertDiagnostic(collected.result, { key, file: 'collector-status.json',
+      path: `retainedArtifactsMatch.${name}`, reason: 'artifact_mismatch' });
+    assert.equal(fs.readFileSync(path.join(collected.outDir, filename), 'utf8'), changedText, 'saved evidence is not repaired');
+    const observations = JSON.parse(fs.readFileSync(path.join(collected.outDir, 'observations.json'), 'utf8'));
+    assert.deepEqual(observations[name], collected.replies[name], 'actual observations are not replaced by changed disk data');
+    assertSafeDiagnostics(collected.result);
+    assert.equal(JSON.stringify(collected.result.diagnostics).includes(privateMarker), false);
+  });
+});
+
 test('a failed runner verdict stays failed even when capture and cleanup succeed', async t => {
   const collected = await collectFictional(t, replies => {
     replies.report.finalDetails.reason = 'fictional_trial_failed';
@@ -578,6 +658,17 @@ test('a failed runner verdict stays failed even when capture and cleanup succeed
   assert.equal(collected.result.complete, false);
   assert.notEqual(collected.result.exitCode, 0);
   assert.equal(collected.result.liveSupportClaimed, false);
+});
+
+test('retention failure preserves the existing runner failure exit classes', async t => {
+  for (const [reason, exitCode] of [['timeout', 1], ['non_get_request', 3]]) await t.test(reason, async t => {
+    const collected = await collectFictional(t, replies => { replies.report.finalDetails.reason = reason; },
+      { reportText: '{ fictional malformed retained report' });
+    assert.equal(collected.result.schemaComplete, false);
+    assert.equal(collected.result.retainedArtifactsMatch.report, false);
+    assert.equal(collected.result.complete, false);
+    assert.equal(collected.result.exitCode, exitCode);
+  });
 });
 
 async function collectWithShippedRunner(t, fakeOptions = {}) {

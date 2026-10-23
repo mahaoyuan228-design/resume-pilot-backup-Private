@@ -11,6 +11,8 @@
 // 请选择+label placeholder. 成绩's page text is the placeholder 请选择成绩,
 // so that placeholder reads empty. Option text is whatever the open menu
 // shows. Nothing is hardcoded.
+// Each attempt retains the original page, wrapper, row, search, and click face.
+// Every awaited step rechecks that owner before accepting menu or display text.
 // Pending live Never-Save. This does not claim the site is supported.
 // liveSupportClaimed stays false. Never clicks 保存/提交/投递/删除/下一步/返回/确定.
 // Close is Escape. Does not target hotjob-mc, CMS core, uploads, readonly
@@ -72,10 +74,16 @@
 
   function visible(node) {
     if (!node || node.nodeType !== 1 || !node.isConnected) return false;
-    if (node.hidden || node.closest('[hidden]')) return false;
-    const style = getComputedStyle(node);
-    if (style.display === 'none' || style.visibility === 'hidden') return false;
+    for (let ancestor = node; ancestor; ancestor = ancestor.parentElement) {
+      if (ancestor.hidden || ancestor.hasAttribute('inert')) return false;
+      const style = getComputedStyle(ancestor);
+      if (style.display === 'none' || style.visibility === 'hidden' || style.visibility === 'collapse') return false;
+    }
     return node.getClientRects().length > 0;
+  }
+
+  function disabled(node) {
+    return !!node.closest('[disabled], [aria-disabled="true"], [inert]');
   }
 
   function onPage() {
@@ -84,16 +92,17 @@
     if (url.protocol !== 'https:' || url.hostname !== 'wecruit.hotjob.cn') return false;
     if (!PATH.test(url.pathname)) return false;
     if (document.querySelector('.el-form, .el-form-item, .my-list-item')) return false;
-    return !!document.querySelector('.resume-operation-wrap');
+    const roots = [...document.querySelectorAll('.resume-operation-wrap')];
+    return roots.length === 1 && visible(roots[0]) && !disabled(roots[0]);
   }
 
   function ownedLabels(item) {
     return [...item.querySelectorAll('label')].filter((node) => node.closest('.ant-row.ant-form-item') === item);
   }
 
-  function itemsFor(label) {
+  function itemsFor(label, root) {
     const want = cleanLabel(label);
-    return [...document.querySelectorAll('.ant-row.ant-form-item')].filter((item) => {
+    return [...root.querySelectorAll('.ant-row.ant-form-item')].filter((item) => {
       const labels = ownedLabels(item);
       return labels.length === 1 && cleanLabel(labels[0].textContent) === want;
     });
@@ -131,6 +140,11 @@
   }
 
   function locateSelect(item, label) {
+    if (!visible(item) || disabled(item)
+      || item.parentElement?.closest('.ant-row.ant-form-item')
+      || item.querySelector('.ant-row.ant-form-item')) return { ok: false, reason: 'control_not_supported' };
+    const labels = ownedLabels(item);
+    if (labels.length !== 1 || !visible(labels[0])) return { ok: false, reason: 'control_not_supported' };
     if (item.querySelector('.cascader-plugins-wrap')) return { ok: false, reason: 'control_not_supported' };
     if (stray(item, 'input.ant-radio-input, input.ant-checkbox-input, input[type="checkbox"], input.ant-input, input[type="file"], textarea, .ant-calendar-picker-input').length) {
       return { ok: false, reason: 'control_not_supported' };
@@ -141,24 +155,55 @@
     const triggers = [...select.querySelectorAll('.ant-select-search__field')]
       .filter((node) => node.closest('.ant-select') === select);
     const search = triggers[0];
-    const trigger = search && visible(search) ? search : selectFace(select);
+    const face = selectFace(select);
+    const trigger = search && visible(search) ? search : face;
     if (!select.classList.contains('ant-select-enabled')
       || !select.classList.contains('ant-select-allow-clear')
       || select.classList.contains('ant-select-disabled')
       || triggers.length !== 1
+      || search.tagName !== 'INPUT' || search.type !== 'text'
+      || search.disabled || search.readOnly || disabled(search)
+      || search.value !== ''
+      || stray(item, 'input, textarea, select').some((node) => node !== search)
       || !visible(select)
-      || !trigger
+      || disabled(select) || !trigger || disabled(trigger)
       || !readSelectText(select, label).ok) {
       return { ok: false, reason: 'control_not_supported' };
     }
-    return { ok: true, kind: 'select', item, select, trigger, label };
+    return { ok: true, kind: 'select', item, select, search, face, trigger, caption: labels[0], label };
   }
 
   function locate(label) {
     if (!Object.hasOwn(KINDS, label)) return { ok: false, reason: 'label_not_allowed' };
-    const items = itemsFor(label);
+    const root = document.querySelector('.resume-operation-wrap');
+    if (!root) return { ok: false, reason: 'control_not_supported' };
+    const items = itemsFor(label, root);
     if (items.length !== 1) return { ok: false, reason: 'control_not_supported' };
-    return locateSelect(items[0], label);
+    const found = locateSelect(items[0], label);
+    if (found.ok) {
+      found.root = root;
+      found.href = location.href;
+    }
+    return found;
+  }
+
+  function invalidFound(found) {
+    if (document.visibilityState === 'hidden') return 'fill_interrupted_page_hidden';
+    if (location.href !== found.href || !onPage()) return 'wrong_page';
+    const current = locate(found.label);
+    if (!current.ok) return current.reason;
+    if (current.root !== found.root || current.item !== found.item
+      || current.caption !== found.caption || current.select !== found.select
+      || current.search !== found.search
+      || !found.trigger.isConnected || !visible(found.trigger) || disabled(found.trigger)
+      || found.item.closest('.resume-operation-wrap') !== found.root
+      || found.select.closest('.ant-row.ant-form-item') !== found.item
+      || found.trigger.closest('.ant-select') !== found.select
+      || found.trigger.closest('.resume-operation-wrap') !== found.root
+      || (found.trigger !== found.search && current.face !== found.trigger)) {
+      return 'control_not_supported';
+    }
+    return '';
   }
 
   function readDisplay(found) {
@@ -176,8 +221,7 @@
   }
 
   function visibleDropdowns() {
-    return [...document.querySelectorAll('.ant-select-dropdown')].filter((node) => visible(node)
-      && DROPDOWN_CLASSES.every((name) => node.classList.contains(name)));
+    return [...document.querySelectorAll('.ant-select-dropdown')].filter(visible);
   }
 
   function anyOpen() {
@@ -188,14 +232,32 @@
 
   function opened(found) {
     const select = found.select;
+    const openSelects = [...document.querySelectorAll('.ant-select.ant-select-open')].filter(visible);
+    if (openSelects.length !== 1 || openSelects[0] !== select) return null;
     if (!select.classList.contains('ant-select-open')
       || !select.classList.contains('ant-select-focused')
       || !select.classList.contains('ant-select-enabled')) return null;
     const menus = visibleDropdowns();
-    if (menus.length !== 1) return null;
+    if (menus.length !== 1 || (found.menu && found.menu !== menus[0])
+      || !DROPDOWN_CLASSES.every((name) => menus[0].classList.contains(name))
+      || menus[0].querySelector('input, textarea, select')) return null;
+    found.menu = menus[0];
     const nodes = leaves(menus[0]);
     if (!nodes.length) return null;
-    return nodes;
+    return { menu: menus[0], nodes };
+  }
+
+  function beforeOption(found, before) {
+    const invalid = invalidFound(found);
+    if (invalid) return invalid;
+    const read = readDisplay(found);
+    return !read.ok ? 'control_not_supported' : (read.value !== before ? 'readback_mismatch' : '');
+  }
+
+  function captureMenu(found) {
+    if (found.menu) return;
+    const menus = visibleDropdowns();
+    if (menus.length === 1) found.menu = menus[0];
   }
 
   function dispatchEscape(target) {
@@ -210,19 +272,34 @@
   }
 
   async function closeMenus(found) {
-    const surfaces = [found?.trigger, found?.select, document.activeElement, document.body];
-    for (const surface of surfaces) dispatchEscape(surface);
+    // Cleanup belongs only to an attempt that passed the initial busy check.
+    // A replaced row is never adopted as a new Escape target.
+    captureMenu(found);
+    let invalid = invalidFound(found);
+    const surfaces = [...new Set([found.trigger, found.select, found.menu].filter(Boolean))];
+    for (const surface of surfaces) {
+      const originalOwner = found.root.isConnected && found.item.isConnected
+        && found.item.closest('.resume-operation-wrap') === found.root
+        && found.select.closest('.ant-row.ant-form-item') === found.item
+        && found.select.closest('.resume-operation-wrap') === found.root
+        && (surface === found.select || surface.closest('.ant-select') === found.select);
+      if (surface.isConnected && (originalOwner || surface === found.menu)) dispatchEscape(surface);
+      invalid ||= invalidFound(found);
+      if (!anyOpen()) return { closed: true, invalid };
+    }
     for (let i = 0; i < 8; i += 1) {
-      if (!anyOpen()) return true;
+      invalid ||= invalidFound(found);
+      if (!anyOpen()) return { closed: true, invalid };
       await pause(10);
     }
-    return !anyOpen();
+    invalid ||= invalidFound(found);
+    return { closed: !anyOpen(), invalid };
   }
 
   function safeClick(node) {
-    const button = node.closest?.('button, a, [type="submit"]');
+    const button = node.closest?.('button, a, [type="submit"], label');
     const label = exact((button || node).textContent || '');
-    if (button && FORBIDDEN.test(label)) {
+    if (button || FORBIDDEN.test(label)) {
       const error = Error('never_save');
       error.code = 'never_save';
       throw error;
@@ -233,13 +310,13 @@
   function result(extra) {
     return {
       ...flags(),
+      ...extra,
       saved: false,
       skippedSave: true,
       complete: false,
       liveSupportClaimed: false,
       supportClaimed: false,
-      neverSave: true,
-      ...extra
+      neverSave: true
     };
   }
 
@@ -264,12 +341,27 @@
   }
 
   function forbiddenOption(node) {
-    const button = node.closest?.('button, a, [type="submit"]');
-    if (button && FORBIDDEN.test(exact(button.textContent || ''))) return true;
+    const button = node.closest?.('button, a, [type="submit"], label');
+    if (button) return true;
     return FORBIDDEN.test(exact(node.textContent || ''));
   }
 
+  async function refuseOpened(found, label, reason, before, want) {
+    const invalidBeforeCleanup = invalidFound(found);
+    const cleanup = await closeMenus(found);
+    const invalid = invalidBeforeCleanup || cleanup.invalid || invalidFound(found);
+    const read = invalid ? { ok: false, value: before } : readDisplay(found);
+    const after = read.ok ? read.value : before;
+    const open = anyOpen();
+    return refused(label, invalid || (after !== before ? 'readback_mismatch'
+      : (open || !cleanup.closed ? 'menu_cleanup_failed' : reason)), {
+      before, after, expected: want, opened: true, canceled: true, stillOpen: open ? 1 : 0
+    });
+  }
+
   async function fillSelect(found, label, want) {
+    const invalid = invalidFound(found);
+    if (invalid) return refused(label, invalid);
     const current = readDisplay(found);
     if (!current.ok) return refused(label, 'control_not_supported', { before: '', after: '', expected: want });
     const before = current.value;
@@ -277,56 +369,72 @@
     if (before === want) return kept(label, 'preexisting_same_value', before, want, 'verified', true);
     if (before) return kept(label, 'existing_value', before, want, 'skipped', false);
     if (anyOpen()) return refused(label, 'control_busy', { before, after: before, expected: want });
-    safeClick(found.trigger);
-    const nodes = await waitFor(() => opened(found));
-    if (!nodes) {
-      const closed = await closeMenus(found);
-      const afterRead = readDisplay(found);
-      return refused(label, closed ? 'control_not_supported' : 'menu_cleanup_failed', {
-        before, after: afterRead.ok ? afterRead.value : before, expected: want, opened: true, canceled: true,
-        stillOpen: closed ? 0 : 1
+    let attempted = false;
+    try {
+      const beforeOpen = beforeOption(found, before);
+      if (beforeOpen) return refused(label, beforeOpen, { before, after: before, expected: want });
+      attempted = true;
+      safeClick(found.trigger);
+      captureMenu(found);
+      const ready = await waitFor(() => {
+        const reason = beforeOption(found, before);
+        return reason ? { reason } : opened(found);
       });
-    }
-    const matches = nodes.filter((node) => exact(node.textContent) === want);
-    if (matches.length !== 1) {
-      const closed = await closeMenus(found);
-      const afterRead = readDisplay(found);
-      const after = afterRead.ok ? afterRead.value : before;
-      return refused(label, matches.length ? 'ambiguous_option' : 'option_not_found', {
-        before, after, expected: want, opened: true, canceled: true,
-        stillOpen: closed && !anyOpen() ? 0 : 1,
-        reason: after !== before ? 'readback_mismatch' : (closed && !anyOpen()
-          ? (matches.length ? 'ambiguous_option' : 'option_not_found')
-          : 'menu_cleanup_failed')
+      const invalidAfterOpen = beforeOption(found, before);
+      if (invalidAfterOpen || ready?.reason || !ready) {
+        return await refuseOpened(found, label, invalidAfterOpen || ready?.reason || 'control_not_supported', before, want);
+      }
+      const matches = ready.nodes.filter((node) => exact(node.textContent) === want);
+      if (matches.length !== 1) {
+        return await refuseOpened(found, label, matches.length ? 'ambiguous_option' : 'option_not_found', before, want);
+      }
+      const option = matches[0];
+      const latest = opened(found);
+      const currentMatches = latest?.nodes.filter((node) => exact(node.textContent) === want) || [];
+      // The awaited menu and leaf must still be the current menu and leaf.
+      // In particular, replacing a leaf with identical text does not authorize it.
+      const invalidBeforeClick = beforeOption(found, before);
+      if (invalidBeforeClick || !latest || latest.menu !== ready.menu
+        || currentMatches.length !== 1 || currentMatches[0] !== option
+        || !visible(option) || disabled(option)
+        || option.closest('.ant-select-dropdown') !== ready.menu) {
+        return await refuseOpened(found, label, invalidBeforeClick || 'control_not_supported', before, want);
+      }
+      if (forbiddenOption(option)) return await refuseOpened(found, label, 'never_save', before, want);
+      safeClick(option);
+      const painted = await waitFor(() => {
+        const reason = invalidFound(found);
+        if (reason) return { reason };
+        const read = readDisplay(found);
+        if (!read.ok) return { reason: 'control_not_supported' };
+        return read.value === want && !anyOpen() ? { matched: true } : null;
       });
-    }
-    if (forbiddenOption(matches[0])) {
-      const closed = await closeMenus(found);
-      return refused(label, 'never_save', {
-        before, after: before, expected: want, opened: true, canceled: true,
-        stillOpen: closed && !anyOpen() ? 0 : 1
-      });
-    }
-    safeClick(matches[0]);
-    const painted = await waitFor(() => {
+      const invalidAfterClick = painted?.reason || invalidFound(found);
+      if (invalidAfterClick) return await refuseOpened(found, label, invalidAfterClick, before, want);
       const read = readDisplay(found);
-      return read.ok && read.value === want && !anyOpen();
-    });
-    if (!painted) {
-      const closed = await closeMenus(found);
-      const afterRead = readDisplay(found);
+      if (painted?.matched && read.ok && read.value === want && !anyOpen()) {
+        return result({
+          ok: true, label, status: 'verified', reason: 'readback_matched',
+          before, after: want, expected: want, opened: true, canceled: false, stillOpen: 0
+        });
+      }
+      const cleanup = await closeMenus(found);
+      const invalidAfterCleanup = cleanup.invalid || invalidFound(found);
+      const afterRead = invalidAfterCleanup ? { ok: false, value: before } : readDisplay(found);
       const after = afterRead.ok ? afterRead.value : before;
       const open = anyOpen();
-      return refused(label, after === want && !open ? 'readback_matched' : (open || !closed ? 'menu_cleanup_failed' : 'readback_mismatch'), {
-        ok: after === want && !open,
-        status: after === want && !open ? 'verified' : 'failed',
+      const verified = !invalidAfterCleanup && cleanup.closed && !open && afterRead.ok && after === want;
+      return result({
+        ok: verified, label, status: verified ? 'verified' : 'failed',
+        reason: invalidAfterCleanup || (verified ? 'readback_matched'
+          : (open || !cleanup.closed ? 'menu_cleanup_failed' : 'readback_mismatch')),
         before, after, expected: want, opened: true, canceled: true, stillOpen: open ? 1 : 0
       });
+    } catch (error) {
+      const reason = error?.message === 'never_save' || error?.code === 'never_save' ? 'never_save' : 'control_error';
+      return attempted ? await refuseOpened(found, label, reason, before, want)
+        : refused(label, reason, { before, after: before, expected: want });
     }
-    return result({
-      ok: true, label, status: 'verified', reason: 'readback_matched',
-      before, after: want, expected: want, opened: true, canceled: false, stillOpen: 0
-    });
   }
 
   async function fillField(label, value) {
@@ -344,36 +452,47 @@
   }
 
   async function cancelField(label) {
+    let found;
+    let before = '';
+    let attempted = false;
     try {
+      if (document.visibilityState === 'hidden') return refused(label, 'fill_interrupted_page_hidden');
       if (!onPage()) return refused(label, 'wrong_page');
-      const found = locate(label);
+      found = locate(label);
       if (!found.ok) return refused(label, found.reason);
+      const invalid = invalidFound(found);
+      if (invalid) return refused(label, invalid);
       const current = readDisplay(found);
       if (!current.ok) return refused(label, 'control_not_supported');
-      const before = current.value;
+      before = current.value;
       if (anyOpen()) return refused(label, 'control_busy', { before, after: before });
+      const beforeOpen = beforeOption(found, before);
+      if (beforeOpen) return refused(label, beforeOpen, { before, after: before });
+      attempted = true;
       safeClick(found.trigger);
-      const nodes = await waitFor(() => opened(found));
-      if (!nodes) {
-        await closeMenus(found);
-        const afterRead = readDisplay(found);
-        return refused(label, 'control_not_supported', {
-          before, after: afterRead.ok ? afterRead.value : before, opened: false, canceled: true
-        });
+      captureMenu(found);
+      const ready = await waitFor(() => {
+        const reason = beforeOption(found, before);
+        return reason ? { reason } : opened(found);
+      });
+      const invalidAfterOpen = beforeOption(found, before);
+      if (invalidAfterOpen || ready?.reason || !ready || !opened(found)) {
+        return await refuseOpened(found, label, invalidAfterOpen || ready?.reason || 'control_not_supported', before, before);
       }
-      const closed = await closeMenus(found);
-      const afterRead = readDisplay(found);
+      const cleanup = await closeMenus(found);
+      const invalidAfterCleanup = cleanup.invalid || invalidFound(found);
+      const afterRead = invalidAfterCleanup ? { ok: false, value: before } : readDisplay(found);
       const after = afterRead.ok ? afterRead.value : before;
       const open = anyOpen();
-      const ok = closed && !open && after === before && afterRead.ok;
+      const ok = !invalidAfterCleanup && cleanup.closed && !open && after === before && afterRead.ok;
       return result({
         ok, label, status: ok ? 'verified' : 'failed',
-        reason: after !== before ? 'readback_mismatch' : (ok ? 'menu_closed' : 'menu_cleanup_failed'),
+        reason: invalidAfterCleanup || (after !== before ? 'readback_mismatch' : (ok ? 'menu_closed' : 'menu_cleanup_failed')),
         before, after, expected: before, opened: true, canceled: true, stillOpen: open ? 1 : 0
       });
     } catch (error) {
-      if (error?.message === 'never_save' || error?.code === 'never_save') return refused(label, 'never_save');
-      return refused(label, 'control_error');
+      const reason = error?.message === 'never_save' || error?.code === 'never_save' ? 'never_save' : 'control_error';
+      return attempted ? await refuseOpened(found, label, reason, before, before) : refused(label, reason);
     }
   }
 
@@ -399,9 +518,26 @@
 
   async function fillFields(values) {
     const fields = [];
-    for (const label of ORDER) fields.push(await fillField(label, values?.[label]));
+    const href = location.href;
+    const root = document.querySelector('.resume-operation-wrap');
+    const invalidBatch = () => {
+      if (document.visibilityState === 'hidden') return 'fill_interrupted_page_hidden';
+      if (location.href !== href || !onPage()) return 'wrong_page';
+      return document.querySelector('.resume-operation-wrap') !== root ? 'control_not_supported' : '';
+    };
+    let interrupted = invalidBatch();
+    for (const label of ORDER) {
+      interrupted ||= invalidBatch();
+      if (interrupted) {
+        fields.push(refused(label, interrupted));
+        continue;
+      }
+      const field = await fillField(label, values?.[label]);
+      fields.push(field);
+      interrupted = invalidBatch() || (['wrong_page', 'fill_interrupted_page_hidden'].includes(field.reason) ? field.reason : '');
+    }
     return result({
-      ok: fields.every((field) => field.ok === true && field.status === 'verified'),
+      ok: !interrupted && fields.every((field) => field.ok === true && field.status === 'verified'),
       fields
     });
   }

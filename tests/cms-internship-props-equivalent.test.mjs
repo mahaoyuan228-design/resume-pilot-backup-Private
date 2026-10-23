@@ -6,7 +6,7 @@ import {dirname,join,resolve} from 'node:path';
 import {fileURLToPath,pathToFileURL} from 'node:url';
 import vm from 'node:vm';
 const home=dirname(fileURLToPath(import.meta.url)),target=resolve('src/content/cms-internship-serialization.mjs');
-const sourceSHA=createHash('sha256').update(await readFile(target)).digest('hex');
+const sourceSHA=createHash('sha256').update((await readFile(target,'utf8')).replace(/\r\n/gu,'\n')).digest('hex');
 assert.equal(sourceSHA,'58cf396276f4e5a649f392fc50d98990cd03862e3b2c834a5d72539f7453378f');
 globalThis.fetch=()=>{throw Error('offline_only');};
 const {readCmsInternshipSerialization:reader}=await import(pathToFileURL(target));

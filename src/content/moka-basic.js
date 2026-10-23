@@ -533,6 +533,8 @@
         break;
       }
     }
+    // Keep accepted skips even when the following readback changes their reason.
+    const skipped = results.filter((row) => row.reason === 'skipped_existing');
     // Later reactive events can replace an earlier value after its first readback.
     if (!failure) {
       for (const row of snapshots) {
@@ -548,6 +550,17 @@
     }
     if (!readTextNeighbors(neighbors).neighborsPreserved) failure = 'neighbor_changed';
     const rollback = failure ? await rollbackOwned(writes) : [];
+    // Skipped targets never enter rollback or neighbor snapshots. Their original
+    // raw values are the accepted receipts because pre-write checks forbid drift.
+    let skippedPreserved = true;
+    for (const result of skipped) {
+      const row = snapshots.find((entry) => entry.label === result.label);
+      const current = classifyField(row.label);
+      if (!current.ready || current.item !== row.item || current.control !== row.control || current.control.value !== row.original) {
+        skippedPreserved = false;
+        Object.assign(result, { ok: false, reason: 'readback_mismatch', after: norm(row.control.value) });
+      }
+    }
     for (const result of results) {
       const row = snapshots.find((entry) => entry.label === result.label);
       result.final = norm(row.control.value);
@@ -561,9 +574,9 @@
       ...NEVER_SAVE,
       reason: failure || (writes.length ? 'readback_matched' : 'skipped_existing'),
       writeAttempted: writes.length > 0,
-      restored: rollback.length > 0 && rollback.every((row) => row.restored),
+      restored: rollback.length > 0 && rollback.every((row) => row.restored) && skippedPreserved,
       restoredCount: rollback.filter((row) => row.restored).length,
-      restoreComplete: rollback.length > 0 && rollback.every((row) => row.restored),
+      restoreComplete: rollback.length > 0 && rollback.every((row) => row.restored) && skippedPreserved,
       rollback,
       profileSource: allowExplicit ? 'explicit' : 'resumeProfile',
       planSummary: plan

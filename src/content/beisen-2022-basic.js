@@ -516,15 +516,22 @@
     }
     // Occupied skips retain their raw value at acceptance, even if populated on
     // focus. Recheck them too, without adding them to owned-write rollback.
-    for (const result of results.filter((row) => row.reason === 'skipped_existing')) {
-      const snapshot = classified.find((row) => row.label === result.label);
-      const row = classifyField(result.label);
-      if (!row.ready || row.item !== snapshot.item || row.control !== snapshot.control || row.control.value !== result.afterRaw) {
-        result.ok = false;
-        result.reason = 'readback_mismatch';
-        result.after = row.ready ? norm(row.control.value) : '';
+    const skipped = results.filter((row) => row.reason === 'skipped_existing');
+    const readSkipped = () => {
+      let preserved = true;
+      for (const result of skipped) {
+        const snapshot = classified.find((row) => row.label === result.label);
+        const row = classifyField(result.label);
+        if (!row.ready || row.item !== snapshot.item || row.control !== snapshot.control || row.control.value !== result.afterRaw) {
+          preserved = false;
+          result.ok = false;
+          result.reason = 'readback_mismatch';
+          result.after = row.ready ? norm(row.control.value) : '';
+        }
       }
-    }
+      return preserved;
+    };
+    readSkipped();
     const neighborChanged = results.some((row) => row.reason === 'neighbor_changed') || !readTextNeighbors(neighbors).neighborsPreserved;
     const ok = results.every((row) => row.ok) && !neighborChanged;
     const restore = [];
@@ -539,6 +546,9 @@
         }
       }
     }
+    // Cleanup can change an unowned skip after its first readback. Retain the
+    // accepted receipt even if that readback already changed its result reason.
+    const skippedPreserved = readSkipped();
     return withNeighborReadback({
       ok,
       siteId: SITE_ID,
@@ -549,7 +559,7 @@
       liveSupportClaimed: false,
       writeAttempted: written.length > 0,
       reason: neighborChanged ? 'neighbor_changed' : ok ? (written.length ? 'readback_matched' : 'existing_values_skipped') : 'readback_mismatch',
-      restored: !ok && written.length > 0 && restore.every((row) => row.restored),
+      restored: !ok && written.length > 0 && restore.every((row) => row.restored) && skippedPreserved,
       restore,
       profileSource: allowExplicit ? 'explicit' : 'resumeProfile',
       planSummary: plan

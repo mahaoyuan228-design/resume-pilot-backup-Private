@@ -1,8 +1,9 @@
 // Offline Never-Save trials for the hotjob pb industry checkbox
 // 如应聘研究发展中心行业研究类岗位请勾选（建议仅勾选3~5项）.
 // Markup uses tests/fixtures/hotjob-pb-industry-probe-dom.json for page
-// structure only. The probe did not open options and did not record display
-// captions. Checkbox captions below are synthetic locate-contract tokens.
+// structure and the one exclusion caption also captured by the same-page certs
+// and intent-salary fixtures. Ordinary captions below are synthetic contract
+// tokens; the probe did not open or record ordinary industry options.
 // A green run is not a live support claim.
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -29,11 +30,15 @@ const mcSource = readFileSync(new URL('../src/content/hotjob-mc-basic.js', impor
 const mcRunner = readFileSync(new URL('../src/background/hotjob-mc-basic-auto.mjs', import.meta.url), 'utf8');
 const templates = readFileSync(new URL('../src/profile/site-question-templates.js', import.meta.url), 'utf8');
 const probe = JSON.parse(readFileSync(new URL('../tests/fixtures/hotjob-pb-industry-probe-dom.json', import.meta.url), 'utf8'));
+const certsProbe = JSON.parse(readFileSync(new URL('../tests/fixtures/hotjob-pb-certs-probe-dom.json', import.meta.url), 'utf8'));
+const salaryProbe = JSON.parse(readFileSync(new URL('../tests/fixtures/hotjob-pb-intent-salary-probe-dom.json', import.meta.url), 'utf8'));
 
 const PAGE = `https://${probe.page.hostname}${probe.page.samplePath}`;
 const LABEL = probe.checkbox.label;
 const FORBIDDEN = probe.page.forbiddenButtons;
 const MODULE = 'hotjob-pb-industry';
+const EXCLUSION = probe.checkbox.optionCaptions[0];
+const EXCLUSION_VALUE = EXCLUSION.normalize('NFKC');
 const SYN = ['SYN_1', 'SYN_2', 'SYN_3', 'SYN_4', 'SYN_5', 'SYN_6', 'SYN_7', 'SYN_8'];
 const THREE = SYN.slice(0, 3);
 const choiceStart = templates.indexOf('RESEARCH_CHOICES');
@@ -54,15 +59,18 @@ function optionBox(text, state) {
   const control = state.dropCheckboxClass ? 'plain-box' : probe.checkbox.controlClass;
   const input = `<input data-caption="${esc(text)}" class="${esc(control)}"${typeAttr}${checked}${disabled}${hidden}>`;
   if (state.bare) return input;
+  if (state.exclusionSubmit && text === EXCLUSION) return `<button type="submit"><span>${input}</span><span>${esc(text)}</span></button>`;
   if (state.saveButton && text === FORBIDDEN[0]) return `<button type="button">${esc(text)}${input}</button>`;
   return `<label><span>${input}</span><span>${esc(text)}</span></label>`;
 }
 
 function optionsHtml(state) {
-  const count = state.oneOption ? 1 : SYN.length;
+  const captions = state.exclusion ? [EXCLUSION, ...SYN] : SYN;
+  const count = state.oneOption ? 1 : captions.length;
   const rows = [];
   for (let index = 0; index < count; index += 1) {
-    let text = SYN[index];
+    let text = captions[index];
+    if (state.duplicateExclusion && index === 1) text = EXCLUSION;
     if (state.duplicateText && index === 1) text = SYN[0];
     if (state.saveButton && index === 0) text = FORBIDDEN[0];
     rows.push(optionBox(text, state));
@@ -236,8 +244,8 @@ test('source stays unregistered and does not claim support', () => {
   }
   assert.equal(CHOICES.length, 32);
   for (const name of CHOICES) {
-    assert.equal(source.includes(name), false, name);
-    assert.equal(JSON.stringify(probe).includes(name), false, name);
+    assert.equal(source.includes(name), name === EXCLUSION, name);
+    assert.equal(JSON.stringify(probe).includes(name), name === EXCLUSION, name);
   }
   for (const token of SYN) {
     assert.equal(source.includes(token), false, token);
@@ -254,9 +262,17 @@ test('source stays unregistered and does not claim support', () => {
   }
 });
 
-test('fixture keeps structure tokens and does not store option captions', () => {
+test('fixture reconciles only the captured exclusion caption and keeps ordinary options unknown', () => {
   assert.equal(probe.checkbox.optionsOpened, false);
-  assert.deepEqual(probe.checkbox.optionCaptions, []);
+  assert.deepEqual(probe.checkbox.optionCaptions, [EXCLUSION]);
+  assert.equal(EXCLUSION, certsProbe.neighbors.research.option);
+  assert.equal(EXCLUSION, salaryProbe.neighbors.research.option);
+  assert.equal(probe.checkbox.label, certsProbe.neighbors.research.label);
+  assert.equal(probe.checkbox.label, salaryProbe.neighbors.research.label);
+  assert.equal(probe.checkbox.controlClass, certsProbe.neighbors.research.controlClass);
+  assert.equal(probe.checkbox.controlClass, salaryProbe.neighbors.research.controlClass);
+  assert.deepEqual(probe.checkbox.captionEvidence.fixtures, ['hotjob-pb-certs-probe-dom.json', 'hotjob-pb-intent-salary-probe-dom.json']);
+  assert.equal(probe.checkbox.captionEvidence.field, 'neighbors.research.option');
   assert.equal(probe.checkbox.valueSample, '0/111601/111905');
   assert.equal(probe.checkbox.controlClass, 'ant-checkbox-input');
   assert.equal(probe.checkbox.inputType, 'checkbox');
@@ -269,6 +285,124 @@ test('fixture keeps structure tokens and does not store option captions', () => 
   assert.match(built, new RegExp(probe.page.rootClass));
   assert.doesNotMatch(built, /111601|111905/);
   for (const name of CHOICES) assert.equal(built.includes(name), false, name);
+});
+
+test('the captured non-research exclusion fills alone and stays unsaved', async () => {
+  const h = await boot({ exclusion: true });
+  try {
+    const row = await h.api.fillField(LABEL, [` ${EXCLUSION} `]);
+    assert.equal(row.ok, true, JSON.stringify(row));
+    assert.equal(row.reason, 'readback_matched');
+    assert.equal(row.status, 'verified');
+    assert.deepEqual(plain(row.before), []);
+    assert.deepEqual(plain(row.after), [EXCLUSION_VALUE]);
+    assert.deepEqual(plain(row.expected), [EXCLUSION_VALUE]);
+    assert.equal(row.clickedOptions, 1);
+    assertNeverSaved(row);
+    assert.deepEqual(checkedCaptions(h.document), [EXCLUSION]);
+    assert.deepEqual(h.stats.captions, [EXCLUSION]);
+    const canceled = await h.api.cancelField(LABEL);
+    assert.equal(canceled.reason, 'left_unsaved');
+    assert.deepEqual(plain(canceled.after), [EXCLUSION_VALUE]);
+    assert.equal(h.stats.checkbox, 1);
+    unchanged(h.document, h.stats);
+  } finally { h.dom.window.close(); }
+});
+
+test('the exclusion cannot be mixed with research captions before a toggle', async () => {
+  for (const captions of [[EXCLUSION, SYN[0]], [SYN[0], EXCLUSION, SYN[1]]]) {
+    const h = await boot({ exclusion: true });
+    try {
+      const row = await h.api.fillField(LABEL, captions);
+      assert.equal(row.ok, false);
+      assert.equal(row.reason, 'conflicting_options');
+      assert.equal(row.clickedOptions, 0);
+      assertNeverSaved(row);
+      assert.deepEqual(checkedCaptions(h.document), []);
+      assert.equal(h.stats.checkbox, 0);
+      unchanged(h.document, h.stats);
+    } finally { h.dom.window.close(); }
+  }
+});
+
+test('a missing, ambiguous, or disabled exclusion fails closed', async () => {
+  const cases = [
+    [{}, 'option_not_found'],
+    [{ exclusion: true, duplicateExclusion: true }, 'control_not_supported'],
+    [{ exclusion: true }, 'control_not_supported']
+  ];
+  for (const [state, reason] of cases) {
+    const h = await boot(state);
+    try {
+      if (state.exclusion && !state.duplicateExclusion) {
+        h.document.querySelector('[data-field="industry"] input').disabled = true;
+      }
+      const row = await h.api.fillField(LABEL, [EXCLUSION]);
+      assert.equal(row.reason, reason, JSON.stringify(row));
+      assert.equal(row.ok, false);
+      assert.equal(row.clickedOptions, 0);
+      assertNeverSaved(row);
+      assert.deepEqual(checkedCaptions(h.document), []);
+      assert.equal(h.stats.checkbox, 0);
+      unchanged(h.document, h.stats);
+    } finally { h.dom.window.close(); }
+  }
+});
+
+test('an exclusion inside a submit button is refused before any action click', async () => {
+  const h = await boot({ exclusion: true, exclusionSubmit: true });
+  try {
+    const row = await h.api.fillField(LABEL, [EXCLUSION]);
+    assert.equal(row.reason, 'never_save', JSON.stringify(row));
+    assert.equal(row.ok, false);
+    assert.equal(row.clickedOptions, 0);
+    assertNeverSaved(row);
+    assert.deepEqual(checkedCaptions(h.document), []);
+    assert.equal(h.stats.checkbox, 0);
+    assert.equal(h.stats.button, 0);
+    unchanged(h.document, h.stats);
+  } finally { h.dom.window.close(); }
+});
+
+test('an exclusion outside the unique resume root is refused before toggling', async () => {
+  for (const duplicateRoot of [false, true]) {
+    const h = await boot({ exclusion: true });
+    try {
+      if (duplicateRoot) {
+        const second = h.document.createElement('div');
+        second.className = probe.page.rootClass;
+        h.document.body.append(second);
+      } else {
+        h.document.body.append(h.document.querySelector('[data-field="industry"]'));
+      }
+      const row = await h.api.fillField(LABEL, [EXCLUSION]);
+      assert.equal(row.reason, duplicateRoot ? 'wrong_page' : 'control_not_supported');
+      assert.equal(row.ok, false);
+      assert.equal(row.clickedOptions, 0);
+      assertNeverSaved(row);
+      assert.equal(h.stats.checkbox, 0);
+      unchanged(h.document, h.stats);
+    } finally { h.dom.window.close(); }
+  }
+});
+
+test('preexisting exclusions and industry selections are preserved without toggling', async () => {
+  for (const [checked, wanted, reason] of [
+    [[EXCLUSION], [EXCLUSION], 'preexisting_same_value'],
+    [THREE, [EXCLUSION], 'existing_value'],
+    [[EXCLUSION], THREE, 'existing_value']
+  ]) {
+    const h = await boot({ exclusion: true, checked });
+    try {
+      const row = await h.api.fillFields({ [LABEL]: JSON.stringify(wanted) });
+      assert.equal(row.fields[0].reason, reason);
+      assert.equal(row.fields[0].clickedOptions, 0);
+      assertNeverSaved(row);
+      assert.deepEqual(checkedCaptions(h.document), checked);
+      assert.equal(h.stats.checkbox, 0);
+      unchanged(h.document, h.stats);
+    } finally { h.dom.window.close(); }
+  }
 });
 
 test('inspect matches the one checkbox row and does not claim support', async () => {
@@ -575,4 +709,69 @@ test('a hidden page fails closed before a click', async () => {
     assertNeverSaved(row);
     unchanged(h.document, h.stats);
   } finally { h.dom.window.close(); }
+});
+
+const contextDrifts = [
+  ['URL', (h) => h.window.history.replaceState({}, '', '/wrong-page'), 'wrong_page'],
+  ['wrapper replacement', (h) => {
+    const root = h.document.querySelector(`.${probe.page.rootClass}`);
+    root.replaceWith(root.cloneNode(true));
+  }, 'control_not_supported'],
+  ['page hidden', (h) => Object.defineProperty(h.document, 'visibilityState', { configurable: true, get: () => 'hidden' }), 'fill_interrupted_page_hidden']
+];
+
+test('an exclusion click cannot verify after page context changes', async () => {
+  for (const [name, mutate, reason] of contextDrifts) {
+    const h = await boot({ exclusion: true });
+    try {
+      const box = h.document.querySelector('[data-field="industry"] input');
+      box.addEventListener('click', () => mutate(h), { once: true });
+      const row = await h.api.fillField(LABEL, [EXCLUSION]);
+      assert.equal(row.ok, false, JSON.stringify({ name, row }));
+      assert.equal(row.reason, reason);
+      assert.equal(row.clickedOptions, 1);
+      assert.equal(h.stats.checkbox, 1);
+      assertNeverSaved(row);
+      unchanged(h.document, h.stats);
+    } finally { h.dom.window.close(); }
+  }
+});
+
+test('context or group ownership drift stops ordinary choices after the first toggle', async () => {
+  const drifts = [...contextDrifts,
+    ['row moved', (h, box) => h.document.body.append(box.closest('.ant-row.ant-form-item')), 'control_not_supported'],
+    ['checkbox replaced', (_h, box) => box.replaceWith(box.cloneNode(true)), 'control_not_supported']
+  ];
+  for (const [name, mutate, reason] of drifts) {
+    const h = await boot();
+    try {
+      const box = h.document.querySelector('[data-field="industry"] input');
+      box.addEventListener('click', () => mutate(h, box), { once: true });
+      const row = await h.api.fillField(LABEL, THREE);
+      assert.equal(row.ok, false, JSON.stringify({ name, row }));
+      assert.equal(row.reason, reason);
+      assert.equal(row.clickedOptions, 1);
+      assert.equal(h.stats.checkbox, 1);
+      assert.deepEqual(checkedCaptions(h.document), [SYN[0]]);
+      assertNeverSaved(row);
+      unchanged(h.document, h.stats);
+    } finally { h.dom.window.close(); }
+  }
+});
+
+test('final exclusion readback rechecks context after click microtasks', async () => {
+  for (const [name, mutate, reason] of contextDrifts) {
+    const h = await boot({ exclusion: true });
+    try {
+      const box = h.document.querySelector('[data-field="industry"] input');
+      box.addEventListener('click', () => h.window.queueMicrotask(() => mutate(h)), { once: true });
+      const row = await h.api.fillField(LABEL, [EXCLUSION]);
+      assert.equal(row.ok, false, JSON.stringify({ name, row }));
+      assert.equal(row.reason, reason);
+      assert.equal(row.clickedOptions, 1);
+      assert.equal(h.stats.checkbox, 1);
+      assertNeverSaved(row);
+      unchanged(h.document, h.stats);
+    } finally { h.dom.window.close(); }
+  }
 });

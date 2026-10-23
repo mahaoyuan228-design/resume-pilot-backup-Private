@@ -1,0 +1,290 @@
+{
+  "sourceDirectory": "C:\\Users\\admin\\Desktop\\_temp-scripts\\cmb-live-398debc7",
+  "extraction": "Selected source JSON keys are copied verbatim; sourceSha256 hashes the original artifact bytes. No neighbor DOM is inferred.",
+  "captures": [
+    {
+      "sourceArtifact": "cmb-basic_self-TRY-20261023-151637.json",
+      "sourceSha256": "2f9492a0980e089a4b3df8f9a3d32dbb451c2fdc9a31dae9dc5a416cbc09633e",
+      "tipSha": "398debc7ade609d5e11ecbe78b250c0c0f6b13cd",
+      "section": "basic_self",
+      "pr": 114,
+      "cdpPort": 9237,
+      "pageUrl": "https://career.cmbchina.com/center/resume",
+      "neverSave": true,
+      "liveSupportClaimed": false,
+      "supportClaimed": false,
+      "softwareClickedSave": false,
+      "softwareClickedSubmit": false,
+      "softwareClickedNext": false,
+      "softwareClickedDeliver": false,
+      "softwareClickedDelete": false,
+      "networkNonGet": [],
+      "visibility": {
+        "fields": {
+          "resume_basicInfo_selfAssessment": {
+            "present": true,
+            "count": 1,
+            "w": 629,
+            "h": 32,
+            "empty": true,
+            "disabled": false,
+            "readOnly": false,
+            "visible": true,
+            "placeholder": "可用5个词描述你的性格",
+            "tag": "textarea"
+          }
+        }
+      },
+      "fill": {
+        "siteId": "cmb",
+        "scope": "cmb_basic_native_text",
+        "complete": false,
+        "liveSupportClaimed": false,
+        "supportClaimed": false,
+        "neverSave": true,
+        "saved": false,
+        "submitted": false,
+        "skippedSave": true,
+        "softwareClickedSave": false,
+        "softwareClickedSubmit": false,
+        "softwareClickedDeliver": false,
+        "softwareClickedDelete": false,
+        "softwareClickedNext": false,
+        "ok": false,
+        "writeAttempted": true,
+        "fields": [
+          {
+            "id": "resume_basicInfo_selfAssessment",
+            "label": "自我评价",
+            "status": "failed",
+            "reason": "neighbor_changed",
+            "writeAttempted": true
+          }
+        ],
+        "reason": "neighbor_changed"
+      },
+      "postReadback": {
+        "resume_basicInfo_selfAssessment": {
+          "value": "认真负责\n善于沟通\n持续学习",
+          "visible": true
+        }
+      },
+      "summary": {
+        "verified": 0,
+        "failed": 1,
+        "skipped": 0,
+        "nonGetCount": 0,
+        "writeAttempted": true,
+        "fillOk": false,
+        "cancelClicked": false,
+        "emptyAfter": false
+      }
+    },
+    {
+      "sourceArtifact": "cmb-internship_content-TRY-20261023-151803.json",
+      "sourceSha256": "e4591ff513659a5c530e31c0cdd24e930a3dbc51474eabd56b9a43b864e5a2d1",
+      "tipSha": "398debc7ade609d5e11ecbe78b250c0c0f6b13cd",
+      "section": "internship_content",
+      "pr": 121,
+      "cdpPort": 9237,
+      "pageUrl": "https://career.cmbchina.com/center/resume",
+      "neverSave": true,
+      "liveSupportClaimed": false,
+      "supportClaimed": false,
+      "softwareClickedSave": false,
+      "softwareClickedSubmit": false,
+      "softwareClickedNext": false,
+      "softwareClickedDeliver": false,
+      "softwareClickedDelete": false,
+      "networkNonGet": [],
+      "visibility": {
+        "fields": {
+          "resume_internshipExperienceList_0_practiceContent": {
+            "present": true,
+            "count": 1,
+            "w": 968,
+            "h": 32,
+            "empty": true,
+            "disabled": false,
+            "readOnly": false,
+            "visible": true,
+            "placeholder": "请输入",
+            "tag": "textarea"
+          }
+        }
+      },
+      "fill": {
+        "siteId": "cmb",
+        "scope": "cmb_internship_native_text",
+        "complete": false,
+        "liveSupportClaimed": false,
+        "supportClaimed": false,
+        "neverSave": true,
+        "saved": false,
+        "submitted": false,
+        "skippedSave": true,
+        "softwareClickedSave": false,
+        "softwareClickedSubmit": false,
+        "softwareClickedDeliver": false,
+        "softwareClickedDelete": false,
+        "softwareClickedNext": false,
+        "ok": false,
+        "writeAttempted": true,
+        "fields": [
+          {
+            "id": "resume_internshipExperienceList_0_practiceContent",
+            "label": "内容与收获",
+            "status": "failed",
+            "reason": "neighbor_changed",
+            "writeAttempted": true
+          }
+        ],
+        "reason": "neighbor_changed"
+      },
+      "postReadback": {
+        "resume_internshipExperienceList_0_practiceContent": {
+          "value": "参与需求分析与文档整理",
+          "visible": true
+        }
+      },
+      "summary": {
+        "verified": 0,
+        "failed": 1,
+        "skipped": 0,
+        "nonGetCount": 0,
+        "writeAttempted": true,
+        "fillOk": false,
+        "cancelClicked": false,
+        "emptyAfter": false
+      }
+    },
+    {
+      "sourceArtifact": "cmb-clubs-TRY-20261023-151801.json",
+      "sourceSha256": "39a4f3b26f618f2839046e7438fe5c7ccd2d00f1d0c8f2db3a8d5ed9f11fc887",
+      "tipSha": "398debc7ade609d5e11ecbe78b250c0c0f6b13cd",
+      "section": "clubs",
+      "pr": 123,
+      "cdpPort": 9237,
+      "pageUrl": "https://career.cmbchina.com/center/resume",
+      "neverSave": true,
+      "liveSupportClaimed": false,
+      "supportClaimed": false,
+      "softwareClickedSave": false,
+      "softwareClickedSubmit": false,
+      "softwareClickedNext": false,
+      "softwareClickedDeliver": false,
+      "softwareClickedDelete": false,
+      "networkNonGet": [],
+      "visibility": {
+        "fields": {
+          "resume_clubActivityList_0_communityName": {
+            "present": true,
+            "count": 1,
+            "w": 307,
+            "h": 32,
+            "empty": true,
+            "disabled": false,
+            "readOnly": false,
+            "visible": true,
+            "placeholder": "请输入",
+            "tag": "input"
+          },
+          "resume_clubActivityList_0_schoolOfficeName": {
+            "present": true,
+            "count": 1,
+            "w": 291,
+            "h": 32,
+            "empty": true,
+            "disabled": false,
+            "readOnly": false,
+            "visible": true,
+            "placeholder": "请输入",
+            "tag": "input"
+          },
+          "resume_clubActivityList_0_schoolOfficeDescription": {
+            "present": true,
+            "count": 1,
+            "w": 968,
+            "h": 32,
+            "empty": true,
+            "disabled": false,
+            "readOnly": false,
+            "visible": true,
+            "placeholder": "可列举参加过的大型活动",
+            "tag": "textarea"
+          }
+        }
+      },
+      "fill": {
+        "siteId": "cmb",
+        "scope": "cmb_clubs_native_text",
+        "complete": false,
+        "liveSupportClaimed": false,
+        "supportClaimed": false,
+        "neverSave": true,
+        "saved": false,
+        "submitted": false,
+        "skippedSave": true,
+        "softwareClickedSave": false,
+        "softwareClickedSubmit": false,
+        "softwareClickedDeliver": false,
+        "softwareClickedDelete": false,
+        "softwareClickedNext": false,
+        "ok": false,
+        "writeAttempted": true,
+        "fields": [
+          {
+            "id": "resume_clubActivityList_0_communityName",
+            "label": "社团名称",
+            "before": "",
+            "after": "LiveConfirm学生会",
+            "status": "verified",
+            "reason": "readback_matched",
+            "writeAttempted": true
+          },
+          {
+            "id": "resume_clubActivityList_0_schoolOfficeName",
+            "label": "职务名称",
+            "before": "",
+            "after": "部长",
+            "status": "verified",
+            "reason": "readback_matched",
+            "writeAttempted": true
+          },
+          {
+            "id": "resume_clubActivityList_0_schoolOfficeDescription",
+            "label": "活动描述",
+            "status": "failed",
+            "reason": "neighbor_changed",
+            "writeAttempted": true
+          }
+        ],
+        "reason": "neighbor_changed"
+      },
+      "postReadback": {
+        "resume_clubActivityList_0_communityName": {
+          "value": "LiveConfirm学生会",
+          "visible": true
+        },
+        "resume_clubActivityList_0_schoolOfficeName": {
+          "value": "部长",
+          "visible": true
+        },
+        "resume_clubActivityList_0_schoolOfficeDescription": {
+          "value": "组织校级活动与志愿服务",
+          "visible": true
+        }
+      },
+      "summary": {
+        "verified": 2,
+        "failed": 1,
+        "skipped": 0,
+        "nonGetCount": 0,
+        "writeAttempted": true,
+        "fillOk": false,
+        "cancelClicked": false,
+        "emptyAfter": false
+      }
+    }
+  ]
+}

@@ -368,3 +368,124 @@ test('workStart requires a valid explicit YYYY-MM source and does not normalize 
     });
   }
 });
+
+// Reuse the checked-in basic editor and its name input. These mutations happen
+// while the profile-binding check is pending, after the earlier field guard.
+async function nameActionTrial({ initial = '', replaceExisting = false, bindingAt = 2, mutate, refuseBinding = false } = {}, verify) {
+  const h = await boot({ replaceExisting, onlyField: 'fullName' });
+  const name = h.document.getElementById('name');
+  const answer = 'Synthetic Customer B';
+  name.value = initial;
+  h.request.profile.fullName = answer;
+  const events = [];
+  for (const type of ['input', 'change']) name.addEventListener(type, () => events.push(type));
+  const sendMessage = h.window.chrome.runtime.sendMessage;
+  let bindingChecks = 0;
+  h.window.chrome.runtime.sendMessage = async message => {
+    if (message?.type === 'RESUME_PROFILE_BINDING_CHECK' && ++bindingChecks === bindingAt) {
+      mutate?.(h, name);
+      if (refuseBinding) return { allowed: false };
+    }
+    return sendMessage(message);
+  };
+  try {
+    const result = await h.window.ResumeGthBasic.trial(h.request);
+    await verify({ ...h, name, answer, events, bindingChecks }, result);
+    assert.equal(result.complete, false);
+    assert.equal(result.liveSupportClaimed, false);
+    assert.equal(result.softwareClickedSave, false);
+    assert.equal(result.softwareClickedSubmit, false);
+    assert.equal(result.softwareClickedDelete, false);
+    assert.equal(h.window.__gthFullLive.clicks().some(row => row.allowed !== true), false);
+    assert.equal(h.window.__gthFullLive.clicks().some(row => /保存|提交|投递|删除/u.test(row.label)), false);
+    if (!result.ok) {
+      assert.equal(result.fields.some(row => row.path === 'fullName' && row.status === 'verified'), false);
+      assert.equal(result.coverage.some(row => row.path === 'fullName' && row.status === 'verified'), false);
+      assert.equal(result.completedFields.some(row => row.key === 'fullName' && row.status === 'verified'), false);
+    }
+  } finally {
+    h.window.__gthFullLive.restore();
+    h.window.__gthFullResumeChromeRestore();
+    h.dom.window.close();
+  }
+}
+
+test('name binding checks preserve applicant edits before an empty fill or overwrite', async () => {
+  for (const options of [{ initial: '', replaceExisting: false }, { initial: 'Previous name', replaceExisting: true }]) {
+    await nameActionTrial({ ...options, mutate: (_h, name) => { name.value = 'Applicant manual edit'; } }, (h, result) => {
+      assert.equal(result.ok, false);
+      assert.equal(result.writeStarted, false);
+      assert.equal(h.name.value, 'Applicant manual edit');
+      assert.deepEqual(h.events, []);
+    });
+  }
+});
+
+test('name binding checks preserve a peer edited before the native setter', async () => {
+  await nameActionTrial({ mutate: h => { h.workInput.value = '2024-03'; } }, (h, result) => {
+    assert.equal(result.ok, false);
+    assert.equal(result.writeStarted, false);
+    assert.equal(h.name.value, '');
+    assert.equal(h.workInput.value, '2024-03');
+    assert.deepEqual(h.events, []);
+  });
+});
+
+test('name binding checks revalidate disabled, readonly, and length constraints before writing', async () => {
+  for (const mutate of [(_h, name) => { name.disabled = true; }, (_h, name) => { name.readOnly = true; },
+    (_h, name) => { name.maxLength = 3; }]) {
+    await nameActionTrial({ mutate }, (h, result) => {
+      assert.equal(result.ok, false);
+      assert.equal(result.writeStarted, false);
+      assert.equal(h.name.value, '');
+      assert.deepEqual(h.events, []);
+    });
+  }
+});
+
+test('name binding checks refuse a replaced or reparented input without starting a write', async () => {
+  for (const mutate of [(_h, name) => { name.replaceWith(name.cloneNode(true)); },
+    (h, name) => { h.document.querySelectorAll('.r-section')[1].append(name); }]) {
+    await nameActionTrial({ mutate }, (h, result) => {
+      assert.equal(result.ok, false);
+      assert.equal(result.writeStarted, false);
+      assert.equal(h.name.value, '');
+      assert.equal(h.document.getElementById('name').value, '');
+      assert.deepEqual(h.events, []);
+    });
+  }
+});
+
+test('name binding checks preserve edits before input and change events', async () => {
+  for (const [bindingAt, expectedEvents] of [[3, []], [4, ['input']]]) {
+    await nameActionTrial({ bindingAt, mutate: (_h, name) => { name.value = 'Applicant manual edit'; } }, (h, result) => {
+      assert.equal(result.ok, false);
+      assert.equal(result.writeStarted, true);
+      assert.equal(h.name.value, 'Applicant manual edit');
+      assert.deepEqual(h.events, expectedEvents);
+    });
+  }
+});
+
+test('name binding refusal before the setter reports no write', async () => {
+  await nameActionTrial({ refuseBinding: true }, (h, result) => {
+    assert.equal(result.ok, false);
+    assert.equal(result.reason, 'profile_binding_changed');
+    assert.equal(result.writeStarted, false);
+    assert.equal(h.name.value, '');
+    assert.deepEqual(h.events, []);
+  });
+});
+
+test('name native fills still verify blank and explicitly overwritten values', async () => {
+  for (const options of [{ initial: '', replaceExisting: false }, { initial: 'Previous name', replaceExisting: true }]) {
+    await nameActionTrial(options, (h, result) => {
+      assert.equal(result.ok, true, JSON.stringify(result));
+      assert.equal(result.writeStarted, true);
+      assert.equal(h.name.value, h.answer);
+      assert.deepEqual(h.events, ['input', 'change']);
+      assert.equal(result.fields.find(row => row.path === 'fullName').reason,
+        options.initial ? 'readback_reapplied' : 'readback_matched');
+    });
+  }
+});

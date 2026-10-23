@@ -3,7 +3,7 @@ globalThis.installResumeCmsRecordController=function(recordKind){
   const internship=recordKind==='internship',controllerName=internship?'ResumeCmsInternshipMulti':'ResumeCmsEducationMulti';
   const setId=internship?'49170501':'14',sectionName=internship?'实习经历':'教育经历必填',rowIdPattern=internship?/^49170501_\d+_\d+$/u:/^14_\d+_\d+$/u;
   'use strict';
-  if(globalThis[controllerName]?.version===3&&globalThis[controllerName].implementationRevision===16)return;
+  if(globalThis[controllerName]?.version===3&&globalThis[controllerName].implementationRevision===17)return;
   if(globalThis.ResumeProfileWriteContext)throw Error('profile_write_context_busy');
   async function checkProfileWrite(){const context=globalThis.ResumeProfileWriteContext;if(context)await context.check();}
   const PAGE='https://wecruit.hotjob.cn/SU629dbc0c0dcad452299bc0f7/pb/resumeOperation.html';
@@ -105,15 +105,18 @@ globalThis.installResumeCmsRecordController=function(recordKind){
       if(typeof services.checkSource!=='function'||typeof services.readSerialization!=='function'||typeof services.verifySerialization!=='function')fail('education_owned_bridges_required');
       if(plan?.version!==1||plan.page!==PAGE||await hash({...plan,fingerprint:undefined})!==plan.fingerprint)fail('education_plan_changed');
       if(internship&&plan.recordKind!=='internship')fail('internship_plan_scope_invalid');
-      // Internship: abort before add/fill only when ZERO facts are ready (avoids
-      // empty new rows). When some facts are ready, soft-skip the rest in-loop.
+      // The owned worker requires one bound DOM row for every planned source.
+      // Refuse a batch containing a zero-ready new record before any Add/fill;
+      // skipping its binding would break that proof, while adding it creates an
+      // empty row. Existing zero-ready rows can still soft-skip in-loop.
       if(internship){
-        const anyReady=plan.records.some(record=>FIELDS.some(([key])=>record.facts[key]?.status==='ready'));
-        if(!anyReady){
+        const recordReady=record=>FIELDS.some(([key])=>record.facts[key]?.status==='ready');
+        const anyReady=plan.records.some(recordReady),emptyNew=plan.records.some(record=>record.target.mode==='new'&&!recordReady(record));
+        if(!anyReady||emptyNew){
           const fields=plan.records.flatMap(record=>FIELDS.map(([key,question])=>{
             const fact=record.facts[key];
             return {profileIndex:record.profileIndex,key,question,path:fact?.path||null,status:'skipped',
-              reason:fact?.reason||'missing_profile_value',
+              reason:fact?.status==='ready'?'internship_record_not_ready':fact?.reason||'missing_profile_value',
               ...(typeof fact?.hasProfileValue==='boolean'?{hasProfileValue:fact.hasProfileValue}:{}),
               ...(typeof fact?.confirmed==='boolean'?{confirmed:fact.confirmed}:{}),
               ...(typeof fact?.valuePreview==='string'?{valuePreview:fact.valuePreview}:{}),
@@ -184,5 +187,5 @@ globalThis.installResumeCmsRecordController=function(recordKind){
       return {ok:true,complete,reason,writeStarted,addClicks,bindings,fields:publicFields,serialization:rows,serializedRecordCount:verification.serializedRecordCount,provisionalNewRecords:addClicks,saveClicks:0,deleteClicks:0,finalSubmitClicks:0};
     }catch(error){if(registered){if(writeStarted&&executions.has(plan?.fingerprint))executions.get(plan.fingerprint).state='unknown';else executions.delete(plan.fingerprint);}return {ok:false,complete:false,reason:/^[a-z0-9_]+$/u.test(error?.message||'')?error.message:'education_candidate_failed',phase,writeStarted,addClicks,bindings,fields:publicFields,provisionalNewRecords:addClicks,saveClicks:0,deleteClicks:0,finalSubmitClicks:0};}finally{if(profileContext&&globalThis.ResumeProfileWriteContext===profileContext)delete globalThis.ResumeProfileWriteContext;}
   }
-  globalThis[controllerName]=Object.freeze({version:3,implementationRevision:16,inspect,locateRow,locateField,rowIdentity,run});
+  globalThis[controllerName]=Object.freeze({version:3,implementationRevision:17,inspect,locateRow,locateField,rowIdentity,run});
 };

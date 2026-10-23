@@ -16,6 +16,7 @@ export const REASON = {
   AUTO_PAGE_NO_REPORT: 'AUTO_PAGE_NO_REPORT',
   BG_NO_RESPONSE: 'BG_NO_RESPONSE',
   SAVE_CLICK_FORBIDDEN: 'SAVE_CLICK_FORBIDDEN',
+  SAVE_GUARD_READBACK_FAILED: 'SAVE_GUARD_READBACK_FAILED',
   UNSETTLED_SUCCESS: 'UNSETTLED_SUCCESS',
 };
 
@@ -293,7 +294,7 @@ export function saveClickGuardSource() {
   })()`;
 }
 
-export const READ_SAVE_CLICKS = 'Array.isArray(window.__rqfSaveClicks) ? window.__rqfSaveClicks : []';
+export const READ_SAVE_CLICKS = 'window.__rqfSaveGuardInstalled === true && Array.isArray(window.__rqfSaveClicks) ? window.__rqfSaveClicks : null';
 
 export function autoPageSnapshotExpression() {
   return `({
@@ -820,6 +821,7 @@ async function runSection({ section, driver, config, fetchJson, openReportServer
       licenseBlocked: looksLicenseBlocked(row.body),
       saveClicksBefore: row.saveClicksBefore || [],
       saveClicksAfter: row.saveClicksAfter || [],
+      saveGuardError: row.saveGuardError || null,
       snapshot: row.snapshot || null,
       screenshotError: row.screenshotError || null,
       body: row.body || null,
@@ -871,10 +873,14 @@ async function runSection({ section, driver, config, fetchJson, openReportServer
 
   let saveClicksBefore = [];
   try {
-    await driver.evaluate(siteTargetId, saveClickGuardSource(), { awaitPromise: false, timeoutMs: 5000 });
-    saveClicksBefore = await driver.evaluate(siteTargetId, READ_SAVE_CLICKS, { awaitPromise: false, timeoutMs: 5000 }) || [];
+    const installed = await driver.evaluate(siteTargetId, saveClickGuardSource(), { awaitPromise: false, timeoutMs: 5000 });
+    if (installed !== true) throw new Error('save_guard_install_unconfirmed');
+    const readback = await readClicks(driver, siteTargetId);
+    if (readback.error) throw new Error(readback.error);
+    saveClicksBefore = readback.clicks;
   } catch (error) {
-    return finish({ ok: false, reason: 'SAVE_GUARD_INSTALL_FAILED', body: { ok: false, reason: String(error?.message || error), helpNeeded: true, writeAttempted: false } });
+    const saveGuardError = String(error?.message || error);
+    return finish({ ok: false, reason: 'SAVE_GUARD_INSTALL_FAILED', saveGuardError, body: { ok: false, reason: saveGuardError, helpNeeded: true, writeAttempted: false } });
   }
   if (saveClicksBefore.length) {
     return finish({
@@ -904,7 +910,8 @@ async function runSection({ section, driver, config, fetchJson, openReportServer
     autoOpened = true;
     const outcome = await report.resultPromise;
     clearTimeout(timer);
-    const saveClicksAfter = await readClicks(driver, siteTargetId);
+    const saveReadback = await readClicks(driver, siteTargetId);
+    const saveClicksAfter = saveReadback.clicks;
     const shot = await shotOf(driver, siteTargetId);
     const breach = postedReportBreach(outcome.body);
     if (saveClicksAfter.length || breach === REASON.SAVE_CLICK_FORBIDDEN) {
@@ -913,6 +920,7 @@ async function runSection({ section, driver, config, fetchJson, openReportServer
         reason: REASON.SAVE_CLICK_FORBIDDEN,
         saveClicksBefore,
         saveClicksAfter,
+        saveGuardError: saveReadback.error,
         body: outcome.body,
         events: outcome.events,
         pngBase64: shot.data,
@@ -920,13 +928,15 @@ async function runSection({ section, driver, config, fetchJson, openReportServer
       });
     }
     const verified = basicFillVerified(section, outcome.body);
-    const ok = !breach && outcome.body?.ok === true && verified;
+    const guardFailure = saveReadback.error ? REASON.SAVE_GUARD_READBACK_FAILED : null;
+    const ok = !breach && !guardFailure && outcome.body?.ok === true && verified;
     return finish({
       ok,
-      reason: breach || (ok ? null : (outcome.body?.reason || outcome.body?.job?.reason
+      reason: breach || guardFailure || (ok ? null : (outcome.body?.reason || outcome.body?.job?.reason
         || (!verified ? REASON.UNSETTLED_SUCCESS : 'section_failed'))),
       saveClicksBefore,
       saveClicksAfter,
+      saveGuardError: saveReadback.error,
       body: outcome.body,
       events: outcome.events,
       pngBase64: shot.data,
@@ -941,7 +951,8 @@ async function runSection({ section, driver, config, fetchJson, openReportServer
         snapshot = await driver.evaluate(autoId, autoPageSnapshotExpression(), { awaitPromise: false, timeoutMs: 5000 });
       } catch { /* page may already be gone */ }
     }
-    const saveClicksAfter = await readClicks(driver, siteTargetId);
+    const saveReadback = await readClicks(driver, siteTargetId);
+    const saveClicksAfter = saveReadback.clicks;
     const shot = await shotOf(driver, siteTargetId);
     if (saveClicksAfter.length) {
       return finish({
@@ -949,6 +960,7 @@ async function runSection({ section, driver, config, fetchJson, openReportServer
         reason: REASON.SAVE_CLICK_FORBIDDEN,
         saveClicksBefore,
         saveClicksAfter,
+        saveGuardError: saveReadback.error,
         snapshot,
         events: report.events,
         pngBase64: shot.data,
@@ -964,6 +976,7 @@ async function runSection({ section, driver, config, fetchJson, openReportServer
       reason,
       saveClicksBefore,
       saveClicksAfter,
+      saveGuardError: saveReadback.error,
       snapshot,
       events: report.events,
       pngBase64: shot.data,
@@ -980,9 +993,11 @@ async function runSection({ section, driver, config, fetchJson, openReportServer
 
 async function readClicks(driver, targetId) {
   try {
-    return await driver.evaluate(targetId, READ_SAVE_CLICKS, { awaitPromise: false, timeoutMs: 5000 }) || [];
-  } catch {
-    return [];
+    const clicks = await driver.evaluate(targetId, READ_SAVE_CLICKS, { awaitPromise: false, timeoutMs: 5000 });
+    if (!Array.isArray(clicks)) return { clicks: [], error: 'save_guard_history_unavailable' };
+    return { clicks, error: null };
+  } catch (error) {
+    return { clicks: [], error: String(error?.message || error) };
   }
 }
 

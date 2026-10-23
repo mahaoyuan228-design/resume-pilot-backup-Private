@@ -10,6 +10,7 @@ import {
   BG_PROBE_HTML,
   HINTS,
   PAID_EXT_ID,
+  READ_SAVE_CLICKS,
   REASON,
   SITE_HOSTS,
   autoPageSnapshotExpression,
@@ -78,7 +79,10 @@ function createMockDriver(state = {}) {
         if (state.probeError) throw state.probeError;
         return state.probeResult ?? { ok: true, answered: true, resp: null, lastError: null };
       }
-      if (expression.includes('__rqfSaveGuardInstalled')) return true;
+      if (expression === saveClickGuardSource()) {
+        if (state.guardInstallError) throw state.guardInstallError;
+        return Object.hasOwn(state, 'guardInstallResult') ? state.guardInstallResult : true;
+      }
       if (expression.includes('lastReport')) {
         if (targetId === 'stale-1') {
           return state.staleSnapshot ?? { bodyText: '', lastReport: null, readyState: 'complete', errors: null };
@@ -87,8 +91,9 @@ function createMockDriver(state = {}) {
       }
       if (expression.includes('__rqfSaveClicks')) {
         state.clickReads = (state.clickReads || 0) + 1;
-        if (state.clickReads === 1) return state.clicksBefore ?? [];
-        return state.clicksAfter ?? [];
+        const phase = state.clickReads === 1 ? 'Before' : 'After';
+        if (state[`clickReadError${phase}`]) throw state[`clickReadError${phase}`];
+        return Object.hasOwn(state, `clicks${phase}`) ? state[`clicks${phase}`] : [];
       }
       if (expression.includes('document.title')) {
         return state.manifest ?? {
@@ -320,6 +325,21 @@ test('save-click guard records capture-phase 保存/提交/Save/Submit only', ()
   assert.deepEqual(result.texts, ['保存', '提交简历', 'Save draft', 'Submit', '提交']);
 });
 
+test('save guard readback requires the installed guard and an array history', () => {
+  for (const window of [
+    {},
+    { __rqfSaveClicks: [] },
+    { __rqfSaveGuardInstalled: true },
+    { __rqfSaveGuardInstalled: true, __rqfSaveClicks: {} },
+  ]) {
+    assert.equal(vm.runInNewContext(READ_SAVE_CLICKS, { window }), null);
+  }
+  const clicks = [];
+  assert.equal(vm.runInNewContext(READ_SAVE_CLICKS, {
+    window: { __rqfSaveGuardInstalled: true, __rqfSaveClicks: clicks },
+  }), clicks);
+});
+
 test('CDP client resolves ids, session ids, and errors', async () => {
   const ws = new EventEmitter();
   ws.send = (data) => { ws.sent = JSON.parse(data); };
@@ -505,6 +525,77 @@ test('save clicks before or after fill fail the section and do not dispatch a cl
   const afterSummary = JSON.parse(fs.readFileSync(after.outcome.summaryPath, 'utf8'));
   assert.equal(afterSummary.sections[0].reason, REASON.SAVE_CLICK_FORBIDDEN);
   assert.equal(afterSummary.sections[0].status, 'fail');
+});
+
+test('paid QA final save guard readback failure cannot pass a verified report', async () => {
+  for (const state of [
+    { clickReadErrorAfter: new Error('Execution context was destroyed.') },
+    { clicksAfter: null },
+    { clicksAfter: {} },
+    { clicksAfter: 'unavailable' },
+  ]) {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'paid-qa-guard-'));
+    const body = verifiedBasicReport();
+    const { outcome, driver } = await runWith(dir, { state, server: okServer(body) });
+    assert.equal(outcome.exitCode, 1);
+    const { summary, evidence } = outcome.results[0];
+    assert.equal(summary.status, 'fail');
+    assert.equal(summary.reason, 'SAVE_GUARD_READBACK_FAILED');
+    assert.equal(evidence.ok, false);
+    assert.equal(evidence.helpNeeded, true);
+    assert.equal(evidence.writeAttempted, true);
+    assert.equal(typeof evidence.saveGuardError, 'string');
+    if (state.clickReadErrorAfter) assert.match(evidence.saveGuardError, /Execution context was destroyed/);
+    assert.deepEqual(evidence.body, body);
+    assert.deepEqual(evidence.events, [{ event: 'auto_begin', at: 1 }]);
+    assert.equal(fs.readFileSync(summary.evidencePng).toString(), 'PNG');
+    assert.equal(driver.calls.filter(call => call[0] === 'close').length, 3);
+  }
+});
+
+test('paid QA initial save guard readback failure prevents reload and fill launch', async () => {
+  for (const state of [
+    { guardInstallError: new Error('guard install failed') },
+    { guardInstallResult: false },
+    { clickReadErrorBefore: new Error('guard read failed') },
+    { clicksBefore: null },
+    { clicksBefore: {} },
+  ]) {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'paid-qa-guard-'));
+    const { outcome, driver } = await runWith(dir, { state });
+    assert.equal(outcome.exitCode, 1);
+    assert.equal(outcome.results[0].summary.reason, 'SAVE_GUARD_INSTALL_FAILED');
+    assert.equal(typeof outcome.results[0].evidence.saveGuardError, 'string');
+    assert.equal(driver.calls.some(call => call[0] === 'create' && String(call[1]).includes('mode=')), false);
+  }
+});
+
+test('posted Save breach takes precedence over unavailable final save guard readback', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'paid-qa-guard-'));
+  const body = verifiedBasicReport();
+  body.fill.softwareClickedSave = true;
+  const { outcome } = await runWith(dir, {
+    state: { clickReadErrorAfter: new Error('guard read failed'), screenshotError: 'screenshot failed' },
+    server: okServer(body),
+  });
+  assert.equal(outcome.results[0].summary.reason, REASON.SAVE_CLICK_FORBIDDEN);
+  assert.equal(outcome.results[0].evidence.saveGuardError, 'guard read failed');
+  assert.equal(outcome.results[0].evidence.screenshotError, 'screenshot failed');
+  assert.deepEqual(outcome.results[0].evidence.body, body);
+});
+
+test('timeout keeps its reason and exposes unavailable final save guard readback', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'paid-qa-guard-'));
+  const { outcome } = await runWith(dir, {
+    env: { AUTO_TIMEOUT_MS: '20' },
+    state: { clickReadErrorAfter: new Error('guard read failed') },
+    server: () => hangingServer(),
+  });
+  const { summary, evidence } = outcome.results[0];
+  assert.equal(summary.status, 'timeout');
+  assert.equal(summary.reason, REASON.AUTO_PAGE_NO_REPORT);
+  assert.equal(evidence.saveGuardError, 'guard read failed');
+  assert.equal(fs.readFileSync(summary.evidencePng).toString(), 'PNG');
 });
 
 test('posted ok with a site save or an unsettled job fails closed without a DOM click', async () => {

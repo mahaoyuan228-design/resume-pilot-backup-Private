@@ -141,7 +141,7 @@ test('direct text fill refuses empty data and out-of-slice neighbor labels', asy
   t.after(() => ctx.window.close());
   const before = snapshot(ctx);
   for (const [label, value, reason] of [['姓名', '  ', 'empty_value'], ['工作年限', '9', 'label_not_allowed']]) {
-    const result = await ctx.api.fillText(label, value);
+    const result = await ctx.api.fillText(label, value, { synthetic: true });
     neverSave(ctx, result);
     assert.equal(result.ok, false);
     assert.equal(result.reason, reason);
@@ -169,7 +169,7 @@ test('direct text fill restores its owned value when an input event hides the an
   t.after(() => ctx.window.close());
   const name = input(ctx, 'fullName');
   name.addEventListener('input', () => { name.parentElement.hidden = true; });
-  const result = await ctx.api.fillText('姓名', values.fullName);
+  const result = await ctx.api.fillText('姓名', values.fullName, { synthetic: true });
   neverSave(ctx, result);
   assert.equal(result.ok, false);
   assert.equal(result.reason, 'readback_mismatch');
@@ -185,7 +185,7 @@ test('direct text fill preserves a competing value on readback mismatch', async 
   t.after(() => ctx.window.close());
   const name = input(ctx, 'fullName');
   name.addEventListener('input', () => { name.value = 'REACTIVE-NAME'; });
-  const result = await ctx.api.fillText('姓名', values.fullName);
+  const result = await ctx.api.fillText('姓名', values.fullName, { synthetic: true });
   neverSave(ctx, result);
   assert.equal(result.ok, false);
   assert.equal(result.restored, false);

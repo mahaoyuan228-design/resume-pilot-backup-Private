@@ -17,4 +17,4 @@ Reason codes:
 - `SITE_TAB_MISSING` — `cms-*` needs a `wecruit.hotjob.cn` tab; `gth-*` needs `hr.gtht.com`. No wait.
 - `BG_NO_RESPONSE` — 5s `PAID_QA_BG_PING` did not return, or the auto page was still on `正在请求后台 *_AUTO` with `lastReport` null at timeout.
 - `AUTO_PAGE_NO_REPORT` — auto page opened (`open_reload` / `auto_begin`) but no `/result` before timeout.
-- `SAVE_CLICK_FORBIDDEN` — a captured click or report claiming Save/submit/savedOnSite/submitted; evidence is retained. The runner never sends that click. `UNSETTLED_SUCCESS` means an unknown/pre-write job or an invalid basic completion contract.
+- `SAVE_CLICK_FORBIDDEN` — a captured click or report claiming Save/submit/savedOnSite/submitted; evidence is retained. The runner never sends that click. `UNSETTLED_SUCCESS` means an unknown/pre-write job or an invalid basic completion contract. `SAVE_GUARD_INSTALL_FAILED` prevents fill when guard installation or initial readback is unavailable. `SAVE_GUARD_READBACK_FAILED` blocks a green report when final guard/history readback is missing, invalid, or unreadable; `saveGuardError` retains details, including on timeouts.

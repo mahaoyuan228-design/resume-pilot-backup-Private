@@ -133,13 +133,13 @@ export function registerSelectTests(label) {
         window.document.querySelector('#active .ant-select-selection-selected-value').textContent = 'SYN_RACE';
       }); },
       (window) => { const options = window.document.querySelectorAll('#menu [role=option]'); options[0].addEventListener('mousedown', () => {
-        options[0].textContent = 'SYN_OTHER'; options[1].textContent = 'SYN_TARGET';
+        options[0].textContent = '删除'; options[1].textContent = 'SYN_TARGET';
       }); }
     ]) {
       const h = bootSelect(label, { onOpen });
       try {
         const result = await h.api.fillSelect(label, 'SYN_TARGET');
-        assert.ok(['control_changed', 'neighbor_changed'].includes(result.reason), result.reason);
+        assert.ok(['control_changed', 'neighbor_changed', 'commit_or_yidun_target'].includes(result.reason), result.reason);
         assert.equal(result.clickedOption, false);
         assert.equal(h.stats.options, 0); assert.equal(h.stats.commits, 0); assertFlags(result);
       } finally { h.dom.window.close(); }

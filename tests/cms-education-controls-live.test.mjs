@@ -23,6 +23,7 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const PAGE = 'https://wecruit.hotjob.cn/SU629dbc0c0dcad452299bc0f7/pb/resumeOperation.html';
 const AUTOSAVE = 'https://wecruit.hotjob.cn/wecruit/resume/info/edit/SU629dbc0c0dcad452299bc0f7';
 const LOOKUP = 'https://wecruit.hotjob.cn/wecruit/dic/fuzzyMatchDic';
+const HOUSEKEEPING_LOOKUP = `${LOOKUP}?iSaJAx=isAjax&request_locale=zh_CN&t=1792759070926`;
 const plain = value => JSON.parse(JSON.stringify(value));
 let fixture = await integrationFixture({ schools: ['悉尼大学'], regions: [{ province: '北京市', city: '北京市' }] });
 // Align the legacy fictional event/props scaffold to the harvested wrappers.
@@ -39,7 +40,7 @@ for (const [before, after] of [
   fixture = fixture.replaceAll(before, after);
 }
 
-async function setup(t, { install = true, onSchoolOpen, emptyDegree = false, controlOriginals = {}, openerMode, delayedHiddenClose = false, previousWidgetControls } = {}) {
+async function setup(t, { install = true, beforeInstall, schoolLookup, lookupClassifier, onSchoolOpen, emptyDegree = false, controlOriginals = {}, openerMode, delayedHiddenClose = false, previousWidgetControls } = {}) {
   const dom = new JSDOM(fixture, { url: PAGE, runScripts: 'dangerously', pretendToBeVisual: true,
     beforeParse(window) {
       window.structuredClone = structuredClone;
@@ -119,7 +120,11 @@ async function setup(t, { install = true, onSchoolOpen, emptyDegree = false, con
     if (event.target.closest('.ant-select-selection,.ant-select-dropdown-menu-item,.ant-calendar-date-panel,.ant-calendar-picker-input')) xhr();
   });
   for (const input of Object.values(textInputs)) for (const type of ['input', 'change', 'blur']) input.addEventListener(type, () => xhr());
-  school.addEventListener('click', () => { xhr(LOOKUP); onSchoolOpen?.({ window, document, xhr }); });
+  school.addEventListener('click', () => {
+    if (schoolLookup) schoolLookup({ window, document, xhr });
+    else xhr(LOOKUP);
+    onSchoolOpen?.({ window, document, xhr });
+  });
   const probeTiming = { delayed: 0, instanceClicks: 0, mouseSequences: [], hiddenCloses: 0,
     focusReplacements: 0, detachedMouseEvents: [], replacementMouseEvents: [] };
   const openers = [...document.querySelectorAll('.form-cell[id="14"] .ant-select-selection[role="combobox"],.form-cell[id="14"] input.ant-calendar-picker-input[readonly]')];
@@ -203,8 +208,15 @@ async function setup(t, { install = true, onSchoolOpen, emptyDegree = false, con
   }
   const readProof = () => plain(window.eval(`(${readCmsEducationSerialization.toString()})()`));
   if (previousWidgetControls) Object.defineProperty(window, 'ResumeCmsEducationMultiWidgetControls', previousWidgetControls);
+  beforeInstall?.({ window, document, native });
   if (install) {
-    const installed = window.eval(runner.buildPageExpression(root, 0, true));
+    let expression = runner.buildPageExpression(root, 0, true);
+    if (lookupClassifier) {
+      const declaration = `const isSchoolLookup = ${runner.isSchoolLookup.toString()};`;
+      assert.equal(expression.split(declaration).length, 2);
+      expression = expression.replace(declaration, `const isSchoolLookup = ${lookupClassifier.toString()};`);
+    }
+    const installed = window.eval(expression);
     assert.equal(installed.ok, true, JSON.stringify(installed));
     for (const file of [...runner.LIVE_FILES, ...runner.CONTROL_FILES]) window.eval(fs.readFileSync(path.join(root, file), 'utf8'));
   }
@@ -286,7 +298,7 @@ test('activation diagnostics expose a validate rejection before any counted open
   const activated = h.window.ResumeCmsEducationMultiWidgetControls.activateSurface(surface, () => null,
     report => reports.push(plain(report)));
   assert.equal(activated, false); assert.deepEqual(events, []);
-  assert.deepEqual(reports.at(-1), { stage: 'preflight', reason: 'validation_rejected', events: [] });
+  assert.deepEqual(reports.at(-1), { stage: 'preflight', reason: 'validation_rejected', events: [], observedEvents: [] });
   assert.equal(h.api.widgetClickCount(), 0); assert.deepEqual(plain(h.api.clicks()), []);
   assert.equal(h.native.sends, 0); assert.equal(h.native.forbidden, 0);
   assert.equal((await h.api.cleanup()).ok, true);
@@ -309,7 +321,7 @@ for (const replacementKind of ['aria-owner', 'wrapper']) test(`focus replacement
     () => h.document.getElementById('14_51_0').querySelector('.ant-select-selection'),
     report => reports.push(plain(report)));
   assert.equal(activated, false); assert.deepEqual(events, []);
-  assert.deepEqual(reports.at(-1), { stage: 'focus', reason: 'binding_changed', events: [] });
+  assert.deepEqual(reports.at(-1), { stage: 'focus', reason: 'binding_changed', events: [], observedEvents: [] });
   assert.equal(h.api.widgetClickCount(), 0); assert.deepEqual(plain(h.api.clicks()), []);
   assert.equal(h.native.sends, 0); assert.equal(h.native.forbidden, 0);
   assert.equal((await h.api.cleanup()).ok, true);
@@ -331,7 +343,8 @@ test('a same-owner school render on focus rebinds before mousedown and produces 
   assert.equal(probes.length, 7); assert.equal(probes[0].key, 'school');
   assert.ok(probes.every(probe => probe.opened && probe.closed));
   assert.ok(probes.every(probe => probe.openerClicks >= 1), 'each activation is counted before any outside-click cleanup');
-  assert.deepEqual(probes[0].activation, { stage: 'complete', reason: null, events: ['mousedown', 'mouseup', 'click'] });
+  assert.deepEqual(probes[0].activation, { stage: 'complete', reason: null, events: ['mousedown', 'mouseup', 'click'],
+    observedEvents: ['mousedown', 'mouseup', 'click'] });
   assert.equal(result.liveSupportClaimed, false); assert.equal(result.restored, true); assert.equal(result.pageLeftAsFound, true);
   assert.deepEqual(h.readProof(), before); assert.equal(h.selects.counts.selections, 0); assert.equal(h.dates.snapshot().selections, 0);
   assert.equal(h.document.querySelectorAll('.ant-select-dropdown,.ant-select-open,.ant-calendar-picker-container').length, 0);
@@ -452,8 +465,44 @@ for (const openerMode of ['delayed-school', 'delayed-calendar']) test(`${openerM
   assert.equal((await h.api.cleanup()).ok, true);
 });
 
+test('fake CDP refuses orphaned prior guards before injection or activation and reports reload required', async t => {
+  // residual-hooks.json records these exact wrappers with no live API. Do not
+  // wrap that contaminated baseline and misreport another widget_open_failed.
+  const h = await setup(t), before = h.readProof(), oldApi = h.api;
+  const methods = () => [h.window.HTMLElement.prototype.click, h.window.fetch,
+    h.window.XMLHttpRequest.prototype.open, h.window.XMLHttpRequest.prototype.send];
+  const guarded = methods();
+  delete h.window.__cmsEducationLive;
+  const outDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cms-education-residual-'));
+  t.after(() => {
+    const resolved = path.resolve(outDir), parent = path.resolve(os.tmpdir()) + path.sep;
+    assert.ok(resolved.startsWith(parent)); fs.rmSync(resolved, { recursive: true, force: true });
+  });
+  const evidence = await runner.runCmsEducationLive({ controls: true, repoRoot: root, outDir, tipSha: '7e2318f',
+    getJson: async () => [{ id: 'residual-offline', type: 'page', url: PAGE,
+      webSocketDebuggerUrl: 'ws://127.0.0.1:9239/devtools/page/residual-offline' }],
+    connectCdp: async () => ({ close() {}, async send(method, params) {
+      if (method !== 'Runtime.evaluate') return {};
+      return { result: { value: plain(await h.window.eval(params.expression)) } };
+    } })
+  });
+  assert.equal(evidence.finalDetails.reason, 'stale_live_guard_reload_required');
+  assert.equal(evidence.finalDetails.exitCode, 2); assert.equal(evidence.liveSupportClaimed, false);
+  assert.equal(evidence.finalDetails.cleanupOk, false, 'the host cannot claim it removed orphaned prior guards');
+  assert.equal(evidence.finalDetails.pageLeftAsFound, false);
+  assert.ok(evidence.fields.every(field => field.reason === 'stale_live_guard_reload_required'));
+  assert.ok(!evidence.finalDetails.steps.some(step => /^inject_|^education_|^cleanup$/u.test(step)));
+  assert.deepEqual(evidence.finalDetails.widgetProbes, []); assert.equal(evidence.finalDetails.widgetClickCount, 0);
+  assert.deepEqual(evidence.nonGet, []); assert.deepEqual(evidence.saveLikePost, []);
+  assert.deepEqual(methods(), guarded); assert.equal(h.window.__cmsEducationLive, undefined);
+  assert.deepEqual(h.readProof(), before); assert.equal(h.selects.counts.opens, 0);
+  assert.equal(h.native.sends, 0); assert.equal(h.native.forbidden, 0);
+  assert.equal((await oldApi.cleanup()).ok, true, 'only the retained original owner can release its known hooks');
+  assert.deepEqual(runner.inspectControlsTrialGuards(h.window), { ok: true });
+});
+
 test('fake CDP controls host reports exact restored proof and validates separate lookup suppression', async t => {
-  const h = await setup(t, { install: false }), before = h.readProof();
+  const h = await setup(t, { install: false, onSchoolOpen: ({ xhr }) => xhr(HOUSEKEEPING_LOOKUP) }), before = h.readProof();
   const outDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cms-education-controls-'));
   t.after(() => {
     const resolved = path.resolve(outDir), parent = path.resolve(os.tmpdir()) + path.sep;
@@ -471,11 +520,15 @@ test('fake CDP controls host reports exact restored proof and validates separate
   assert.equal(evidence.liveSupportClaimed, false); assert.equal(evidence.fields.length, 9);
   assert.equal(evidence.finalDetails.widgetClickCount, 8); assert.equal(evidence.finalDetails.clickCount, 0);
   assert.ok(evidence.suppressedLookup.length > 0); assert.deepEqual(evidence.nonGet, []);
+  assert.ok(evidence.suppressedLookup.some(row => row.url === HOUSEKEEPING_LOOKUP), 'host validation preserves the bounded harvested housekeeping query');
   assert.deepEqual(h.readProof(), before); assert.equal(h.native.sends, 0); assert.equal(h.native.forbidden, 0);
   const missing = structuredClone(evidence); delete missing.suppressedLookup;
   assert.equal(runner.evidenceExitCode(missing), 2);
   const spoofed = structuredClone(evidence); spoofed.suppressedLookup[0].url += '?private';
   assert.equal(runner.evidenceExitCode(spoofed), 2);
+  const spoofedQuery = structuredClone(evidence);
+  spoofedQuery.suppressedLookup.find(row => row.url === HOUSEKEEPING_LOOKUP).url += '&private=1';
+  assert.equal(runner.evidenceExitCode(spoofedQuery), 2);
   const count = structuredClone(evidence); delete count.finalDetails.widgetClickCount;
   assert.equal(runner.evidenceExitCode(count), 2);
   const noAttempts = structuredClone(evidence); noAttempts.finalDetails.widgetClickCount = 0;
@@ -488,6 +541,10 @@ test('fake CDP controls host reports exact restored proof and validates separate
   assert.equal(runner.evidenceExitCode(noActivation), 2, 'probe reports cannot bypass the counted mouse sequence');
   const uncountedOpener = structuredClone(evidence); uncountedOpener.finalDetails.widgetProbes[0].openerClicks = 0;
   assert.equal(runner.evidenceExitCode(uncountedOpener), 2, 'other opener and outside cleanup clicks cannot excuse an uncounted activation');
+  const duplicateOpener = structuredClone(evidence); duplicateOpener.finalDetails.widgetProbes[0].openerClicks = 2;
+  assert.equal(runner.evidenceExitCode(duplicateOpener), 2, 'one probe authorizes exactly one opener activation');
+  const noReceipt = structuredClone(evidence); delete noReceipt.finalDetails.widgetProbes[0].activation.observedEvents;
+  assert.equal(runner.evidenceExitCode(noReceipt), 2, 'attempted event names alone cannot prove DOM delivery');
 });
 
 for (const [label, action, reason] of [
@@ -509,4 +566,178 @@ for (const [label, action, reason] of [
   assert.equal(h.native.sends, 0); assert.equal(h.native.forbidden, 0);
   assert.deepEqual(h.readProof(), before);
   await h.api.cleanup();
+});
+
+// REAL_USE_CMS_EDU_CONTROLS1_d22734a9_CLEAN_2026-10-23.md and
+// live-clean-nonget-d22734a9/cms-education-live.controls1.json show a clean
+// counted school open/close followed by fuzzyMatchDic generic nonGet with no
+// lookup suppression. harvest/harvest-summary.json networkPassive preserves
+// its three housekeeping parameters; note()/redactUrl removes queries from the
+// failure JSON. Fictional adapter callbacks below emit that captured URL after
+// probe close while school remains active. No absent site handler is invented.
+function lookupAfterSchoolProbe(h, afterSchool) {
+  const adapters = h.window.ResumeCmsEducationMultiAdapters;
+  h.window.ResumeCmsEducationMultiAdapters = Object.freeze({ ...adapters,
+    school: async (...args) => {
+      const result = await adapters.school(...args);
+      afterSchool();
+      return result;
+    }
+  });
+}
+
+function assertClosedSchoolProbe(h) {
+  const probe = plain(h.api.widgetProbes())[0];
+  assert.equal(probe.key, 'school'); assert.equal(probe.openerClicks, 1);
+  assert.equal(probe.activation.stage, 'complete');
+  assert.equal(probe.opened, true); assert.equal(probe.closed, true);
+  assert.equal(probe.reason, null);
+}
+
+function assertLookupNeverSave(h, before, result) {
+  assert.equal(result.liveSupportClaimed, false);
+  assert.equal(h.native.sends, 0); assert.equal(h.native.fetches, 1, 'only the required session GET reaches fixture fetch');
+  assert.equal(h.native.forbidden, 0);
+  assert.equal(h.window.fixtureCounts.saves, 0); assert.equal(h.window.fixtureCounts.submits, 0);
+  assert.equal(h.selects.counts.selections, 0); assert.equal(h.dates.snapshot().selections, 0);
+  assert.deepEqual(plain(h.api.clicks()), []);
+  assert.deepEqual(h.readProof(), before);
+}
+
+test('school lookup classifier accepts only the harvested housekeeping query shape', () => {
+  for (const url of [HOUSEKEEPING_LOOKUP, `${LOOKUP}?t=1792759070926&request_locale=zh_CN&iSaJAx=isAjax`,
+    '/wecruit/dic/fuzzyMatchDic?request_locale=zh_CN&iSaJAx=isAjax&t=1792759070926']) {
+    assert.equal(runner.isSchoolLookup({ method: 'POST', url }), true, url);
+  }
+  for (const query of [
+    'iSaJAx=isAjax&request_locale=zh_CN', 'iSaJAx=isAjax&t=1792759070926', 'request_locale=zh_CN&t=1792759070926',
+    'iSaJAx=isAjax&request_locale=zh_CN&t=1792759070926&t=1792759070926',
+    'iSaJAx=isAjax&request_locale=zh_CN&t=1792759070926&private=1',
+    'iSaJAx=wrong&request_locale=zh_CN&t=1792759070926', 'iSaJAx=isAjax&request_locale=en_US&t=1792759070926',
+    'iSaJAx=isAjax&request_locale=zh_CN&t=179275907092', 'iSaJAx=isAjax&request_locale=zh_CN&t=17927590709260',
+    'iSaJAx=isAjax&request_locale=zh_CN&t=179275907092x'
+  ]) assert.equal(runner.isSchoolLookup({ method: 'POST', url: `${LOOKUP}?${query}` }), false, query);
+  for (const method of ['GET', 'HEAD', 'OPTIONS', 'PUT', 'DELETE']) {
+    assert.equal(runner.isSchoolLookup({ method, url: HOUSEKEEPING_LOOKUP }), false, method);
+  }
+  for (const url of [`${HOUSEKEEPING_LOOKUP}#private`, HOUSEKEEPING_LOOKUP.replace('https://', 'https://user:secret@'),
+    HOUSEKEEPING_LOOKUP.replace('hotjob.cn', 'hotjob.cn.evil.invalid')]) {
+    assert.equal(runner.isSchoolLookup({ method: 'POST', url }), false, url);
+  }
+});
+
+test('historical queryless classifier reproduces CLEAN counted school open/close followed by generic nonGet', async t => {
+  // In-memory comparison to the pre-R3 no-query classifier; installed source,
+  // adapters, DOM, and all transport guards otherwise remain current.
+  function querylessSchoolLookup(request, page) {
+    if (String(request?.method ?? '').toUpperCase() !== 'POST' || typeof request?.url !== 'string') return false;
+    try {
+      const baseline = new URL(page), url = new URL(request.url, baseline);
+      return url.origin === baseline.origin && !url.username && !url.password && !url.search && !url.hash
+        && url.pathname === '/wecruit/dic/fuzzyMatchDic';
+    } catch { return false; }
+  }
+  const h = await setup(t, { lookupClassifier: querylessSchoolLookup, schoolLookup: () => {} });
+  const before = h.readProof(), prepared = h.api.prepare(); assert.equal(prepared.ok, true);
+  lookupAfterSchoolProbe(h, () => h.xhr(HOUSEKEEPING_LOOKUP));
+  const result = await h.api.run(await runner.createLivePlan(plain(prepared.identities), 0, true));
+  assertClosedSchoolProbe(h);
+  assert.equal(h.api.widgetClickCount(), 1); assert.equal(h.api.widgetProbes().length, 1);
+  assert.equal(result.ok, false); assert.equal(result.reason, 'non_get_request');
+  assert.deepEqual(plain(h.api.posts()), [{ method: 'POST', url: LOOKUP, via: 'xhr' }], 'the generic failure log redacts the original query');
+  assert.deepEqual(plain(h.api.suppressedLookup()), []);
+  assertLookupNeverSave(h, before, result);
+  assert.equal(result.restored, true); assert.equal(result.pageLeftAsFound, true);
+  assert.equal((await h.api.cleanup()).ok, true);
+});
+
+for (const timing of ['before-install', 'before-arm', 'armed-outside-school', 'sent-after-school']) {
+  test(`queried lookup opened ${timing} remains generic nonGet despite successful school open/close`, async t => {
+    let request;
+    const openLookup = window => { request = new window.XMLHttpRequest(); request.open('POST', HOUSEKEEPING_LOOKUP); };
+    const h = await setup(t, { schoolLookup: ({ window }) => {
+      if (timing === 'sent-after-school') openLookup(window);
+    }, beforeInstall: ({ window }) => {
+      if (timing === 'before-install') openLookup(window);
+    } });
+    if (timing === 'before-arm') openLookup(h.window);
+    const before = h.readProof(), prepared = h.api.prepare(); assert.equal(prepared.ok, true);
+    if (timing === 'armed-outside-school') {
+      const controller = h.window.ResumeCmsEducationMulti;
+      h.window.ResumeCmsEducationMulti = Object.freeze({ ...controller, run(...args) {
+        openLookup(h.window);
+        return controller.run(...args);
+      } });
+    }
+    if (timing === 'sent-after-school') {
+      const controller = h.window.ResumeCmsEducationMulti;
+      h.window.ResumeCmsEducationMulti = Object.freeze({ ...controller, run(plan, services) {
+        return controller.run(plan, { ...services, adapters: { ...services.adapters, school: async (...args) => {
+          const result = await services.adapters.school(...args);
+          // Outside widgetAdapter's finally: the current school gate is gone.
+          request.send('private-late-lookup-body');
+          return result;
+        } } });
+      } });
+    } else lookupAfterSchoolProbe(h, () => request.send('private-unarmed-lookup-body'));
+    const result = await h.api.run(await runner.createLivePlan(plain(prepared.identities), 0, true));
+    assertClosedSchoolProbe(h);
+    assert.equal(result.ok, false); assert.equal(result.reason, 'non_get_request');
+    assert.equal(h.api.posts().length, 1); assert.deepEqual(plain(h.api.suppressedLookup()), []);
+    assertLookupNeverSave(h, before, result);
+    assert.equal(result.restored, true); assert.equal(result.pageLeftAsFound, true);
+    assert.equal((await h.api.cleanup()).ok, true);
+  });
+}
+
+test('queried lookup after school probe uses captured native abort and preserves exact suppression evidence', async t => {
+  let request, overrideCalls = 0;
+  const aborted = [];
+  const h = await setup(t, {
+    beforeInstall: ({ window }) => {
+      const abort = window.XMLHttpRequest.prototype.abort;
+      window.XMLHttpRequest.prototype.abort = function () { aborted.push(this); return abort.call(this); };
+    },
+    schoolLookup: () => {}
+  });
+  const before = h.readProof(), prepared = h.api.prepare(); assert.equal(prepared.ok, true);
+  lookupAfterSchoolProbe(h, () => {
+    request = new h.window.XMLHttpRequest(); request.open('POST', HOUSEKEEPING_LOOKUP);
+    request.abort = () => { overrideCalls++; };
+    request.send('private-lookup-body');
+  });
+  const result = await h.api.run(await runner.createLivePlan(plain(prepared.identities), 0, true));
+  assert.equal(result.ok, true, JSON.stringify(result)); assertClosedSchoolProbe(h);
+  assert.equal(overrideCalls, 0); assert.equal(aborted.filter(item => item === request).length, 1);
+  assert.deepEqual(plain(h.api.suppressedLookup()), [
+    { method: 'POST', url: HOUSEKEEPING_LOOKUP, via: 'xhr', blockedBeforeSend: true, phase: 'trial' }
+  ]);
+  assert.deepEqual(plain(h.api.posts()), []);
+  assert.equal(result.restored, true); assert.equal(result.pageLeftAsFound, true);
+  assertLookupNeverSave(h, before, result);
+  assert.equal((await h.api.cleanup()).ok, true);
+});
+
+test('queried lookup captured native abort failure is fatal and never reaches native send', async t => {
+  let request, lookupAborts = 0, caught;
+  const h = await setup(t, { schoolLookup: () => {}, beforeInstall: ({ window }) => {
+    const abort = window.XMLHttpRequest.prototype.abort;
+    window.XMLHttpRequest.prototype.abort = function () {
+      if (this === request) { lookupAborts++; throw new Error('fixture_native_abort_failed'); }
+      return abort.call(this);
+    };
+  } });
+  const before = h.readProof(), prepared = h.api.prepare(); assert.equal(prepared.ok, true);
+  lookupAfterSchoolProbe(h, () => {
+    request = new h.window.XMLHttpRequest(); request.open('POST', HOUSEKEEPING_LOOKUP);
+    try { request.send('private-lookup-body'); } catch (error) { caught = error; }
+  });
+  const result = await h.api.run(await runner.createLivePlan(plain(prepared.identities), 0, true));
+  assertClosedSchoolProbe(h);
+  assert.equal(lookupAborts, 1); assert.equal(caught?.message, 'fixture_native_abort_failed');
+  assert.equal(result.ok, false); assert.equal(result.reason, 'non_get_request');
+  assert.deepEqual(plain(h.api.suppressedLookup()), []);
+  assert.deepEqual(plain(h.api.posts()), [{ method: 'POST', url: LOOKUP, via: 'xhr' }]);
+  assertLookupNeverSave(h, before, result);
+  assert.equal((await h.api.cleanup()).ok, true);
 });

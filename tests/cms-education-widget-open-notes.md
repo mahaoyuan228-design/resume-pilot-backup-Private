@@ -1,5 +1,167 @@
 # CMS education widget open/close regression
 
+## R3: clean lookup suppression and owned control probes
+
+Base `d22734a92b130ca58fbd7c44b4ec7d1d45c41caa` was fetched, hard-reset, and
+reverified before creating `codex/cms-edu-widget-open-r3`. #177's offline results
+below did **not** fix the supplied live retest.
+
+### Authoritative clean verdict: lookup classification, not failed opening
+
+`REAL_USE_CMS_EDU_CONTROLS1_d22734a9_CLEAN_2026-10-23.md` and
+`live-clean-nonget-d22734a9/cms-education-live.controls1.json`,
+`cms-edu-retest-summary.json`, `pre-trial-hooks.json`, and `RESULT_NOTE.txt`
+supersede the polluted failure as the current live verdict: **CLEAN CONTROLS=1
+at d22734a9 exits 3 with `non_get_request`, not `widget_open_failed`**. Hooks
+were native, body click reached its listener, and the API was absent before the
+trial. The school probe completed mouse events with one opener click,
+`opened=true`, and `closed=true`; only then the trial failed with the exact
+fuzzyMatchDic pathname in generic XHR traffic and empty suppression logs. All
+nine fields failed; values/restoration/cleanup remained intact. No live support
+or B+7 follows from a successful single-control probe.
+
+There is a concrete classifier gap in the supplied original harvest:
+`harvest/harvest-summary.json` `networkPassive` captures
+`/wecruit/dic/fuzzyMatchDic?iSaJAx=isAjax&request_locale=zh_CN&t=1792759070926`.
+The previous lookup classifier rejected every query string. Generic traffic
+uses `note`/`redactUrl`, which removes the query before evidence is written;
+the clean JSON's queryless-looking URL cannot distinguish that request shape.
+The clean run does not establish the raw query or exact request timing, but the
+harvest proves a real lookup shape that the offline queryless fixture omitted.
+
+R3 now classifies either the existing queryless lookup or exactly the three
+unique harvested housekeeping parameters: `iSaJAx=isAjax`,
+`request_locale=zh_CN`, and a 13-digit numeric `t`. Ordering may vary; unknown,
+duplicate, missing, or invalid parameters, fragments, credentials, other
+origins/paths/methods remain rejected. The existing school-owned armed-phase
+XHR metadata and active-control gates remain mandatory. Suppression calls the
+captured prototype `abort` and never native `send`; an abort exception retains
+the existing fatal generic-traffic path. No success response or catalog option
+is synthesized. The same classifier validates host `suppressedLookup` evidence.
+
+The original #174 autosave classifier/suppression branch, text writer, timer
+handling, and restoration stay intact. Clean-page opener, owned visible-menu,
+close, residual-guard, and exact click-accounting regressions are retained.
+The remaining work follows the clean lookup failure rather than assuming the
+product cannot open school. Tests model the recorded query after a successful
+probe without claiming its precise live scheduling.
+
+Clean-lookup offline validation: **188/188** CMS education tests passed with
+zero failures/skips using `node --test --test-concurrency=3` across every
+`tests/cms-education*.test.mjs`. This includes **38/38** controls tests,
+**8/8** new lookup regressions, and **10/10** retained R3 probe regressions
+(counts overlap). Syntax/whitespace checks pass. Protected #174 classifiers,
+autosave branch, timers, XHR-open metadata, text/restore/cleanup, and autosave
+files match both `d22734a9` and `c7451f3` after newline normalization.
+
+### Follow-up overlay harvest: stale harness baseline
+
+`CMS_EDU_WIDGET_OVERLAY_HARVEST_d22734a9_2026-10-23.md` and
+`overlay-harvest-d22734a9/residual-hooks.json` add a concrete explanation for
+the failure: the API was absent while `HTMLElement.prototype.click`, fetch/XHR
+wrappers, and a swallowing document capture click guard remained. School kept
+`aria-expanded=false` and its linked dropdown stayed hidden. The supplied
+`after-reload-open.json` reports that both native `.click()` and the #177
+product `activateSurface` opened the same school after reload. The compact
+overlay, summary, and trusted-mouse JSON agree on the blocked before state.
+The supplied finding says: "Leftover CONTROLS Never-Save document-capture click
+guard + patched HTMLElement.prototype.click swallowed clicks after prior trial".
+
+This evidence supersedes an opener-only diagnosis. An absent API did not mean
+a clean page: a second trial could capture old wrappers as its baseline, have
+its click swallowed by the old listener, then restore that contaminated baseline
+and report successful cleanup. `live/restore-major-after-fail.mjs` also contains
+an API-only deletion without running removers; its execution timing is not
+established by the supplied artifacts. A clean #177 own cleanup leak is not
+established either.
+
+CONTROLS now inspects the evidenced click/fetch/XHR wrapper fingerprints before
+any new patch, product injection, or activation. Orphaned hooks produce
+`stale_live_guard_reload_required` with only boolean hook diagnostics, preserving
+current values and refusing to stack another harness. Reload the resume page
+before rerunning. Active APIs/profile contexts still return busy. The runner
+does not automatically reload or remove unknown capture listeners: reloading
+can discard unsaved values, and a missing API provides no owned remover handle.
+This preflight runs only for `CONTROLS=1`; #174's guards and cleanup are unchanged.
+
+The residual regression retains a real prior trial's guards after deleting only
+its API. It verifies both `.click()` and native DOM dispatch are blocked, the
+second trial refuses without mutation, and proper cleanup by the retained owner
+lets the same harvested opener open its linked visible menu and close with
+Escape. No option/day/value/Save is selected. A fake-CDP host regression also
+requires the reload-specific failure before injection/preparation, with no
+claim that the orphan guards were cleaned. Existing all-seven fresh-page probes
+still verify opening and clean close. No live browser was accessed for R3.
+
+Follow-up offline validation: all `tests/cms-education*.test.mjs` passed
+**180/180**, zero failures/skips, using `node --test --test-concurrency=3`.
+This includes **30/30** controls tests and **10/10** R3 regressions; counts
+overlap. All five JavaScript files in the PR pass syntax checks and
+`git diff --check` passes. Protected #174 blocks/files remain identical to both
+`d22734a9` and the first R3 commit `7e2318f` after newline normalization.
+
+Evidence is supplied in `_temp-scripts/cms-edu-widget-open-r3-materials/`:
+
+- `REAL_USE_CMS_EDU_CONTROLS1_d22734a9_2026-10-23.md`,
+  `live/cms-education-live.controls1.json`, `live/evidence-summary-extract.json`,
+  and `live/RESULT_NOTE.txt`: the school-first probe reports activation complete,
+  mouse event names `mousedown/mouseup/click`, `openerClicks=0`,
+  `widgetClickCount=0`, and `opened=false`. Its failure propagates to all nine
+  fields. Forbidden clicks are zero; restoration/cleanup succeed. The handover
+  verifies tip product bytes synced 9/9; this is not a stale #175 helper result.
+- `CMS_EDU_DOM_HARVEST_2026-10-23-2030.md`, `harvest/field-school.json`, and
+  `harvest/field-school-open.json`: the existing selection and visible dropdown
+  link through `aria-controls` to an inner dropdown DIV. The degree mouse retry
+  (`harvest/field-degree-xueli-open-mouse.json`) reports expanded ARIA and open
+  class with no visible dropdown; these flags cannot prove opening. Isolated
+  start/end captures establish the existing readonly calendar surfaces/portals.
+- `prior-notes/cms-education-widget-open-notes-tip-d22734a9.md` and
+  `prior-r2/STATUS_CODEX_CMS_EDU_WIDGET_OPEN_R2_2026-10-23.md` document #177's
+  pre-mousedown replacement fix. R3 retains those binding checks.
+
+#177 appended event names after calling an opener's overridable `dispatchEvent`.
+R3 uses the owning window's `EventTarget.prototype.dispatchEvent` for the
+controls probe's mouse activation and Escape/outside close signals. Each mouse
+event must also reach a temporary document capture listener as the exact Event
+object on the bound opener; the listener is removed in `finally`. Attempted
+names and actually observed names are reported separately. This is native DOM
+dispatch of synthetic events, not trusted browser input. An earlier capture
+stop still fails with `event_not_observed`; no retry or toggle is attempted.
+
+The Never-Save click guard independently counts the active probe's exact opener
+click. It must receive exactly one before the open wait. Outside cleanup clicks
+cannot supply this count, and host evidence requires one click and all three
+observed events for each of the seven probes. Open confirmation requires one
+visible, uniquely ARIA-linked dropdown; the bound root's open class may lag.
+Foreign open roots, extra/foreign menus, and hidden linked menus still fail.
+Close ownership, unchanged values/serialization, and closed overlays remain
+required. No option/day, Save, Submit, Next, Deliver, or Delete is authorized.
+
+`cms-education-widget-open-r3.test.mjs` compares an immutable activation helper
+from the #177 blob (`58222ca8fb4d72339545d9579269c3c8a4b53312`) against R3.
+A fictional inert instance `dispatchEvent` reproduces the exact supplied
+complete-mouse/zero-count/unopened signature with #177, while R3 delivers one
+counted activation and opens/closes all seven captured surfaces. Other cases
+cover an earlier capture stop, body/duplicate click accounting, visible linked
+menus before the open class, and hidden/ARIA-only negatives. The inert-instance
+fixture remains a secondary delivery boundary test; the new harvest identifies
+residual harness guards as the measured mechanism. Native prototype dispatch
+does not bypass the stale document capture guard, so clean-page preflight is
+required as well as actual receipt/overlay checks.
+
+#174's timer tracking, autosave suppression, native text writer, restore/cleanup,
+and `CONTROLS=0` path remain intact. No live CMS/CDP session or other workdir was
+accessed. `liveSupportClaimed=false`; a separate Never-Save live retest is needed.
+
+Initial R3 offline validation before the overlay-harvest follow-up:
+`node --test --test-concurrency=3` across every
+`tests/cms-education*.test.mjs` passed **177/177**, zero failures/skips (including
+**29/29** controls and **8/8** new R3 regressions; counts overlap). All five
+changed/new JavaScript files pass `node --check`; `git diff --check` passes.
+The immutable #177 comparison helper matches the base activation source.
+Protected #174 blocks and autosave files match the exact base after newline
+normalization. The existing props test's generated report was restored unchanged.
+
 ## R2 follow-up: zero counted opener clicks at #175
 
 R2 starts at `2ffb6f6b3e55fbe3864a3d5fd8f32d3f6a17f62b`, fetched and

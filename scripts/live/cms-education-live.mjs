@@ -69,6 +69,9 @@ offline-only. Exact autosave and active-school lookup XHRs are aborted before na
 send in separate logs. Every other non-GET attempt fails.
 Close menus first and leave the tab alone during the trial. Originals are
 restored and verified. liveSupportClaimed remains false; no live-site claim.
+CONTROLS=1 refuses orphaned prior trial hooks before installing new guards.
+If stale_live_guard_reload_required is reported, reload the resume tab, then
+rerun. Deleting __cmsEducationLive does not clear its document/prototype hooks.
 
   PORT              Loopback CDP port. Default 9239
   OUTDIR            Evidence directory. Default current directory
@@ -121,14 +124,22 @@ function validSuppressedAutosave(row) {
     && (row.abortFailed === undefined || typeof row.abortFailed === 'boolean');
 }
 
-// School opening/searching has this one separately evidenced lookup POST.
+// harvest/harvest-summary.json networkPassive captures this lookup with the
+// three housekeeping parameters below. note()/redactUrl strips queries, so the
+// CLEAN d22734a9 nonGet URL does not establish a queryless request. Do not
+// generalize this bounded lookup exception to autosave or arbitrary queries.
 // Aborting it cannot manufacture catalog matches; missing options still skip.
 export function isSchoolLookup(request, page = CMS_BASELINE_PAGE) {
   if (String(request?.method ?? '').toUpperCase() !== 'POST' || typeof request?.url !== 'string') return false;
   try {
     const baseline = new URL(page), url = new URL(request.url, baseline);
-    return url.origin === baseline.origin && !url.username && !url.password && !url.search && !url.hash
-      && url.pathname === '/wecruit/dic/fuzzyMatchDic';
+    if (url.origin !== baseline.origin || url.username || url.password || url.hash
+      || url.pathname !== '/wecruit/dic/fuzzyMatchDic') return false;
+    if (!url.search) return true;
+    const params = url.searchParams;
+    return [...params].length === 3 && new Set(params.keys()).size === 3
+      && params.get('iSaJAx') === 'isAjax' && params.get('request_locale') === 'zh_CN'
+      && /^\d{13}$/u.test(params.get('t') || '');
   } catch { return false; }
 }
 
@@ -199,6 +210,27 @@ export async function createLivePlan(identityOrIdentities, rowIndex = 0, control
   return createPlan(profile, requests, supplements, binding);
 }
 
+export function inspectControlsTrialGuards(view) {
+  // CMS_EDU_WIDGET_OVERLAY_HARVEST_d22734a9_2026-10-23.md and
+  // overlay-harvest-d22734a9/residual-hooks.json show these legacy wrappers
+  // surviving after __cmsEducationLive disappears. Never capture them as a
+  // new trial's clean baseline or try to remove an unknown capture listener.
+  try {
+    const source = (fn) => typeof fn === 'function' ? view.Function.prototype.toString.call(fn) : '';
+    const click = source(view.HTMLElement?.prototype.click), fetch = source(view.fetch);
+    const xhrOpen = source(view.XMLHttpRequest?.prototype.open), xhrSend = source(view.XMLHttpRequest?.prototype.send);
+    const residualGuards = {
+      click: click.includes('allowedWidgetClick') && click.includes('clickNote'),
+      fetch: fetch.includes('cms_education_live_blocked_non_get'),
+      xhrOpen: xhrOpen.includes('openedDuringTrial') && xhrOpen.includes('metadata.set'),
+      xhrSend: xhrSend.includes('isEducationAutosave') && xhrSend.includes('suppressedAutosave')
+    };
+    return Object.values(residualGuards).some(Boolean)
+      ? { ok: false, reason: 'stale_live_guard_reload_required', reloadRequired: true, residualGuards }
+      : { ok: true };
+  } catch { return { ok: false, reason: 'controls_guard_state_unavailable', reloadRequired: true }; }
+}
+
 // Copy the shipped read-only serialization module into this evaluation's
 // closure. No selectors, React handlers, or write adapters are invented here.
 export function buildPageExpression(root = repoRoot, rowIndex = 0, controls = false) {
@@ -215,6 +247,7 @@ export function buildPageExpression(root = repoRoot, rowIndex = 0, controls = fa
     const isEducationAutosave = ${isEducationAutosave.toString()};
     const isSchoolLookup = ${isSchoolLookup.toString()};
     const redactUrl = ${redactUrl.toString()};
+    ${controls ? `const inspectControlsTrialGuards = ${inspectControlsTrialGuards.toString()};` : ''}
     return (${installEducationTrial.toString()})(globalThis, ${JSON.stringify(CMS_BASELINE_PAGE)},
       readCmsEducationSerialization, verifyEducationSerialization);
   })()`;
@@ -223,6 +256,10 @@ export function buildPageExpression(root = repoRoot, rowIndex = 0, controls = fa
 function installEducationTrial(view, page, readSerialization, verifySerialization) {
   const doc = view.document;
   if (view.__cmsEducationLive || view.ResumeProfileWriteContext) return { ok: false, reason: 'profile_write_context_busy' };
+  if (CONTROLS) {
+    const guards = inspectControlsTrialGuards(view);
+    if (!guards.ok) return guards;
+  }
   const previous = ['ResumeCmsSession', 'installResumeCmsRecordController', 'ResumeCmsEducationMulti',
     ...(CONTROLS ? ['ResumeCmsMultiSchoolSearch', 'ResumeCmsMultiEducationDates', 'ResumeCmsInternshipDates', 'ResumeCmsMultiSelect',
       'ResumeCmsInternshipSelect', 'ResumeCmsMultiRegion', 'ResumeCmsEducationMultiAdapters', 'ResumeCmsEducationMultiWidgetControls'] : [])].map((key) => ({
@@ -236,9 +273,11 @@ function installEducationTrial(view, page, readSerialization, verifySerializatio
   const clicks = [];
   const widgetProbes = [];
   const probeDiagnostics = () => widgetProbes.map(probe => ({ ...probe,
-    activation: { ...probe.activation, events: probe.activation.events.slice() } }));
+    activation: { ...probe.activation, events: probe.activation.events.slice(),
+      observedEvents: probe.activation.observedEvents?.slice() || [] } }));
   let widgetClickCount = 0;
   let activeControl = null;
+  let activeProbe = null;
   let ownedOverlaySpec = null;
   let ownedPortal = null;
   let autosavePhase = null;
@@ -321,7 +360,13 @@ function installEducationTrial(view, page, readSerialization, verifySerializatio
     return false;
   }
   const onClick = (event) => {
-    if (allowedWidgetClick(event.target)) { widgetClickCount += 1; return; }
+    if (allowedWidgetClick(event.target)) {
+      widgetClickCount += 1;
+      // Count only a delivered click on this probe's bound opener. Outside
+      // cleanup clicks and activation attempt logs cannot supply this proof.
+      if (activeProbe && event.target !== doc.body && event.target === probeSurface(activeControl)) activeProbe.openerClicks += 1;
+      return;
+    }
     event.preventDefault(); event.stopImmediatePropagation(); clickNote(event.target);
   };
   const onSubmit = (event) => { event.preventDefault(); event.stopImmediatePropagation(); clickNote(event.target, 'submit'); };
@@ -444,7 +489,7 @@ function installEducationTrial(view, page, readSerialization, verifySerializatio
             return undefined;
           }
           if (autosavePhase && request?.openedDuringTrial && request.openedForSchool && activeControl?.kind === 'school' && isSchoolLookup(request, page)) {
-            try { this.abort(); }
+            try { abort.call(this); }
             catch (error) { note(request.method, request.url, 'xhr'); throw error; }
             if (suppressedLookup.length < 80) suppressedLookup.push({ method: 'POST', url: new URL(request.url, page).href,
               via: 'xhr', blockedBeforeSend: true, phase: autosavePhase });
@@ -738,7 +783,9 @@ function installEducationTrial(view, page, readSerialization, verifySerializatio
     const menu = menus[0] || (closing && ownedPortal) || hiddenLinkedMenu;
     if (open.length > 1 || open.length === 1 && open[0] !== select || menus.length > 1
       || overlays.length !== open.length + menus.length || !menu || !linked || !menu.contains(linked)
-      || ownedPortal && menu !== ownedPortal || !closing && (open.length !== 1 || menus.length !== 1)) return null;
+      || ownedPortal && menu !== ownedPortal || !closing && menus.length !== 1) return null;
+    // A unique visible dropdown linked to the bound select proves opening
+    // even if its root open class lags. The class/expanded ARIA alone never do.
     // A captured menu can outlive the open class during its exit animation,
     // or hide just before the open class is removed. Neither is closed yet.
     return { surface, overlay: menu, closed: false };
@@ -763,7 +810,7 @@ function installEducationTrial(view, page, readSerialization, verifySerializatio
     for (const node of surfaces.filter(Boolean)) {
       currentSurface();
       if (node !== doc && !node.isConnected) fail('menu_cleanup_failed');
-      node.dispatchEvent(new view.KeyboardEvent('keydown', {
+      view.EventTarget.prototype.dispatchEvent.call(node, new view.KeyboardEvent('keydown', {
         key: 'Escape', code: 'Escape', keyCode: 27, which: 27, bubbles: true, cancelable: true
       }));
     }
@@ -783,7 +830,7 @@ function installEducationTrial(view, page, readSerialization, verifySerializatio
     if (!await waitClosed(Math.min(deadline, view.performance.now() + 650))) {
       for (const type of ['mousedown', 'mouseup', 'click']) {
         if (!probeOverlay(spec, true)) fail('menu_cleanup_failed');
-        doc.body.dispatchEvent(new view.MouseEvent(type, { bubbles: true, cancelable: true }));
+        view.EventTarget.prototype.dispatchEvent.call(doc.body, new view.MouseEvent(type, { bubbles: true, cancelable: true }));
       }
       if (!await waitClosed(deadline)) fail('menu_cleanup_failed');
     }
@@ -807,9 +854,10 @@ function installEducationTrial(view, page, readSerialization, verifySerializatio
   async function widgetAdapter(spec, field, fact, binding, context) {
     if (activeControl) fail('control_adapter_reentrant');
     activeControl = spec;
-    const probe = { key: spec.key, activation: { stage: 'preflight', reason: 'helper_unavailable', events: [] },
+    const probe = { key: spec.key, activation: { stage: 'preflight', reason: 'helper_unavailable', events: [], observedEvents: [] },
       openerClicks: 0, opened: false, closed: false, reason: null };
     widgetProbes.push(probe);
+    activeProbe = probe;
     try {
       {
         // Exercise each captured opener without choosing options or days.
@@ -821,15 +869,14 @@ function installEducationTrial(view, page, readSerialization, verifySerializatio
         ownedOverlaySpec = spec;
         // One complete activation of the captured opener. Do not retry/toggle
         // on a delayed mount, and do not infer a successful open from events.
-        const clicksBeforeActivation = widgetClickCount;
-        try {
-          if (!view.ResumeCmsEducationMultiWidgetControls?.activateSurface(surface, () => {
-            safetyCheck();
-            const current = probeSurface(spec);
-            if (stable({ value: locateField(spec).value, proof: readProof() }) !== before) fail('education_control_open_changed_value');
-            return allowedWidgetClick(current) ? current : null;
-          }, activation => { probe.activation = activation; })) fail('widget_open_failed');
-        } finally { probe.openerClicks = widgetClickCount - clicksBeforeActivation; }
+        if (!view.ResumeCmsEducationMultiWidgetControls?.activateSurface(surface, () => {
+          safetyCheck();
+          const current = probeSurface(spec);
+          if (stable({ value: locateField(spec).value, proof: readProof() }) !== before) fail('education_control_open_changed_value');
+          return allowedWidgetClick(current) ? current : null;
+        }, activation => { probe.activation = activation; })) fail('widget_open_failed');
+        if (probe.openerClicks !== 1) fail('widget_open_failed');
+        activeProbe = null;
         await waitForProbeOpen(spec);
         probe.opened = true;
         await closeProbe(spec);
@@ -842,7 +889,7 @@ function installEducationTrial(view, page, readSerialization, verifySerializatio
         { ...binding, replaceExisting: false }, context);
     }
     catch (error) { probe.reason = safeReason(error); throw error; }
-    finally { activeControl = null; }
+    finally { activeProbe = null; activeControl = null; }
   }
 
   async function execute(plan) {
@@ -988,9 +1035,10 @@ function completeWidgetProbes(probes, clickCount) {
   return Number.isSafeInteger(clickCount) && clickCount >= CONTROL_SPECS.length
     && Array.isArray(probes) && probes.length === CONTROL_SPECS.length
     && CONTROL_SPECS.every(spec => probes.filter(probe => probe?.key === spec.key && !probe.reason
-      && Number.isSafeInteger(probe.openerClicks) && probe.openerClicks > 0
+      && probe.openerClicks === 1
       && probe.opened === true && probe.closed === true && probe.activation?.stage === 'complete'
-      && probe.activation.reason === null && JSON.stringify(probe.activation.events) === '["mousedown","mouseup","click"]').length === 1);
+      && probe.activation.reason === null && JSON.stringify(probe.activation.events) === '["mousedown","mouseup","click"]'
+      && JSON.stringify(probe.activation.observedEvents) === '["mousedown","mouseup","click"]').length === 1);
 }
 
 export function evidenceExitCode(evidence) {
@@ -1240,6 +1288,7 @@ export async function runCmsEducationLive(options = {}) {
         'ROW_INDEX selects one existing row by the shipped controller identity; all other rows are bound with no ready facts and must stay unchanged. Zero Add, Save, Submit, Next, Deliver, or Delete clicks.',
         controls ? 'CONTROLS=1 opens/closes seven captured widget surfaces and uses shipped adapters with replaceExisting:false to verify exact preexisting fixture values. Every widget original must equal its fixture before any writes. City probes the first province menu only; its second menu was not harvested. Changed-widget writes remain offline-only.'
           : `Only education.${rowIndex}.major and education.${rowIndex}.majorDescription are confirmed. No widget adapters are injected.`,
+        ...(controls ? ['CONTROLS preflight refuses evidenced residual trial click/fetch/XHR hooks before installation with stale_live_guard_reload_required. Reload the resume page before rerunning; deleting its API does not remove capture guards. No automatic reload discards unsaved values, and no orphan listener is bypassed.'] : []),
         'Trial writes use ResumeCmsEducationMulti.run and its native text writer; DOM and shipped React serialization proof must match.',
         'Cleanup restores text with native setters/events and re-verifies unchanged widget values without option/day replacement. Exact DOM, raw public props, DTO proof, and closed overlays must match before guards are removed. Original values and proof stay in the page.',
         'All form submissions and forbidden clicks are blocked. Controls mode permits only the active bound opener and evidenced outside-click cleanup; options, days, navigation, clear icons, and confirmations cannot be clicked. An opened select needs one linked owned menu; a date needs one owned calendar portal. Only exact education autosave and active-school fuzzyMatchDic XHRs opened after arming are aborted before native send, in separate suppression logs. No HTTP success response or catalog option is synthesized.',

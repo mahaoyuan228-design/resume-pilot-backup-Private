@@ -2,16 +2,21 @@
   'use strict';
   const skip=reason=>({status:'skipped',reason});
   // CMS_EDU_DOM_HARVEST_2026-10-23-2030.md and the isolated-open retry
-  // scripts identify these exact opener surfaces. A native mouse activation
+  // scripts identify these exact opener surfaces. A complete DOM mouse sequence
   // includes down/up as well as click; HTMLElement.click() alone omits the
   // former and can also be replaced on an element. The caller still owns the
   // row/value guards and must observe a visible linked overlay after this one
   // activation. Expanded ARIA or a hidden captured menu is never proof of open.
   function activateSurface(surface,validate,report=()=>{}){
     const view=surface?.ownerDocument?.defaultView;
-    const events=[];
-    const note=(stage,reason=null)=>report({stage,reason,events:events.slice()});
+    const events=[],observedEvents=[];
+    const note=(stage,reason=null)=>report({stage,reason,events:events.slice(),observedEvents:observedEvents.slice()});
     if(!view||typeof validate!=='function'){note('preflight','surface_unavailable');return false;}
+    const eventTarget=view.EventTarget?.prototype,doc=surface.ownerDocument;
+    const dispatch=eventTarget?.dispatchEvent,listen=eventTarget?.addEventListener,unlisten=eventTarget?.removeEventListener;
+    if(typeof dispatch!=='function'||typeof listen!=='function'||typeof unlisten!=='function'){
+      note('preflight','event_dispatch_unavailable');return false;
+    }
     const wrapper=surface.closest('[id^="14_"]'),section=surface.closest('.form-cell[id="14"]');
     const isSelect=surface.matches('.ant-select-selection[role="combobox"]'),owner=surface.getAttribute('aria-controls');
     const current=(stage,rebind=false)=>{
@@ -48,9 +53,19 @@
       clientY=Number.isFinite(rect.top+rect.height/2)?rect.top+rect.height/2:0;
     for(const type of ['mousedown','mouseup','click']){
       if(!current(type))return false;
-      surface.dispatchEvent(new view.MouseEvent(type,{bubbles:true,cancelable:true,view,
-        button:0,buttons:type==='mousedown'?1:0,detail:1,clientX,clientY}));
-      events.push(type);
+      const event=new view.MouseEvent(type,{bubbles:true,cancelable:true,view,
+        button:0,buttons:type==='mousedown'?1:0,detail:1,clientX,clientY});
+      let observed=false;
+      const receipt=received=>{if(received===event&&received.target===surface)observed=true;};
+      // #177 logged method calls as complete even when no event reached the
+      // document click guard. Bypass an opener's shadowed dispatchEvent and
+      // require receipt on the real DOM path. Do not infer receipt from the
+      // dispatch return value: preventDefault on a mouse press can be normal.
+      listen.call(doc,type,receipt,true);
+      try{dispatch.call(surface,event);events.push(type);}
+      finally{unlisten.call(doc,type,receipt,true);}
+      if(!observed){note(type,'event_not_observed');return false;}
+      observedEvents.push(type);
     }
     return current('complete');
   }

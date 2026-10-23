@@ -118,16 +118,30 @@ export function isEducationAutosave(request, page = CMS_BASELINE_PAGE) {
   } catch { return false; }
 }
 
-function validSuppressedAutosave(row) {
-  return isEducationAutosave(row) && row.via === 'xhr' && row.blockedBeforeSend === true
+// The isolated degree harvest also records this exact XHR query shape. It is
+// eligible only inside the same owned school/degree activity, never text mode.
+export function isEducationControlAutosave(request, page = CMS_BASELINE_PAGE) {
+  if (typeof request?.url !== 'string') return false;
+  try {
+    const url = new URL(request.url, page), params = url.searchParams;
+    if ([...params].length !== 2 || new Set(params.keys()).size !== 2
+      || params.get('iSaJAx') !== 'isAjax' || params.get('request_locale') !== 'zh_CN') return false;
+    url.search = '';
+    return isEducationAutosave({ ...request, url: url.href }, page);
+  } catch { return false; }
+}
+
+function validSuppressedAutosave(row, controls = false) {
+  return (isEducationAutosave(row) || controls && ['school', 'degree'].includes(row?.controlKey)
+    && isEducationControlAutosave(row)) && row.via === 'xhr' && row.blockedBeforeSend === true
     && ['trial', 'restore'].includes(row.phase)
     && (row.abortFailed === undefined || typeof row.abortFailed === 'boolean');
 }
 
 // harvest/harvest-summary.json networkPassive captures this lookup with the
 // three housekeeping parameters below. note()/redactUrl strips queries, so the
-// CLEAN d22734a9 nonGet URL does not establish a queryless request. Do not
-// generalize this bounded lookup exception to autosave or arbitrary queries.
+// CLEAN d22734a9 nonGet URL does not establish a queryless request.
+// This lookup classifier does not authorize autosave or arbitrary queries.
 // Aborting it cannot manufacture catalog matches; missing options still skip.
 export function isSchoolLookup(request, page = CMS_BASELINE_PAGE) {
   if (String(request?.method ?? '').toUpperCase() !== 'POST' || typeof request?.url !== 'string') return false;
@@ -245,6 +259,7 @@ export function buildPageExpression(root = repoRoot, rowIndex = 0, controls = fa
     const AUTOSAVE_SETTLE_TIMEOUT_MS = ${AUTOSAVE_SETTLE_TIMEOUT_MS};
     const isNonGetMethod = ${isNonGetMethod.toString()};
     const isEducationAutosave = ${isEducationAutosave.toString()};
+    const isEducationControlAutosave = ${isEducationControlAutosave.toString()};
     const isSchoolLookup = ${isSchoolLookup.toString()};
     const redactUrl = ${redactUrl.toString()};
     ${controls ? `const inspectControlsTrialGuards = ${inspectControlsTrialGuards.toString()};` : ''}
@@ -277,6 +292,7 @@ function installEducationTrial(view, page, readSerialization, verifySerializatio
       observedEvents: probe.activation.observedEvents?.slice() || [] } }));
   let widgetClickCount = 0;
   let activeControl = null;
+  let activeControlOwner = null;
   let activeProbe = null;
   let ownedOverlaySpec = null;
   let ownedPortal = null;
@@ -465,7 +481,8 @@ function installEducationTrial(view, page, readSerialization, verifySerializatio
       const open = xhr.open, send = xhr.send, abort = xhr.abort;
       patch(xhr, 'open', function (method, url, ...rest) {
         const result = open.call(this, method, url, ...rest);
-        metadata.set(this, { method, url, openedDuringTrial: !!autosavePhase, openedForSchool: activeControl?.kind === 'school' });
+        metadata.set(this, { method, url, openedDuringTrial: !!autosavePhase,
+          openedForSchool: activeControl?.kind === 'school', openedForControl: activeControlOwner });
         return result;
       });
       patch(xhr, 'send', function (...args) {
@@ -475,7 +492,10 @@ function installEducationTrial(view, page, readSerialization, verifySerializatio
           // Only the evidenced autosave may continue local verification. Native
           // send is never reached, even if abort throws. Record the block in
           // either case; an abort failure remains fatal and retains guards.
-          if (autosavePhase && request?.openedDuringTrial && isEducationAutosave(request, page)) {
+          const controlKey = CONTROLS && activeControlOwner && request?.openedForControl === activeControlOwner
+            && ['school', 'degree'].includes(activeControl.key) && isEducationControlAutosave(request, page)
+            ? activeControl.key : null;
+          if (autosavePhase && request?.openedDuringTrial && (isEducationAutosave(request, page) || controlKey)) {
             const phase = autosavePhase;
             let abortFailed = false;
             try { abort.call(this); }
@@ -483,7 +503,8 @@ function installEducationTrial(view, page, readSerialization, verifySerializatio
             finally {
               if (suppressedAutosave.length < 80) suppressedAutosave.push({
                 method: 'POST', url: new URL(request.url, page).href, via: 'xhr',
-                blockedBeforeSend: true, phase, ...(abortFailed ? { abortFailed: true } : {})
+                blockedBeforeSend: true, phase, ...(controlKey ? { controlKey } : {}),
+                ...(abortFailed ? { abortFailed: true } : {})
               });
             }
             return undefined;
@@ -700,8 +721,9 @@ function installEducationTrial(view, page, readSerialization, verifySerializatio
     if (CONTROLS && widgetOverlays().length) {
       if (!ownedOverlaySpec) fail('menu_cleanup_failed');
       activeControl = ownedOverlaySpec;
+      activeControlOwner = {};
       try { await closeProbe(ownedOverlaySpec); }
-      finally { activeControl = null; }
+      finally { activeControl = null; activeControlOwner = null; }
     }
     if (originalsMatch()
       && proofSnapshot(readProof()) === prepared.proof
@@ -854,6 +876,7 @@ function installEducationTrial(view, page, readSerialization, verifySerializatio
   async function widgetAdapter(spec, field, fact, binding, context) {
     if (activeControl) fail('control_adapter_reentrant');
     activeControl = spec;
+    activeControlOwner = {};
     const probe = { key: spec.key, activation: { stage: 'preflight', reason: 'helper_unavailable', events: [], observedEvents: [] },
       openerClicks: 0, opened: false, closed: false, reason: null };
     widgetProbes.push(probe);
@@ -889,7 +912,7 @@ function installEducationTrial(view, page, readSerialization, verifySerializatio
         { ...binding, replaceExisting: false }, context);
     }
     catch (error) { probe.reason = safeReason(error); throw error; }
-    finally { activeProbe = null; activeControl = null; }
+    finally { activeProbe = null; activeControl = null; activeControlOwner = null; }
   }
 
   async function execute(plan) {
@@ -1052,7 +1075,7 @@ export function evidenceExitCode(evidence) {
   const specs = fieldSpecsForRow(details.rowIndex, controls);
   const fields = evidence?.fields || [];
   const ok = evidence?.neverSave === true && evidence.liveSupportClaimed === false
-    && Array.isArray(evidence.suppressedAutosave) && evidence.suppressedAutosave.every((row) => validSuppressedAutosave(row) && !row.abortFailed)
+    && Array.isArray(evidence.suppressedAutosave) && evidence.suppressedAutosave.every((row) => validSuppressedAutosave(row, controls) && !row.abortFailed)
     && (controls ? Array.isArray(evidence.suppressedLookup) && evidence.suppressedLookup.every(validSuppressedLookup)
       && completeWidgetProbes(details.widgetProbes, details.widgetClickCount)
       : evidence.suppressedLookup === undefined || Array.isArray(evidence.suppressedLookup) && evidence.suppressedLookup.every(validSuppressedLookup))
@@ -1106,9 +1129,10 @@ export async function runCmsEducationLive(options = {}) {
     if (trafficRows.length < 160 && isNonGetMethod(request?.method)) trafficRows.push({ method: request?.method, url: request?.url, via });
   };
   const readSuppression = (rows) => {
-    if (!Array.isArray(rows) || rows.length > 80 || !rows.every(validSuppressedAutosave)) throw new Error('autosave_guard_invalid');
-    return rows.map(({ method, url, via, blockedBeforeSend, phase, abortFailed }) => ({
+    if (!Array.isArray(rows) || rows.length > 80 || !rows.every(row => validSuppressedAutosave(row, controls))) throw new Error('autosave_guard_invalid');
+    return rows.map(({ method, url, via, blockedBeforeSend, phase, controlKey, abortFailed }) => ({
       method: method.toUpperCase(), url: new URL(url, CMS_BASELINE_PAGE).href, via, blockedBeforeSend, phase,
+      ...(isEducationControlAutosave({ method, url }) ? { controlKey } : {}),
       ...(abortFailed ? { abortFailed: true } : {})
     }));
   };

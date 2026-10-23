@@ -350,9 +350,20 @@
       if(menus().length)stop('basic_other_menu_open');
       if(!editors.length){
         const links=[...sections[0].querySelectorAll('a.h-e-btn')].filter(node=>visible(node)&&norm(node.textContent)==='编辑');
-        if(links.length!==1||links[0].getAttribute('href')&&!/^(#|javascript:(?:;|void\(0\)))$/iu.test(links[0].getAttribute('href')))
+        if(links.length!==1||!enabled(links[0])||links[0].closest('.title_')!==sections[0].querySelector('.title_')
+          ||links[0].closest('[disabled],[aria-disabled="true"],.is-disabled,.disabled,[formaction]')
+          ||links[0].getAttribute('href')&&!/^(#|javascript:(?:;|void\(0\)))$/iu.test(links[0].getAttribute('href')))
           stop('basic_edit_not_unique');
-        step('editor_open');await boundAction(()=>{if(!(links[0])?.isConnected)stop('profile_action_target_changed');return links[0].click();});openedByUs=true;
+        const edit=links[0],editTitle=edit.closest('.title_'),editHref=edit.getAttribute('href');
+        step('editor_open');await boundAction(()=>{
+          const live=page(),current=[...live[0].querySelectorAll('a.h-e-btn')].filter(node=>visible(node)&&norm(node.textContent)==='编辑');
+          if(!edit.isConnected||live[0]!==sections[0]||current.length!==1||current[0]!==edit
+            ||!enabled(edit)||edit.closest('.title_')!==editTitle||editTitle!==live[0].querySelector('.title_')
+            ||edit.closest('[disabled],[aria-disabled="true"],.is-disabled,.disabled,[formaction]')
+            ||edit.getAttribute('href')!==editHref||forms(live).length||otherSectionForms(live).length||menus().length)
+            stop('basic_edit_not_unique');
+          return edit.click();
+        });openedByUs=true;
         form=await waitFor(()=>{sections=page();const all=forms(sections);
           if(all.length>1)stop('basic_editor_not_unique');
           if(otherSectionForms(sections).length)stop('other_section_editor_open');
@@ -397,6 +408,7 @@
         // Same-value under replaceExisting: verify without reopening select/month
         // (reopen clears control mid-flight → basic_other_values_changed).
         if(existing!==''&&norm(existing)===norm(answer.value)){
+          if(!siteValid(selected))stop('basic_site_validation_failed');
           record(field.key,{question:field.question,path:answer.path,status:'verified',reason:'preexisting_same_value'});
           verifiedReads.set(field.key,existing);continue;
         }
@@ -529,21 +541,38 @@
       result.supportedComplete=result.fields.length===FIELDS.length&&result.fields.every(field=>field.status==='verified');
       result.operableComplete=result.fields.length===FIELDS.length&&result.fields.every(field=>field.status==='verified'||field.reason==='site_readonly');
       result.complete=false;
-      state.progress.activeField=null;step('complete');
+      state.progress.activeField=null;step('final_readback');
       const outcome=result.fields.some(field=>['readback_matched','readback_reapplied'].includes(field.reason))?'verified'
         :result.fields.some(field=>field.status==='verified')&&result.fields.every(field=>field.status==='verified'
           &&field.reason==='preexisting_same_value'||field.reason==='site_readonly')?'verified_preexisting':'failed_before_write';
-      const info={...diagnostics(),writeStarted:result.writeStarted,supportedComplete:result.supportedComplete,operableComplete:result.operableComplete,complete:false};
-      await checkBinding();state.last={requestId:request.requestId,outcome,info,currentCheck:()=>{try{
+      const currentCheck=()=>{try{
         const live=page();return performance.timeOrigin===origin&&outside(live)===otherBefore&&forms(live).length===1
+          &&otherSectionForms(live).length===0
           &&JSON.stringify(questionRows())===JSON.stringify(COVERAGE.map(field=>field.question))
           &&forms(live)[0]===form&&valuesExcept(form)===allBefore&&readonlySnapshot()===readonlyBefore&&result.fields.every(row=>row.status!=='verified'
             ||(()=>{const field=FIELDS.find(field=>field.question===row.question),current=target(form,field);
               return sameTarget(targets[field.key],current)&&current.read()===verifiedReads.get(field.key)&&siteValid(current);})());
-      }catch{return false;}}};
+      }catch{return false;}};
+      await checkBinding();
+      if(!currentCheck())stop('basic_other_values_changed');
+      step('complete');
+      const info={...diagnostics(),writeStarted:result.writeStarted,supportedComplete:result.supportedComplete,operableComplete:result.operableComplete,complete:false};
+      state.last={requestId:request.requestId,outcome,info,currentCheck};
       return {ok:true,...result,...info};
     }catch(error){
       const reason=error instanceof Stop?error.code:'basic_trial_failed';
+      // A failed final check invalidates the earlier field receipts as well as
+      // the overall result. Do not expose stale verified coverage after an await.
+      if(state.progress?.selectorStep==='final_readback'){
+        const staleReason=reason==='basic_other_values_changed'?'final_readback_changed':reason;
+        for(const row of result.fields)if(row.status==='verified'){
+          Object.assign(row,{status:'failed',reason:staleReason});
+          Object.assign(result.coverage.find(field=>field.question===row.question),row);
+        }
+        for(const row of state.progress.completedFields)if(row.status==='verified')
+          Object.assign(row,{status:'failed',reason:staleReason});
+        result.supportedComplete=false;result.operableComplete=false;
+      }
       const info={...diagnostics(reason),writeStarted:result.writeStarted};
       if(openedByUs&&!result.writeStarted&&form?.isConnected){const cancel=[...form.querySelectorAll('button')]
         .filter(node=>visible(node)&&node.type==='button'&&!node.disabled&&!node.hasAttribute('formaction')&&norm(node.textContent)==='取消');

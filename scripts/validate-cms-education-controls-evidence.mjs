@@ -66,9 +66,13 @@ function validRestoration(restoration) {
 function validSuppressionShapes(report) {
   // The host reads these rows with method.toUpperCase(). The legacy URL
   // classifiers coerce methods, so ['POST'] otherwise passes retained evidence.
-  // Keep endpoint, ownership, transport, phase and abort checks in the runner.
+  // Lookup abort failures take the fatal generic-traffic path before a row is
+  // recorded. The legacy lookup check ignores abortFailed, so reject retained
+  // rows that contradict successful suppression, including malformed flags.
+  // Keep endpoint, ownership, transport, phase and before-send checks in the runner.
   return ['suppressedAutosave', 'suppressedLookup'].every(key => Array.isArray(report?.[key])
-    && report[key].every(row => object(row) && typeof row.method === 'string'));
+    && report[key].every(row => object(row) && typeof row.method === 'string'
+      && (row.abortFailed === undefined || row.abortFailed === false)));
 }
 
 export function validateControlsDaytimeEvidence(artifact) {

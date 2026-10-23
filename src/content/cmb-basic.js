@@ -657,6 +657,52 @@
       showSearch: false
     }
   };
+  // Residual selects from cmb-remaining-dom-ids-20261019.json. Observe only
+  // these existing controls; this does not supply portal dropdown markup.
+  const PRIMARY_SELECT_IDS = new Set([
+    EDUCATION_LEVEL_SELECT_ID, RELATIONSHIP_TYPE_SELECT_ID, RELATIONSHIP_TYPE_ROW1_SELECT_ID,
+    AWARD_LEVEL_SELECT_ID, ENGLISH_LEVEL_SELECT_ID, CHANNEL_TYPE_SELECT_ID, INTERVIEW_CITY_SELECT_ID
+  ]);
+
+  function primarySelectNeighbors(excludedId) {
+    return [...document.querySelectorAll('[id]')]
+      .filter((node) => node.id !== excludedId && PRIMARY_SELECT_IDS.has(node.id))
+      .map((node) => {
+        const root = node.closest('.ant-select');
+        const item = root?.closest(ITEM_SEL);
+        const spec = Object.values(SELECT_SPECS).find((candidate) => candidate.selectId === node.id);
+        return {
+          id: node.id, node, root,
+          state: JSON.stringify(root ? {
+            structureOk: Boolean(item && selectStructureOk(item, spec)),
+            controls: node.getAttribute('aria-controls'),
+            lists: [...root.querySelectorAll('[role="listbox"]')].map((list) => list.id),
+            available: controlAvailable(root),
+            disabled: root.classList.contains('ant-select-disabled'),
+            shown: [...root.querySelectorAll('.ant-select-selection-item')]
+              .map((shown) => [shown.textContent, shown.getAttribute('data-code')]),
+            rows: [...root.querySelectorAll('[role="option"]')]
+              .map((row) => [row.textContent, row.getAttribute('data-code'), row.getAttribute('aria-selected')]),
+            search: [...root.querySelectorAll('input.ant-select-selection-search-input')]
+              .map((search) => [search.value, search.disabled, search.readOnly])
+          } : null)
+        };
+      });
+  }
+
+  function changedPrimarySelectNeighbors(before, excludedId) {
+    const after = primarySelectNeighbors(excludedId);
+    const oldNodes = new Map(before.map((row, index) => [row.node, { row, index }]));
+    const newNodes = new Map(after.map((row, index) => [row.node, { row, index }]));
+    const changed = [];
+    for (const [index, row] of before.entries()) {
+      const current = newNodes.get(row.node);
+      if (!current || current.index !== index || current.row.root !== row.root || current.row.state !== row.state) changed.push(row.id);
+    }
+    for (const row of after) if (!oldNodes.has(row.node)) changed.push(row.id);
+    // Report IDs only. Neighbor values stay private to this readback check.
+    return [...new Set(changed)];
+  }
 
   function resolveCodedOption(options, raw) {
     const text = norm(raw);
@@ -753,7 +799,8 @@
     const resolved = resolveCodedOption(spec.options, value);
     const base = {
       label: spec.label,
-      ...(spec.rowScoped ? { selectId: spec.selectId, rowIndex: spec.rowIndex } : {}),
+      ...(PRIMARY_SELECT_IDS.has(spec.selectId) ? { selectId: spec.selectId } : {}),
+      ...(spec.rowScoped ? { rowIndex: spec.rowIndex } : {}),
       saved: false,
       skippedSave: true,
       supported: false,
@@ -804,19 +851,29 @@
     }
     // The page (or the explicitly synthetic fixture) must accept the click.
     // Never manufacture a successful readback by rewriting display or ARIA state.
+    const neighbors = PRIMARY_SELECT_IDS.has(spec.selectId) ? primarySelectNeighbors(spec.selectId) : null;
     target.node.click();
+    const immediateChanges = neighbors ? changedPrimarySelectNeighbors(neighbors, spec.selectId) : [];
     await pause(80);
+    const changedSelectIds = [...new Set([...immediateChanges,
+      ...(neighbors ? changedPrimarySelectNeighbors(neighbors, spec.selectId) : [])])];
+    const isolation = changedSelectIds.length ? {
+      neighborCheck: { ok: false, reason: 'neighbor_changed', changedSelectIds }
+    } : {};
+    if (neighbors && !pageAllowed(options)) {
+      return { ...base, ...isolation, ok: false, reason: 'wrong_page', before, beforeCode, writeAttempted: true };
+    }
     const afterLocated = locateCodedItem(spec);
     const afterItem = afterLocated.item;
-    if (!afterItem) return { ...base, ok: false, reason: afterLocated.reason, before, beforeCode, writeAttempted: true };
+    if (!afterItem) return { ...base, ...isolation, ok: false, reason: changedSelectIds.length ? 'neighbor_changed' : afterLocated.reason, before, beforeCode, writeAttempted: true };
     const afterRoot = afterItem.querySelector('.ant-select');
     if (!controlAvailable(afterRoot) || afterRoot.classList.contains('ant-select-disabled')) {
-      return { ...base, ok: false, reason: 'select_disabled', before, beforeCode, writeAttempted: true };
+      return { ...base, ...isolation, ok: false, reason: changedSelectIds.length ? 'neighbor_changed' : 'select_disabled', before, beforeCode, writeAttempted: true };
     }
     const afterSearch = afterItem.querySelector('input.ant-select-selection-search-input');
-    if (afterSearch && !controlAvailable(afterSearch)) return { ...base, ok: false, reason: 'select_disabled', before, beforeCode, writeAttempted: true };
+    if (afterSearch && !controlAvailable(afterSearch)) return { ...base, ...isolation, ok: false, reason: changedSelectIds.length ? 'neighbor_changed' : 'select_disabled', before, beforeCode, writeAttempted: true };
     if (afterSearch && norm(afterSearch.value)) {
-      return { ...base, ok: false, reason: 'search_input_written', before, beforeCode, writeAttempted: true };
+      return { ...base, ...isolation, ok: false, reason: changedSelectIds.length ? 'neighbor_changed' : 'search_input_written', before, beforeCode, writeAttempted: true };
     }
     const afterRead = readCodedSelect(afterItem, spec);
     const after = afterRead.ok ? afterRead.value : '';
@@ -824,9 +881,10 @@
     const matched = afterRead.ok && after === resolved.text && afterCode === resolved.code;
     return {
       ...base,
+      ...isolation,
       writeAttempted: true,
-      ok: matched,
-      reason: matched ? 'matched' : (afterRead.ok ? 'readback_mismatch' : afterRead.reason),
+      ok: matched && changedSelectIds.length === 0,
+      reason: changedSelectIds.length ? 'neighbor_changed' : (matched ? 'matched' : (afterRead.ok ? 'readback_mismatch' : afterRead.reason)),
       before,
       beforeCode,
       after,
@@ -2152,14 +2210,31 @@
     if (values.politics) results.push(await fillPolitics(values.politics, options));
     if (values.ethnicity) results.push(await fillEthnicity(values.ethnicity, options));
     if (values.idCardType) results.push(await fillIdCardType(values.idCardType, options));
-    if (values.educationLevel) results.push(await fillEducationLevel(values.educationLevel, options));
-    if (values.relationshipType) results.push(await fillRelationshipType(values.relationshipType, options));
-    if (values.relationshipTypeRow1) results.push(await fillRelationshipTypeRow1(values.relationshipTypeRow1, options));
-    if (values.awardLevel) results.push(await fillAwardLevel(values.awardLevel, options));
-    if (values.englishLevel) results.push(await fillEnglishLevel(values.englishLevel, options));
-    if (values.channelType) results.push(await fillChannelType(values.channelType, options));
-    if (values.interviewCity) results.push(await fillInterviewCity(values.interviewCity, options));
-    if (values.birthDate) results.push(await fillBirthDate(values.birthDate));
+    const residualSelectPlan = [
+      ['educationLevel', fillEducationLevel], ['relationshipType', fillRelationshipType],
+      ['relationshipTypeRow1', fillRelationshipTypeRow1], ['awardLevel', fillAwardLevel],
+      ['englishLevel', fillEnglishLevel], ['channelType', fillChannelType], ['interviewCity', fillInterviewCity]
+    ];
+    let residualBlockedBy = null;
+    const notRun = (path, label, selectId) => ({
+      path, label, selectId, ok: false, status: 'failed', reason: 'not_run', blockedBy: residualBlockedBy,
+      expected: values[path], before: '', after: '', writeAttempted: false,
+      saved: false, skippedSave: true, supported: false, liveSupportClaimed: false
+    });
+    for (const [path, fill] of residualSelectPlan) {
+      if (!values[path]) continue;
+      const spec = SELECT_SPECS[path];
+      if (residualBlockedBy) {
+        results.push(notRun(path, spec.label, spec.selectId));
+        continue;
+      }
+      const result = await fill(values[path], options);
+      results.push({ ...result, path });
+      residualBlockedBy = result.reason === 'neighbor_changed' || result.reason === 'wrong_page' ? result.reason : null;
+    }
+    if (values.birthDate) results.push(residualBlockedBy
+      ? notRun('birthDate', BIRTHDATE_HINT.label, BIRTHDATE_HINT.selectId)
+      : await fillBirthDate(values.birthDate));
     const blocked = (plan?.blockers || []).filter((row) => REQUESTED_FILL_FAIL_CLOSED.has(row?.reason));
     for (const row of blocked) {
       const present = results.some((item) => item && (item.path === row.path || item.label === row.label));

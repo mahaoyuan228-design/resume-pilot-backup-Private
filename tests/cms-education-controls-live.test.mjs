@@ -39,7 +39,7 @@ for (const [before, after] of [
   fixture = fixture.replaceAll(before, after);
 }
 
-async function setup(t, { install = true, onSchoolOpen, emptyDegree = false, controlOriginals = {}, openerMode } = {}) {
+async function setup(t, { install = true, onSchoolOpen, emptyDegree = false, controlOriginals = {}, openerMode, delayedHiddenClose = false, previousWidgetControls } = {}) {
   const dom = new JSDOM(fixture, { url: PAGE, runScripts: 'dangerously', pretendToBeVisual: true,
     beforeParse(window) {
       window.structuredClone = structuredClone;
@@ -120,22 +120,51 @@ async function setup(t, { install = true, onSchoolOpen, emptyDegree = false, con
   });
   for (const input of Object.values(textInputs)) for (const type of ['input', 'change', 'blur']) input.addEventListener(type, () => xhr());
   school.addEventListener('click', () => { xhr(LOOKUP); onSchoolOpen?.({ window, document, xhr }); });
-  const probeTiming = { delayed: 0 };
-  if (openerMode) {
-    const click = window.HTMLElement.prototype.click;
-    window.HTMLElement.prototype.click = function () {
-      if (openerMode === 'noop-school' && this === school) return;
-      const delay = openerMode === 'delayed-school' && this === school
-        || openerMode === 'delayed-calendar' && this === dates.inputFor('startDate');
-      if (delay) {
-        probeTiming.delayed++;
-        window.setTimeout(() => window.setTimeout(() => click.call(this), 75), 75);
-        return;
-      }
-      return click.call(this);
+  const probeTiming = { delayed: 0, instanceClicks: 0, mouseSequences: [], hiddenCloses: 0 };
+  const openers = [...document.querySelectorAll('.form-cell[id="14"] .ant-select-selection[role="combobox"],.form-cell[id="14"] input.ant-calendar-picker-input[readonly]')];
+  // The harvest retry scripts use mousePressed/mouseReleased on these exact
+  // surfaces. Their React handlers were not captured. These fictional event
+  // gates expose the old click-only blind spot without inventing more DOM.
+  if (openerMode === 'mouse-sequence') for (const surface of openers) {
+    const sequence = [];
+    surface.click = () => { probeTiming.instanceClicks++; };
+    for (const type of ['mousedown', 'mouseup', 'click']) surface.addEventListener(type, event => {
+      sequence.push(event.type);
+      if (event.type !== 'click') return;
+      if (sequence.join(',') !== 'mousedown,mouseup,click') event.stopImmediatePropagation();
+      else probeTiming.mouseSequences.push({ wrapper: surface.closest('[id^="14_"]').id, events: [...sequence] });
+      sequence.length = 0;
+    }, true);
+  }
+  if (openerMode === 'noop-school') school.addEventListener('click', event => event.stopImmediatePropagation(), true);
+  if (['delayed-school', 'delayed-calendar'].includes(openerMode)) {
+    const surface = openerMode === 'delayed-school' ? school : dates.inputFor('startDate');
+    const resumed = new WeakSet();
+    surface.addEventListener('click', event => {
+      if (resumed.has(event)) return;
+      event.stopImmediatePropagation();
+      probeTiming.delayed++;
+      window.setTimeout(() => window.setTimeout(() => {
+        const delayed = new window.MouseEvent('click', { bubbles: true, cancelable: true });
+        resumed.add(delayed); surface.dispatchEvent(delayed);
+      }, 75), 75);
+    }, true);
+  }
+  if (delayedHiddenClose) {
+    const remove = window.Element.prototype.remove;
+    window.Element.prototype.remove = function () {
+      if (!this.matches('.ant-select-dropdown')) return remove.call(this);
+      const menu = this;
+      // Harvested closed dropdowns remain mounted with this hidden class. Model
+      // an asynchronous close transition rather than immediate DOM removal.
+      window.setTimeout(() => window.setTimeout(() => {
+        menu.classList.add('ant-select-dropdown-hidden'); menu.style.display = 'none';
+        probeTiming.hiddenCloses++;
+      }, 75), 75);
     };
   }
   const readProof = () => plain(window.eval(`(${readCmsEducationSerialization.toString()})()`));
+  if (previousWidgetControls) Object.defineProperty(window, 'ResumeCmsEducationMultiWidgetControls', previousWidgetControls);
   if (install) {
     const installed = window.eval(runner.buildPageExpression(root, 0, true));
     assert.equal(installed.ok, true, JSON.stringify(installed));
@@ -186,8 +215,30 @@ test('nine-field trial probes captured widgets, verifies preexisting controls, a
   assert.equal(h.window.fixtureCounts.saves, 0); assert.equal(h.window.fixtureCounts.submits, 0);
   const cleanup = await h.api.cleanup(); assert.equal(cleanup.ok, true, JSON.stringify(cleanup));
   assert.equal(h.window.ResumeCmsInternshipDates, undefined); assert.equal(h.window.ResumeCmsInternshipSelect, undefined);
+  assert.equal(h.window.ResumeCmsEducationMultiWidgetControls, undefined, 'the controls-only activation helper is removed with the injected adapters');
   assert.equal(JSON.stringify({ result, cleanup }).includes('private fictional'), false);
   assert.equal(JSON.stringify({ result, cleanup }).includes('private-request-body'), false);
+});
+
+test('controls cleanup restores the previous activation-helper property descriptor', async t => {
+  const previous = { retained: true }, descriptor = { value: previous, configurable: true, enumerable: false, writable: false };
+  const h = await setup(t, { previousWidgetControls: descriptor });
+  assert.equal(typeof h.window.ResumeCmsEducationMultiWidgetControls.activateSurface, 'function');
+  assert.notEqual(h.window.ResumeCmsEducationMultiWidgetControls, previous);
+  assert.equal((await h.api.cleanup()).ok, true);
+  assert.deepEqual(Object.getOwnPropertyDescriptor(h.window, 'ResumeCmsEducationMultiWidgetControls'), descriptor);
+});
+
+test('activation helper stops if a captured wrapper is replaced between mouse down and mouse up', async t => {
+  const h = await setup(t), wrapper = h.document.getElementById('14_51_0');
+  const surface = wrapper.querySelector('.ant-select-selection'), events = [];
+  for (const type of ['mousedown', 'mouseup', 'click']) surface.addEventListener(type, event => events.push(event.type), true);
+  surface.addEventListener('mousedown', () => wrapper.replaceWith(wrapper.cloneNode(true)), { once: true });
+  const activated = h.window.ResumeCmsEducationMultiWidgetControls.activateSurface(surface,
+    () => h.document.getElementById('14_51_0').querySelector('.ant-select-selection'));
+  assert.equal(activated, false); assert.deepEqual(events, ['mousedown']);
+  assert.equal(h.api.widgetClickCount(), 0); assert.equal(h.native.sends, 0); assert.equal(h.native.forbidden, 0);
+  assert.equal((await h.api.cleanup()).ok, true);
 });
 
 test('empty original control fails before any trial events or writes', async t => {
@@ -220,8 +271,74 @@ test('a no-op opener cannot produce successful probe evidence', async t => {
   assert.equal(prepared.ok, true);
   const result = await h.api.run(await runner.createLivePlan(plain(prepared.identities), 0, true));
   assert.equal(result.ok, false); assert.equal(result.reason, 'widget_open_failed');
-  assert.deepEqual(h.readProof(), before); assert.equal(h.api.widgetClickCount(), 0);
+  assert.deepEqual(h.readProof(), before); assert.equal(h.api.widgetClickCount(), 1, 'a dispatched opener click is an attempt, not owned-overlay evidence');
   assert.equal(h.native.sends, 0); assert.equal((await h.api.cleanup()).ok, true);
+});
+
+test('harvested select and readonly calendar openers receive a full mouse sequence even when instance click is inert', async t => {
+  const h = await setup(t, { openerMode: 'mouse-sequence' }), before = h.readProof(), prepared = h.api.prepare();
+  assert.equal(prepared.ok, true, JSON.stringify(prepared));
+  const result = await h.api.run(await runner.createLivePlan(plain(prepared.identities), 0, true));
+  assert.equal(result.ok, true, JSON.stringify(result));
+  assert.equal(result.liveSupportClaimed, false); assert.equal(result.restored, true); assert.equal(result.pageLeftAsFound, true);
+  assert.equal(h.probeTiming.instanceClicks, 0, 'the probe dispatches on the harvested opener rather than calling a site-patched instance click');
+  assert.deepEqual(h.probeTiming.mouseSequences.map(({ wrapper }) => wrapper).sort(),
+    ['14_51_0', '14_53_0', '14_248_0', '14_49_0', '14_50_0', '14_52_0', '14_102301_0'].sort());
+  assert.ok(h.probeTiming.mouseSequences.every(({ events }) => events.join(',') === 'mousedown,mouseup,click'));
+  assert.deepEqual(h.readProof(), before); assert.equal(h.native.sends, 0); assert.equal(h.native.forbidden, 0);
+  assert.equal(h.selects.counts.selections, 0); assert.equal(h.dates.snapshot().selections, 0);
+  assert.deepEqual(plain(h.api.clicks()), []); assert.deepEqual(plain(h.api.posts()), []);
+  assert.equal((await h.api.cleanup()).ok, true);
+});
+
+test('probe close waits for captured dropdowns to become hidden without selecting options', async t => {
+  const h = await setup(t, { delayedHiddenClose: true }), before = h.readProof(), prepared = h.api.prepare();
+  assert.equal(prepared.ok, true, JSON.stringify(prepared));
+  const result = await h.api.run(await runner.createLivePlan(plain(prepared.identities), 0, true));
+  assert.equal(result.ok, true, JSON.stringify(result));
+  assert.equal(result.liveSupportClaimed, false); assert.equal(result.pageLeftAsFound, true);
+  assert.ok(h.probeTiming.hiddenCloses >= 4);
+  assert.ok(h.document.querySelectorAll('.ant-select-dropdown.ant-select-dropdown-hidden').length >= 4);
+  assert.equal(h.document.querySelectorAll('.ant-select-open,.ant-select-dropdown:not(.ant-select-dropdown-hidden),.ant-calendar-picker-container').length, 0);
+  assert.equal(h.selects.counts.selections, 0); assert.equal(h.native.sends, 0); assert.equal(h.native.forbidden, 0);
+  assert.deepEqual(h.readProof(), before); assert.equal((await h.api.cleanup()).ok, true);
+});
+
+test('an opened dropdown without the bound selection aria owner is never accepted as probe evidence', async t => {
+  let school, originalOwner;
+  const h = await setup(t, { onSchoolOpen: ({ document }) => {
+    school = document.getElementById('14_51_0').querySelector('.ant-select-selection');
+    originalOwner = school.getAttribute('aria-controls');
+    // Rebind only captured ownership attributes to another captured selection.
+    // A visible menu and open class alone cannot prove it belongs to school.
+    const other = document.getElementById('14_102301_0').querySelector('.ant-select-selection');
+    school.setAttribute('aria-controls', other.getAttribute('aria-controls'));
+  } });
+  const before = h.readProof(), prepared = h.api.prepare(); assert.equal(prepared.ok, true);
+  const result = await h.api.run(await runner.createLivePlan(plain(prepared.identities), 0, true));
+  assert.equal(result.ok, false); assert.equal(result.reason, 'widget_open_failed');
+  assert.equal(result.liveSupportClaimed, false); assert.equal(result.pageLeftAsFound, false);
+  assert.equal(h.selects.counts.selections, 0); assert.equal(h.native.sends, 0); assert.equal(h.native.forbidden, 0);
+  assert.deepEqual(h.readProof(), before);
+  // The test owns its fictional DOM and restores the tampered owner for final
+  // teardown. The runner must fail closed rather than dismiss a foreign menu.
+  school.setAttribute('aria-controls', originalOwner); h.selects.close();
+  assert.equal((await h.api.cleanup()).ok, true);
+});
+
+test('an open class and hidden linked catalog options do not satisfy the visible-overlay probe', async t => {
+  const h = await setup(t, { onSchoolOpen: ({ document }) => {
+    const menu = document.querySelector('.ant-select-dropdown');
+    menu.classList.add('ant-select-dropdown-hidden'); menu.style.display = 'none';
+  } });
+  const before = h.readProof(), prepared = h.api.prepare(); assert.equal(prepared.ok, true);
+  const result = await h.api.run(await runner.createLivePlan(plain(prepared.identities), 0, true));
+  assert.equal(result.ok, false); assert.equal(result.reason, 'widget_open_failed');
+  assert.equal(result.liveSupportClaimed, false); assert.equal(result.restored, true); assert.equal(result.pageLeftAsFound, true);
+  assert.equal(h.selects.counts.selections, 0); assert.equal(h.native.sends, 0); assert.equal(h.native.forbidden, 0);
+  assert.deepEqual(h.readProof(), before);
+  assert.equal(h.document.querySelectorAll('.ant-select-open,.ant-calendar-picker-container').length, 0);
+  assert.equal((await h.api.cleanup()).ok, true);
 });
 
 for (const openerMode of ['delayed-school', 'delayed-calendar']) test(`${openerMode} waits for the owned portal and leaves no overlay behind`, async t => {

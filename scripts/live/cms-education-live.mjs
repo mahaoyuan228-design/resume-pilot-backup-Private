@@ -225,7 +225,7 @@ function installEducationTrial(view, page, readSerialization, verifySerializatio
   if (view.__cmsEducationLive || view.ResumeProfileWriteContext) return { ok: false, reason: 'profile_write_context_busy' };
   const previous = ['ResumeCmsSession', 'installResumeCmsRecordController', 'ResumeCmsEducationMulti',
     ...(CONTROLS ? ['ResumeCmsMultiSchoolSearch', 'ResumeCmsMultiEducationDates', 'ResumeCmsInternshipDates', 'ResumeCmsMultiSelect',
-      'ResumeCmsInternshipSelect', 'ResumeCmsMultiRegion', 'ResumeCmsEducationMultiAdapters'] : [])].map((key) => ({
+      'ResumeCmsInternshipSelect', 'ResumeCmsMultiRegion', 'ResumeCmsEducationMultiAdapters', 'ResumeCmsEducationMultiWidgetControls'] : [])].map((key) => ({
     key, descriptor: Object.getOwnPropertyDescriptor(view, key)
   }));
   if (previous.some(({ descriptor }) => descriptor && !descriptor.configurable)) return { ok: false, reason: 'product_globals_not_replaceable' };
@@ -652,7 +652,7 @@ function installEducationTrial(view, page, readSerialization, verifySerializatio
     if (CONTROLS && widgetOverlays().length) {
       if (!ownedOverlaySpec) fail('menu_cleanup_failed');
       activeControl = ownedOverlaySpec;
-      try { await closeProbe(ownedOverlaySpec, locateField(ownedOverlaySpec)); }
+      try { await closeProbe(ownedOverlaySpec); }
       finally { activeControl = null; }
     }
     if (originalsMatch()
@@ -706,53 +706,96 @@ function installEducationTrial(view, page, readSerialization, verifySerializatio
     return { ok: domMatch && propsMatch && !changed && (!CONTROLS || !widgetOverlays().length), via: CONTROLS ? 'product_adapters_and_native_events' : 'native_events', otherChanged: changed };
   }
 
-  async function closeProbe(spec, field) {
-    const surface = spec.kind === 'date' ? field.input : field.selections[0];
+  function probeSurface(spec) {
+    const field = locateField(spec);
+    return spec.kind === 'date' ? field.input : field.selections[0];
+  }
+
+  function probeOverlay(spec, closing = false) {
+    const surface = probeSurface(spec);
     const overlays = widgetOverlays();
-    if (overlays.length) {
-      if (spec.kind === 'date') {
-        if (!ownedPortal || overlays.length !== 1 || overlays[0] !== ownedPortal || !ownedPortal.matches('.ant-calendar-picker-container')) fail('menu_cleanup_failed');
-      } else {
-        const select = surface.closest('.ant-select');
-        const open = overlays.filter(node => node.matches('.ant-select.ant-select-open'));
-        const menus = overlays.filter(node => node.matches('.ant-select-dropdown'));
-        const ids = [...new Set([...select.querySelectorAll('[aria-controls]')].map(node => node.getAttribute('aria-controls')).filter(Boolean))];
-        if (open.length !== 1 || open[0] !== select || menus.length !== 1 || overlays.length !== 2
-          || ids.length !== 1 || !doc.getElementById(ids[0]) || !menus[0].contains(doc.getElementById(ids[0]))) fail('menu_cleanup_failed');
-      }
+    if (!overlays.length) return closing ? { surface, closed: true } : null;
+    if (spec.kind === 'date') {
+      if (overlays.length !== 1 || !overlays[0].matches('.ant-calendar-picker-container')
+        || !overlays[0].querySelector('.ant-calendar-date-panel') || ownedPortal && overlays[0] !== ownedPortal) return null;
+      return { surface, overlay: overlays[0], closed: false };
     }
+    const select = surface.closest('.ant-select');
+    const open = overlays.filter(node => node.matches('.ant-select.ant-select-open'));
+    const menus = overlays.filter(node => node.matches('.ant-select-dropdown'));
+    const ids = [...new Set([...select.querySelectorAll('[aria-controls]')].map(node => node.getAttribute('aria-controls')).filter(Boolean))];
+    const linked = ids.length === 1 && doc.getElementById(ids[0]);
+    // The harvested aria-controls points to a DIV inside the dropdown. Keep
+    // that link mandatory; expanded=true and hidden catalog options alone do
+    // not prove opening (see the captured 学历 retries).
+    // The 学历 harvest also has an expanded select with only a hidden linked
+    // dropdown. It may receive close signals, but cannot satisfy an open probe.
+    const hiddenLinkedMenu = closing && !menus.length && open.length === 1 && open[0] === select
+      && linked && linked.closest('.ant-select-dropdown');
+    const menu = menus[0] || (closing && ownedPortal) || hiddenLinkedMenu;
+    if (open.length > 1 || open.length === 1 && open[0] !== select || menus.length > 1
+      || overlays.length !== open.length + menus.length || !menu || !linked || !menu.contains(linked)
+      || ownedPortal && menu !== ownedPortal || !closing && (open.length !== 1 || menus.length !== 1)) return null;
+    // A captured menu can outlive the open class during its exit animation,
+    // or hide just before the open class is removed. Neither is closed yet.
+    return { surface, overlay: menu, closed: false };
+  }
+
+  async function closeProbe(spec) {
+    pageCheck();
+    const initial = probeOverlay(spec, true);
+    if (!initial) fail('menu_cleanup_failed');
+    if (initial.closed) { ownedOverlaySpec = null; ownedPortal = null; return; }
+    ownedPortal ||= initial.overlay;
+    const surface = initial.surface;
+    surface.focus({ preventScroll: true });
+    const currentSurface = () => {
+      const state = probeOverlay(spec, true);
+      if (!state || state.surface !== surface || !surface.isConnected) fail('menu_cleanup_failed');
+    };
+    currentSurface();
+    const field = locateField(spec);
     const surfaces = spec.kind === 'date' ? [surface, surface.closest('.ant-calendar-picker'), doc]
       : [surface, ...field.item.querySelectorAll('input.ant-select-search__field')];
-    for (const node of surfaces.filter(Boolean)) node.dispatchEvent(new view.KeyboardEvent('keydown', {
-      key: 'Escape', code: 'Escape', keyCode: 27, which: 27, bubbles: true, cancelable: true
-    }));
+    for (const node of surfaces.filter(Boolean)) {
+      currentSurface();
+      if (node !== doc && !node.isConnected) fail('menu_cleanup_failed');
+      node.dispatchEvent(new view.KeyboardEvent('keydown', {
+        key: 'Escape', code: 'Escape', keyCode: 27, which: 27, bubbles: true, cancelable: true
+      }));
+    }
     surface.blur();
-    if (widgetOverlays().length) for (const type of ['mousedown', 'mouseup', 'click']) doc.body.dispatchEvent(new view.MouseEvent(type, { bubbles: true, cancelable: true }));
-    await wait(0);
+    const deadline = view.performance.now() + AUTOSAVE_SETTLE_TIMEOUT_MS;
+    const waitClosed = async (until) => {
+      do {
+        pageCheck();
+        const state = probeOverlay(spec, true);
+        if (!state) fail('menu_cleanup_failed');
+        if (state.closed) return true;
+        await wait(25);
+      } while (view.performance.now() < until);
+      return false;
+    };
+    // Give the owned exit animation time before the evidenced outside cleanup.
+    if (!await waitClosed(Math.min(deadline, view.performance.now() + 650))) {
+      for (const type of ['mousedown', 'mouseup', 'click']) {
+        if (!probeOverlay(spec, true)) fail('menu_cleanup_failed');
+        doc.body.dispatchEvent(new view.MouseEvent(type, { bubbles: true, cancelable: true }));
+      }
+      if (!await waitClosed(deadline)) fail('menu_cleanup_failed');
+    }
     await settleCallbacks();
     if (widgetOverlays().length) fail('menu_cleanup_failed');
     ownedOverlaySpec = null;
     ownedPortal = null;
   }
 
-  async function waitForProbeOpen(spec, field) {
+  async function waitForProbeOpen(spec) {
     const deadline = view.performance.now() + AUTOSAVE_SETTLE_TIMEOUT_MS;
     do {
       pageCheck();
-      const overlays = widgetOverlays();
-      if (spec.kind === 'date') {
-        if (overlays.length === 1 && overlays[0].matches('.ant-calendar-picker-container')
-          && overlays[0].querySelector('.ant-calendar-date-panel')) {
-          ownedPortal = overlays[0]; return;
-        }
-      } else {
-        const select = field.selections[0].closest('.ant-select');
-        const open = overlays.filter(node => node.matches('.ant-select.ant-select-open'));
-        const menus = overlays.filter(node => node.matches('.ant-select-dropdown'));
-        const ids = [...new Set([...select.querySelectorAll('[aria-controls]')].map(node => node.getAttribute('aria-controls')).filter(Boolean))];
-        if (overlays.length === 2 && open.length === 1 && open[0] === select && menus.length === 1
-          && ids.length === 1 && doc.getElementById(ids[0]) && menus[0].contains(doc.getElementById(ids[0]))) return;
-      }
+      const state = probeOverlay(spec);
+      if (state) { ownedPortal = state.overlay; return; }
       await wait(25);
     } while (view.performance.now() < deadline);
     fail('widget_open_failed');
@@ -767,11 +810,17 @@ function installEducationTrial(view, page, readSerialization, verifySerializatio
         // City opens the first province select only. The exact fixture display
         // was required for every widget before any trial text writes.
         const before = stable({ value: field.value, proof: readProof() });
-        const surface = spec.kind === 'date' ? field.input : field.selections[0];
+        const surface = probeSurface(spec);
         ownedOverlaySpec = spec;
-        surface.click();
-        await waitForProbeOpen(spec, field);
-        await closeProbe(spec, field);
+        // One complete activation of the captured opener. Do not retry/toggle
+        // on a delayed mount, and do not infer a successful open from events.
+        if (!view.ResumeCmsEducationMultiWidgetControls?.activateSurface(surface, () => {
+          safetyCheck();
+          const current = probeSurface(spec);
+          return allowedWidgetClick(current) ? current : null;
+        })) fail('widget_open_failed');
+        await waitForProbeOpen(spec);
+        await closeProbe(spec);
         if (stable({ value: locateField(spec).value, proof: readProof() }) !== before) fail('education_control_open_changed_value');
       }
       // Opening is read-only; exact preexisting values were required before any

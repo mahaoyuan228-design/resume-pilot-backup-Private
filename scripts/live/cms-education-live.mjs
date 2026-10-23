@@ -4,10 +4,12 @@
  * Run from the repository root with an already-open Edge resume tab:
  *   $env:PORT='9239'; $env:OUTDIR=Join-Path ([Environment]::GetFolderPath('Desktop')) 'ResumeQuickFill-Dev\_temp-scripts'; node scripts/live/cms-education-live.mjs
  *
- * ROW_INDEX (default 0) selects one existing education row. No Add, edit, select, date,
- * Save, Submit, or Apply control is clicked. The shipped record controller
+ * ROW_INDEX (default 0) selects one existing education row. The default is text
+ * only; CONTROLS=1 opts in to seven harvested widgets. No Add, edit,
+ * Save, Submit, Next, Apply, Deliver, or Delete control is clicked. The shipped record controller
  * writes 专业名称 / 专业描述; the shipped public-props reader and verifier
- * check React serialization. Other education fields stay unsupported.
+ * check React serialization. Opt-in widgets require exact fixture originals and
+ * only exercise owned open/close probes before verifying preexisting values.
  * Original values stay in the page, and are restored with native events and
  * real focus/blur (including empty originals that createPlan cannot confirm).
  * This is a fixture trial, not the extension's licensed popup workflow or a
@@ -28,7 +30,7 @@ import {
 
 export { readPort, readOutDir, readStepTimeout, classifyCmsTabUrl, selectCmsResumeTarget };
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
-export const BASE_TIP = '31074f62a6ed8a7c2fc95b96eb28ac828dc726e0';
+export const BASE_TIP = '3b51254e38268a69b3d478b1432ee6315fcbf37b';
 export const DEFAULT_PORT = 9239;
 export const EVIDENCE_NAME = 'cms-education-live.json';
 export const READBACK_WAIT_MS = 500;
@@ -40,22 +42,39 @@ export const FIELD_SPECS = Object.freeze([
 ]);
 export const UNCLAIMED = Object.freeze(['学校', '学历', '学位', '开始时间', '结束时间', '城市', '专业排名']);
 export const LIVE_FILES = Object.freeze(['src/content/cms-session.js', 'src/content/cms-record-controller.js', 'src/content/cms-education-multi.js']);
+// These catalog/day values and wrappers are present in the 2026-10-23 harvest.
+// This opt-in fixture is not applicant profile data or a live support claim.
+export const CONTROL_SPECS = Object.freeze([
+  { key: 'school', q: '学校', kind: 'school', path: 'education.0.school', fixture: '悉尼大学', wrapper: '51' },
+  { key: 'degree', q: '学历', kind: 'select', path: 'education.0.degree', fixture: '本科', wrapper: '53' },
+  { key: 'academicDegree', q: '学位', kind: 'select', path: 'recordSupplement.0.academicDegree', fixture: '学士', wrapper: '248' },
+  { key: 'startDate', q: '开始时间', kind: 'date', path: 'education.0.startDate', fixture: '2023-02-01', wrapper: '49' },
+  { key: 'endDate', q: '结束时间', kind: 'date', path: 'education.0.endDate', fixture: '2024-11-01', wrapper: '50' },
+  { key: 'region', q: '城市', kind: 'region', path: 'recordSupplement.0.region', fixture: Object.freeze({ province: '北京市', city: '北京市' }), wrapper: '52' },
+  { key: 'gradeRank', q: '专业排名', kind: 'select', path: 'education.0.gradeRank', fixture: '无排名', wrapper: '102301' }
+].map(Object.freeze));
+export const CONTROL_FILES = Object.freeze(['school', 'dates', 'select', 'region', 'adapters'].map((name) => `src/content/cms-education-multi-${name}.js`));
 export const HELP = `Usage (Windows PowerShell, repository root):
   ${POWERSHELL}
 
 Never-Save trial. Attach to the already-open baseline 招商 CMS resume tab using Edge CDP.
-Select one existing education row with ROW_INDEX; 专业名称 and 专业描述 only.
+Select one existing education row with ROW_INDEX; default text writes are 专业名称/专业描述.
 All other rows are bound with no ready facts and must remain unchanged.
 Supports 1–30 existing rows (the shipped planner's limit); never adds rows.
-No navigation, login, Add, clicks, 保存/提交/投递, or non-GET transmission.
-Only the evidenced education XHR autosave is suppressed before native send;
-its attempts are logged separately. All other non-GET attempts fail.
+No navigation, login, Add, Save/Submit/Next/Deliver/Delete, or non-GET transmission.
+CONTROLS=1 requires all seven widget originals to equal the exact fixture display,
+probes their open/close surfaces, and verifies preexisting values without option/day
+selection. City probes only the captured first province menu. Changed widgets are
+offline-only. Exact autosave and active-school lookup XHRs are aborted before native
+send in separate logs. Every other non-GET attempt fails.
 Close menus first and leave the tab alone during the trial. Originals are
 restored and verified. liveSupportClaimed remains false; no live-site claim.
 
   PORT              Loopback CDP port. Default 9239
   OUTDIR            Evidence directory. Default current directory
   ROW_INDEX         Zero-based existing row in controller/DOM order. Default 0
+  CONTROLS          Opt in to seven harvested widgets plus text: 1 (default 0).
+                    Requires exact fixture originals; probes only, no support claim.
   STEP_TIMEOUT_MS   Per CDP call timeout, 1000–120000. Default 30000
 Evidence: ${EVIDENCE_NAME}
 `;
@@ -68,9 +87,15 @@ export function readRowIndex(env = process.env) {
   return Number(value);
 }
 
-export function fieldSpecsForRow(rowIndex = 0) {
+export function readControls(env = process.env) {
+  if (!['0', '1'].includes(env.CONTROLS ?? '0')) throw new Error('CONTROLS must be 0 or 1');
+  return env.CONTROLS === '1';
+}
+
+export function fieldSpecsForRow(rowIndex = 0, controls = false) {
   if (!Number.isSafeInteger(rowIndex) || rowIndex < 0) throw new Error('education_row_index_invalid');
-  return FIELD_SPECS.map((spec) => ({ ...spec, path: spec.path.replace('education.0.', `education.${rowIndex}.`) }));
+  return [...FIELD_SPECS, ...(controls ? CONTROL_SPECS : [])].map((spec) => ({ ...spec,
+    path: spec.path.replace('education.0.', `education.${rowIndex}.`).replace('recordSupplement.0.', `recordSupplement.${rowIndex}.`) }));
 }
 
 export function isNonGetMethod(method) {
@@ -92,6 +117,22 @@ export function isEducationAutosave(request, page = CMS_BASELINE_PAGE) {
 
 function validSuppressedAutosave(row) {
   return isEducationAutosave(row) && row.via === 'xhr' && row.blockedBeforeSend === true
+    && ['trial', 'restore'].includes(row.phase);
+}
+
+// School opening/searching has this one separately evidenced lookup POST.
+// Aborting it cannot manufacture catalog matches; missing options still skip.
+export function isSchoolLookup(request, page = CMS_BASELINE_PAGE) {
+  if (String(request?.method ?? '').toUpperCase() !== 'POST' || typeof request?.url !== 'string') return false;
+  try {
+    const baseline = new URL(page), url = new URL(request.url, baseline);
+    return url.origin === baseline.origin && !url.username && !url.password && !url.search && !url.hash
+      && url.pathname === '/wecruit/dic/fuzzyMatchDic';
+  } catch { return false; }
+}
+
+function validSuppressedLookup(row) {
+  return isSchoolLookup(row) && row.via === 'xhr' && row.blockedBeforeSend === true
     && ['trial', 'restore'].includes(row.phase);
 }
 
@@ -128,20 +169,20 @@ export function partitionTraffic(rows) {
   return { nonGet: nonGet.slice(0, 80), saveLikePost: nonGet.slice(0, 80) };
 }
 
-export function fixtureProfile(rowIndex = 0, recordCount = rowIndex + 1) {
-  const specs = fieldSpecsForRow(rowIndex);
+export function fixtureProfile(rowIndex = 0, recordCount = rowIndex + 1, controls = false) {
+  const specs = fieldSpecsForRow(rowIndex, controls);
   if (!Number.isInteger(recordCount) || recordCount < 1 || recordCount > 30) throw new Error('education_row_count_not_supported');
   if (rowIndex >= recordCount) throw new Error('education_row_index_out_of_range');
   return {
     education: Array.from({ length: recordCount }, (_unused, index) => index === rowIndex
-      ? { major: specs[0].fixture, majorDescription: specs[1].fixture } : {}),
-    confirmedFields: specs.map((spec) => spec.path)
+      ? Object.fromEntries(specs.filter((spec) => spec.path.startsWith('education.')).map((spec) => [spec.path.split('.').at(-1), spec.fixture])) : {}),
+    confirmedFields: specs.filter((spec) => spec.path.startsWith('education.')).map((spec) => spec.path)
   };
 }
 
-export async function createLivePlan(identityOrIdentities, rowIndex = 0) {
+export async function createLivePlan(identityOrIdentities, rowIndex = 0, controls = false) {
   const identities = Array.isArray(identityOrIdentities) ? identityOrIdentities : [identityOrIdentities];
-  const profile = fixtureProfile(rowIndex, identities.length);
+  const profile = fixtureProfile(rowIndex, identities.length, controls);
   const binding = await ownerBindingFor(profile, '00000000-0000-4000-8000-0000000000ed');
   // The shipped writer/verifier require every existing row to be bound. Empty
   // source rows produce only skipped facts: no applicant values leave the page,
@@ -150,22 +191,28 @@ export async function createLivePlan(identityOrIdentities, rowIndex = 0) {
     profileIndex, sourceSnapshotHash: (await sourceSnapshot(profile, profileIndex)).hash,
     target: { mode: 'existing', identity }, replaceExisting: profileIndex === rowIndex
   })));
-  return createPlan(profile, requests, [], binding);
+  const supplements = controls ? CONTROL_SPECS.filter((spec) => spec.path.startsWith('recordSupplement.')).map((spec) => ({
+    profileIndex: rowIndex, field: spec.key, value: spec.fixture, confirmed: true, origin: 'manual',
+    sitePageUrl: CMS_BASELINE_PAGE, sourceSnapshotHash: requests[rowIndex].sourceSnapshotHash, ownerBinding: binding
+  })) : [];
+  return createPlan(profile, requests, supplements, binding);
 }
 
 // Copy the shipped read-only serialization module into this evaluation's
 // closure. No selectors, React handlers, or write adapters are invented here.
-export function buildPageExpression(root = repoRoot, rowIndex = 0) {
+export function buildPageExpression(root = repoRoot, rowIndex = 0, controls = false) {
   const serialization = fs.readFileSync(path.join(root, 'src/content/cms-education-serialization.mjs'), 'utf8')
     .replace(/^export /gmu, '');
   return `(() => {
     ${serialization}
-    const FIELD_SPECS = ${JSON.stringify(fieldSpecsForRow(rowIndex))};
+    const FIELD_SPECS = ${JSON.stringify(fieldSpecsForRow(rowIndex, controls))};
+    const CONTROLS = ${JSON.stringify(controls)};
     const ROW_INDEX = ${rowIndex};
     const READBACK_WAIT_MS = ${READBACK_WAIT_MS};
     const AUTOSAVE_SETTLE_TIMEOUT_MS = ${AUTOSAVE_SETTLE_TIMEOUT_MS};
     const isNonGetMethod = ${isNonGetMethod.toString()};
     const isEducationAutosave = ${isEducationAutosave.toString()};
+    const isSchoolLookup = ${isSchoolLookup.toString()};
     const redactUrl = ${redactUrl.toString()};
     return (${installEducationTrial.toString()})(globalThis, ${JSON.stringify(CMS_BASELINE_PAGE)},
       readCmsEducationSerialization, verifyEducationSerialization);
@@ -175,14 +222,21 @@ export function buildPageExpression(root = repoRoot, rowIndex = 0) {
 function installEducationTrial(view, page, readSerialization, verifySerialization) {
   const doc = view.document;
   if (view.__cmsEducationLive || view.ResumeProfileWriteContext) return { ok: false, reason: 'profile_write_context_busy' };
-  const previous = ['ResumeCmsSession', 'installResumeCmsRecordController', 'ResumeCmsEducationMulti'].map((key) => ({
+  const previous = ['ResumeCmsSession', 'installResumeCmsRecordController', 'ResumeCmsEducationMulti',
+    ...(CONTROLS ? ['ResumeCmsMultiSchoolSearch', 'ResumeCmsMultiEducationDates', 'ResumeCmsInternshipDates', 'ResumeCmsMultiSelect',
+      'ResumeCmsInternshipSelect', 'ResumeCmsMultiRegion', 'ResumeCmsEducationMultiAdapters'] : [])].map((key) => ({
     key, descriptor: Object.getOwnPropertyDescriptor(view, key)
   }));
   if (previous.some(({ descriptor }) => descriptor && !descriptor.configurable)) return { ok: false, reason: 'product_globals_not_replaceable' };
   const removers = [];
   const posts = [];
   const suppressedAutosave = [];
+  const suppressedLookup = [];
   const clicks = [];
+  let widgetClickCount = 0;
+  let activeControl = null;
+  let ownedOverlaySpec = null;
+  let ownedPortal = null;
   let autosavePhase = null;
   const pendingTimers = new Set();
   let untrackedTimer = false;
@@ -211,7 +265,26 @@ function installEducationTrial(view, page, readSerialization, verifySerializatio
     const text = String(node?.textContent || node?.getAttribute?.('aria-label') || '');
     if (clicks.length < 80) clicks.push({ type, label: ['保存', '提交', '投递', '删除', '确定'].find((word) => text.includes(word)) || type });
   }
-  const onClick = (event) => { event.preventDefault(); event.stopImmediatePropagation(); clickNote(event.target); };
+  function allowedWidgetClick(node) {
+    if (!CONTROLS || !autosavePhase || !activeControl || !prepared || !(node instanceof view.Element)) return false;
+    const state = view.ResumeCmsEducationMulti?.inspect();
+    if (!state?.ok || !sameRecordSet(state.records)) return false;
+    const field = view.ResumeCmsEducationMulti.locateField(state.form, prepared.identity, activeControl.q);
+    if (!field || field.item.closest('[id^="14_"]')?.id !== `14_${activeControl.wrapper}_${ROW_INDEX}`) return false;
+    if (node === doc.body) return true; // Existing adapters' evidenced outside-click menu cleanup.
+    if (field.item.contains(node)) {
+      return activeControl.kind === 'date' ? node === field.input && node.matches('input.ant-calendar-picker-input')
+        : (activeControl.kind === 'region' ? field.selections.slice(0, 1) : field.selections)
+          .some((selection) => node === selection && selection.matches('.ant-select-selection[role="combobox"]'));
+    }
+    // Never-Save controls mode only probes open/close. Even an otherwise owned
+    // catalog option, day, navigation arrow, clear icon, or OK button is denied.
+    return false;
+  }
+  const onClick = (event) => {
+    if (allowedWidgetClick(event.target)) { widgetClickCount += 1; return; }
+    event.preventDefault(); event.stopImmediatePropagation(); clickNote(event.target);
+  };
   const onSubmit = (event) => { event.preventDefault(); event.stopImmediatePropagation(); clickNote(event.target, 'submit'); };
   try {
     for (const [schedule, cancel, repeating] of [['setTimeout', 'clearTimeout', false], ['setInterval', 'clearInterval', true]]) {
@@ -236,7 +309,11 @@ function installEducationTrial(view, page, readSerialization, verifySerializatio
         pendingTimers.delete(handle);
       });
     }
-    patch(view.HTMLElement.prototype, 'click', function () { clickNote(this); });
+    const nativeClick = view.HTMLElement.prototype.click;
+    patch(view.HTMLElement.prototype, 'click', function () {
+      if (allowedWidgetClick(this)) return nativeClick.call(this);
+      clickNote(this);
+    });
     doc.addEventListener('click', onClick, true);
     doc.addEventListener('submit', onSubmit, true);
     removers.push(() => { doc.removeEventListener('click', onClick, true); doc.removeEventListener('submit', onSubmit, true); });
@@ -260,7 +337,7 @@ function installEducationTrial(view, page, readSerialization, verifySerializatio
       const open = xhr.open, send = xhr.send;
       patch(xhr, 'open', function (method, url, ...rest) {
         const result = open.call(this, method, url, ...rest);
-        metadata.set(this, { method, url, openedDuringTrial: !!autosavePhase });
+        metadata.set(this, { method, url, openedDuringTrial: !!autosavePhase, openedForSchool: activeControl?.kind === 'school' });
         return result;
       });
       patch(xhr, 'send', function (...args) {
@@ -277,6 +354,13 @@ function installEducationTrial(view, page, readSerialization, verifySerializatio
               method: 'POST', url: new URL(request.url, page).href, via: 'xhr',
               blockedBeforeSend: true, phase: autosavePhase
             });
+            return undefined;
+          }
+          if (autosavePhase && request?.openedDuringTrial && request.openedForSchool && activeControl?.kind === 'school' && isSchoolLookup(request, page)) {
+            try { this.abort(); }
+            catch (error) { note(request.method, request.url, 'xhr'); throw error; }
+            if (suppressedLookup.length < 80) suppressedLookup.push({ method: 'POST', url: new URL(request.url, page).href,
+              via: 'xhr', blockedBeforeSend: true, phase: autosavePhase });
             return undefined;
           }
           note(request?.method, request?.url, 'xhr');
@@ -363,25 +447,56 @@ function installEducationTrial(view, page, readSerialization, verifySerializatio
   }
   function outsideSnapshot(targets) {
     const skip = new Set(targets);
+    const targetItems = CONTROLS && prepared ? FIELD_SPECS.map((spec) => locateField(spec).item) : [];
     return stable([...doc.querySelectorAll('input,textarea,select,.ant-select-selection-selected-value,.ant-select-selection-item')]
-      .filter((node) => !skip.has(node)).map((node) => [node.tagName, node.type || '', node.value ?? node.textContent ?? '', !!node.checked, node.selectedIndex ?? null]));
+      .filter((node) => !skip.has(node) && !targetItems.some((item) => item.contains(node))
+        && !(CONTROLS && node.closest('.ant-select-dropdown,.ant-calendar-picker-container')))
+      .map((node) => [node.tagName, node.type || '', node.value ?? node.textContent ?? '', !!node.checked, node.selectedIndex ?? null]));
   }
   function boundState() {
     const state = view.ResumeCmsEducationMulti.inspect();
     if (!state.ok || !sameRecordSet(state.records)) fail('education_binding_changed');
     return state;
   }
-  function locate(spec, state = boundState()) {
+  function locateField(spec, state = boundState()) {
     const field = view.ResumeCmsEducationMulti.locateField(state.form, prepared.identity, spec.q);
+    if (!field) fail('control_not_supported');
+    if (spec.kind) {
+      if (field.kind !== (spec.kind === 'school' ? 'select' : spec.kind)
+        || field.item.closest('[id^="14_"]')?.id !== `14_${spec.wrapper}_${ROW_INDEX}`) fail('control_not_supported');
+      return field;
+    }
     const input = field?.input;
     if (field?.kind !== 'text' || !input || input.disabled || input.readOnly
       || !(input instanceof view.HTMLTextAreaElement || input instanceof view.HTMLInputElement && input.type === 'text')
       || input.closest('.ant-select,.ant-calendar-picker,.ant-picker,.el-date-editor,.el-select,.el-cascader,.cascader-wrap,.cascader-plugins-wrap')) fail('control_not_supported');
-    return input;
+    return field;
+  }
+  function locate(spec, state = boundState()) {
+    return locateField(spec, state).input;
+  }
+  function domValue(spec) {
+    const field = locateField(spec);
+    return spec.kind ? field.value : field.input.value;
+  }
+  function desiredDom(spec) {
+    return spec.kind === 'region' ? [spec.fixture.province, spec.fixture.city]
+      : ['school', 'select'].includes(spec.kind) ? [spec.fixture] : spec.fixture;
+  }
+  function originalsMatch() {
+    return prepared.originals.every(({ spec, value }) => stable(domValue(spec)) === stable(value));
+  }
+  function widgetOverlays() {
+    return [...doc.querySelectorAll('.ant-select-dropdown:not(.ant-select-dropdown-hidden),.ant-select.ant-select-open,.ant-calendar-picker-container')]
+      .filter((node) => node.getClientRects().length && view.getComputedStyle(node).display !== 'none'
+        && view.getComputedStyle(node).visibility !== 'hidden');
   }
   function targetInputs() {
     const state = boundState();
-    return FIELD_SPECS.map((spec) => locate(spec, state));
+    return FIELD_SPECS.flatMap((spec) => {
+      const field = locateField(spec, state);
+      return spec.kind ? [...field.item.querySelectorAll('input,textarea,select,.ant-select-selection-selected-value,.ant-select-selection-item')] : [field.input];
+    });
   }
   function prepare() {
     let recordCount = null;
@@ -389,6 +504,7 @@ function installEducationTrial(view, page, readSerialization, verifySerializatio
       if (prepared) fail('trial_already_prepared');
       safetyCheck();
       if (view.ResumeProfileWriteContext) fail('profile_write_context_busy');
+      if (CONTROLS && widgetOverlays().length) fail('control_busy');
       const controller = view.ResumeCmsEducationMulti;
       if (typeof controller?.inspect !== 'function' || typeof controller?.run !== 'function') fail('education_module_unavailable');
       const state = controller.inspect();
@@ -400,9 +516,39 @@ function installEducationTrial(view, page, readSerialization, verifySerializatio
         href: view.location.href, timeOrigin: view.performance.timeOrigin, originals: [] };
       const proof = readProof();
       for (const spec of FIELD_SPECS) {
-        const input = locate(spec);
+        const live = locateField(spec), input = live.input;
         const fields = proof.rows[ROW_INDEX].fields.filter((field) => field.question === spec.q);
         const field = fields[0];
+        if (spec.kind) {
+          const value = domValue(spec), display = spec.kind === 'region' ? field?.display
+            : ['school', 'select'].includes(spec.kind) ? [field?.display] : field?.display;
+          if (fields.length !== 1 || stable(value) !== stable(display)
+            || (Array.isArray(value) ? value.length !== (spec.kind === 'region' ? 2 : 1) || value.some((item) => typeof item !== 'string' || !item.trim())
+              : typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/u.test(value))) fail('education_control_original_not_restorable');
+          // With fuzzy lookup aborted, a changed school may make its original
+          // catalog option unreachable. Only the exact preexisting fixture is
+          // safe for this Never-Save trial; changed-school writes stay offline.
+          if (spec.kind === 'school' && stable(value) !== stable([spec.fixture])) fail('education_school_original_not_restorable');
+          if (spec.kind === 'region' && stable(value) !== stable([spec.fixture.province, spec.fixture.city])) fail('education_region_original_not_restorable');
+          if (stable(value) !== stable(desiredDom(spec))) fail('education_control_original_not_fixture');
+          const catalogs = {
+            degree: ['初中及以下','高中','技校/职高','中专','大专','本科','双学位','硕士研究生','MBA','EMBA','MPA','法律硕士','博士研究生','其它'],
+            academicDegree: ['无','学士','双学士','硕士','双硕士','博士'],
+            gradeRank: ['前5%','前10%','前20%','前30%','前50%','前70%','后30%','无排名']
+          };
+          if (spec.kind === 'select' && !catalogs[spec.key]?.includes(value[0])) fail('education_control_original_not_restorable');
+          if (spec.kind === 'date') {
+            const [year, month, day] = value.split('-').map(Number), date = new Date(Date.UTC(year, month - 1, day));
+            const [fixtureYear, fixtureMonth] = spec.fixture.split('-').map(Number);
+            if (year < 1900 || year > 2100 || date.getUTCFullYear() !== year || date.getUTCMonth() !== month - 1 || date.getUTCDate() !== day
+              || Math.abs(year * 12 + month - fixtureYear * 12 - fixtureMonth) > 60) fail('education_control_original_not_restorable');
+          }
+          if (typeof view.ResumeCmsEducationMultiAdapters?.[spec.kind] !== 'function') fail('control_adapter_unavailable');
+          prepared.originals.push({ spec, value: structuredClone(value), rawSnapshot: stable({ raw: field.raw, serialized: field.serialized, display: field.display }), fact: { status: 'ready', confirmed: true,
+            path: spec.path, value: spec.kind === 'region' ? { province: value[0], city: value[1] } : Array.isArray(value) ? value[0] : value,
+            optionText: spec.kind === 'region' ? { province: value[0], city: value[1] } : Array.isArray(value) ? value[0] : value } });
+          continue;
+        }
         if (fields.length !== 1 || ![1, 6].includes(field.fillType) || field.customDataSource
           || ![null, 'string'].includes(field.raw === null ? null : typeof field.raw)
           || String(field.raw ?? '') !== input.value || String(field.display ?? '') !== input.value) fail('education_original_state_mismatch');
@@ -418,14 +564,20 @@ function installEducationTrial(view, page, readSerialization, verifySerializatio
   async function restore() {
     autosavePhase = 'restore';
     pageCheck();
-    if (prepared.originals.every(({ spec, value }) => locate(spec).value === value)
+    if (CONTROLS && widgetOverlays().length) {
+      if (!ownedOverlaySpec) fail('menu_cleanup_failed');
+      activeControl = ownedOverlaySpec;
+      try { await closeProbe(ownedOverlaySpec, locateField(ownedOverlaySpec)); }
+      finally { activeControl = null; }
+    }
+    if (originalsMatch()
       && proofSnapshot(readProof()) === prepared.proof
-      && outsideSnapshot(targetInputs()) === prepared.others) {
+      && outsideSnapshot(targetInputs()) === prepared.others && (!CONTROLS || !widgetOverlays().length)) {
       let drainError = null;
       try { await settleCallbacks(); } catch (error) { drainError = error; }
-      if (prepared.originals.every(({ spec, value }) => locate(spec).value === value)
+      if (originalsMatch()
         && proofSnapshot(readProof()) === prepared.proof
-        && outsideSnapshot(targetInputs()) === prepared.others) {
+        && outsideSnapshot(targetInputs()) === prepared.others && (!CONTROLS || !widgetOverlays().length)) {
         if (drainError) throw drainError;
         return { ok: true, via: 'not_needed', otherChanged: false };
       }
@@ -435,6 +587,19 @@ function installEducationTrial(view, page, readSerialization, verifySerializatio
     let changed = false;
     for (const original of prepared.originals) {
       pageCheck();
+      if (original.spec.kind) {
+        const current = readProof().rows[ROW_INDEX].fields.find((field) => field.question === original.spec.q);
+        if (stable(domValue(original.spec)) !== stable(original.value)
+          || stable({ raw: current.raw, serialized: current.serialized, display: current.display }) !== original.rawSnapshot) {
+          const outcome = await widgetAdapter(original.spec, locateField(original.spec), original.fact, {
+            profileIndex: ROW_INDEX, rowIdentity: prepared.identity, sectionName: '教育经历必填',
+            key: original.spec.key, question: original.spec.q, sourcePath: original.spec.path,
+            confirmed: true, replaceExisting: true
+          }, { form: boundState().form, locate: () => locateField(original.spec) });
+          if (outcome?.status !== 'verified') fail('restore_control_failed');
+        }
+        continue;
+      }
       const input = locate(original.spec);
       // Native cleanup preserves whitespace/empty values; createPlan normalizes
       // them. It is never counted as a product fill or support evidence.
@@ -449,11 +614,87 @@ function installEducationTrial(view, page, readSerialization, verifySerializatio
     await wait(READBACK_WAIT_MS);
     await settleCallbacks();
     pageCheck();
-    const domMatch = prepared.originals.every(({ spec, value }) => locate(spec).value === value);
+    const domMatch = originalsMatch();
     const propsMatch = proofSnapshot(readProof()) === prepared.proof;
     changed = outsideSnapshot(targetInputs()) !== prepared.others
       || protectedProofSnapshot(readProof()) !== prepared.protectedProof;
-    return { ok: domMatch && propsMatch && !changed, via: 'native_events', otherChanged: changed };
+    return { ok: domMatch && propsMatch && !changed && (!CONTROLS || !widgetOverlays().length), via: CONTROLS ? 'product_adapters_and_native_events' : 'native_events', otherChanged: changed };
+  }
+
+  async function closeProbe(spec, field) {
+    const surface = spec.kind === 'date' ? field.input : field.selections[0];
+    const overlays = widgetOverlays();
+    if (overlays.length) {
+      if (spec.kind === 'date') {
+        if (!ownedPortal || overlays.length !== 1 || overlays[0] !== ownedPortal || !ownedPortal.matches('.ant-calendar-picker-container')) fail('menu_cleanup_failed');
+      } else {
+        const select = surface.closest('.ant-select');
+        const open = overlays.filter(node => node.matches('.ant-select.ant-select-open'));
+        const menus = overlays.filter(node => node.matches('.ant-select-dropdown'));
+        const ids = [...new Set([...select.querySelectorAll('[aria-controls]')].map(node => node.getAttribute('aria-controls')).filter(Boolean))];
+        if (open.length !== 1 || open[0] !== select || menus.length !== 1 || overlays.length !== 2
+          || ids.length !== 1 || !doc.getElementById(ids[0]) || !menus[0].contains(doc.getElementById(ids[0]))) fail('menu_cleanup_failed');
+      }
+    }
+    const surfaces = spec.kind === 'date' ? [surface, surface.closest('.ant-calendar-picker'), doc]
+      : [surface, ...field.item.querySelectorAll('input.ant-select-search__field')];
+    for (const node of surfaces.filter(Boolean)) node.dispatchEvent(new view.KeyboardEvent('keydown', {
+      key: 'Escape', code: 'Escape', keyCode: 27, which: 27, bubbles: true, cancelable: true
+    }));
+    surface.blur();
+    if (widgetOverlays().length) for (const type of ['mousedown', 'mouseup', 'click']) doc.body.dispatchEvent(new view.MouseEvent(type, { bubbles: true, cancelable: true }));
+    await wait(0);
+    await settleCallbacks();
+    if (widgetOverlays().length) fail('menu_cleanup_failed');
+    ownedOverlaySpec = null;
+    ownedPortal = null;
+  }
+
+  async function waitForProbeOpen(spec, field) {
+    const deadline = view.performance.now() + AUTOSAVE_SETTLE_TIMEOUT_MS;
+    do {
+      pageCheck();
+      const overlays = widgetOverlays();
+      if (spec.kind === 'date') {
+        if (overlays.length === 1 && overlays[0].matches('.ant-calendar-picker-container')
+          && overlays[0].querySelector('.ant-calendar-date-panel')) {
+          ownedPortal = overlays[0]; return;
+        }
+      } else {
+        const select = field.selections[0].closest('.ant-select');
+        const open = overlays.filter(node => node.matches('.ant-select.ant-select-open'));
+        const menus = overlays.filter(node => node.matches('.ant-select-dropdown'));
+        const ids = [...new Set([...select.querySelectorAll('[aria-controls]')].map(node => node.getAttribute('aria-controls')).filter(Boolean))];
+        if (overlays.length === 2 && open.length === 1 && open[0] === select && menus.length === 1
+          && ids.length === 1 && doc.getElementById(ids[0]) && menus[0].contains(doc.getElementById(ids[0]))) return;
+      }
+      await wait(25);
+    } while (view.performance.now() < deadline);
+    fail('widget_open_failed');
+  }
+
+  async function widgetAdapter(spec, field, fact, binding, context) {
+    if (activeControl) fail('control_adapter_reentrant');
+    activeControl = spec;
+    try {
+      {
+        // Exercise each captured opener without choosing options or days.
+        // City opens the first province select only. The exact fixture display
+        // was required for every widget before any trial text writes.
+        const before = stable({ value: field.value, proof: readProof() });
+        const surface = spec.kind === 'date' ? field.input : field.selections[0];
+        ownedOverlaySpec = spec;
+        surface.click();
+        await waitForProbeOpen(spec, field);
+        await closeProbe(spec, field);
+        if (stable({ value: locateField(spec).value, proof: readProof() }) !== before) fail('education_control_open_changed_value');
+      }
+      // Opening is read-only; exact preexisting values were required before any
+      // writes. Product adapters verify them without reselecting raw codes.
+      return await view.ResumeCmsEducationMultiAdapters[spec.kind](field, fact,
+        { ...binding, replaceExisting: false }, context);
+    }
+    finally { activeControl = null; }
   }
 
   async function execute(plan) {
@@ -475,13 +716,13 @@ function installEducationTrial(view, page, readSerialization, verifySerializatio
           || !item.facts || Object.entries(item.facts).some(([key, fact]) => fact?.status === 'ready'
             && (index !== ROW_INDEX || !FIELD_SPECS.some((spec) => spec.key === key))))
         || !plan.ownerBinding || FIELD_SPECS.some((spec) => record.facts?.[spec.key]?.status !== 'ready'
-          || record.facts[spec.key].value !== spec.fixture || record.facts[spec.key].path !== spec.path)) fail('education_trial_plan_invalid');
+          || stable(record.facts[spec.key].value) !== stable(spec.fixture) || record.facts[spec.key].path !== spec.path)) fail('education_trial_plan_invalid');
       const digest = await view.crypto.subtle.digest('SHA-256', new view.TextEncoder().encode(stable({ ...plan, fingerprint: undefined })));
       const fingerprint = [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, '0')).join('');
       if (fingerprint !== plan.fingerprint) fail('education_plan_changed');
       activePlan = stable(plan);
       if (proofSnapshot(readProof()) !== prepared.proof || outsideSnapshot(targetInputs()) !== prepared.others
-        || prepared.originals.some(({ spec, value }) => locate(spec).value !== value)) fail('education_original_state_changed');
+        || !originalsMatch()) fail('education_original_state_changed');
       const check = () => {
         safetyCheck();
         if (stable(plan) !== activePlan) fail('education_plan_changed');
@@ -497,10 +738,16 @@ function installEducationTrial(view, page, readSerialization, verifySerializatio
         checkSource: (index, hash) => check() && Number.isInteger(index) && index >= 0
           && index < plan.records.length && hash === plan.records[index].sourceSnapshotHash,
         readSerialization: async () => { await wait(READBACK_WAIT_MS); await settleCallbacks(); check(); return readProof(); },
-        verifySerialization
-        // No school/select/date/region adapters: they cannot be clicked.
+        verifySerialization,
+        ...(CONTROLS ? { adapters: Object.fromEntries(['school', 'select', 'date', 'region'].map((kind) => [kind,
+          (field, fact, binding, context) => {
+            const spec = FIELD_SPECS.find((item) => item.key === binding.key && item.kind === kind);
+            if (!spec) fail('control_adapter_binding_invalid');
+            return widgetAdapter(spec, field, fact, binding, context);
+          }])) } : {})
       });
       result.productReason = /^[a-z0-9_]+$/u.test(product?.reason || '') ? product.reason : 'product_failed';
+      if (CONTROLS && product?.ok !== true) fail(result.productReason);
       await wait(READBACK_WAIT_MS);
       await settleCallbacks();
       safetyCheck();
@@ -511,7 +758,7 @@ function installEducationTrial(view, page, readSerialization, verifySerializatio
         const fields = product.fields?.filter((field) => field.profileIndex === ROW_INDEX && field.key === spec.key && field.path === spec.path) || [];
         const serialized = verified.records?.find((row) => row.profileIndex === ROW_INDEX)?.fields.filter((field) => field.key === spec.key) || [];
         const ok = product.ok === true && verified.ok === true && fields.length === 1 && fields[0].status === 'verified'
-          && serialized.length === 1 && serialized[0].status === 'verified' && locate(spec).value === spec.fixture;
+          && serialized.length === 1 && serialized[0].status === 'verified' && stable(domValue(spec)) === stable(desiredDom(spec));
         return { path: spec.path, ok, reason: ok ? 'readback_matched' : 'readback_mismatch', value: ok ? spec.fixture : null };
       });
       result.otherChanged = outsideSnapshot(targetInputs()) !== prepared.others
@@ -546,6 +793,8 @@ function installEducationTrial(view, page, readSerialization, verifySerializatio
     },
     posts: () => posts.slice(),
     suppressedAutosave: () => suppressedAutosave.slice(),
+    suppressedLookup: () => suppressedLookup.slice(),
+    widgetClickCount: () => widgetClickCount,
     clicks: () => clicks.slice(),
     async cleanup() {
       aborted = true;
@@ -558,7 +807,7 @@ function installEducationTrial(view, page, readSerialization, verifySerializatio
         } else await settleCallbacks();
       } catch (error) {
         return { ok: false, reason: safeReason(error), posts: posts.slice(), clicks: clicks.slice(),
-          suppressedAutosave: suppressedAutosave.slice() };
+          suppressedAutosave: suppressedAutosave.slice(), suppressedLookup: suppressedLookup.slice(), widgetClickCount };
       }
       for (const remove of [...removers].reverse()) remove();
       for (const { key, descriptor } of previous) {
@@ -566,17 +815,18 @@ function installEducationTrial(view, page, readSerialization, verifySerializatio
         else delete view[key];
       }
       if (view.__cmsEducationLive === api) delete view.__cmsEducationLive;
-      return { ok: true, posts: posts.slice(), clicks: clicks.slice(), suppressedAutosave: suppressedAutosave.slice() };
+      return { ok: true, posts: posts.slice(), clicks: clicks.slice(), suppressedAutosave: suppressedAutosave.slice(),
+        suppressedLookup: suppressedLookup.slice(), widgetClickCount };
     }
   };
   view.__cmsEducationLive = api;
   return { ok: true };
 }
 
-function plannedFields(reason = 'not_run', specs = FIELD_SPECS) {
+function plannedFields(reason = 'not_run', specs = FIELD_SPECS, controls = false) {
   return [
     ...specs.map((spec) => ({ q: spec.q, path: spec.path, status: 'failed', reason, value: null })),
-    ...UNCLAIMED.map((q) => ({ q, status: 'skipped', reason: 'control_not_supported', value: null }))
+    ...(controls ? [] : UNCLAIMED.map((q) => ({ q, status: 'skipped', reason: 'control_not_supported', value: null })))
   ];
 }
 
@@ -587,19 +837,23 @@ export function evidenceExitCode(evidence) {
   if (['timeout', 'cdp_unreachable', 'cdp_endpoint_invalid', 'cdp_targets_invalid', 'interception_failed', 'network_guard_failed'].includes(details.reason)) return 1;
   if (!Number.isInteger(details.recordCount) || details.recordCount < 1 || details.recordCount > 30
     || !Number.isSafeInteger(details.rowIndex) || details.rowIndex < 0 || details.rowIndex >= details.recordCount) return 2;
-  const specs = fieldSpecsForRow(details.rowIndex);
+  const controls = details.controls === true;
+  const specs = fieldSpecsForRow(details.rowIndex, controls);
   const fields = evidence?.fields || [];
   const ok = evidence?.neverSave === true && evidence.liveSupportClaimed === false
     && Array.isArray(evidence.suppressedAutosave) && evidence.suppressedAutosave.every(validSuppressedAutosave)
+    && (controls ? Array.isArray(evidence.suppressedLookup) && evidence.suppressedLookup.every(validSuppressedLookup)
+      && Number.isSafeInteger(details.widgetClickCount) && details.widgetClickCount >= 0
+      : evidence.suppressedLookup === undefined || Array.isArray(evidence.suppressedLookup) && evidence.suppressedLookup.every(validSuppressedLookup))
     && details.liveSupportClaimed === false && details.moduleClaimedSupport === false
     && !details.reason && details.restored === true && details.pageLeftAsFound === true
     && details.cleanupOk === true && details.otherChanged === false
-    && fields.length === FIELD_SPECS.length + UNCLAIMED.length
+    && fields.length === (controls ? specs.length : FIELD_SPECS.length + UNCLAIMED.length)
     && specs.every((spec, index) => fields[index]?.q === spec.q && fields[index]?.path === spec.path
-      && fields[index]?.status === 'verified' && fields[index]?.reason === 'readback_matched' && fields[index]?.value === spec.fixture)
-    && UNCLAIMED.every((q, index) => fields[index + FIELD_SPECS.length]?.q === q
+      && fields[index]?.status === 'verified' && fields[index]?.reason === 'readback_matched' && JSON.stringify(fields[index]?.value) === JSON.stringify(spec.fixture))
+    && (controls || UNCLAIMED.every((q, index) => fields[index + FIELD_SPECS.length]?.q === q
       && fields[index + FIELD_SPECS.length]?.status === 'skipped'
-      && fields[index + FIELD_SPECS.length]?.reason === 'control_not_supported');
+      && fields[index + FIELD_SPECS.length]?.reason === 'control_not_supported'));
   return ok ? 0 : 2;
 }
 
@@ -609,7 +863,9 @@ export async function runCmsEducationLive(options = {}) {
   const outDir = options.outDir || readOutDir(env);
   const stepTimeoutMs = options.stepTimeoutMs ?? readStepTimeout(env);
   const rowIndex = options.rowIndex ?? readRowIndex(env);
-  const specs = fieldSpecsForRow(rowIndex);
+  const controls = options.controls ?? readControls(env);
+  if (typeof controls !== 'boolean') throw new Error('CONTROLS must be 0 or 1');
+  const specs = fieldSpecsForRow(rowIndex, controls);
   const root = options.repoRoot || repoRoot;
   const tipSha = options.tipSha || readTipSha(root);
   const filePath = path.join(outDir, EVIDENCE_NAME);
@@ -623,6 +879,8 @@ export async function runCmsEducationLive(options = {}) {
   let outcome = null;
   let clicks = [];
   let suppressedAutosave = [];
+  let suppressedLookup = [];
+  let widgetClickCount = 0;
   let installed = false;
   let fetchEnabled = false;
   let cleanupOk = false;
@@ -639,6 +897,11 @@ export async function runCmsEducationLive(options = {}) {
     return rows.map(({ method, url, via, blockedBeforeSend, phase }) => ({
       method: method.toUpperCase(), url: new URL(url, CMS_BASELINE_PAGE).href, via, blockedBeforeSend, phase
     }));
+  };
+  const readLookupSuppression = (rows) => {
+    if (!Array.isArray(rows) || rows.length > 80 || !rows.every(validSuppressedLookup)) throw new Error('lookup_guard_invalid');
+    return rows.map(({ method, url, via, blockedBeforeSend, phase }) => ({ method: method.toUpperCase(),
+      url: new URL(url, CMS_BASELINE_PAGE).href, via, blockedBeforeSend, phase }));
   };
   const send = async (method, params, step) => {
     const reply = await session.send(method, params, { timeoutMs: stepTimeoutMs, step });
@@ -700,12 +963,12 @@ export async function runCmsEducationLive(options = {}) {
       else if (guard?.visible !== 'visible') reason = 'page_hidden';
       stopIfTraffic();
       if (!reason) {
-        const install = await evaluate(buildPageExpression(root, rowIndex), 'install_live');
+        const install = await evaluate(buildPageExpression(root, rowIndex, controls), 'install_live');
         installed = install?.ok === true;
         if (!installed) reason = safeReason(install?.reason, 'guard_install_failed');
       }
       if (!reason) {
-        for (const file of LIVE_FILES) {
+        for (const file of [...LIVE_FILES, ...(controls ? CONTROL_FILES : [])]) {
           stopIfTraffic();
           const source = fs.readFileSync(path.join(root, file), 'utf8');
           const injected = await evaluate(`(() => { try { ${source}\n return {ok:true}; } catch { return {ok:false}; } })()`, `inject_${path.basename(file, '.js')}`);
@@ -720,7 +983,7 @@ export async function runCmsEducationLive(options = {}) {
         else if (prepared.rowIndex !== rowIndex || !Array.isArray(prepared.identities)
           || prepared.identities.length !== recordCount || prepared.identity !== prepared.identities[rowIndex]) reason = 'education_binding_changed';
         else {
-          const plan = await createLivePlan(prepared.identities, rowIndex);
+          const plan = await createLivePlan(prepared.identities, rowIndex, controls);
           stopIfTraffic();
           outcome = await evaluate(`globalThis.__cmsEducationLive.run(${JSON.stringify(plan)})`, 'education_run', true);
           if (outcome?.ok !== true) reason = safeReason(outcome?.reason, 'control_not_supported');
@@ -736,6 +999,7 @@ export async function runCmsEducationLive(options = {}) {
         if (!Array.isArray(posts)) throw new Error('traffic_read_failed');
         trafficRows.push(...posts);
         suppressedAutosave = readSuppression(await evaluate('globalThis.__cmsEducationLive.suppressedAutosave()', 'read_suppressed_autosave'));
+        if (controls) suppressedLookup = readLookupSuppression(await evaluate('globalThis.__cmsEducationLive.suppressedLookup()', 'read_suppressed_lookup'));
         const observed = await evaluate('globalThis.__cmsEducationLive.clicks()', 'read_clicks');
         if (!Array.isArray(observed)) throw new Error('click_read_failed');
         clicks = observed;
@@ -747,6 +1011,11 @@ export async function runCmsEducationLive(options = {}) {
         // Even unsuccessful cleanup can report late blocked attempts. Preserve
         // them without permitting them to excuse any observed network traffic.
         suppressedAutosave = mergeObservations(suppressedAutosave, readSuppression(cleanup?.suppressedAutosave));
+        if (controls) {
+          suppressedLookup = mergeObservations(suppressedLookup, readLookupSuppression(cleanup?.suppressedLookup));
+          if (!Number.isSafeInteger(cleanup?.widgetClickCount) || cleanup.widgetClickCount < 0) throw new Error('click_read_failed');
+          widgetClickCount = cleanup.widgetClickCount;
+        }
         cleanupOk = cleanup?.ok === true && Array.isArray(cleanup.posts) && Array.isArray(cleanup.clicks);
         if (!cleanupOk) reason ||= safeReason(cleanup?.reason, 'cleanup_failed');
       } catch { reason ||= 'cleanup_failed'; }
@@ -772,30 +1041,31 @@ export async function runCmsEducationLive(options = {}) {
     && outcome.restored === true && outcome.pageLeftAsFound === true && outcome.otherChanged === false
     && outcome.waitedMs >= READBACK_WAIT_MS && specs.every((spec) => {
       const found = outcome.readbacks?.filter((row) => row.path === spec.path) || [];
-      return found.length === 1 && found[0].ok === true && found[0].reason === 'readback_matched' && found[0].value === spec.fixture;
+      return found.length === 1 && found[0].ok === true && found[0].reason === 'readback_matched' && JSON.stringify(found[0].value) === JSON.stringify(spec.fixture);
     });
   if (!verified) reason ||= 'readback_mismatch';
-  const fields = plannedFields(reason, specs);
+  const fields = plannedFields(reason, specs, controls);
   if (verified) for (let index = 0; index < specs.length; index += 1) Object.assign(fields[index], {
     status: 'verified', reason: 'readback_matched', value: specs[index].fixture
   });
   const evidence = {
-    tipSha, neverSave: true, liveSupportClaimed: false, fields, ...traffic, suppressedAutosave,
+    tipSha, neverSave: true, liveSupportClaimed: false, fields, ...traffic, suppressedAutosave, suppressedLookup,
     finalDetails: {
-      baseTip: BASE_TIP, port, rowIndex, recordCount, href, tabAction, reason, steps,
+      baseTip: BASE_TIP, port, rowIndex, recordCount, controls, href, tabAction, reason, steps,
       neverSave: true, liveSupportClaimed: false, moduleClaimedSupport: false,
-      clickCount: clicks.length, bannedClick: clickDecision.banned === true,
+      clickCount: clicks.length, widgetClickCount, bannedClick: clickDecision.banned === true,
       cleanupOk, restored: outcome?.restored === true,
       pageLeftAsFound: cleanupOk && outcome?.pageLeftAsFound === true,
-      restoreVia: outcome ? 'native_events' : null, otherChanged: outcome?.otherChanged === true,
+      restoreVia: outcome ? controls ? 'product_adapters_and_native_events' : 'native_events' : null, otherChanged: outcome?.otherChanged === true,
       waitedMs: Number(outcome?.waitedMs) || 0, productReason: safeReason(outcome?.productReason, null),
       limits: [
         'Offline-tested fixture trial only. No live site support is claimed.',
-        'ROW_INDEX selects one existing row by the shipped controller identity; all other rows are bound with no ready facts and must stay unchanged. Zero Add or widget clicks.',
-        `Only education.${rowIndex}.major and education.${rowIndex}.majorDescription are confirmed. No widget adapters are injected.`,
+        'ROW_INDEX selects one existing row by the shipped controller identity; all other rows are bound with no ready facts and must stay unchanged. Zero Add, Save, Submit, Next, Deliver, or Delete clicks.',
+        controls ? 'CONTROLS=1 opens/closes seven captured widget surfaces and uses shipped adapters with replaceExisting:false to verify exact preexisting fixture values. Every widget original must equal its fixture before any writes. City probes the first province menu only; its second menu was not harvested. Changed-widget writes remain offline-only.'
+          : `Only education.${rowIndex}.major and education.${rowIndex}.majorDescription are confirmed. No widget adapters are injected.`,
         'Trial writes use ResumeCmsEducationMulti.run and its native text writer; DOM and shipped React serialization proof must match.',
-        'Cleanup uses native setters, input/change, and real focus/blur to preserve exact original text, including empty strings. Original values and proof stay in the page.',
-        'All clicks and form submissions are blocked. Only the evidenced XHR POST opened during trial/restore is aborted before native send and logged as suppressedAutosave. No HTTP success response is synthesized.',
+        'Cleanup restores text with native setters/events and re-verifies unchanged widget values without option/day replacement. Exact DOM, raw public props, DTO proof, and closed overlays must match before guards are removed. Original values and proof stay in the page.',
+        'All form submissions and forbidden clicks are blocked. Controls mode permits only the active bound opener and evidenced outside-click cleanup; options, days, navigation, clear icons, and confirmations cannot be clicked. An opened select needs one linked owned menu; a date needs one owned calendar portal. Only exact education autosave and active-school fuzzyMatchDic XHRs opened after arming are aborted before native send, in separate suppression logs. No HTTP success response or catalog option is synthesized.',
         'Every other non-GET attempt, including HEAD/OPTIONS or any CDP-observed request, fails; CDP interception is mandatory and never allows non-GET transmission.',
         'Tracked page timeouts drain under the guards; an uncleared interval or unresolved callback fails cleanup and retains page hooks. Original DOM and serialization are reverified before hooks are removed.',
         'This bounded trial does not prove absence of arbitrary future callbacks through previously captured APIs, workers, or later asynchronous responses.',
@@ -821,7 +1091,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
       process.exitCode = evidence.finalDetails.exitCode;
     }
   } catch {
-    process.stderr.write('CMS education live runner failed; check PORT, OUTDIR, ROW_INDEX, and STEP_TIMEOUT_MS.\n');
+    process.stderr.write('CMS education live runner failed; check PORT, OUTDIR, ROW_INDEX, CONTROLS, and STEP_TIMEOUT_MS.\n');
     process.exitCode = 1;
   }
 }

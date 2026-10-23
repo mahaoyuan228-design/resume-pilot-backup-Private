@@ -73,7 +73,7 @@ test('school option_not_found records candidateOptions top-N (diagnostics only)'
   assert.match(schoolSrc, /candidateOptions/);
   assert.match(schoolSrc, /candidateOptions\.length >= 12/);
   assert.match(schoolSrc, /candidateOptions: state\.candidateOptions/);
-  assert.match(schoolSrc, /implementationRevision:7/);
+  assert.match(schoolSrc, /implementationRevision:8/);
 });
 
 console.log(JSON.stringify({
@@ -81,7 +81,7 @@ console.log(JSON.stringify({
   evidence: 'static contracts for school/rank skip vs region fail + unranked synonyms + Chinese reason keys'
 }));
 
-test('school rev7 refuses sole-create + empty-row create hint', () => {
+test('school rev8 refuses sole-create + empty-row create hint', () => {
   assert.match(schoolSrc, /sole_create_refused_by_policy/);
   assert.match(schoolSrc, /empty_row_create_template_not_used/);
   assert.match(schoolSrc, /rowWasEmpty: !existing/);

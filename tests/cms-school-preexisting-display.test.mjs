@@ -8,8 +8,8 @@ import vm from 'node:vm';
 
 const schoolSrc = await readFile(resolve('src/content/cms-education-multi-school.js'), 'utf8');
 
-test('school rev7 exports schoolDisplayMatches + preexisting under replaceExisting', () => {
-  assert.match(schoolSrc, /implementationRevision:7/);
+test('school rev8 exports schoolDisplayMatches + preexisting under replaceExisting', () => {
+  assert.match(schoolSrc, /implementationRevision:8/);
   assert.match(schoolSrc, /function schoolDisplayMatches\(/);
   assert.match(schoolSrc, /if \(reapplying\) return \{status:'verified',reason:'preexisting_same_value'/);
   assert.match(schoolSrc, /catalogMissSoft:\s*true/);

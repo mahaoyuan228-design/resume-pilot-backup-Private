@@ -18,14 +18,73 @@ const object = value => value !== null && typeof value === 'object' && !Array.is
 const writeJson = (dir, name, value) => fs.writeFileSync(path.join(dir, name), `${JSON.stringify(value, null, 2)}\n`, { encoding: 'utf8', flag: 'wx', mode: 0o600 });
 
 export const CHECKLIST = Object.freeze([
-  { key: 'bytes_clean_page', files: ['reviewed-bytes.json', 'snapshots-before.json'], fields: ['reviewedBytes.files', 'boundaries.before'], predicate: 'Independent approved hashes equal machine and runner bytes; twelve native hooks, absent API, body-click receipt, zero overlays.' },
-  { key: 'seven_visible_probes', files: ['cms-education-live.json', 'observations.json'], fields: ['report.finalDetails.widgetProbes', 'run.readbacks'], predicate: 'Seven unique owned openings and closings, including degree; one counted opener and mousedown/mouseup/click actually observed each.' },
-  { key: 'suppression_traffic_clicks', files: ['cms-education-live.json', 'observations.json'], fields: ['report.suppressedAutosave', 'report.suppressedLookup', 'report.nonGet', 'report.saveLikePost', 'report.finalDetails.clickCount'], predicate: 'Existing bounded ownership/before-send classifiers pass; generic traffic arrays empty; zero forbidden clicks. Empty suppression does not establish exercised suppression.' },
-  { key: 'nine_readbacks', files: ['snapshots-before.json', 'observations.json', 'cms-education-live.json'], fields: ['snapshots.dom', 'snapshots.publicProps', 'run.readbacks', 'run.waitedMs', 'report.fields'], predicate: 'Actual originals retained; all nine exact waited readbacks; existing runner and validator agree.' },
-  { key: 'restoration_neighbors', files: ['snapshots-before.json', 'snapshots-after.json', 'evidence-pack.json'], fields: ['snapshots.dom', 'snapshots.publicProps', 'snapshots.dto', 'snapshots.neighbors', 'rawDom', 'restoration'], predicate: 'Four independently computed matching snapshot hashes plus exact raw section/neighbor markup equality; lossless tagged values, whitespace, property absence and all neighboring rows retained.' },
-  { key: 'settled_callbacks', files: ['observations.json', 'cms-education-live.json'], fields: ['cleanup.timerSettle', 'report.finalDetails.timerSettle'], predicate: 'Actual bounded settlement; pendingTimers=0, unobservableTimers=0; nonnegative safe observedNonFunctionTimeouts.' },
-  { key: 'cleanup', files: ['snapshots-after.json', 'collector-status.json', 'cms-education-live.json'], fields: ['boundaries.after', 'identity', 'report.finalDetails.cleanupOk'], predicate: 'Actual hook and injected-global descriptor/value identity restored, context unchanged, absent API, zero overlays. Identity supplement is outside schema v1.' }
-]);
+  { key: 'bytes_clean_page', bindings: [
+    { file: 'reviewed-bytes.json', path: 'tipSha' },
+    { file: 'reviewed-bytes.json', path: 'files' },
+    { file: 'snapshots-before.json', path: 'boundary' }
+  ], predicate: 'Independent approved hashes equal machine and runner bytes; twelve native hooks, absent API, body-click receipt, zero overlays.' },
+  { key: 'seven_visible_probes', bindings: [
+    { file: 'cms-education-live.json', path: 'finalDetails.widgetProbes' },
+    { file: 'cms-education-live.json', path: 'finalDetails.widgetClickCount' },
+    { file: 'observations.json', path: 'cleanup.widgetProbes' },
+    { file: 'observations.json', path: 'cleanup.widgetClickCount' }
+  ], predicate: 'Seven unique owned openings and closings, including degree; one counted opener and mousedown/mouseup/click actually observed each.' },
+  { key: 'suppression_traffic_clicks', bindings: [
+    { file: 'cms-education-live.json', path: 'suppressedAutosave' },
+    { file: 'cms-education-live.json', path: 'suppressedLookup' },
+    { file: 'cms-education-live.json', path: 'nonGet' },
+    { file: 'cms-education-live.json', path: 'saveLikePost' },
+    { file: 'cms-education-live.json', path: 'finalDetails.clickCount' },
+    { file: 'cms-education-live.json', path: 'finalDetails.bannedClick' },
+    { file: 'observations.json', path: 'cleanup.posts' },
+    { file: 'observations.json', path: 'cleanup.clicks' },
+    { file: 'observations.json', path: 'cleanup.suppressedAutosave' },
+    { file: 'observations.json', path: 'cleanup.suppressedLookup' },
+    { file: 'collector-status.json', path: 'suppressionExercised' }
+  ], predicate: 'Existing bounded ownership/before-send classifiers pass; generic traffic arrays empty; zero forbidden clicks. Empty suppression does not establish exercised suppression.' },
+  { key: 'nine_readbacks', bindings: [
+    { file: 'snapshots-before.json', path: 'snapshots.dom' },
+    { file: 'snapshots-before.json', path: 'snapshots.publicProps' },
+    { file: 'observations.json', path: 'prepare.rowIndex' },
+    { file: 'observations.json', path: 'prepare.recordCount' },
+    { file: 'observations.json', path: 'prepare.identity' },
+    { file: 'observations.json', path: 'prepare.identities' },
+    { file: 'observations.json', path: 'run.rowIndex' },
+    { file: 'observations.json', path: 'run.recordCount' },
+    { file: 'observations.json', path: 'run.readbacks' },
+    { file: 'observations.json', path: 'run.waitedMs' },
+    { file: 'cms-education-live.json', path: 'fields' },
+    { file: 'cms-education-live.json', path: 'finalDetails.waitedMs' },
+    { file: 'collector-status.json', path: 'actualTrialMatches' }
+  ], predicate: 'Actual originals retained; all nine exact waited readbacks; existing runner and validator agree.' },
+  { key: 'restoration_neighbors', bindings: [
+    ...['snapshots-before.json', 'snapshots-after.json'].flatMap(file =>
+      ['snapshots.dom', 'snapshots.publicProps', 'snapshots.dto', 'snapshots.neighbors',
+        'rawDom.educationOuterHTML', 'rawDom.neighborOuterHTML'].map(path => ({ file, path }))),
+    { file: 'evidence-pack.json', path: 'restoration' },
+    { file: 'collector-status.json', path: 'rawDomCaptured' },
+    { file: 'collector-status.json', path: 'rawDomEqual' }
+  ], predicate: 'Four independently computed matching snapshot hashes plus exact raw section/neighbor markup equality; lossless tagged values, whitespace, property absence and all neighboring rows retained.' },
+  { key: 'settled_callbacks', bindings: [
+    { file: 'observations.json', path: 'cleanup.timerSettle' },
+    { file: 'cms-education-live.json', path: 'finalDetails.timerSettle' },
+    { file: 'collector-status.json', path: 'actualTrialMatches' }
+  ], predicate: 'Actual bounded settlement; pendingTimers=0, unobservableTimers=0; nonnegative safe observedNonFunctionTimeouts.' },
+  { key: 'cleanup', bindings: [
+    { file: 'snapshots-after.json', path: 'boundary' },
+    { file: 'snapshots-after.json', path: 'identity' },
+    { file: 'collector-status.json', path: 'identity' },
+    { file: 'collector-status.json', path: 'observationsComplete' },
+    { file: 'collector-status.json', path: 'errors' },
+    { file: 'cms-education-live.json', path: 'finalDetails.cleanupOk' },
+    { file: 'observations.json', path: 'cleanup.ok' }
+  ], predicate: 'Actual hook and injected-global descriptor/value identity restored, context unchanged, absent API, zero overlays. Identity supplement is outside schema v1.' }
+].map(({ key, bindings, predicate }) => Object.freeze({
+  key, files: Object.freeze([...new Set(bindings.map(binding => binding.file))]),
+  fields: Object.freeze([...new Set(bindings.map(binding => binding.path))]),
+  // Each path starts at its named artifact's root; preparation emits requirements only.
+  bindings: Object.freeze(bindings.map(binding => Object.freeze(binding))), predicate
+})));
 
 function newOutputDirectory(outDir) {
   if (typeof outDir !== 'string' || !outDir.trim()) fail('output_required');

@@ -207,6 +207,61 @@ test('raw props with accessors, cycles, or unsupported values fail closed withou
   });
 });
 
+test('custom array prototypes fail closed before inherited iterators or body probes execute', async t => {
+  for (const phase of ['initial', 'finish']) await t.test(phase, tt => {
+    const h = setup(tt), recorder = phase === 'finish' ? h.capture() : null;
+    h.window.eval(`
+      window.captureIteratorCalls = 0;
+      const customArrayPrototype = Object.create(Array.prototype);
+      customArrayPrototype[Symbol.iterator] = function () {
+        window.captureIteratorCalls++;
+        return Array.prototype[Symbol.iterator].call(this);
+      };
+      Object.setPrototypeOf(fixtureProps.infoData[0], customArrayPrototype);
+    `);
+    assert.throws(() => recorder ? recorder.finish() : h.capture(),
+      error => error.message === 'daytime_capture_non_data_value');
+    assert.equal(h.window.captureIteratorCalls, 0);
+    assert.equal(h.probes(), phase === 'finish' ? 1 : 0);
+  });
+});
+
+test('nonprimitive ancestor ids fail closed before coercion or body probes execute', async t => {
+  for (const phase of ['initial', 'finish']) for (const kind of ['object', 'function']) {
+    await t.test(`${phase} ${kind}`, tt => {
+      const h = setup(tt), recorder = phase === 'finish' ? h.capture() : null;
+      h.window.eval(`
+        window.captureIdCoercions = { toString: 0, valueOf: 0 };
+        const unsafeId = ${kind === 'object' ? '{}' : 'function unsafeId() {}'};
+        unsafeId.toString = function () { window.captureIdCoercions.toString++; return {}; };
+        unsafeId.valueOf = function () { window.captureIdCoercions.valueOf++; return 'unrelated'; };
+        document.getElementById('14').__reactFiber$offline.return = {
+          memoizedProps: { id: unsafeId }, return: null
+        };
+      `);
+      assert.throws(() => recorder ? recorder.finish() : h.capture(),
+        error => error.message === 'daytime_capture_non_data_value');
+      assert.deepEqual(plain(h.window.captureIdCoercions), { toString: 0, valueOf: 0 });
+      assert.equal(h.probes(), phase === 'finish' ? 1 : 0);
+    });
+  }
+});
+
+test('unrelated ancestor props allow absent ids and safe primitive ids', t => {
+  const h = setup(t);
+  h.window.eval(`
+    let ancestor = { memoizedProps: {}, return: null };
+    for (const id of [undefined, null, false, 0, 1n, Symbol('unrelated'), 'unrelated']) {
+      ancestor = { memoizedProps: { id }, return: ancestor };
+    }
+    document.getElementById('14').__reactFiber$offline.return = ancestor;
+  `);
+  const recorder = h.capture(), after = recorder.finish();
+  assert.deepEqual(plain(after.snapshots), plain(recorder.before.snapshots));
+  assert.deepEqual(plain(after.identity), { hooksRestored: true, globalsRestored: true, contextUnchanged: true });
+  assert.equal(h.probes(), 2);
+});
+
 test('equivalent public-props candidates are accepted and conflicting candidates are rejected', t => {
   const h = setup(t);
   h.window.eval(`document.querySelector('.form-cell-inner').__reactFiber$equivalent = {

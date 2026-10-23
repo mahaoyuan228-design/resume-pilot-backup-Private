@@ -76,6 +76,9 @@ export function createDaytimeCapture(view, readSerialization) {
     if (type === 'bigint') return [type, String(value)];
     if (type !== 'object' || ancestors.has(value) || Object.getOwnPropertySymbols(value).length)
       fail('daytime_capture_non_data_value');
+    const array = Array.isArray(value), prototype = Object.getPrototypeOf(value);
+    if (array ? prototype !== view.Array.prototype
+      : prototype !== view.Object.prototype && prototype !== null) fail('daytime_capture_non_data_value');
     const next = new Set(ancestors); next.add(value);
     const names = Object.getOwnPropertyNames(value).sort();
     const entries = names.map(key => {
@@ -84,9 +87,7 @@ export function createDaytimeCapture(view, readSerialization) {
       return [key, { configurable: descriptor.configurable, enumerable: descriptor.enumerable,
         writable: descriptor.writable, value: encode(descriptor.value, next) }];
     });
-    if (Array.isArray(value)) return ['array', entries];
-    const prototype = Object.getPrototypeOf(value);
-    if (prototype !== view.Object.prototype && prototype !== null) fail('daytime_capture_non_data_value');
+    if (array) return ['array', entries];
     return ['object', prototype === null ? 'null_prototype' : 'object_prototype', entries];
   }
   function encodedPublicProps(props) {
@@ -172,6 +173,9 @@ export function createDaytimeCapture(view, readSerialization) {
         const props = ownValue(fiber, 'memoizedProps');
         if (!props || typeof props !== 'object') continue;
         const id = data(props, 'id')?.descriptor.value;
+        // The shipped reader stringifies every ancestor id, including props
+        // that do not identify this section. Reject executable coercion first.
+        if (id !== null && ['object', 'function'].includes(typeof id)) fail('daytime_capture_non_data_value');
         if (!['number', 'string'].includes(typeof id) || String(id) !== '14') continue;
         const info = data(props, 'infoData')?.descriptor.value, form = data(props, 'formData')?.descriptor.value;
         if (Array.isArray(info) && form && typeof form === 'object') candidates.add(props);

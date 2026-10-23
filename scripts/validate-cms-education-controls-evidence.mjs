@@ -63,6 +63,14 @@ function validRestoration(restoration) {
     && RESTORATION_HASHES.every(key => sameHash(restoration.before[key], restoration.after[key]));
 }
 
+function validSuppressionShapes(report) {
+  // The host reads these rows with method.toUpperCase(). The legacy URL
+  // classifiers coerce methods, so ['POST'] otherwise passes retained evidence.
+  // Keep endpoint, ownership, transport, phase and abort checks in the runner.
+  return ['suppressedAutosave', 'suppressedLookup'].every(key => Array.isArray(report?.[key])
+    && report[key].every(row => object(row) && typeof row.method === 'string'));
+}
+
 export function validateControlsDaytimeEvidence(artifact) {
   const report = artifact?.report;
   const details = report?.finalDetails;
@@ -75,6 +83,7 @@ export function validateControlsDaytimeEvidence(artifact) {
     { key: 'policy', ok: object(artifact) && artifact.schemaVersion === EVIDENCE_SCHEMA_VERSION
       && artifact.neverSave === true && artifact.liveSupportClaimed === false },
     { key: 'runner_report', ok: object(report) && object(details) && Array.isArray(report.fields)
+      && validSuppressionShapes(report)
       && reportExitCode === 0 && details.controls === true
       && details.neverSave === true && details.bannedClick === false
       && typeof details.waitedMs === 'number' && Number.isFinite(details.waitedMs)

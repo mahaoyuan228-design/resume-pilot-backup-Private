@@ -130,18 +130,44 @@
   function snapshot(excluded) {
     return [...document.querySelectorAll('input,select,textarea,[contenteditable]')]
       .filter(node => node !== excluded).map(node => ({
-        node, state: JSON.stringify([
-          node.tagName, node.type || '', node.value ?? null, node.checked ?? null,
-          node.selectedIndex ?? null, node.disabled ?? null, node.readOnly ?? null,
-          node.getAttribute('contenteditable'), node.hasAttribute('contenteditable') ? node.textContent : null,
-          [...(node.files || [])].map(file => [file.name, file.size, file.type])
-        ])
+        node,
+        descriptor: {
+          tag: node.tagName.toLowerCase(), id: node.id || null,
+          name: node.getAttribute('name'), type: node.type || '', role: node.getAttribute('role'),
+          className: node.getAttribute('class'), ariaHidden: node.getAttribute('aria-hidden')
+        },
+        state: {
+          tag: node.tagName, type: node.type || '', value: node.value ?? null, checked: node.checked ?? null,
+          selectedIndex: node.selectedIndex ?? null, disabled: node.disabled ?? null, readOnly: node.readOnly ?? null,
+          contenteditable: node.getAttribute('contenteditable'),
+          textContent: node.hasAttribute('contenteditable') ? node.textContent : null,
+          files: [...(node.files || [])].map(file => [file.name, file.size, file.type])
+        }
       }));
   }
-  function sameNeighbors(before, excluded) {
+  function neighborChanges(before, excluded) {
     const after = snapshot(excluded);
-    return before.length === after.length && before.every((row, index) =>
-      row.node === after[index].node && row.state === after[index].state);
+    const oldNodes = new Map(before.map((row, index) => [row.node, { row, index }]));
+    const newNodes = new Map(after.map((row, index) => [row.node, { row, index }]));
+    const changes = [];
+    for (const [index, row] of before.entries()) {
+      const current = newNodes.get(row.node);
+      if (!current) {
+        changes.push({ kind: 'removed', before: row.descriptor, after: null, changedProperties: [] });
+        continue;
+      }
+      const changedProperties = Object.keys(row.state).filter(key =>
+        JSON.stringify(row.state[key]) !== JSON.stringify(current.row.state[key]));
+      if (changedProperties.length) changes.push({
+        kind: 'state_changed', before: row.descriptor, after: current.row.descriptor, changedProperties
+      });
+      if (current.index !== index) changes.push({
+        kind: 'reordered', before: row.descriptor, after: current.row.descriptor, changedProperties: []
+      });
+    }
+    for (const row of after) if (!oldNodes.has(row.node))
+      changes.push({ kind: 'added', before: null, after: row.descriptor, changedProperties: [] });
+    return changes;
   }
   function planFromProfile(profile) {
     if (!profile || typeof profile !== 'object' || Array.isArray(profile)
@@ -165,13 +191,18 @@
   function valid(node) {
     return node.getAttribute('aria-invalid') !== 'true' && (!node.validity || node.validity.valid);
   }
+  function readback(field, node, expected) {
+    page();
+    if (locate(field) !== node) throw failure('target_changed');
+    if (node.value !== expected) throw failure('readback_mismatch');
+  }
   async function execute(profile) {
     const plan = planFromProfile(profile);
     const result = { ...flags(), ok: false, writeAttempted: false, fields: [] };
     if (!plan.ok) return { ...result, reason: plan.reason, fields: plan.fields };
     if (busy) return { ...result, reason: 'fill_busy' };
     busy = true;
-    let active = null, changed = false;
+    let active = null, activeNode = null, activeBefore = null, changed = false;
     try {
       page();
       // Validate every requested control before any write; never partially apply
@@ -181,9 +212,11 @@
         active = row;
         changed = false;
         const field = BY_ID.get(row.id), node = targets.get(row.id);
+        activeNode = node;
         page();
         if (locate(field) !== node) throw failure('target_changed');
         const before = node.value;
+        activeBefore = before;
         if (before !== '') {
           if (before === row.value && !valid(node)) throw failure('site_validation_failed');
           result.fields.push({ id: row.id, label: row.label, before, after: before,
@@ -194,11 +227,11 @@
         }
         if (node.maxLength >= 0 && row.value.length > node.maxLength) throw failure('value_too_long');
         const neighbors = snapshot(node);
+        let phase = 'before_write';
         const guard = expected => {
-          page();
-          if (locate(field) !== node) throw failure('target_changed');
-          if (!sameNeighbors(neighbors, node)) throw failure('neighbor_changed');
-          if (node.value !== expected) throw failure('readback_mismatch');
+          readback(field, node, expected);
+          const changes = neighborChanges(neighbors, node);
+          if (changes.length) throw Object.assign(failure('neighbor_changed'), { neighborChanges: changes, phase });
         };
         guard('');
         const prototype = field.tag === 'textarea' ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
@@ -206,14 +239,17 @@
         if (typeof setter !== 'function') throw failure('native_setter_missing');
         result.writeAttempted = true;
         changed = true;
+        phase = 'native_setter';
         setter.call(node, row.value);
         guard(row.value);
         for (const eventName of ['input', 'change', 'blur']) {
           guard(row.value);
+          phase = eventName;
           node.dispatchEvent(new Event(eventName, { bubbles: true }));
           guard(row.value);
         }
         await new Promise(resolve => setTimeout(resolve, 40));
+        phase = 'settled';
         guard(row.value);
         if (!valid(node)) throw failure('site_validation_failed');
         result.fields.push({ id: row.id, label: row.label, before, after: node.value,
@@ -224,8 +260,31 @@
       result.reason = result.fields.find(row => row.status !== 'verified')?.reason || null;
     } catch (error) {
       result.reason = error.code || 'fill_failed';
-      if (active) result.fields.push({ id: active.id, label: active.label, status: 'failed',
-        reason: result.reason, writeAttempted: changed });
+      let targetVerified = false;
+      if (error.code === 'neighbor_changed') {
+        // Isolation remains a failed operation. The live TRY captures show that
+        // its target may nevertheless retain the exact requested text. Stop all
+        // events/writes, then verify that target independently after settling.
+        result.neighborCheck = {
+          ok: false, reason: 'neighbor_changed', phase: error.phase, changes: error.neighborChanges
+        };
+        if (active && changed) {
+          try {
+            await new Promise(resolve => setTimeout(resolve, 40));
+            readback(BY_ID.get(active.id), activeNode, active.value);
+            if (!valid(activeNode)) throw failure('site_validation_failed');
+            targetVerified = true;
+          } catch (readbackError) {
+            result.reason = readbackError.code || 'fill_failed';
+          }
+        }
+      }
+      if (active) result.fields.push({
+        id: active.id, label: active.label,
+        ...(targetVerified ? { before: activeBefore, after: activeNode.value } : {}),
+        status: targetVerified ? 'verified' : 'failed',
+        reason: targetVerified ? 'readback_matched' : result.reason, writeAttempted: changed
+      });
       for (const row of plan.fields) if (!result.fields.some(item => item.id === row.id))
         result.fields.push({ id: row.id, label: row.label, status: 'failed', reason: 'not_run', writeAttempted: false });
     } finally {

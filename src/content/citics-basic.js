@@ -991,7 +991,7 @@
       results.push(await fillGender(values.gender));
     }
     for (const label of ALLOWED_SELECT_LABELS) {
-      if (results.some((row) => ['neighbor_changed', 'wrong_page', 'yidun_visible'].includes(row.reason))) break;
+      if (results.some((row) => ['neighbor_changed', 'wrong_page', 'yidun_visible', 'control_changed', 'page_hidden'].includes(row.reason))) break;
       const spec = SELECT_SPECS[label];
       if (!spec.profile || !norm(values[spec.key])) continue;
       const selectResult = await fillSelect(label, values[spec.key], options);

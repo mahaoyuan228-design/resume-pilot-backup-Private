@@ -145,21 +145,30 @@
       && hits.length === 1 && hits[0] === item && control.closest(ITEM_SEL) === item;
   }
 
-  // Observe only uniquely bound text controls in the existing item contract.
+  // Duplicate labels forbid choosing a write target, but each existing item's
+  // single visible/editable text control can still be observed by identity.
   // These snapshots never become owned writes or rollback targets.
   function snapshotTextNeighbors(ownedControls) {
     return formItems().flatMap((item) => {
       const label = labelText(item.querySelector(LABEL_SEL));
       const row = classifyField(label);
-      return row.ready && row.item === item && !ownedControls.includes(row.control)
-        ? [{ label, item, control: row.control, beforeRaw: row.control.value }]
+      const ambiguousLabel = row.reason === 'field_ambiguous';
+      const control = ambiguousLabel ? textControl(item) : row.ready && row.item === item ? row.control : null;
+      return control && control.closest(ITEM_SEL) === item && !ownedControls.includes(control)
+        ? [{ label, item, control, beforeRaw: control.value, ambiguousLabel }]
         : [];
     });
   }
 
   function readTextNeighbors(snapshots) {
     const neighbors = snapshots.map((snapshot) => {
-      const current = classifyField(snapshot.label);
+      let current = classifyField(snapshot.label);
+      if (snapshot.ambiguousLabel) {
+        // Never resolve a duplicate through another item with the same caption.
+        const control = snapshot.item.isConnected && labelText(snapshot.item.querySelector(LABEL_SEL)) === snapshot.label
+          ? textControl(snapshot.item) : null;
+        current = { ready: !!control && control.closest(ITEM_SEL) === snapshot.item, item: snapshot.item, control };
+      }
       const sameBinding = current.ready && current.item === snapshot.item && current.control === snapshot.control;
       const preserved = sameBinding && snapshot.control.value === snapshot.beforeRaw;
       return {

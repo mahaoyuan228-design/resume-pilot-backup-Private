@@ -465,22 +465,37 @@ test('DOM-only writes cannot pass React serialization verification', async t => 
   await api.cleanup();
 });
 
-test('page guards block native clicks, dispatched clicks, submits, fetch, XHR, and beacons', async t => {
+test('page guards install click/submit blockers without invoking them and block non-GET transports', async t => {
   let fetches = 0;
   let sends = 0;
   let beacons = 0;
+  const originalMethods = {};
+  const captureGuards = new Map();
   const { api, window } = await educationDom(t, { mutate(window) {
+    originalMethods.click = window.HTMLElement.prototype.click;
+    originalMethods.submit = window.HTMLFormElement.prototype.submit;
+    originalMethods.requestSubmit = window.HTMLFormElement.prototype.requestSubmit;
+    const add = window.document.addEventListener;
+    window.document.addEventListener = function (type, listener, options) {
+      if (['click', 'submit'].includes(type) && options === true) captureGuards.set(type, listener);
+      return add.call(this, type, listener, options);
+    };
     window.fetch = async () => { fetches += 1; return { ok: true }; };
     window.XMLHttpRequest.prototype.send = () => { sends += 1; };
     window.navigator.sendBeacon = () => { beacons += 1; return true; };
   } });
-  const save = window.document.getElementById('save');
-  save.click();
-  save.dispatchEvent(new window.MouseEvent('click', { bubbles: true, cancelable: true }));
-  const form = window.document.querySelector('form');
-  form.submit();
-  form.requestSubmit();
-  form.dispatchEvent(new window.Event('submit', { bubbles: true, cancelable: true }));
+  // The Never-Save policy also applies to fixture tests. Verify installation
+  // and the rejecting handler bodies without probing Save or submit actions.
+  assert.notEqual(window.HTMLElement.prototype.click, originalMethods.click);
+  assert.match(window.HTMLElement.prototype.click.toString(), /clickNote\(this\)/u);
+  for (const method of ['submit', 'requestSubmit']) {
+    assert.notEqual(window.HTMLFormElement.prototype[method], originalMethods[method]);
+    assert.match(window.HTMLFormElement.prototype[method].toString(), /clickNote\(this, 'submit'\)/u);
+  }
+  for (const type of ['click', 'submit']) {
+    assert.equal(typeof captureGuards.get(type), 'function');
+    assert.match(captureGuards.get(type).toString(), /event\.preventDefault\(\); event\.stopImmediatePropagation\(\)/u);
+  }
   await assert.rejects(window.fetch(LIVE_URL, { method: 'POST' }));
   await assert.rejects(window.fetch(LIVE_URL, { method: 'HEAD' }));
   await assert.rejects(window.fetch(LIVE_URL, { method: 'OPTIONS' }));
@@ -494,7 +509,7 @@ test('page guards block native clicks, dispatched clicks, submits, fetch, XHR, a
   assert.equal(beacons, 0);
   assert.equal(window.fixtureCounts.saves, 0);
   assert.equal(window.fixtureCounts.submits, 0);
-  assert.ok(api.clicks().length >= 5);
+  assert.deepEqual(plain(api.clicks()), []);
   assert.deepEqual(plain(api.posts().map(row => row.method)), ['POST', 'HEAD', 'OPTIONS', 'PUT', 'POST']);
   assert.equal(JSON.stringify(api.posts()).includes('private-'), false);
   const prepared = await api.prepare();

@@ -46,7 +46,8 @@ const OUT_OF_SCOPE_KEYS = new Set([
 const NEVER_SAVE_KEYS = new Set([
   'profile', 'profileBinding', 'allowExplicitValues',
   'fullName', 'mobile', 'phone', 'email',
-  'gender', 'idType', '性别', '证件类型'
+  'gender', 'idType', '性别', '证件类型',
+  'height', 'weight', '身高', '体重'
 ]);
 
 const norm = (value) => String(value ?? '').replace(/[\s\u00a0]+/gu, ' ').trim();
@@ -136,6 +137,12 @@ function neverSaveStamp(partial) {
     saved: false,
     skippedSave: true,
     supportClaimed: false,
+    neverClickedNext: true,
+    softwareClickedNext: false,
+    softwareClickedSave: false,
+    softwareClickedSubmit: false,
+    softwareClickedDeliver: false,
+    softwareClickedDelete: false,
     note: HOTJOB_MC_NEVER_SAVE_NOTE
   };
 }
@@ -210,6 +217,31 @@ export function planHotjobMcNeverSave(input) {
     if (!textPlan.ok) return neverSaveStamp(textPlan);
   }
 
+  const optionalTextFields = [];
+  for (const spec of [
+    { label: '身高', path: 'height' },
+    { label: '体重', path: 'weight' }
+  ]) {
+    const present = [spec.path, spec.label].filter((key) => Object.prototype.hasOwnProperty.call(input, key));
+    const fromProfile = !present.length && input.profile
+      && Object.prototype.hasOwnProperty.call(input.profile, spec.path);
+    if (!present.length && !fromProfile) continue;
+    const normalizeValue = (value) => String(value ?? '').normalize('NFKC')
+      .replace(/[\u200b-\u200d\ufeff]/gu, '').replace(/[\s\u00a0]+/gu, ' ').trim();
+    const values = fromProfile ? [normalizeValue(input.profile[spec.path])] : present.map((key) => normalizeValue(input[key]));
+    const value = values[0];
+    const reason = new Set(values).size !== 1 ? 'field_ambiguous'
+      : !value ? 'missing_profile_value'
+        : fromProfile && (!Array.isArray(input.profile.confirmedFields) || !input.profile.confirmedFields.includes(spec.path)) ? 'profile_fact_unconfirmed'
+          : null;
+    optionalTextFields.push({ ...spec, value, ready: reason === null, reason });
+  }
+  const optionalBlockers = optionalTextFields.filter((row) => !row.ready);
+  if (optionalBlockers.length) return neverSaveStamp({
+    ok: false, reason: optionalBlockers[0].reason, values: null,
+    fields: [...textPlan.fields, ...optionalTextFields], blockers: optionalBlockers
+  });
+
   const selectFields = [];
   const selectRequests = [
     { keys: ['gender', '性别'], label: '性别', path: 'gender' },
@@ -239,7 +271,7 @@ export function planHotjobMcNeverSave(input) {
       ok: false,
       reason: blockers[0].reason,
       values: null,
-      fields: [...textPlan.fields, ...selectFields],
+      fields: [...textPlan.fields, ...optionalTextFields, ...selectFields],
       blockers
     });
   }
@@ -248,10 +280,11 @@ export function planHotjobMcNeverSave(input) {
     reason: 'never_save_plan_ready',
     values: {
       ...textPlan.values,
+      ...Object.fromEntries(optionalTextFields.map((row) => [row.path, row.value])),
       gender: selectFields.find((row) => row.label === '性别')?.value ?? null,
       idType: selectFields.find((row) => row.label === '证件类型')?.value ?? null
     },
-    fields: [...textPlan.fields, ...selectFields],
+    fields: [...textPlan.fields, ...optionalTextFields, ...selectFields],
     blockers: []
   });
 }

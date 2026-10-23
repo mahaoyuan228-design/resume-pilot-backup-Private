@@ -1,5 +1,5 @@
 {
-  "source": "Structural excerpt of the 2026-10-23 hotjob pb resumeOperation probe for the industry checkbox only. The probe recorded valueSample as an internal code triple and did not open the options. Display captions are not stored. Neighbors are same-page structure tokens, not captions of this field. A fixture is not a live support claim.",
+  "source": "Structural excerpt of the 2026-10-23 hotjob pb resumeOperation probe for the industry checkbox only. The probe recorded valueSample as an internal code triple and did not open the options. The one exclusion caption is reconciled from the same-page certs and intent-salary probe fixtures. Ordinary industry captions remain absent. A fixture is not a live support claim.",
   "page": {
     "hostname": "wecruit.hotjob.cn",
     "pathPattern": "/SU[0-9A-Za-z]{8,64}/pb/resumeOperation.html",
@@ -21,7 +21,12 @@
     "valueSample": "0/111601/111905",
     "valueSampleNote": "Probe valueSample is an internal code triple, not display text. Options were not opened. Do not match 0, 111601, or 111905. Display captions are page-derived at runtime.",
     "optionsOpened": false,
-    "optionCaptions": [],
+    "optionCaptions": ["非研究类岗位，不涉及"],
+    "captionEvidence": {
+      "fixtures": ["hotjob-pb-certs-probe-dom.json", "hotjob-pb-intent-salary-probe-dom.json"],
+      "field": "neighbors.research.option",
+      "note": "Both same-page fixtures capture this exact exclusion caption beside input.ant-checkbox-input. No ordinary industry option captions or option codes are inferred."
+    },
     "suggested": {
       "min": 3,
       "max": 5,

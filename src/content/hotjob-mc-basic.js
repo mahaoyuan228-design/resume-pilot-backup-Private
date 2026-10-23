@@ -5,6 +5,7 @@
 //
 // First slice fields (live CDP 中联 SU661f… /mc/deliver/operationResumer 2026-10-18):
 //   姓名 (text) · 移动电话 (text) · 电子邮箱 (text)
+//   Never-Save only: 身高 / 体重 (exact probe placeholders; no live support claim)
 // Flat select knives (shared fillSelect): 性别 · 证件类型
 //   via .select-am-list-extra + .am-modal.mc-select-popup (no search box; small option list)
 // Out of scope (same extra class but NOT flat allowlist):
@@ -27,6 +28,12 @@
 
   const SITE_ID = 'hotjob-mc';
   const TEXT_LABELS = ['姓名', '移动电话', '电子邮箱'];
+  /** Raw probe 2026-10-18: exact plain input contracts on 基本信息 1/9 only. */
+  const NEVER_SAVE_TEXT_SPECS = Object.freeze({
+    身高: Object.freeze({ key: 'height', placeholder: '请填写身高(cm)' }),
+    体重: Object.freeze({ key: 'weight', placeholder: '请填写体重(kg)' })
+  });
+  const NEVER_SAVE_TEXT_LABELS = Object.freeze(Object.keys(NEVER_SAVE_TEXT_SPECS));
   const GENDER = '性别';
   const ID_TYPE = '证件类型';
   /** Flat mc-select allowlist only. 性别 + 证件类型 share one fillSelect / fillSelectOnce path. */
@@ -67,7 +74,8 @@
   ]);
   const NEVER_SAVE_KEYS = new Set([
     ...FILL_BASIC_KEYS,
-    'gender', 'idType', '性别', '证件类型'
+    'gender', 'idType', '性别', '证件类型',
+    'height', 'weight', '身高', '体重'
   ]);
   let forbiddenClickRefusals = 0;
   const ITEM_SEL = '.my-list-item';
@@ -165,6 +173,8 @@
    * Duplicate labels, missing inputs, extra inputs, or a stray input fail closed.
    */
   function classifyText(label) {
+    const activeLabel = cleanLabel(label);
+    if (NEVER_SAVE_TEXT_SPECS[activeLabel]) return classifyNeverSaveText(activeLabel);
     const hits = matchingItems(label);
     if (hits.length === 0) return { label, ready: false, reason: 'item_not_found', matchCount: 0 };
     if (hits.length !== 1) return { label, ready: false, reason: 'field_ambiguous', matchCount: hits.length };
@@ -179,8 +189,40 @@
     return { label, ready: true, reason: null, matchCount: 1, controlCount: 1, item, control: inputs[0] };
   }
 
+  /** No fallback selector, unit conversion, picker, or guessed label for these fields. */
+  function verifiedNeverSaveTextControl(item, label) {
+    const spec = NEVER_SAVE_TEXT_SPECS[label];
+    if (!item || !spec || item.querySelectorAll(LABEL_SEL).length !== 1) return null;
+    const inputs = [...item.querySelectorAll(INPUT_SEL)];
+    if (inputs.length !== 1 || item.querySelectorAll('input').length !== 1) return null;
+    const control = inputs[0];
+    if (!visibleTextLike(control) || control.readOnly || control.type !== 'text' || item.querySelector('textarea, select')) return null;
+    for (let node = control; node; node = node.parentElement) {
+      const style = getComputedStyle(node);
+      if (style.display === 'none' || style.visibility === 'hidden') return null;
+    }
+    if (control.getAttribute('placeholder') !== spec.placeholder) return null;
+    return control;
+  }
+
+  function classifyNeverSaveText(label) {
+    const hits = matchingItems(label);
+    const fail = (partial = {}) => ({
+      label, ready: false, reason: 'control_not_supported', matchCount: hits.length, ...partial
+    });
+    if (hits.length !== 1) return fail();
+    const control = verifiedNeverSaveTextControl(hits[0], label);
+    if (!control) return fail({ controlCount: hits[0].querySelectorAll(INPUT_SEL).length });
+    return {
+      label, ready: true, reason: 'structure_matched', matchCount: 1, controlCount: 1,
+      item: hits[0], control
+    };
+  }
+
   function textControl(item) {
     if (!item) return null;
+    const label = labelText(item.querySelector(LABEL_SEL));
+    if (NEVER_SAVE_TEXT_SPECS[label]) return verifiedNeverSaveTextControl(item, label);
     if (strayTextInputs(item).length) return null;
     const inputs = contractInputs(item);
     return inputs.length === 1 ? inputs[0] : null;
@@ -202,7 +244,8 @@
     return control ? norm(control.value) : '';
   }
 
-  async function fillText(label, value) {
+  async function fillText(label, value, options = {}) {
+    if (NEVER_SAVE_TEXT_SPECS[cleanLabel(label)]) return fillField(label, value, options);
     const expected = norm(value);
     if (!expected) {
       return {
@@ -247,7 +290,18 @@
     };
   }
 
-  async function restoreText(label, previousValue) {
+  async function restoreText(label, previousValue, options = {}) {
+    if (NEVER_SAVE_TEXT_SPECS[cleanLabel(label)]) {
+      if (!pageAllowed(options) || !basicInfoReady()) return seal({ label, ok: false, reason: 'wrong_page', writeAttempted: false });
+      const classified = classifyNeverSaveText(cleanLabel(label));
+      if (!classified.ready) return seal({ label, ok: false, reason: 'control_not_supported', writeAttempted: false });
+      setNativeValue(classified.control, String(previousValue ?? ''));
+      await pause(60);
+      const current = classifyNeverSaveText(cleanLabel(label));
+      const after = current.ready ? norm(current.control.value) : null;
+      const ok = current.ready && after === norm(previousValue);
+      return seal({ label, ok, reason: !current.ready ? 'control_not_supported' : ok ? 'restored' : 'restore_mismatch', restoredTo: norm(previousValue), after, writeAttempted: true });
+    }
     const item = findItem(label);
     if (!item) return { label, ok: false, reason: 'item_not_found', restoredTo: previousValue };
     const control = textControl(item);
@@ -886,6 +940,103 @@
     });
   }
 
+  /** 基本信息 is the first mc step; an explicit different progress fails closed. */
+  function basicInfoReady() {
+    const fp = probeFingerprint();
+    if (!fp.resumeTitleOk || fp.loading || fp.loginHints) return false;
+    const bodyText = document.body?.innerText || document.body?.textContent || '';
+    const progress = bodyText.match(/填写进度\s*[：:]\s*(\d+)\s*\/\s*(\d+)/u);
+    return !progress || (progress[1] === '1' && progress[2] === '9');
+  }
+
+  /**
+   * Independent Never-Save text paint. Existing nonempty values are preserved.
+   * Only exact 身高/体重 labels and raw probe placeholders are supported.
+   */
+  async function fillField(label, value, options = {}) {
+    const activeLabel = cleanLabel(label);
+    const expected = norm(value);
+    const finish = (partial) => seal({
+      label: activeLabel, ok: false, reason: 'control_not_supported',
+      before: '', after: '', final: '', expected,
+      writeAttempted: false, painted: false, skipped: false, restored: false,
+      ...partial
+    });
+    if (!pageAllowed(options) || !basicInfoReady()) return finish({ reason: 'wrong_page' });
+    if (!NEVER_SAVE_TEXT_SPECS[activeLabel]) return finish({ reason: 'label_not_allowed' });
+    const classified = classifyNeverSaveText(activeLabel);
+    if (!classified.ready) return finish({
+      reason: 'control_not_supported',
+      matchCount: classified.matchCount,
+      controlCount: classified.controlCount ?? null
+    });
+    const before = norm(classified.control.value);
+    if (!expected) return finish({
+      reason: 'missing_profile_value', before, after: before, final: before, skipped: true
+    });
+    if (before) return finish({
+      ok: true, reason: before === expected ? 'preexisting_same_value' : 'existing_value',
+      before, after: before, final: before, skipped: true
+    });
+
+    classified.control.focus();
+    setNativeValue(classified.control, expected);
+    await pause(80);
+    const current = classifyNeverSaveText(activeLabel);
+    const after = current.ready ? norm(current.control.value) : null;
+    if (!current.ready) return finish({
+      reason: 'control_not_supported', before, after, final: after,
+      writeAttempted: true, painted: true
+    });
+    if (after !== expected) return finish({
+      reason: 'readback_mismatch', before, after, final: after,
+      writeAttempted: true, painted: true
+    });
+    if (options.restore === true) {
+      const restore = await restoreText(activeLabel, before, options);
+      return finish({
+        ok: restore.ok, reason: restore.ok ? 'readback_matched' : restore.reason,
+        before, after, final: restore.after, writeAttempted: true, painted: true,
+        restored: restore.ok, restore
+      });
+    }
+    return finish({
+      ok: true, reason: 'readback_matched', before, after, final: after,
+      writeAttempted: true, painted: true
+    });
+  }
+
+  /** Read-only structure inspection; no input, focus, pointer, or picker actions. */
+  function inspect(options = {}) {
+    if (!pageAllowed(options) || !basicInfoReady()) return seal({
+      ok: false, reason: 'wrong_page', fields: [], results: [], writeAttempted: false
+    });
+    const fields = [...TEXT_LABELS, ...NEVER_SAVE_TEXT_LABELS].map((label) => {
+      const row = classifyText(label);
+      return seal({
+        label, ready: row.ready, found: row.matchCount === 1, hasTextControl: row.ready,
+        reason: row.ready ? 'structure_matched' : row.reason,
+        matchCount: row.matchCount, controlCount: row.controlCount ?? null,
+        value: row.ready ? norm(row.control.value) : '',
+        placeholder: row.ready ? row.control.getAttribute('placeholder') || '' : '',
+        writeAttempted: false
+      });
+    });
+    for (const label of ALLOWED_SELECT_LABELS) {
+      const row = classifySelect(label);
+      fields.push(seal({
+        label, ready: row.ready, found: row.matchCount === 1,
+        reason: row.ready ? 'structure_matched' : row.reason,
+        value: row.ready ? readSelect(row.item).value : '', writeAttempted: false
+      }));
+    }
+    const ok = fields.every((row) => row.ready);
+    return seal({
+      ok, reason: ok ? 'structure_matched' : 'control_not_supported',
+      fields, results: fields, writeAttempted: false
+    });
+  }
+
   function commitClicks() {
     return typeof globalThis.__hotjobMcCommitClicks === 'number' ? globalThis.__hotjobMcCommitClicks : null;
   }
@@ -959,6 +1110,26 @@
       textValues = plan.values;
     }
 
+    const extraTextPlan = [];
+    for (const [label, spec] of Object.entries(NEVER_SAVE_TEXT_SPECS)) {
+      const present = [spec.key, label].filter((key) => Object.prototype.hasOwnProperty.call(rawValues, key));
+      const fromProfile = !present.length && rawValues.profile
+        && Object.prototype.hasOwnProperty.call(rawValues.profile, spec.key);
+      if (!present.length && !fromProfile) continue;
+      const values = fromProfile ? [norm(rawValues.profile[spec.key])] : present.map((key) => norm(rawValues[key]));
+      const value = values[0];
+      const reason = new Set(values).size !== 1 ? 'field_ambiguous'
+        : !value ? 'missing_profile_value'
+          : fromProfile && (!Array.isArray(rawValues.profile.confirmedFields) || !rawValues.profile.confirmedFields.includes(spec.key)) ? 'profile_fact_unconfirmed'
+            : null;
+      if (reason) return finish({
+        ok: false, reason, label,
+        results: [seal({ label, path: spec.key, ok: false, reason, expected: value, writeAttempted: false })]
+      });
+      extraTextPlan.push({ label, value });
+    }
+    if (extraTextPlan.length && !basicInfoReady()) return finish({ ok: false, reason: 'wrong_page' });
+
     const selectPlan = [];
     const selectRequests = [
       { keys: ['gender', '性别'], label: GENDER },
@@ -982,19 +1153,21 @@
     const textRows = [
       ['姓名', textValues.fullName],
       ['移动电话', textValues.mobile],
-      ['电子邮箱', textValues.email]
+      ['电子邮箱', textValues.email],
+      ...extraTextPlan.map((row) => [row.label, row.value])
     ].map(([label, value]) => ({ ...classifyText(label), expected: norm(value) }));
     if (textRows.some((row) => !row.ready)) {
       return finish({
         ok: false,
-        reason: 'control_drift',
-        results: textRows.map((row) => ({
+        reason: textRows.some((row) => !row.ready && NEVER_SAVE_TEXT_SPECS[row.label]) ? 'control_not_supported' : 'control_drift',
+        results: textRows.map((row) => seal({
           label: row.label,
           ok: false,
           reason: row.reason,
           before: '',
           after: '',
-          expected: row.expected
+          expected: row.expected,
+          writeAttempted: false
         }))
       });
     }
@@ -1015,24 +1188,43 @@
     }
 
     const neighborBefore = readNeighbor();
-    const textSnapshots = textRows.map((row) => ({ label: row.label, before: readText(row.item) }));
+    const textSnapshots = textRows
+      .filter((row) => !NEVER_SAVE_TEXT_SPECS[row.label] || !norm(row.control.value))
+      .map((row) => ({ label: row.label, before: readText(row.item) }));
     const selectSnapshots = selectRows.map((row) => ({ label: row.label, before: readSelect(row.item).value }));
     const selectOptions = { ...options, restore: false };
     const results = [];
-    for (const [label, value] of [
-      ['姓名', textValues.fullName],
-      ['移动电话', textValues.mobile],
-      ['电子邮箱', textValues.email]
-    ]) {
-      results.push(await fillText(label, value));
+    for (const row of textRows) {
+      results.push(await fillText(row.label, row.expected, { ...options, restore: false }));
     }
     for (const row of selectPlan) {
       results.push(await fillSelect(row.label, row.value, selectOptions));
     }
 
+    const paintedTextSnapshots = textSnapshots.filter((snap) => !NEVER_SAVE_TEXT_SPECS[snap.label]
+      || results.find((row) => row.label === snap.label)?.writeAttempted === true);
     const rollback = async () => {
       const restore = [];
-      for (const snap of textSnapshots) restore.push(await restoreText(snap.label, snap.before));
+      for (const snap of paintedTextSnapshots) {
+        if (NEVER_SAVE_TEXT_SPECS[snap.label]) {
+          const current = classifyNeverSaveText(snap.label);
+          const written = results.find((row) => row.label === snap.label);
+          if (!current.ready) {
+            restore.push(seal({ label: snap.label, ok: false, reason: 'control_not_supported', writeAttempted: false }));
+            continue;
+          }
+          const value = norm(current.control.value);
+          if (value === norm(snap.before)) {
+            restore.push(seal({ label: snap.label, ok: true, reason: 'restored', after: value, writeAttempted: false }));
+            continue;
+          }
+          if (value !== written.after) {
+            restore.push(seal({ label: snap.label, ok: false, reason: 'existing_value', after: value, writeAttempted: false }));
+            continue;
+          }
+        }
+        restore.push(await restoreText(snap.label, snap.before, options));
+      }
       for (const snap of [...selectSnapshots].reverse()) {
         const current = readSelect(findItem(snap.label));
         if (current.ok && current.value !== snap.before && snap.before && !isPlaceholderSelect(snap.before)) {
@@ -1046,7 +1238,8 @@
       const restore = await rollback();
       return finish({
         ok: false,
-        reason: 'readback_mismatch',
+        reason: results.some((row) => NEVER_SAVE_TEXT_SPECS[row.label] && row.reason === 'control_not_supported')
+          ? 'control_not_supported' : 'readback_mismatch',
         writeAttempted: true,
         restored: false,
         restore,
@@ -1058,7 +1251,7 @@
 
     if (options.restore === true) {
       const restore = await rollback();
-      const textBack = textSnapshots.every((snap) => readText(findItem(snap.label)) === norm(snap.before));
+      const textBack = paintedTextSnapshots.every((snap) => readText(findItem(snap.label)) === norm(snap.before));
       const selectBack = selectSnapshots.every((snap) => {
         const current = readSelect(findItem(snap.label));
         return current.ok && current.value === snap.before;
@@ -1082,11 +1275,16 @@
       移动电话: readText(findItem('移动电话')),
       电子邮箱: readText(findItem('电子邮箱'))
     };
+    for (const row of extraTextPlan) readback[row.label] = readText(findItem(row.label));
     for (const row of selectPlan) readback[row.label] = readSelect(findItem(row.label)).value;
     const neighbor = readNeighbor();
     const textMatch = readback['姓名'] === textValues.fullName
       && readback['移动电话'] === textValues.mobile
-      && readback['电子邮箱'] === textValues.email;
+      && readback['电子邮箱'] === textValues.email
+      && extraTextPlan.every((row) => {
+        const result = results.find((entry) => entry.label === row.label);
+        return readback[row.label] === (result?.reason === 'existing_value' ? result.before : row.value);
+      });
     const selectMatch = selectPlan.every((row) => readback[row.label] === row.value);
     const neighborOk = neighbor.value === neighborBefore.value;
     const ok = textMatch && selectMatch && neighborOk;
@@ -1109,6 +1307,8 @@
   const api = {
     siteId: SITE_ID,
     TEXT_LABELS,
+    NEVER_SAVE_TEXT_SPECS,
+    NEVER_SAVE_TEXT_LABELS,
     SELECT_SPECS,
     ALLOWED_SELECT_LABELS,
     SELECT_OUT_OF_SCOPE,
@@ -1133,6 +1333,8 @@
     readSelect,
     pointerClick,
     fillText,
+    fillField,
+    inspect,
     restoreText,
     fillSelect,
     fillBasic,

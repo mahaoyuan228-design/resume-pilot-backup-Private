@@ -275,8 +275,13 @@ test('internship: a neighboring control change stops the remaining plan', async 
     const id = probe.fields[0].id;
     p.node(id).addEventListener('input', () => { p.node(probe.neighbors[0].id).value = 'site side effect'; });
     const result = await p.api.fillProfile(profile());
+    assert.equal(result.ok, false);
     assert.equal(result.reason, 'neighbor_changed');
-    assert.equal(result.fields[0].status, 'failed');
+    assert.equal(result.fields[0].status, 'verified');
+    assert.equal(result.fields[0].reason, 'readback_matched');
+    assert.equal(result.fields[0].before, '');
+    assert.equal(result.fields[0].after, values()[id]);
+    assert.equal(result.neighborCheck.reason, 'neighbor_changed');
     for (const field of probe.fields.slice(1)) assert.equal(p.node(field.id).value, '');
     assert.deepEqual(p.counts, { clicks: 0, requests: 0, submits: 0 });
     assert.equal(result.liveSupportClaimed, false);

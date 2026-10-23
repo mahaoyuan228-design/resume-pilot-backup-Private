@@ -149,6 +149,48 @@
       && hits.length === 1 && hits[0] === item && control.closest(ITEM_SEL) === item;
   }
 
+  // Observe only uniquely bound text controls in the existing item contract.
+  // These snapshots never become owned writes or rollback targets.
+  function snapshotTextNeighbors(ownedControls) {
+    return formItems().flatMap((item) => {
+      const label = labelText(item.querySelector(LABEL_SEL));
+      const row = classifyField(label);
+      return row.ready && row.item === item && !ownedControls.includes(row.control)
+        ? [{ label, item, control: row.control, beforeRaw: row.control.value }]
+        : [];
+    });
+  }
+
+  function readTextNeighbors(snapshots) {
+    const neighbors = snapshots.map((snapshot) => {
+      const current = classifyField(snapshot.label);
+      const sameBinding = current.ready && current.item === snapshot.item && current.control === snapshot.control;
+      const preserved = sameBinding && snapshot.control.value === snapshot.beforeRaw;
+      return {
+        label: snapshot.label,
+        beforeRaw: snapshot.beforeRaw,
+        afterRaw: current.ready ? current.control.value : null,
+        originalAfterRaw: snapshot.control.value,
+        preserved,
+        reason: !sameBinding ? 'neighbor_binding_changed' : preserved ? 'preserved' : 'neighbor_value_changed'
+      };
+    });
+    return { neighborsPreserved: neighbors.every((row) => row.preserved), neighbors };
+  }
+
+  function withNeighborReadback(result, snapshots) {
+    // Read again after cleanup: target rollback events can change a neighbor too.
+    const state = readTextNeighbors(snapshots);
+    return {
+      ...result,
+      ...state,
+      ok: result.ok && state.neighborsPreserved,
+      reason: state.neighborsPreserved ? result.reason : 'neighbor_changed',
+      restored: Boolean(result.restored) && state.neighborsPreserved,
+      ...('restoreComplete' in result ? { restoreComplete: result.restoreComplete && state.neighborsPreserved } : {})
+    };
+  }
+
   function setNativeValue(input, value, binding) {
     const proto = Object.getPrototypeOf(input);
     const desc = Object.getOwnPropertyDescriptor(proto, 'value')
@@ -167,7 +209,7 @@
     return control ? norm(control.value) : '';
   }
 
-  async function fillTextAttempt(label, value) {
+  async function fillTextAttempt(label, value, neighborSnapshots = null) {
     const expected = norm(value);
     if (!TEXT_LABELS.includes(label) || !expected) {
       return {
@@ -197,30 +239,39 @@
       };
     }
     const control = row.control;
+    const neighbors = neighborSnapshots ?? snapshotTextNeighbors([control]);
+    const finish = (result) => withNeighborReadback(result, neighbors);
     const before = norm(control.value);
+    if (!readTextNeighbors(neighbors).neighborsPreserved) {
+      return finish({ ...NEVER_SAVE, label, ok: false, reason: 'neighbor_changed', before, after: before, expected, writeAttempted: false });
+    }
     if (!emptyText(control.value)) {
-      return { ...NEVER_SAVE, label, ok: true, reason: 'skipped_existing', before, after: before, expected, skipped: true, writeAttempted: false };
+      return finish({ ...NEVER_SAVE, label, ok: true, reason: 'skipped_existing', before, after: before, expected, skipped: true, writeAttempted: false });
     }
     control.focus();
     const focused = classifyField(label);
+    if (!readTextNeighbors(neighbors).neighborsPreserved) {
+      return finish({ ...NEVER_SAVE, label, ok: false, reason: 'neighbor_changed', before, after: norm(control.value), expected, writeAttempted: false });
+    }
     if (!focused.ready || focused.item !== row.item || focused.control !== control || !emptyText(control.value)) {
-      return { ...NEVER_SAVE, label, ok: false, reason: 'control_changed_before_write', before, after: norm(control.value), expected, writeAttempted: false };
+      return finish({ ...NEVER_SAVE, label, ok: false, reason: 'control_changed_before_write', before, after: norm(control.value), expected, writeAttempted: false });
     }
     setNativeValue(control, expected, row);
     await pause(80);
     const current = classifyField(label);
     const after = norm(control.value);
-    const ok = current.ready && current.item === row.item && current.control === control && after === expected;
-    return {
+    const neighborsPreserved = readTextNeighbors(neighbors).neighborsPreserved;
+    const ok = current.ready && current.item === row.item && current.control === control && after === expected && neighborsPreserved;
+    return finish({
       ...NEVER_SAVE,
       label,
       ok,
-      reason: ok ? 'matched' : 'readback_mismatch',
+      reason: !neighborsPreserved ? 'neighbor_changed' : ok ? 'matched' : 'readback_mismatch',
       before,
       after,
       expected,
       writeAttempted: true
-    };
+    });
   }
 
   async function rollbackOwned(writes) {
@@ -252,18 +303,19 @@
   async function fillText(label, value) {
     const row = classifyField(label);
     const original = row.control?.value;
-    const result = await fillTextAttempt(label, value);
+    const neighbors = row.ready ? snapshotTextNeighbors([row.control]) : [];
+    const result = await fillTextAttempt(label, value, neighbors);
     const rollback = !result.ok && result.writeAttempted
       ? await rollbackOwned([{ label, item: row.item, control: row.control, original, expected: norm(value) }])
       : [];
-    return {
+    return withNeighborReadback({
       ...result,
       restored: rollback.length > 0 && rollback.every((entry) => entry.restored),
       restoredCount: rollback.filter((entry) => entry.restored).length,
       restoreComplete: rollback.length > 0 && rollback.every((entry) => entry.restored),
       rollback,
       final: row.control ? norm(row.control.value) : ''
-    };
+    }, neighbors);
   }
 
   function planFromProfile(profile) {
@@ -452,6 +504,7 @@
         }))
       };
     }
+    const neighbors = snapshotTextNeighbors(classified.map((row) => row.control));
     const snapshots = classified.map((row) => ({ ...row, original: row.control.value }));
     const results = [];
     const writes = [];
@@ -463,7 +516,7 @@
         results.push({ ...NEVER_SAVE, label: row.label, ok: false, reason: failure, before: norm(row.original), after: norm(row.control.value), expected: row.expected, writeAttempted: false });
         break;
       }
-      const result = await fillTextAttempt(row.label, row.expected);
+      const result = await fillTextAttempt(row.label, row.expected, neighbors);
       results.push(result);
       if (result.writeAttempted) writes.push(row);
       if (!result.ok) {
@@ -484,13 +537,14 @@
         }
       }
     }
+    if (!readTextNeighbors(neighbors).neighborsPreserved) failure = 'neighbor_changed';
     const rollback = failure ? await rollbackOwned(writes) : [];
     for (const result of results) {
       const row = snapshots.find((entry) => entry.label === result.label);
       result.final = norm(row.control.value);
     }
     const ok = !failure;
-    return {
+    return withNeighborReadback({
       ok,
       siteId: SITE_ID,
       href: location.href,
@@ -507,7 +561,7 @@
         ? { reason: plan.reason, readyCount: plan.fields.filter((f) => f.ready).length, blockerCount: plan.blockers.length }
         : { reason: 'explicit_override' },
       results
-    };
+    }, neighbors);
   }
 
   const api = {

@@ -232,7 +232,8 @@ async function launchChrome(port) {
     async close() {
       child.kill('SIGKILL');
       await pause(100);
-      fs.rmSync(userData, { recursive: true, force: true });
+      // Chromium child processes may briefly keep the profile locked on Windows.
+      await fs.promises.rm(userData, { recursive: true, force: true, maxRetries: 30, retryDelay: 100 });
     }
   };
 }

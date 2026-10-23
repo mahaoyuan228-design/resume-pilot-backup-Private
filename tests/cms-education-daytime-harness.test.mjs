@@ -10,7 +10,7 @@ import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { spawnSync, execFileSync } from 'node:child_process';
 import {
-  BASE_TIP, prepareDaytimeHarness, collectDaytimeHarness, createObservedConnector
+  BASE_TIP, CHECKLIST, prepareDaytimeHarness, collectDaytimeHarness, createObservedConnector
 } from '../scripts/cms-education-daytime-harness.mjs';
 import { REVIEWED_FILES, HOOK_NAMES } from '../scripts/validate-cms-education-controls-evidence.mjs';
 import { fieldSpecsForRow, CONTROL_SPECS, READBACK_WAIT_MS } from '../scripts/live/cms-education-live.mjs';
@@ -306,6 +306,60 @@ async function collectFictional(t, modify = () => {}, fakeOptions = {}, drive = 
   });
   return { ...options, result, replies, raw };
 }
+
+function assertChecklistBindings(checklist, artifacts) {
+  assert.ok(Array.isArray(checklist) && checklist.length === 7, 'all seven checklist rows are retained');
+  assert.deepEqual(checklist.map(row => row.key), ['bytes_clean_page', 'seven_visible_probes',
+    'suppression_traffic_clicks', 'nine_readbacks', 'restoration_neighbors', 'settled_callbacks', 'cleanup']);
+  for (const row of checklist) {
+    assert.ok(Array.isArray(row.bindings) && row.bindings.length > 0, `${row.key} requires nonempty bindings`);
+    assert.deepEqual(row.files, [...new Set(row.bindings.map(binding => binding.file))]);
+    assert.deepEqual(row.fields, [...new Set(row.bindings.map(binding => binding.path))]);
+    for (const binding of row.bindings) {
+      assert.ok(typeof binding.file === 'string' && binding.file.length > 0, 'binding file is required');
+      assert.ok(typeof binding.path === 'string' && binding.path.length > 0, 'binding path is required');
+      assert.ok(Object.hasOwn(artifacts, binding.file), `missing checklist evidence file: ${binding.file}`);
+      let value = artifacts[binding.file];
+      for (const part of binding.path.split('.')) {
+        assert.ok(part && value !== null && typeof value === 'object' && Object.hasOwn(value, part),
+          `missing checklist evidence path: ${binding.file}:${binding.path}`);
+        value = value[part];
+      }
+    }
+  }
+}
+
+test('checklist binds every requirement to emitted fictional artifacts and matches offline prepare', async t => {
+  const collected = await collectFictional(t);
+  const artifacts = Object.fromEntries(jsonFiles(collected.outDir).map(({ filename, value }) => [path.basename(filename), value]));
+  const prepared = JSON.parse(fs.readFileSync(path.join(collected.directory, 'prepared', 'checklist.json'), 'utf8'));
+  assert.deepEqual(prepared, artifacts['checklist.json']);
+  assert.deepEqual(artifacts['checklist.json'], CHECKLIST);
+  assertChecklistBindings(artifacts['checklist.json'], artifacts);
+});
+
+test('checklist coverage rejects missing bindings and old pack paths applied to standalone artifacts', async t => {
+  const collected = await collectFictional(t);
+  const artifacts = Object.fromEntries(jsonFiles(collected.outDir).map(({ filename, value }) => [path.basename(filename), value]));
+  for (const bindings of [undefined, []]) {
+    const missing = structuredClone(CHECKLIST);
+    missing[0].bindings = bindings;
+    assert.throws(() => assertChecklistBindings(missing, artifacts), /requires nonempty bindings/u);
+  }
+  for (const [file, path] of [
+    ['reviewed-bytes.json', 'reviewedBytes.files'],
+    ['snapshots-before.json', 'boundaries.before'],
+    ['cms-education-live.json', 'report.finalDetails.widgetProbes']
+  ]) {
+    const wrongRoot = structuredClone(CHECKLIST);
+    const row = wrongRoot.find(item => item.bindings?.some(binding => binding.file === file));
+    assert.ok(row, `the actual checklist binds ${file}`);
+    row.bindings = [{ file, path }];
+    row.files = [file];
+    row.fields = [path];
+    assert.throws(() => assertChecklistBindings(wrongRoot, artifacts), /missing checklist evidence path/u);
+  }
+});
 
 test('collector retains fictional unit observations separately from the runner report', async t => {
   const collected = await collectFictional(t);

@@ -1,5 +1,5 @@
 {
-  "source": "Structural excerpt of the 2026-10-23 hotjob pb resumeOperation probe for basic text and flat controls. Classes, labels, placeholders, and menu text only. Applicant name, phone, email, id number, address, and birth date are omitted.",
+  "source": "Structural excerpt of the 2026-10-23 hotjob pb resumeOperation probe for basic text and flat controls. Classes, labels, placeholders, and menu text. Height and id-number placeholders plus their probed value samples are included for Never-Save readback. Applicant name, phone, email, address, and birth date stay omitted.",
   "page": {
     "hostname": "wecruit.hotjob.cn",
     "pathPattern": "/SU[0-9A-Za-z]{8,64}/pb/resumeOperation.html",
@@ -21,6 +21,22 @@
         "key": "name",
         "label": "姓名",
         "placeholder": "请填写姓名"
+      },
+      {
+        "key": "height",
+        "label": "身高*?",
+        "placeholder": "（单位：cm）",
+        "valueSample": "182",
+        "verdict": "wireable_text",
+        "probeNote": "selectorClasses: ant-row ant-form-item | label=身高*? | ant-input | ph=（单位：cm）. Interactive action skip_text_no_open_needed."
+      },
+      {
+        "key": "idNumber",
+        "label": "证件号码",
+        "placeholder": "请填写证件号码",
+        "valueSample": "11010220020125231X",
+        "verdict": "wireable_text",
+        "probeNote": "selectorClasses: ant-row ant-form-item | label=证件号码 | ant-input | ph=请填写证件号码. valueSample is the probed display used only for preexisting readback."
       },
       {
         "key": "phone",
@@ -142,18 +158,6 @@
       "controlClass": "ant-input",
       "placeholder": "请填写联系地址",
       "token": "NEIGHBOR_KEEP"
-    },
-    "idNumber": {
-      "label": "证件号码",
-      "controlClass": "ant-input",
-      "placeholder": "请填写证件号码",
-      "token": "NEIGHBOR_ID"
-    },
-    "height": {
-      "label": "身高*?",
-      "controlClass": "ant-input",
-      "placeholder": "（单位：cm）",
-      "token": "HEIGHT_KEEP"
     },
     "birth": {
       "label": "出生日期",

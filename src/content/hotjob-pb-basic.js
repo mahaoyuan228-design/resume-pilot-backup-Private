@@ -1,5 +1,8 @@
 // Hotjob pb (Ant Design resumeOperation) Never-Save fill for basic profile fields only.
-// Probe 2026-10-23: text 姓名 / 移动电话 / 电子邮箱 (input.ant-input);
+// Probe 2026-10-23: text 姓名 / 身高*? / 证件号码 / 移动电话 / 电子邮箱 (input.ant-input).
+// 身高*? placeholder is （单位：cm）. 证件号码 placeholder is 请填写证件号码.
+// Those two placeholders are part of the locate contract; a missing or different
+// placeholder fails closed. 姓名 / 电话 / 邮箱 keep the earlier text contract.
 // 性别 is input.ant-radio-input (page text 男 / 女, not an ant-select; valueSample
 // 0/599/604 is an internal code, not a display label);
 // flat ant-select allow-clear: 国籍/地区, 民族, 婚姻状况, 政治面貌, 证件类型.
@@ -15,16 +18,22 @@
 (() => {
   const NAME = '姓名';
   const GENDER = '性别';
+  const HEIGHT = '身高*?';
   const NATION = '国籍/地区';
   const ETHNIC = '民族';
   const MARRIAGE = '婚姻状况';
   const POLITICS = '政治面貌';
   const ID_TYPE = '证件类型';
+  const ID_NUMBER = '证件号码';
   const PHONE = '移动电话（请填写中国大陆移动电话，以便接收短信通知）';
   const EMAIL = '电子邮箱（请尽量使用163、qq等常见邮箱，尽量不要用gmail、hotmail等境外邮箱或学校邮箱）';
-  const ORDER = Object.freeze([NAME, GENDER, NATION, ETHNIC, MARRIAGE, POLITICS, ID_TYPE, PHONE, EMAIL]);
+  const ORDER = Object.freeze([
+    NAME, GENDER, HEIGHT, NATION, ETHNIC, MARRIAGE, POLITICS, ID_TYPE, ID_NUMBER, PHONE, EMAIL
+  ]);
   const KINDS = Object.freeze({
     [NAME]: 'text',
+    [HEIGHT]: 'text',
+    [ID_NUMBER]: 'text',
     [PHONE]: 'text',
     [EMAIL]: 'text',
     [GENDER]: 'radio',
@@ -33,6 +42,10 @@
     [MARRIAGE]: 'select',
     [POLITICS]: 'select',
     [ID_TYPE]: 'select'
+  });
+  const TEXT_PLACEHOLDERS = Object.freeze({
+    [HEIGHT]: '（单位：cm）',
+    [ID_NUMBER]: '请填写证件号码'
   });
   const DROPDOWN_CLASSES = Object.freeze([
     'ant-select-dropdown',
@@ -112,7 +125,7 @@
     return [...item.querySelectorAll(selector)].filter((node) => node.closest('.ant-row.ant-form-item') === item);
   }
 
-  function locateText(item) {
+  function locateText(item, placeholder) {
     if (stray(item, '.ant-select, .cascader-plugins-wrap, input.ant-radio-input, input[type="file"], textarea, .ant-calendar-picker-input').length) {
       return { ok: false, reason: 'control_not_supported' };
     }
@@ -122,6 +135,9 @@
     const attr = input.getAttribute('type');
     const type = String(input.type || '').toLowerCase();
     if (type !== 'text' || (attr && attr.toLowerCase() !== 'text')) return { ok: false, reason: 'control_not_supported' };
+    if (placeholder != null && input.getAttribute('placeholder') !== placeholder) {
+      return { ok: false, reason: 'control_not_supported' };
+    }
     if (input.readOnly || input.disabled || input.classList.contains('ant-calendar-picker-input')) {
       return { ok: false, reason: 'control_not_supported' };
     }
@@ -221,7 +237,9 @@
     const items = itemsFor(label);
     if (items.length !== 1) return { ok: false, reason: 'control_not_supported' };
     const kind = KINDS[label];
-    const found = kind === 'text' ? locateText(items[0]) : kind === 'radio' ? locateRadio(items[0]) : locateSelect(items[0], label);
+    const found = kind === 'text'
+      ? locateText(items[0], TEXT_PLACEHOLDERS[label])
+      : kind === 'radio' ? locateRadio(items[0]) : locateSelect(items[0], label);
     if (found.ok) found.label = label;
     return found;
   }

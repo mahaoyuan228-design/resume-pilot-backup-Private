@@ -327,3 +327,172 @@ test('an invalid birthday stays unparseable even when the picker target is uniqu
   assert.equal(plan.birthDateReadiness.fillVia, null);
   assert.equal(plan.blockers.some((row) => row.reason === 'datepicker_hint_only'), false);
 });
+
+test('unavailable birthday targets fail before any mouse interaction', async () => {
+  for (const makeUnavailable of [
+    (input) => { input.disabled = true; },
+    (input) => { input.type = 'hidden'; },
+    (input) => { input.type = 'reset'; },
+    (input) => { input.type = 'file'; },
+    (input) => { input.hidden = true; },
+    (input) => { input.setAttribute('aria-disabled', 'true'); },
+    (input) => { input.parentElement.hidden = true; },
+    (input) => { input.parentElement.style.display = 'none'; },
+    (input) => { input.parentElement.setAttribute('inert', ''); }
+  ]) {
+    const { document, input, counts } = page();
+    makeUnavailable(input);
+    let mouseEvents = 0;
+    input.addEventListener('mousedown', () => { mouseEvents += 1; });
+    const result = await fillCmbBirthDatePicker(document, '1990-01-02');
+    assert.equal(result.ok, false);
+    assert.equal(result.reason, 'birthdate_input_missing');
+    assert.equal(result.writeAttempted, false);
+    assert.equal(result.liveSupportClaimed, false);
+    assert.equal(mouseEvents, 0);
+    assert.equal(input.value, '');
+    assert.equal(counts().saveClicks, 0);
+  }
+});
+
+function installSingleDatePanel(document, input, transform = () => {}) {
+  input.addEventListener('mousedown', () => {
+    const dropdown = document.createElement('div');
+    dropdown.className = 'ant-picker-dropdown';
+    dropdown.innerHTML = markup({ mode: 'date', year: 1990, month: 1 });
+    transform(dropdown);
+    document.body.appendChild(dropdown);
+  });
+}
+
+test('picker cells cannot route through forbidden or navigational ancestors', async () => {
+  for (const label of ['保存', '提交', '删除', '投递', '下一步', 'Save', 'Submit', 'Delete', 'Deliver', 'Next']) {
+    const { document, input } = page();
+    let unsafeClicks = 0;
+    installSingleDatePanel(document, input, (dropdown) => {
+      const cell = dropdown.querySelector('.ant-picker-cell-inner');
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.setAttribute('aria-label', label);
+      cell.replaceWith(button);
+      button.appendChild(cell);
+      button.addEventListener('click', () => { unsafeClicks += 1; });
+    });
+    const result = await fillCmbBirthDatePicker(document, '1990-01-02');
+    assert.equal(result.ok, false, label);
+    assert.equal(result.reason, 'birthdate_panel_missing', label);
+    assert.equal(unsafeClicks, 0, label);
+    assert.equal(input.value, '', label);
+  }
+
+  const { document, input } = page();
+  let navigations = 0;
+  installSingleDatePanel(document, input, (dropdown) => {
+    const cell = dropdown.querySelector('.ant-picker-cell-inner');
+    const link = document.createElement('a');
+    link.href = '#unexpected';
+    cell.replaceWith(link);
+    link.appendChild(cell);
+    link.addEventListener('click', () => { navigations += 1; });
+  });
+  const result = await fillCmbBirthDatePicker(document, '1990-01-02');
+  assert.equal(result.ok, false);
+  assert.equal(navigations, 0);
+});
+
+test('a date cell that becomes a forbidden action on mousedown is never clicked', async () => {
+  const { document, input } = page();
+  let clicks = 0;
+  installSingleDatePanel(document, input, (dropdown) => {
+    const cell = dropdown.querySelector('.ant-picker-cell-inner');
+    cell.addEventListener('mousedown', () => { cell.setAttribute('aria-label', '下一步'); });
+    cell.addEventListener('click', () => { clicks += 1; });
+  });
+  const result = await fillCmbBirthDatePicker(document, '1990-01-02');
+  assert.equal(result.ok, false);
+  assert.equal(clicks, 0);
+  assert.equal(input.value, '');
+});
+
+test('a picker cell cannot activate a label-associated action control', async () => {
+  for (const external of [false, true]) {
+    const { document, input } = page();
+    let actionClicks = 0;
+    installSingleDatePanel(document, input, (dropdown) => {
+      const cell = dropdown.querySelector('.ant-picker-cell-inner');
+      const label = document.createElement('label');
+      const button = document.createElement('button');
+      button.id = 'unexpected-picker-action';
+      button.type = 'button';
+      button.setAttribute('aria-label', '保存');
+      button.addEventListener('click', () => { actionClicks += 1; });
+      cell.replaceWith(label);
+      label.appendChild(cell);
+      if (external) {
+        label.htmlFor = button.id;
+        document.body.appendChild(button);
+      } else {
+        label.prepend(button);
+      }
+    });
+    const result = await fillCmbBirthDatePicker(document, '1990-01-02');
+    assert.equal(result.ok, false);
+    assert.equal(result.reason, 'birthdate_panel_missing');
+    assert.equal(actionClicks, 0);
+    assert.equal(input.value, '');
+  }
+});
+
+test('hidden stale dropdowns do not make the visible birthday panel ambiguous', async () => {
+  const { document, input } = page();
+  const hidden = document.createElement('div');
+  hidden.hidden = true;
+  hidden.innerHTML = '<div class="ant-picker-dropdown"></div>';
+  document.body.appendChild(hidden);
+  installSingleDatePanel(document, input);
+  document.addEventListener('click', (event) => {
+    if (!event.target.closest('.ant-picker-cell[title="1990-01-02"]')) return;
+    input.value = '1990-01-02';
+    event.target.closest('.ant-picker-dropdown').remove();
+  });
+  const result = await fillCmbBirthDatePicker(document, '1990-01-02');
+  assert.equal(result.ok, true);
+  assert.equal(result.liveSupportClaimed, false);
+});
+
+test('a target duplicated during picker navigation aborts before a day is clicked', async () => {
+  const { document, input } = page();
+  installNavigatingPicker(document, input);
+  let dateClicks = 0;
+  document.addEventListener('click', (event) => {
+    if (event.target.closest('.ant-picker-year-btn')) {
+      document.body.appendChild(input.cloneNode());
+    }
+    if (event.target.closest('.ant-picker-cell[title="1990-01-02"]')) dateClicks += 1;
+  });
+  const result = await fillCmbBirthDatePicker(document, '1990-01-02');
+  assert.equal(result.ok, false);
+  assert.equal(result.reason, 'birthdate_target_ambiguous');
+  assert.equal(dateClicks, 0);
+  assert.equal(input.value, '');
+});
+
+test('post-pick verification reads the current unique target after a rerender', async () => {
+  for (const replacementValue of ['', '1990/01/02']) {
+    const { document, input } = page();
+    installNavigatingPicker(document, input);
+    document.addEventListener('click', (event) => {
+      if (!event.target.closest('.ant-picker-cell[title="1990-01-02"]')) return;
+      const replacement = input.cloneNode();
+      replacement.value = replacementValue;
+      input.replaceWith(replacement);
+    });
+    const result = await fillCmbBirthDatePicker(document, '1990-01-02');
+    assert.equal(result.ok, replacementValue !== '');
+    assert.equal(result.reason, replacementValue ? 'matched' : 'birthdate_readback_mismatch');
+    assert.equal(result.saved, false);
+    assert.equal(result.liveSupportClaimed, false);
+    assert.equal(input.value, '1990-01-02');
+    assert.equal(document.getElementById(input.id).value, replacementValue);
+  }
+});

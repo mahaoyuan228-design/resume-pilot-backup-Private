@@ -3,7 +3,7 @@
  * Classifies a future harvest packet into the four recorded verdict codes.
  * Does not read the DOM, invent a selector, fill, or save.
  * Null stays the recorded DOM_CONTROL_MISSING gate.
- * A live snap packet is classified from its recorded counts only.
+ * A live snap packet is classified from its recorded facts only.
  * Dictionary rows are contrast only and do not prove a control.
  * A present control is still not support and is not a fill.
  * Never Save. 招行 is not supported.
@@ -66,6 +66,7 @@ function closed(partial) {
     gate: partial.gate,
     reason: partial.reason,
     supported: false,
+    liveSupportClaimed: false,
     liveFillClaimed: false,
     fillAllowed: false,
     wireAllowed: false,
@@ -102,11 +103,17 @@ function valueLooksLikeSelector(value) {
   return /[#.\[\]>~+]|\bxpath\b|\bcss\b/i.test(value);
 }
 
-function hasSmuggledSelector(value, depth = 0) {
-  if (depth > 4 || !isPlainObject(value)) return false;
-  for (const [key, inner] of Object.entries(value)) {
-    if (keyLooksLikeSelector(key)) return true;
-    if (isPlainObject(inner) && hasSmuggledSelector(inner, depth + 1)) return true;
+function hasSmuggledSelector(value) {
+  const pending = [value];
+  const seen = new WeakSet();
+  while (pending.length) {
+    const current = pending.pop();
+    if (current == null || typeof current !== 'object' || seen.has(current)) continue;
+    seen.add(current);
+    for (const [key, inner] of Object.entries(current)) {
+      if (keyLooksLikeSelector(key)) return true;
+      if (inner != null && typeof inner === 'object') pending.push(inner);
+    }
   }
   return false;
 }
@@ -270,18 +277,38 @@ function isLiveRankingSnap(harvest) {
   return true;
 }
 
-function liveLabelCount(snap) {
-  return Array.isArray(snap?.labelHits) ? snap.labelHits.length : 0;
+function recordedStrings(value) {
+  if (!Array.isArray(value) || value.some((item) => typeof item !== 'string' || !norm(item))) return null;
+  return value.map(norm).sort();
 }
 
-function liveControlCount(snap) {
-  if (!Array.isArray(snap?.labelHits)) return 0;
-  return snap.labelHits.filter((row) => isPlainObject(row) && row.hasInput === true).length;
+/** Only compare facts collected by both existing read-only snap expressions. */
+function readLiveSnap(snap, first = false) {
+  const ids = recordedStrings(snap.idHits);
+  const rankingish = recordedStrings(snap.rankingishLabels);
+  const names = !first && snap.nameHits === undefined ? [] : recordedStrings(snap.nameHits);
+  if (!ids || !rankingish || !names || !Array.isArray(snap.labelHits)) return null;
+  if (first && (!integerCount(snap.allLabelCount) || snap.allLabelCount === 0
+      || snap.allLabelCount < snap.labelHits.length)) return null;
+  const labels = [];
+  for (const row of snap.labelHits) {
+    if (!isPlainObject(row) || typeof row.labelText !== 'string' || !norm(row.labelText)
+        || typeof row.hasInput !== 'boolean' || typeof row.visible !== 'boolean'
+        || !(row.inputId === null || typeof row.inputId === 'string')) return null;
+    labels.push({
+      labelText: norm(row.labelText),
+      hasInput: row.hasInput,
+      inputId: row.inputId === null ? null : norm(row.inputId),
+      visible: row.visible
+    });
+  }
+  labels.sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b)));
+  return { labels, ids, rankingish, names };
 }
 
 /**
  * Overnight live snaps are not the harvest schema.
- * Counts already on the packet decide the verdict. Ids are not turned into selectors.
+ * Both recorded snapshots must agree. Ids are not turned into selectors.
  */
 function classifyLiveSnap(harvest) {
   if (hasSmuggledSelector(harvest)) {
@@ -292,13 +319,7 @@ function classifyLiveSnap(harvest) {
       reason: 'selector_rejected'
     });
   }
-  const hasForm = harvest.pageContext.hasForm === true;
-  const hitCount1 = liveLabelCount(harvest.snap1);
-  const hitCount2 = liveLabelCount(harvest.snap2);
-  const idHits = Array.isArray(harvest.snap1.idHits) ? harvest.snap1.idHits.length : 0;
-  const controls = liveControlCount(harvest.snap1);
-  const rankingish = Array.isArray(harvest.snap1.rankingishLabels) ? harvest.snap1.rankingishLabels.length : 0;
-  if (!hasForm) {
+  if (harvest.pageContext.hasForm !== true || harvest.pageContext.loginHints === true) {
     return closed({
       harvestLanded: true,
       verdict: PROBE_INCONCLUSIVE,
@@ -306,7 +327,27 @@ function classifyLiveSnap(harvest) {
       reason: 'form_not_visible'
     });
   }
-  if (hitCount1 === 0 && hitCount2 === 0 && idHits === 0) {
+  const first = readLiveSnap(harvest.snap1, true);
+  const second = readLiveSnap(harvest.snap2);
+  if (harvest.ok === false || !first || !second) {
+    return closed({
+      harvestLanded: true,
+      verdict: PROBE_INCONCLUSIVE,
+      gate: 'live_snap',
+      reason: 'evidence_incomplete'
+    });
+  }
+  // Snap 2 does not collect nameHits. Compare the facts shared by both probes.
+  if (['labels', 'ids', 'rankingish'].some((key) => JSON.stringify(first[key]) !== JSON.stringify(second[key]))) {
+    return closed({
+      harvestLanded: true,
+      verdict: PROBE_INCONCLUSIVE,
+      gate: 'live_snap',
+      reason: 'snapshots_disagree'
+    });
+  }
+  if (first.labels.length === 0 && first.ids.length === 0 && first.rankingish.length === 0
+      && first.names.length === 0 && second.names.length === 0) {
     return closed({
       harvestLanded: true,
       verdict: DOM_CONTROL_MISSING,
@@ -314,7 +355,13 @@ function classifyLiveSnap(harvest) {
       reason: DOM_CONTROL_MISSING
     });
   }
-  if (controls === 1 && hitCount1 === hitCount2) {
+  const unique = first.labels.length === 1 ? first.labels[0] : null;
+  const extraIds = unique && (first.ids.length > 1 || first.ids.some((id) => id !== unique.inputId));
+  const extraLabels = unique && first.rankingish.some((text) => text !== unique.labelText);
+  const nameConflict = unique && first.names.length > 0
+    && (typeof harvest.snap1.labelHits[0].inputName !== 'string'
+      || first.names.some((name) => name !== norm(harvest.snap1.labelHits[0].inputName)));
+  if (unique?.hasInput === true && !extraIds && !extraLabels && !nameConflict && second.names.length === 0) {
     return closed({
       harvestLanded: true,
       verdict: DOM_CONTROL_PRESENT,
@@ -322,19 +369,11 @@ function classifyLiveSnap(harvest) {
       reason: 'presence_is_not_support'
     });
   }
-  if (hitCount1 > 0 || rankingish > 0) {
-    return closed({
-      harvestLanded: true,
-      verdict: DOM_CONTROL_AMBIGUOUS,
-      gate: 'live_snap',
-      reason: DOM_CONTROL_AMBIGUOUS
-    });
-  }
   return closed({
     harvestLanded: true,
-    verdict: DOM_CONTROL_MISSING,
+    verdict: DOM_CONTROL_AMBIGUOUS,
     gate: 'live_snap',
-    reason: DOM_CONTROL_MISSING
+    reason: DOM_CONTROL_AMBIGUOUS
   });
 }
 
@@ -388,6 +427,7 @@ export function rankingMajorObservedFacts(decision) {
     fillAllowed: false,
     saveAllowed: false,
     supported: false,
+    liveSupportClaimed: false,
     liveFillClaimed: false,
     wireAllowed: false,
     requiresInteractionKnife: true

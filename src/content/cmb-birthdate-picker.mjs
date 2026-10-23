@@ -61,23 +61,50 @@ function saveLikeText(el) {
   if (!el) return '';
   const aria = typeof el.getAttribute === 'function' ? (el.getAttribute('aria-label') || '') : '';
   const value = el.tagName === 'INPUT' || el.tagName === 'BUTTON' ? String(el.value || '') : '';
-  return `${el.textContent || ''} ${value} ${aria}`.replace(/\s+/gu, '');
+  return pickerNorm(`${el.textContent || ''} ${value} ${aria}`);
 }
 
 function isSaveLike(el) {
-  return /保存|提交|删除|投递/u.test(saveLikeText(el));
+  const text = saveLikeText(el);
+  if (/保存|提交|删除|投递|下一步|下一页|\b(?:save|submit|delete|deliver)\b/iu.test(text)) return true;
+  return [el?.textContent, el?.getAttribute?.('aria-label'), el?.value]
+    .some((value) => /^next(?:step|page)?$/iu.test(pickerNorm(value).replace(/\s+/gu, '')));
+}
+
+function pickerNodeUnavailable(el) {
+  if (!el || el.isConnected === false) return true;
+  for (let node = el; node; node = node.parentElement) {
+    if (node.disabled === true || node.getAttribute?.('aria-disabled') === 'true') return true;
+    if (node.hasAttribute?.('hidden') || node.hasAttribute?.('inert') || node.getAttribute?.('aria-hidden') === 'true') return true;
+    const style = node.ownerDocument?.defaultView?.getComputedStyle?.(node) || node.style;
+    if (style?.display === 'none' || style?.visibility === 'hidden' || style?.visibility === 'collapse') return true;
+  }
+  return false;
 }
 
 function isUnsafeClick(el) {
-  if (!el || isSaveLike(el)) return true;
-  const button = typeof el.closest === 'function' ? el.closest('button') : null;
-  if (button) {
-    const type = String(button.getAttribute('type') || '').toLowerCase();
-    if (type !== 'button') return true;
+  if (pickerNodeUnavailable(el) || isSaveLike(el)) return true;
+  for (let node = el; node; node = node.parentElement) {
+    if (node.tagName === 'A' && node.hasAttribute('href')) return true;
+    if (node.tagName === 'LABEL' && node.control) {
+      const control = node.control;
+      const type = String(control.getAttribute('type') || '').toLowerCase();
+      if (!node.contains(control) || control.tagName === 'BUTTON'
+          || ['submit', 'image', 'button', 'reset', 'file'].includes(type)
+          || pickerNodeUnavailable(control) || isSaveLike(control)) return true;
+      // A label can activate its associated control after a descendant click.
+      // Only a direct control click or the validated radio wrapper may do so.
+      if (node !== el && control !== el && !control.contains(el)) return true;
+    }
+    if (node.tagName === 'BUTTON') {
+      const type = String(node.getAttribute('type') || '').toLowerCase();
+      if (type !== 'button' || isSaveLike(node)) return true;
+    }
+    if (node.getAttribute?.('role') === 'button' && isSaveLike(node)) return true;
   }
   if (el.tagName === 'INPUT') {
     const type = String(el.getAttribute('type') || 'text').toLowerCase();
-    if (type === 'submit' || type === 'image' || type === 'button') return true;
+    if (['submit', 'image', 'button', 'reset', 'file', 'hidden'].includes(type)) return true;
   }
   return false;
 }
@@ -90,7 +117,9 @@ function dispatchMouse(doc, el, type) {
 function pressPicker(doc, el) {
   if (isUnsafeClick(el)) return false;
   dispatchMouse(doc, el, 'mousedown');
+  if (isUnsafeClick(el)) return false;
   dispatchMouse(doc, el, 'mouseup');
+  if (isUnsafeClick(el)) return false;
   if (typeof el.click === 'function') el.click();
   return true;
 }
@@ -113,10 +142,7 @@ function visibleDropdowns(doc) {
   return [...doc.querySelectorAll('.ant-picker-dropdown')].filter((node) => {
     if (!node || !node.classList) return false;
     if (node.classList.contains('ant-picker-dropdown-hidden')) return false;
-    if (typeof node.hasAttribute === 'function' && node.hasAttribute('hidden')) return false;
-    if (node.style && node.style.display === 'none') return false;
-    if (node.style && node.style.visibility === 'hidden') return false;
-    return true;
+    return !pickerNodeUnavailable(node);
   });
 }
 
@@ -239,6 +265,8 @@ async function openBirthDatePanel(doc, input, wait) {
 async function driveBirthDatePanel(doc, parsed, wait) {
   let previousSig = '';
   for (let step = 0; step < PICKER_STEP_LIMIT; step += 1) {
+    const target = assessCmbBirthDatePickerTarget(doc);
+    if (!target.ok) return { ok: false, reason: target.reason };
     const located = singlePanel(doc);
     if (!located.ok) return located;
     const panel = located.panel;
@@ -338,7 +366,7 @@ function assessCmbBirthDatePickerTarget(doc) {
     return { ...classifyCmbBirthDatePickerTarget({ count: 0, input: false }), ok: false, node: null };
   }
   const nodes = [...doc.querySelectorAll(`[id="${CMB_BIRTHDATE_INPUT_ID}"]`)];
-  const input = nodes.length === 1 && nodes[0].tagName === 'INPUT';
+  const input = nodes.length === 1 && nodes[0].tagName === 'INPUT' && !isUnsafeClick(nodes[0]);
   const classified = classifyCmbBirthDatePickerTarget({ count: nodes.length, input });
   return {
     ...classified,
@@ -398,26 +426,46 @@ async function fillCmbBirthDatePicker(doc, rawDate, options = {}) {
     });
   }
   await wait();
-  const afterPick = normalizeCmbBirthDateValue(input.value);
+  const pickedTarget = assessCmbBirthDatePickerTarget(doc);
+  if (!pickedTarget.ok) {
+    pressEscape(doc, input);
+    return closedPickerResult({
+      reason: pickedTarget.reason,
+      expected: parsed.iso,
+      before,
+      writeAttempted: true
+    });
+  }
+  const pickedInput = pickedTarget.node;
+  const afterPick = normalizeCmbBirthDateValue(pickedInput.value);
   if (afterPick !== parsed.iso) {
     pressEscape(doc, input);
     return closedPickerResult({
       reason: 'birthdate_readback_mismatch',
       expected: parsed.iso,
       before,
-      after: pickerNorm(input.value),
+      after: pickerNorm(pickedInput.value),
       writeAttempted: true
     });
   }
   const stillOpen = singlePanel(doc);
-  if (stillOpen.ok) pressEscape(doc, input);
-  const after = normalizeCmbBirthDateValue(input.value);
+  if (stillOpen.ok) pressEscape(doc, pickedInput);
+  const verifiedTarget = assessCmbBirthDatePickerTarget(doc);
+  if (!verifiedTarget.ok) {
+    return closedPickerResult({
+      reason: verifiedTarget.reason,
+      expected: parsed.iso,
+      before,
+      writeAttempted: true
+    });
+  }
+  const after = normalizeCmbBirthDateValue(verifiedTarget.node.value);
   if (after !== parsed.iso) {
     return closedPickerResult({
       reason: 'birthdate_readback_mismatch',
       expected: parsed.iso,
       before,
-      after: pickerNorm(input.value),
+      after: pickerNorm(verifiedTarget.node.value),
       writeAttempted: true
     });
   }

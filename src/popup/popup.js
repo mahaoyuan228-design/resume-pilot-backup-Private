@@ -1,6 +1,7 @@
 "use strict";
 import {captureProfileBinding,assertProfileBinding,withProfileBinding,dispatchBoundSource} from "../profile/profile-lifecycle.js";
 import {isCmb,cmbBasicInjectFiles} from "../content/cmb-profile-map.mjs";
+import {isCmbResumeEditPage} from "../content/cmb-profile-map.mjs";
 import {cmbPopupOutcome} from "../background/cmb-basic-auto.mjs";
 import {assessGthIntentFill, GTH_INTENT_FILL_TYPE, intentFillPayload, intentValueShape} from "../background/gth-intent-auto.mjs";
 import {assessGthSkillsFill, assessGthOtherFill, assessGthEducationOpenFill, assessGthWorkOpenFill} from "../background/gth-open-fills.mjs";
@@ -862,6 +863,11 @@ function cmbRouteMessage(reason) {
 async function sendCmb(type, tab, selectedOwnerToken) {
   const files = cmbBasicInjectFiles(tab.url);
   if (!files) throw new Error("当前不是招商银行页面。");
+  if (type === "RESUME_FILL" && !isCmbResumeEditPage(tab.url)) {
+    const error = new Error(cmbRouteMessage("wrong_page"));
+    error.fillNotStarted = true;
+    throw error;
+  }
   if (type === "RESUME_FILL") {
     const origin = authorizationScope(tab.url);
     const { resumeTrustedOrigins } = await chrome.storage.local.get("resumeTrustedOrigins");

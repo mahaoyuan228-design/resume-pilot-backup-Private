@@ -248,6 +248,19 @@
     return control ? norm(control.value) : '';
   }
 
+  // Check the existing control and its ancestors before any control click.
+  // These guards do not supply a new live DOM contract.
+  function controlAvailable(node) {
+    if (!node?.isConnected) return false;
+    for (let current = node; current?.nodeType === 1; current = current.parentElement) {
+      if (current.hidden || current.disabled || current.hasAttribute('inert')
+        || current.getAttribute('aria-hidden') === 'true' || current.getAttribute('aria-disabled') === 'true') return false;
+      const style = getComputedStyle(current);
+      if (style.display === 'none' || style.visibility === 'hidden' || style.visibility === 'collapse') return false;
+    }
+    return true;
+  }
+
   function genderOptions(item) {
     return [...item.querySelectorAll(RADIO_WRAP_SEL)].map((wrap) => {
       const mark = wrap.querySelector(RADIO_MARK_SEL);
@@ -255,14 +268,26 @@
       const clone = wrap.cloneNode(true);
       clone.querySelectorAll(RADIO_MARK_SEL).forEach((node) => node.remove());
       return { wrap, mark, control, text: norm(clone.textContent) };
-    }).filter((row) => row.text === '男' || row.text === '女');
+    });
   }
 
   function genderStructureOk(options) {
     if (options.length !== 2) return false;
     const texts = new Set(options.map((row) => row.text));
     if (texts.size !== 2 || !texts.has('男') || !texts.has('女')) return false;
-    return options.every((row) => row.mark && row.control && row.control.type === 'radio' && !row.control.disabled);
+    return options.every((row) => row.mark && row.control && row.control.type === 'radio'
+      && row.wrap.tagName === 'LABEL' && row.wrap.control === row.control
+      && norm(row.control.value) === row.text
+      && row.wrap.querySelectorAll(RADIO_MARK_SEL).length === 1
+      && row.wrap.querySelectorAll('input[type="radio"]').length === 1
+      && controlAvailable(row.wrap) && controlAvailable(row.control)) && radioGroupIsolated(options);
+  }
+
+  function radioGroupIsolated(options) {
+    const controls = options.map((row) => row.control);
+    if (new Set(controls.map((control) => control.name)).size !== 1) return false;
+    return controls.every((control) => !control.name || ![...document.querySelectorAll('input[type="radio"]')]
+      .some((other) => !controls.includes(other) && other.name === control.name && other.form === control.form));
   }
 
   function readGender(item) {
@@ -279,6 +304,9 @@
       label: GENDER_LABEL,
       saved: false,
       skippedSave: true,
+      supported: false,
+      liveSupportClaimed: false,
+      writeAttempted: false,
       expected: want,
       before: '',
       after: ''
@@ -287,28 +315,36 @@
     if (!GENDER_VALUES.includes(want)) {
       return { ...base, ok: false, reason: 'invalid_profile_value' };
     }
-    const item = findItem(GENDER_LABEL);
-    if (!item) return { ...base, ok: false, reason: 'item_not_found' };
+    const hits = matchingItems(GENDER_LABEL);
+    if (hits.length !== 1) return { ...base, ok: false, reason: hits.length ? 'item_ambiguous' : 'item_not_found' };
+    const item = hits[0];
     const radios = genderOptions(item);
     if (!genderStructureOk(radios)) {
       return { ...base, ok: false, reason: 'radio_structure_changed' };
     }
     const beforeRead = readGender(item);
+    if (!beforeRead.ok) return { ...base, ok: false, reason: beforeRead.reason };
     const before = beforeRead.ok ? beforeRead.value : '';
     const target = radios.find((row) => row.text === want);
     if (!target) {
       return { ...base, ok: false, reason: 'option_not_found', before, after: before };
     }
-    target.wrap.click();
-    if (!target.control.checked) target.control.click();
-    target.control.dispatchEvent(new Event('input', { bubbles: true }));
-    target.control.dispatchEvent(new Event('change', { bubbles: true }));
+    if (isUnsafeClick(target.wrap) || isUnsafeClick(target.control)) {
+      return { ...base, ok: false, reason: 'unsafe_control', before, after: before };
+    }
+    if (before === want) return { ...base, ok: true, reason: 'matched', before, after: before };
+    target.control.click();
     await pause(80);
-    const afterRead = readGender(item);
+    const afterItems = matchingItems(GENDER_LABEL);
+    if (afterItems.length !== 1) {
+      return { ...base, ok: false, reason: afterItems.length ? 'item_ambiguous' : 'item_not_found', before, writeAttempted: true };
+    }
+    const afterRead = readGender(afterItems[0]);
     const after = afterRead.ok ? afterRead.value : '';
     const matched = afterRead.ok && after === want;
     return {
       ...base,
+      writeAttempted: true,
       ok: matched,
       reason: matched ? 'matched' : (afterRead.ok ? 'readback_mismatch' : afterRead.reason),
       before,
@@ -323,14 +359,19 @@
       const clone = wrap.cloneNode(true);
       clone.querySelectorAll(RADIO_MARK_SEL).forEach((node) => node.remove());
       return { wrap, mark, control, text: norm(clone.textContent) };
-    }).filter((row) => row.text === '是' || row.text === '否');
+    });
   }
 
   function formalWorkStructureOk(options) {
     if (options.length !== 2) return false;
     const texts = new Set(options.map((row) => row.text));
     if (texts.size !== 2 || !texts.has('是') || !texts.has('否')) return false;
-    return options.every((row) => row.mark && row.control && row.control.type === 'radio' && !row.control.disabled);
+    return options.every((row) => row.mark && row.control && row.control.type === 'radio'
+      && row.wrap.tagName === 'LABEL' && row.wrap.control === row.control
+      && norm(row.control.value) === row.text
+      && row.wrap.querySelectorAll(RADIO_MARK_SEL).length === 1
+      && row.wrap.querySelectorAll('input[type="radio"]').length === 1
+      && controlAvailable(row.wrap) && controlAvailable(row.control)) && radioGroupIsolated(options);
   }
 
   function readFormalWork(item) {
@@ -347,6 +388,9 @@
       label: FORMAL_WORK_LABEL,
       saved: false,
       skippedSave: true,
+      supported: false,
+      liveSupportClaimed: false,
+      writeAttempted: false,
       expected: want,
       before: '',
       after: ''
@@ -355,28 +399,36 @@
     if (!FORMAL_WORK_VALUES.includes(want)) {
       return { ...base, ok: false, reason: 'invalid_profile_value' };
     }
+    const hits = matchingItems(FORMAL_WORK_LABEL);
+    if (hits.length !== 1) return { ...base, ok: false, reason: hits.length ? 'item_ambiguous' : 'item_not_found' };
     const item = findItem(FORMAL_WORK_LABEL);
-    if (!item) return { ...base, ok: false, reason: 'item_not_found' };
     const radios = formalWorkOptions(item);
     if (!formalWorkStructureOk(radios)) {
       return { ...base, ok: false, reason: 'radio_structure_changed' };
     }
     const beforeRead = readFormalWork(item);
+    if (!beforeRead.ok) return { ...base, ok: false, reason: beforeRead.reason };
     const before = beforeRead.ok ? beforeRead.value : '';
     const target = radios.find((row) => row.text === want);
     if (!target) {
       return { ...base, ok: false, reason: 'option_not_found', before, after: before };
     }
-    target.wrap.click();
-    if (!target.control.checked) target.control.click();
-    target.control.dispatchEvent(new Event('input', { bubbles: true }));
-    target.control.dispatchEvent(new Event('change', { bubbles: true }));
+    if (isUnsafeClick(target.wrap) || isUnsafeClick(target.control)) {
+      return { ...base, ok: false, reason: 'unsafe_control', before, after: before };
+    }
+    if (before === want) return { ...base, ok: true, reason: 'matched', before, after: before };
+    target.control.click();
     await pause(80);
-    const afterRead = readFormalWork(item);
+    const afterItems = matchingItems(FORMAL_WORK_LABEL);
+    if (afterItems.length !== 1) {
+      return { ...base, ok: false, reason: afterItems.length ? 'item_ambiguous' : 'item_not_found', before, writeAttempted: true };
+    }
+    const afterRead = readFormalWork(afterItems[0]);
     const after = afterRead.ok ? afterRead.value : '';
     const matched = afterRead.ok && after === want;
     return {
       ...base,
+      writeAttempted: true,
       ok: matched,
       reason: matched ? 'matched' : (afterRead.ok ? 'readback_mismatch' : afterRead.reason),
       before,
@@ -627,14 +679,16 @@
     return [...root.querySelectorAll('[id]')].some((node) => node.id === selectId);
   }
 
-  function findCodedItem(spec) {
+  function locateCodedItem(spec) {
     const hits = formItems().filter((item) => {
       const label = item.querySelector(LABEL_SEL);
       if (!label || !spec.labelTest(labelText(label))) return false;
       if (!spec.rowScoped) return true;
       return selectIdMatches(item, spec.selectId);
     });
-    return hits.length === 1 ? hits[0] : null;
+    return hits.length === 1
+      ? { item: hits[0], reason: null }
+      : { item: null, reason: hits.length ? 'item_ambiguous' : 'item_not_found' };
   }
 
   function selectRows(item) {
@@ -660,17 +714,22 @@
 
   function selectStructureOk(item, spec) {
     const root = item.querySelector('.ant-select');
-    if (!root || !selectIdMatches(item, spec.selectId)) return false;
+    if (!root || item.querySelectorAll('.ant-select').length !== 1 || !selectIdMatches(item, spec.selectId)) return false;
+    if ([...document.querySelectorAll('[id]')].filter((node) => node.id === spec.selectId).length !== 1) return false;
     const showSearch = root.classList.contains('ant-select-show-search') || root.dataset.showSearch === 'true';
     if (showSearch !== spec.showSearch) return false;
     const list = item.querySelector('[role="listbox"]');
-    if (!list || list.id !== spec.listId) return false;
-    if (item.querySelectorAll('.ant-select-selection-item').length !== 1) return false;
+    if (!list || list.id !== spec.listId || item.querySelectorAll('[role="listbox"]').length !== 1) return false;
+    if (!root.contains(list) || [...document.querySelectorAll('[id]')].filter((node) => node.id === spec.listId).length !== 1) return false;
+    if (item.querySelectorAll('.ant-select-selection-item').length !== 1
+      || !root.contains(item.querySelector('.ant-select-selection-item'))) return false;
     const search = [...item.querySelectorAll('input.ant-select-selection-search-input')];
     if (spec.showSearch) {
-      if (search.length !== 1 || search[0].type !== 'search') return false;
+      if (search.length !== 1 || search[0].type !== 'search' || !root.contains(search[0])) return false;
     } else if (search.length !== 0) return false;
-    return optionSetMatches(selectRows(item), spec.options, spec.allowOptionSubset === true);
+    const rows = selectRows(item);
+    return rows.every((row) => list.contains(row.node))
+      && optionSetMatches(rows, spec.options, spec.allowOptionSubset === true);
   }
 
   function readCodedSelect(item, spec) {
@@ -689,17 +748,6 @@
     return { ok: true, value: row.text, code: row.code, reason: 'selected' };
   }
 
-  function applyCodedSelect(item, row) {
-    for (const option of selectRows(item)) {
-      option.node.setAttribute('aria-selected', option.code === row.code ? 'true' : 'false');
-    }
-    const shown = item.querySelector('.ant-select-selection-item');
-    shown.textContent = row.text;
-    shown.setAttribute('data-code', row.code);
-    const target = selectRows(item).find((option) => option.code === row.code);
-    target.node.click();
-  }
-
   async function fillCodedSelect(spec, value, options = {}) {
     const resolved = resolveCodedOption(spec.options, value);
     const base = {
@@ -707,6 +755,9 @@
       ...(spec.rowScoped ? { selectId: spec.selectId, rowIndex: spec.rowIndex } : {}),
       saved: false,
       skippedSave: true,
+      supported: false,
+      liveSupportClaimed: false,
+      writeAttempted: false,
       expected: resolved?.text || norm(value),
       code: resolved?.code || '',
       before: '',
@@ -716,14 +767,18 @@
     };
     if (!pageAllowed(options)) return { ...base, ok: false, reason: 'wrong_page' };
     if (!resolved) return { ...base, ok: false, reason: 'invalid_profile_value', code: '' };
-    const item = findCodedItem(spec);
-    if (!item) return { ...base, ok: false, reason: 'item_not_found' };
+    const located = locateCodedItem(spec);
+    const item = located.item;
+    if (!item) return { ...base, ok: false, reason: located.reason };
     if (!selectStructureOk(item, spec)) return { ...base, ok: false, reason: 'select_structure_changed' };
+    const root = item.querySelector('.ant-select');
+    if (!controlAvailable(root) || root.classList.contains('ant-select-disabled')) {
+      return { ...base, ok: false, reason: 'select_disabled' };
+    }
     const beforeRead = readCodedSelect(item, spec);
+    if (!beforeRead.ok) return { ...base, ok: false, reason: beforeRead.reason };
     const before = beforeRead.ok ? beforeRead.value : '';
     const beforeCode = beforeRead.ok ? beforeRead.code : '';
-    applyCodedSelect(item, resolved);
-    await pause(80);
     const search = item.querySelector('input.ant-select-selection-search-input');
     if (search && norm(search.value)) {
       return {
@@ -736,12 +791,39 @@
         afterCode: beforeCode
       };
     }
-    const afterRead = readCodedSelect(item, spec);
+    if (search && !controlAvailable(search)) return { ...base, ok: false, reason: 'select_disabled', before, beforeCode };
+    const target = selectRows(item).find((row) => row.code === resolved.code && row.text === norm(resolved.text));
+    if (!target) return { ...base, ok: false, reason: 'option_not_found', before, beforeCode, after: before, afterCode: beforeCode };
+    if (!controlAvailable(target.node) || target.node.classList.contains('ant-select-item-option-disabled')) {
+      return { ...base, ok: false, reason: 'select_disabled', before, beforeCode, after: before, afterCode: beforeCode };
+    }
+    if (isUnsafeClick(target.node)) return { ...base, ok: false, reason: 'unsafe_control', before, beforeCode, after: before, afterCode: beforeCode };
+    if (before === resolved.text && beforeCode === resolved.code) {
+      return { ...base, ok: true, reason: 'matched', before, beforeCode, after: before, afterCode: beforeCode };
+    }
+    // The page (or the explicitly synthetic fixture) must accept the click.
+    // Never manufacture a successful readback by rewriting display or ARIA state.
+    target.node.click();
+    await pause(80);
+    const afterLocated = locateCodedItem(spec);
+    const afterItem = afterLocated.item;
+    if (!afterItem) return { ...base, ok: false, reason: afterLocated.reason, before, beforeCode, writeAttempted: true };
+    const afterRoot = afterItem.querySelector('.ant-select');
+    if (!controlAvailable(afterRoot) || afterRoot.classList.contains('ant-select-disabled')) {
+      return { ...base, ok: false, reason: 'select_disabled', before, beforeCode, writeAttempted: true };
+    }
+    const afterSearch = afterItem.querySelector('input.ant-select-selection-search-input');
+    if (afterSearch && !controlAvailable(afterSearch)) return { ...base, ok: false, reason: 'select_disabled', before, beforeCode, writeAttempted: true };
+    if (afterSearch && norm(afterSearch.value)) {
+      return { ...base, ok: false, reason: 'search_input_written', before, beforeCode, writeAttempted: true };
+    }
+    const afterRead = readCodedSelect(afterItem, spec);
     const after = afterRead.ok ? afterRead.value : '';
     const afterCode = afterRead.ok ? afterRead.code : '';
     const matched = afterRead.ok && after === resolved.text && afterCode === resolved.code;
     return {
       ...base,
+      writeAttempted: true,
       ok: matched,
       reason: matched ? 'matched' : (afterRead.ok ? 'readback_mismatch' : afterRead.reason),
       before,
@@ -812,7 +894,7 @@
     };
   }
 
-    /* CMB_BIRTHDATE_PICKER_START */
+  /* CMB_BIRTHDATE_PICKER_START */
   const CMB_BIRTHDATE_INPUT_ID = 'resume_basicInfo_birthday';
   const CMB_BIRTHDATE_FILL_FAIL_REASONS = Object.freeze([
     'birthdate_unparseable',
@@ -868,23 +950,50 @@
     if (!el) return '';
     const aria = typeof el.getAttribute === 'function' ? (el.getAttribute('aria-label') || '') : '';
     const value = el.tagName === 'INPUT' || el.tagName === 'BUTTON' ? String(el.value || '') : '';
-    return `${el.textContent || ''} ${value} ${aria}`.replace(/\s+/gu, '');
+    return pickerNorm(`${el.textContent || ''} ${value} ${aria}`);
   }
 
   function isSaveLike(el) {
-    return /保存|提交|删除|投递/u.test(saveLikeText(el));
+    const text = saveLikeText(el);
+    if (/保存|提交|删除|投递|下一步|下一页|\b(?:save|submit|delete|deliver)\b/iu.test(text)) return true;
+    return [el?.textContent, el?.getAttribute?.('aria-label'), el?.value]
+      .some((value) => /^next(?:step|page)?$/iu.test(pickerNorm(value).replace(/\s+/gu, '')));
+  }
+
+  function pickerNodeUnavailable(el) {
+    if (!el || el.isConnected === false) return true;
+    for (let node = el; node; node = node.parentElement) {
+      if (node.disabled === true || node.getAttribute?.('aria-disabled') === 'true') return true;
+      if (node.hasAttribute?.('hidden') || node.hasAttribute?.('inert') || node.getAttribute?.('aria-hidden') === 'true') return true;
+      const style = node.ownerDocument?.defaultView?.getComputedStyle?.(node) || node.style;
+      if (style?.display === 'none' || style?.visibility === 'hidden' || style?.visibility === 'collapse') return true;
+    }
+    return false;
   }
 
   function isUnsafeClick(el) {
-    if (!el || isSaveLike(el)) return true;
-    const button = typeof el.closest === 'function' ? el.closest('button') : null;
-    if (button) {
-      const type = String(button.getAttribute('type') || '').toLowerCase();
-      if (type !== 'button') return true;
+    if (pickerNodeUnavailable(el) || isSaveLike(el)) return true;
+    for (let node = el; node; node = node.parentElement) {
+      if (node.tagName === 'A' && node.hasAttribute('href')) return true;
+      if (node.tagName === 'LABEL' && node.control) {
+        const control = node.control;
+        const type = String(control.getAttribute('type') || '').toLowerCase();
+        if (!node.contains(control) || control.tagName === 'BUTTON'
+            || ['submit', 'image', 'button', 'reset', 'file'].includes(type)
+            || pickerNodeUnavailable(control) || isSaveLike(control)) return true;
+        // A label can activate its associated control after a descendant click.
+        // Only a direct control click or the validated radio wrapper may do so.
+        if (node !== el && control !== el && !control.contains(el)) return true;
+      }
+      if (node.tagName === 'BUTTON') {
+        const type = String(node.getAttribute('type') || '').toLowerCase();
+        if (type !== 'button' || isSaveLike(node)) return true;
+      }
+      if (node.getAttribute?.('role') === 'button' && isSaveLike(node)) return true;
     }
     if (el.tagName === 'INPUT') {
       const type = String(el.getAttribute('type') || 'text').toLowerCase();
-      if (type === 'submit' || type === 'image' || type === 'button') return true;
+      if (['submit', 'image', 'button', 'reset', 'file', 'hidden'].includes(type)) return true;
     }
     return false;
   }
@@ -897,7 +1006,9 @@
   function pressPicker(doc, el) {
     if (isUnsafeClick(el)) return false;
     dispatchMouse(doc, el, 'mousedown');
+    if (isUnsafeClick(el)) return false;
     dispatchMouse(doc, el, 'mouseup');
+    if (isUnsafeClick(el)) return false;
     if (typeof el.click === 'function') el.click();
     return true;
   }
@@ -920,10 +1031,7 @@
     return [...doc.querySelectorAll('.ant-picker-dropdown')].filter((node) => {
       if (!node || !node.classList) return false;
       if (node.classList.contains('ant-picker-dropdown-hidden')) return false;
-      if (typeof node.hasAttribute === 'function' && node.hasAttribute('hidden')) return false;
-      if (node.style && node.style.display === 'none') return false;
-      if (node.style && node.style.visibility === 'hidden') return false;
-      return true;
+      return !pickerNodeUnavailable(node);
     });
   }
 
@@ -1046,6 +1154,8 @@
   async function driveBirthDatePanel(doc, parsed, wait) {
     let previousSig = '';
     for (let step = 0; step < PICKER_STEP_LIMIT; step += 1) {
+      const target = assessCmbBirthDatePickerTarget(doc);
+      if (!target.ok) return { ok: false, reason: target.reason };
       const located = singlePanel(doc);
       if (!located.ok) return located;
       const panel = located.panel;
@@ -1145,7 +1255,7 @@
       return { ...classifyCmbBirthDatePickerTarget({ count: 0, input: false }), ok: false, node: null };
     }
     const nodes = [...doc.querySelectorAll(`[id="${CMB_BIRTHDATE_INPUT_ID}"]`)];
-    const input = nodes.length === 1 && nodes[0].tagName === 'INPUT';
+    const input = nodes.length === 1 && nodes[0].tagName === 'INPUT' && !isUnsafeClick(nodes[0]);
     const classified = classifyCmbBirthDatePickerTarget({ count: nodes.length, input });
     return {
       ...classified,
@@ -1205,26 +1315,46 @@
       });
     }
     await wait();
-    const afterPick = normalizeCmbBirthDateValue(input.value);
+    const pickedTarget = assessCmbBirthDatePickerTarget(doc);
+    if (!pickedTarget.ok) {
+      pressEscape(doc, input);
+      return closedPickerResult({
+        reason: pickedTarget.reason,
+        expected: parsed.iso,
+        before,
+        writeAttempted: true
+      });
+    }
+    const pickedInput = pickedTarget.node;
+    const afterPick = normalizeCmbBirthDateValue(pickedInput.value);
     if (afterPick !== parsed.iso) {
       pressEscape(doc, input);
       return closedPickerResult({
         reason: 'birthdate_readback_mismatch',
         expected: parsed.iso,
         before,
-        after: pickerNorm(input.value),
+        after: pickerNorm(pickedInput.value),
         writeAttempted: true
       });
     }
     const stillOpen = singlePanel(doc);
-    if (stillOpen.ok) pressEscape(doc, input);
-    const after = normalizeCmbBirthDateValue(input.value);
+    if (stillOpen.ok) pressEscape(doc, pickedInput);
+    const verifiedTarget = assessCmbBirthDatePickerTarget(doc);
+    if (!verifiedTarget.ok) {
+      return closedPickerResult({
+        reason: verifiedTarget.reason,
+        expected: parsed.iso,
+        before,
+        writeAttempted: true
+      });
+    }
+    const after = normalizeCmbBirthDateValue(verifiedTarget.node.value);
     if (after !== parsed.iso) {
       return closedPickerResult({
         reason: 'birthdate_readback_mismatch',
         expected: parsed.iso,
         before,
-        after: pickerNorm(input.value),
+        after: pickerNorm(verifiedTarget.node.value),
         writeAttempted: true
       });
     }

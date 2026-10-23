@@ -229,6 +229,25 @@ async function setup(t, { install = true, beforeInstall, schoolLookup, lookupCla
   return { window, document, native, selects, dates, textInputs, readProof, xhr, probeTiming, api: window.__cmsEducationLive };
 }
 
+function captureTrialHooks(window) {
+  return [
+    ['fetch', window, 'fetch'], ['click', window.HTMLElement.prototype, 'click'],
+    ['submit', window.HTMLFormElement.prototype, 'submit'], ['requestSubmit', window.HTMLFormElement.prototype, 'requestSubmit'],
+    ...['open', 'send', 'abort'].map(key => [`XHR.${key}`, window.XMLHttpRequest.prototype, key]),
+    ...['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'].map(key => [key, window, key])
+  ].map(([label, object, key]) => ({ label, object, key, descriptor: Object.getOwnPropertyDescriptor(object, key) }));
+}
+
+function assertTrialHooks(hooks, message) {
+  for (const { label, object, key, descriptor } of hooks) {
+    assert.deepEqual(Object.getOwnPropertyDescriptor(object, key), descriptor, `${label}: ${message}`);
+  }
+}
+
+function assertSettledControlsTimers(timers) {
+  assert.deepEqual(plain(timers), { pendingTimers: 0, unobservableTimers: 0, observedNonFunctionTimeouts: 0 });
+}
+
 test('controls opt-in creates seven explicit fixture facts/supplements; text default stays narrow', async () => {
   assert.equal(runner.readControls({}), false);
   assert.equal(runner.readControls({ CONTROLS: '1' }), true);
@@ -274,6 +293,99 @@ test('nine-field trial probes captured widgets, verifies preexisting controls, a
   assert.equal(h.window.ResumeCmsEducationMultiWidgetControls, undefined, 'the controls-only activation helper is removed with the injected adapters');
   assert.equal(JSON.stringify({ result, cleanup }).includes('private fictional'), false);
   assert.equal(JSON.stringify({ result, cleanup }).includes('private-request-body'), false);
+});
+
+test('controls school callbacks settle nested function timers and promise work through nine readbacks and cleanup', async t => {
+  let nativeHooks, callbackSuppression;
+  const completed = [];
+  const h = await setup(t, { beforeInstall: ({ window }) => { nativeHooks = captureTrialHooks(window); },
+    onSchoolOpen: ({ window, xhr }) => {
+      // Fictional callbacks exercise the existing harvested opener and timer
+      // guards; neither the handlers nor their timing are a live-site claim.
+      window.setTimeout(() => {
+        completed.push('outer');
+        window.Promise.resolve().then(() => {
+          completed.push('promise');
+          window.setTimeout(() => {
+            const count = window.__cmsEducationLive.suppressedAutosave().length;
+            xhr();
+            callbackSuppression = plain(window.__cmsEducationLive.suppressedAutosave().slice(count));
+            completed.push('inner');
+          }, 650);
+        });
+      }, 650);
+    }
+  }), before = h.readProof(), outside = h.document.getElementById('unrelated').value;
+  const prepared = h.api.prepare(); assert.equal(prepared.ok, true);
+  const result = await h.api.run(await runner.createLivePlan(plain(prepared.identities), 0, true));
+  assert.equal(result.ok, true, JSON.stringify(result));
+  assert.deepEqual(completed, ['outer', 'promise', 'inner']);
+  assert.deepEqual(callbackSuppression, [{ method: 'POST', url: AUTOSAVE, via: 'xhr', blockedBeforeSend: true, phase: 'trial' }]);
+  assert.equal(result.readbacks.length, 9); assert.ok(result.readbacks.every(field => field.ok && field.reason === 'readback_matched'));
+  assertSettledControlsTimers(result.timerSettle); assertSettledControlsTimers(h.api.timerSettle());
+  assert.equal(result.restored, true); assert.equal(result.pageLeftAsFound, true); assert.equal(result.otherChanged, false);
+  assert.equal(result.liveSupportClaimed, false); assert.deepEqual(h.readProof(), before);
+  assert.equal(h.document.getElementById('unrelated').value, outside);
+  assert.equal(h.native.sends, 0); assert.equal(h.native.forbidden, 0);
+  assert.deepEqual(plain(h.api.posts()), []); assert.deepEqual(plain(h.api.clicks()), []);
+  const cleanup = await h.api.cleanup(); assert.equal(cleanup.ok, true, JSON.stringify(cleanup));
+  assertSettledControlsTimers(cleanup.timerSettle); assert.deepEqual(completed, ['outer', 'promise', 'inner']);
+  assert.deepEqual(h.readProof(), before); assert.equal(h.window.__cmsEducationLive, undefined);
+  assert.equal(h.document.querySelectorAll('.ant-select-open,.ant-select-dropdown:not(.ant-select-dropdown-hidden),.ant-calendar-picker-container').length, 0);
+  assertTrialHooks(nativeHooks, 'restored after settled controls callbacks');
+});
+
+test('controls school interval keeps cleanup guards until the fictional interval is explicitly cleared', async t => {
+  let nativeHooks, interval;
+  const h = await setup(t, { beforeInstall: ({ window }) => { nativeHooks = captureTrialHooks(window); },
+    // Use the existing fixture opener, without adding a site handler or DOM.
+    onSchoolOpen: ({ window, xhr }) => { interval = window.setInterval(() => xhr(), 60000); }
+  }), before = h.readProof(), guardedHooks = captureTrialHooks(h.window);
+  const prepared = h.api.prepare(); assert.equal(prepared.ok, true);
+  const result = await h.api.run(await runner.createLivePlan(plain(prepared.identities), 0, true));
+  assert.equal(result.ok, false); assert.equal(result.reason, 'autosave_callbacks_pending');
+  assert.equal(result.pageLeftAsFound, false); assert.equal(result.liveSupportClaimed, false);
+  assert.ok(result.timerSettle.pendingTimers > 0); assert.equal(result.timerSettle.unobservableTimers, 0);
+  assert.equal(h.api.widgetProbes()[0].key, 'school'); assert.equal(h.api.widgetProbes()[0].reason, 'autosave_callbacks_pending');
+  const unresolved = await h.api.cleanup();
+  assert.equal(unresolved.ok, false); assert.equal(unresolved.reason, 'autosave_callbacks_pending');
+  assert.ok(unresolved.timerSettle.pendingTimers > 0); assert.equal(h.window.__cmsEducationLive, h.api);
+  assertTrialHooks(guardedHooks, 'retained while controls callbacks remain pending');
+  assert.deepEqual(h.readProof(), before); assert.equal(h.native.sends, 0); assert.equal(h.native.forbidden, 0);
+  assert.deepEqual(plain(h.api.posts()), []); assert.deepEqual(plain(h.api.clicks()), []);
+  h.window.clearInterval(interval);
+  assertSettledControlsTimers(h.api.timerSettle());
+  const cleanup = await h.api.cleanup(); assert.equal(cleanup.ok, true, JSON.stringify(cleanup));
+  assertSettledControlsTimers(cleanup.timerSettle); assert.deepEqual(h.readProof(), before);
+  assert.equal(h.window.__cmsEducationLive, undefined);
+  assert.equal(h.document.querySelectorAll('.ant-select-open,.ant-select-dropdown:not(.ant-select-dropdown-hidden),.ant-calendar-picker-container').length, 0);
+  assertTrialHooks(nativeHooks, 'restored after the controls interval is cleared');
+});
+
+test('controls opening detects a changed existing neighbor and retains guards without overwriting it', async t => {
+  let nativeHooks;
+  const changed = 'fictional neighboring mutation';
+  const h = await setup(t, { beforeInstall: ({ window }) => { nativeHooks = captureTrialHooks(window); },
+    onSchoolOpen: ({ document }) => { document.getElementById('unrelated').value = changed; }
+  }), before = h.readProof(), outside = h.document.getElementById('unrelated'), original = outside.value,
+    guardedHooks = captureTrialHooks(h.window);
+  const prepared = h.api.prepare(); assert.equal(prepared.ok, true);
+  const result = await h.api.run(await runner.createLivePlan(plain(prepared.identities), 0, true));
+  assert.equal(result.ok, false); assert.equal(result.otherChanged, true); assert.equal(result.pageLeftAsFound, false);
+  assert.equal(result.liveSupportClaimed, false); assert.equal(outside.value, changed);
+  assert.deepEqual(h.readProof(), before); assert.equal(h.native.sends, 0); assert.equal(h.native.forbidden, 0);
+  assert.deepEqual(plain(h.api.posts()), []); assert.deepEqual(plain(h.api.clicks()), []);
+  const unresolved = await h.api.cleanup(); assert.equal(unresolved.ok, false); assert.equal(unresolved.reason, 'restore_failed');
+  assert.equal(outside.value, changed); assert.equal(h.window.__cmsEducationLive, h.api);
+  assertTrialHooks(guardedHooks, 'retained while the existing neighbor differs');
+  // The test owns this mutation; the runner may restore only its authorized
+  // fields. Restore the existing fixture neighbor before final teardown.
+  outside.value = original;
+  const cleanup = await h.api.cleanup(); assert.equal(cleanup.ok, true, JSON.stringify(cleanup));
+  assertSettledControlsTimers(cleanup.timerSettle); assert.deepEqual(h.readProof(), before);
+  assert.equal(h.window.__cmsEducationLive, undefined);
+  assert.equal(h.document.querySelectorAll('.ant-select-open,.ant-select-dropdown:not(.ant-select-dropdown-hidden),.ant-calendar-picker-container').length, 0);
+  assertTrialHooks(nativeHooks, 'restored after the fixture neighbor is restored');
 });
 
 test('controls cleanup restores the previous activation-helper property descriptor', async t => {
@@ -559,6 +671,7 @@ test('fake CDP controls host reports exact restored proof and validates separate
       events: ['mousedown', 'mouseup', 'click'], observedEvents: ['mousedown', 'mouseup', 'click'] }, probe.key);
   }
   assert.equal(evidence.finalDetails.widgetClickCount, 8); assert.equal(evidence.finalDetails.clickCount, 0);
+  assertSettledControlsTimers(evidence.finalDetails.timerSettle);
   assert.ok(evidence.suppressedLookup.length > 0); assert.deepEqual(evidence.nonGet, []); assert.deepEqual(evidence.saveLikePost, []);
   for (const key of ['nonGet', 'saveLikePost']) for (const [label, value] of [
     ['missing', undefined], ['null', null], ['object', {}], ['zero', 0], ['empty string', '']

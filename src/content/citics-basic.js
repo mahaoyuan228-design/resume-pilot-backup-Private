@@ -517,7 +517,7 @@
 
   function assertSafeTarget(node) {
     if (!(node instanceof Element)) throw code('select_click_target_missing');
-    if (node.closest('button, a, [type=submit], .yidun_cover-frame, .yidun_popup, .yidun_modal, .yidun_panel, iframe')) {
+    if (node.closest('button, a, [type=submit], [type=button], [role=button], .yidun_cover-frame, .yidun_popup, .yidun_modal, .yidun_panel, iframe')) {
       throw code('commit_or_yidun_target');
     }
     const text = norm(node.textContent);
@@ -749,6 +749,7 @@
         || !visible(found.matches[0]) || !enabledOption(found.matches[0])
         || linkedDropdown(select, visibleDropdowns()) !== opened.dropdown
         || matchingOptions(opened.dropdown, expected).matches.length !== 1
+        || matchingOptions(opened.dropdown, expected).matches[0] !== found.matches[0]
         || yidunCovering() || document.visibilityState === 'hidden' || !pageAllowed({ synthetic: true })) {
         throw code('control_changed');
       }

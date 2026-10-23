@@ -10,7 +10,11 @@
 // row still name it. Disagreeing captions stay fail-closed. Any other pair of
 // 毕业院校 rows stays fail-closed. Never-Save prefers the preexisting ant-select
 // only when the pair is exactly one flat ant-select with a non-empty selected
-// value and one text input, and does not write the text input.
+// value and one text input, and does not write the text input. A text partner
+// that is not visible still counts: the filled ant-select is accepted alone and
+// stays the anchor. Empty select, two text rows, a select without
+// ant-select-allow-clear, a third 毕业院校 row, and a disagreeing caption stay
+// fail-closed.
 // 学位, 学历, and 专业名称 repeat after 毕业时间 in 教育经历. The basic row is the
 // single form item strictly after the preferred 毕业院校 row and before the one
 // 毕业时间 row. A unique 毕业院校 row is that preferred row. Match the label.
@@ -146,19 +150,30 @@
     return [...item.querySelectorAll(selector)].filter((node) => node.closest('.ant-row.ant-form-item') === item);
   }
 
-  function locateText(item) {
-    if (stray(item, `${STRAY}, textarea`).length) return { ok: false, reason: 'control_not_supported' };
+  function textInput(item) {
+    if (stray(item, `${STRAY}, textarea`).length) return null;
     const inputs = stray(item, 'input.ant-input');
-    if (inputs.length !== 1) return { ok: false, reason: 'control_not_supported' };
+    if (inputs.length !== 1) return null;
     const control = inputs[0];
     const attr = control.getAttribute('type');
     const type = String(control.type || '').toLowerCase();
-    if (type !== 'text' || (attr && attr.toLowerCase() !== 'text')) return { ok: false, reason: 'control_not_supported' };
-    if (control.readOnly || control.disabled || control.classList.contains('ant-calendar-picker-input')) {
-      return { ok: false, reason: 'control_not_supported' };
-    }
-    if (!visible(control)) return { ok: false, reason: 'control_not_supported' };
+    if (type !== 'text' || (attr && attr.toLowerCase() !== 'text')) return null;
+    if (control.readOnly || control.disabled || control.classList.contains('ant-calendar-picker-input')) return null;
+    return control;
+  }
+
+  function locateText(item) {
+    const control = textInput(item);
+    if (!control || !visible(control)) return { ok: false, reason: 'control_not_supported' };
     return { ok: true, kind: 'text', item, control };
+  }
+
+  // The harvested 请填写毕业院校 input can sit in the DOM with no client rect.
+  // It is still the text partner. It is not a control we write.
+  function hiddenTextPartner(item) {
+    const control = textInput(item);
+    if (!control || visible(control)) return { ok: false, reason: 'control_not_supported' };
+    return { ok: true, kind: 'text', item, control, hidden: true };
   }
 
   function locateTextarea(item) {
@@ -226,7 +241,8 @@
   }
 
   // Two harvested 毕业院校 rows: keep the flat ant-select that already shows a
-  // school, and leave the text input alone. A unique row stays the text contract.
+  // school, and leave the text input alone. A hidden text partner still pairs.
+  // A unique row stays the text contract.
   function resolveSchool(rows) {
     if (rows.length === 1) return locateText(rows[0]);
     if (rows.length !== 2) return { ok: false, reason: 'control_not_supported' };
@@ -235,16 +251,18 @@
     for (const item of rows) {
       const asSelect = locateSelect(item, SCHOOL);
       const asText = locateText(item);
-      if (asSelect.ok && !asText.ok) {
+      const asHidden = !asSelect.ok && !asText.ok ? hiddenTextPartner(item) : { ok: false };
+      if (asSelect.ok && !asText.ok && !asHidden.ok) {
         if (select) return { ok: false, reason: 'control_not_supported' };
         select = asSelect;
-      } else if (asText.ok && !asSelect.ok) {
+      } else if ((asText.ok || asHidden.ok) && !asSelect.ok) {
         if (text) return { ok: false, reason: 'control_not_supported' };
-        text = asText;
+        text = asText.ok ? asText : asHidden;
       } else {
         return { ok: false, reason: 'control_not_supported' };
       }
     }
+    if (!select || !text) return { ok: false, reason: 'control_not_supported' };
     const read = readSelectText(select.select, SCHOOL);
     if (!read.ok || !read.value) return { ok: false, reason: 'control_not_supported' };
     return select;

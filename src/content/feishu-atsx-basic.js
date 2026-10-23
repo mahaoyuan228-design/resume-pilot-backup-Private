@@ -219,7 +219,7 @@
     // The fixture has empty text values, with no text sentinel contract.
     // Prompt-looking strings and actual placeholder text in value are occupied too.
     if (String(control.value).trim() !== '') {
-      return seal({ label, ok: true, reason: 'skipped_existing', before, after: before, expected, writeAttempted: false });
+      return seal({ label, ok: true, reason: 'skipped_existing', before, after: before, afterRaw: control.value, expected, writeAttempted: false });
     }
     const snapshot = { label, item: row.item, control, before: control.value, expected: String(value ?? '') };
     control.focus();
@@ -228,7 +228,7 @@
       return seal({ label, ok: false, reason: 'control_changed', before, after: norm(control.value), expected, writeAttempted: false });
     }
     if (String(control.value).trim() !== '') {
-      return seal({ label, ok: true, reason: 'skipped_existing', before, after: norm(control.value), expected, writeAttempted: false });
+      return seal({ label, ok: true, reason: 'skipped_existing', before, after: norm(control.value), afterRaw: control.value, expected, writeAttempted: false });
     }
     setNativeValue(control, snapshot.expected, snapshot);
     await pause(80);
@@ -464,6 +464,17 @@
       const current = classifyField(result.label);
       const snap = snapshots.find((row) => row.label === result.label);
       if (!current.ready || current.item !== snap.item || current.control !== snap.control || norm(current.control.value) !== result.expected) {
+        result.ok = false;
+        result.reason = 'readback_mismatch';
+        result.after = current.ready ? norm(current.control.value) : norm(snap.control.value);
+      }
+    }
+    // Occupied skips retain their raw value at acceptance, even if populated on
+    // focus. Recheck them too, without adding them to owned-write rollback.
+    for (const result of results.filter((row) => row.reason === 'skipped_existing')) {
+      const snap = snapshots.find((row) => row.label === result.label);
+      const current = classifyField(result.label);
+      if (!current.ready || current.item !== snap.item || current.control !== snap.control || current.control.value !== result.afterRaw) {
         result.ok = false;
         result.reason = 'readback_mismatch';
         result.after = current.ready ? norm(current.control.value) : norm(snap.control.value);

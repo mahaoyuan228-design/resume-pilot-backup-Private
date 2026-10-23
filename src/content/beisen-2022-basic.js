@@ -195,6 +195,7 @@
     const before = norm(control.value);
     const skipExisting = () => ({
       label, ok: true, reason: 'skipped_existing', before: norm(control.value), after: norm(control.value), expected,
+      afterRaw: control.value,
       writeAttempted: false, saved: false, skippedSave: true, liveSupportClaimed: false
     });
     // The fixture has no value-placeholder contract. Every nonempty value is occupied,
@@ -447,6 +448,17 @@
       const result = results.find((row) => row.label === snapshot.label);
       const row = classifyField(snapshot.label);
       if (result.ok && (!row.ready || row.item !== snapshot.item || row.control !== snapshot.control || norm(row.control.value) !== result.expected)) {
+        result.ok = false;
+        result.reason = 'readback_mismatch';
+        result.after = row.ready ? norm(row.control.value) : '';
+      }
+    }
+    // Occupied skips retain their raw value at acceptance, even if populated on
+    // focus. Recheck them too, without adding them to owned-write rollback.
+    for (const result of results.filter((row) => row.reason === 'skipped_existing')) {
+      const snapshot = classified.find((row) => row.label === result.label);
+      const row = classifyField(result.label);
+      if (!row.ready || row.item !== snapshot.item || row.control !== snapshot.control || row.control.value !== result.afterRaw) {
         result.ok = false;
         result.reason = 'readback_mismatch';
         result.after = row.ready ? norm(row.control.value) : '';

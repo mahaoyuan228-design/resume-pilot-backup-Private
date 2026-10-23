@@ -136,14 +136,24 @@
     };
   }
 
-  function setNativeValue(input, value) {
+  // Cleanup may restore a hidden owned input, but never a node rebound to a
+  // different field/item. Connectivity and value equality alone are not ownership.
+  function hasTextBinding({ label, item, control }) {
+    const hits = matchingItems(label);
+    return control?.isConnected && item?.isConnected
+      && hits.length === 1 && hits[0] === item && control.closest(ITEM_SEL) === item;
+  }
+
+  function setNativeValue(input, value, binding) {
     const proto = Object.getPrototypeOf(input);
     const desc = Object.getOwnPropertyDescriptor(proto, 'value')
       || Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value');
     if (desc?.set) desc.set.call(input, value);
     else input.value = value;
     input.dispatchEvent(new Event('input', { bubbles: true }));
+    if (!hasTextBinding(binding)) return;
     input.dispatchEvent(new Event('change', { bubbles: true }));
+    if (!hasTextBinding(binding)) return;
     input.dispatchEvent(new Event('blur', { bubbles: true }));
   }
 
@@ -155,12 +165,13 @@
   async function restoreOwnedText(snapshot) {
     const { label, control, beforeRaw, writtenValue } = snapshot;
     if (!control?.isConnected) return { label, restored: false, reason: 'control_detached' };
+    if (!hasTextBinding(snapshot)) return { label, restored: false, reason: 'control_rebound' };
     if (control.value === beforeRaw) return { label, restored: true, reason: 'already_restored' };
     // A reactive or user value wins. Cleanup must not overwrite a competing value.
     if (control.value !== writtenValue) return { label, restored: false, reason: 'competing_value_preserved' };
-    setNativeValue(control, beforeRaw);
+    setNativeValue(control, beforeRaw, snapshot);
     await pause(80);
-    const restored = control.isConnected && control.value === beforeRaw;
+    const restored = hasTextBinding(snapshot) && control.value === beforeRaw;
     return { label, restored, reason: restored ? 'restored' : 'restore_readback_mismatch' };
   }
 
@@ -191,14 +202,14 @@
     if (!emptyText(control.value)) return skipExisting();
     control.focus();
     const focused = classifyField(label);
-    if (!focused.ready || focused.control !== control) return blocked('control_changed_before_write');
+    if (!focused.ready || focused.control !== control || focused.item !== row.item) return blocked('control_changed_before_write');
     if (!emptyText(control.value)) return skipExisting();
-    const snapshot = { label, control, beforeRaw: control.value, writtenValue: String(value ?? '') };
-    setNativeValue(control, snapshot.writtenValue);
+    const snapshot = { label, item: row.item, control, beforeRaw: control.value, writtenValue: String(value ?? '') };
+    setNativeValue(control, snapshot.writtenValue, snapshot);
     await pause(80);
     const current = classifyField(label);
     const after = current.ready ? norm(current.control.value) : '';
-    const ok = current.ready && current.control === control && after === expected;
+    const ok = current.ready && current.item === row.item && current.control === control && after === expected;
     const restore = ok ? null : await restoreOwnedText(snapshot);
     return {
       label,
@@ -426,7 +437,7 @@
         results.push({ label, ok: false, reason: 'control_changed_before_write', before: '', after: '', expected: norm(value), writeAttempted: false });
         continue;
       }
-      const snapshot = row.ready ? { label, control: row.control, beforeRaw: row.control.value, writtenValue: String(value) } : null;
+      const snapshot = row.ready ? { label, item: row.item, control: row.control, beforeRaw: row.control.value, writtenValue: String(value) } : null;
       const result = await fillText(label, value, options);
       results.push(result);
       if (result.writeAttempted && snapshot) written.push({ ...snapshot, beforeRaw: result.beforeRaw });
@@ -435,7 +446,7 @@
     for (const snapshot of written) {
       const result = results.find((row) => row.label === snapshot.label);
       const row = classifyField(snapshot.label);
-      if (result.ok && (!row.ready || row.control !== snapshot.control || norm(row.control.value) !== result.expected)) {
+      if (result.ok && (!row.ready || row.item !== snapshot.item || row.control !== snapshot.control || norm(row.control.value) !== result.expected)) {
         result.ok = false;
         result.reason = 'readback_mismatch';
         result.after = row.ready ? norm(row.control.value) : '';
@@ -448,7 +459,7 @@
       // A later cleanup event can repopulate a field restored earlier in this loop.
       for (const snapshot of written) {
         const row = restore.find((entry) => entry.label === snapshot.label);
-        if (row.restored && (!snapshot.control.isConnected || snapshot.control.value !== snapshot.beforeRaw)) {
+        if (row.restored && (!hasTextBinding(snapshot) || snapshot.control.value !== snapshot.beforeRaw)) {
           row.restored = false;
           row.reason = 'restore_readback_mismatch';
         }

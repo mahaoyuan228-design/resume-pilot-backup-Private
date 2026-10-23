@@ -277,6 +277,17 @@
     }
     return texts;
   }
+  function pickerDisplayMatches(value, parts) {
+    // The observed region input and chip may show 大兴区 or 北京大兴区.
+    // Keep closed preflight and later STATUS on the same exact display rules.
+    const text = norm(value);
+    return text === parts.l2 || text === parts.l1 + parts.l2;
+  }
+  function pickerSelectionMatches(target, parts) {
+    const chips = chipTexts(target.panel);
+    return chips?.length === 1 && pickerDisplayMatches(chips[0], parts)
+      && pickerDisplayMatches(target.input.value, parts);
+  }
   function chipEntries(panel) {
     const lists = [...panel.querySelectorAll('.selected-view-data')].filter(node => panel.contains(node));
     if (lists.length !== 1) return null;
@@ -399,7 +410,7 @@
   async function fillPicker(target, parts, replaceExisting, markWrite, guard) {
     const {panel, trigger, input} = target;
     const {l1, l2} = parts;
-    const pOk = text => text === l2 || text === l1 + l2;
+    const pOk = text => pickerDisplayMatches(text, parts);
     let opened = false;
     let replaced = false;
     const trace = {question:ownLabel(target.item), inputBefore:null, confirmClicked:false, steps:[]};
@@ -454,10 +465,10 @@
     const chips = chipTexts(panel);
     if (!chips) await abort('picker_chip_unknown');
     const triggerValue = norm(input.value);
-    if (chips.length === 1 && pOk(chips[0]) && pOk(triggerValue)) {
+    if (pickerSelectionMatches(target, parts)) {
       await clickPanelCancel(panel);
       opened = false;
-      if (!pOk(norm(input.value)) || shown(panel)) fail('picker_readback_mismatch');
+      if (!pickerSelectionMatches(target, parts) || shown(panel) || !siteValid(target)) fail('picker_readback_mismatch');
       return {status:'verified', reason:'preexisting_same_value'};
     }
     const counterNow = readCounter(panel);
@@ -661,8 +672,8 @@
   function closedPickerDecision(target, parts) {
     const chips = chipTexts(target.panel);
     if (!chips) return {action:'fail', reason:'picker_chip_unknown'};
-    const triggerValue = norm(target.input.value);
-    if (chips.length === 1 && chips[0] === parts.l2 && triggerValue === parts.l2) return {action:'same'};
+    if (pickerSelectionMatches(target, parts)) return siteValid(target)
+      ? {action:'same'} : {action:'fail', reason:'intent_site_validation_failed'};
     // A different chip is confirmed after the panel opens. replaceExisting false
     // cancels it; replaceExisting true re-picks inside that open panel.
     return {action:'fill'};
@@ -864,7 +875,10 @@
               const current = textTarget(form, field.question);
               return current.input.value === answer.value && siteValid(current);
             }
-            if (field.kind === 'picker') return norm(pickerTarget(form, field.question).input.value) === answer.parts.l2;
+            if (field.kind === 'picker') {
+              const current = pickerTarget(form, field.question);
+              return pickerSelectionMatches(current, answer.parts) && siteValid(current);
+            }
             if (field.kind === 'select') return norm(selectTarget(form, field.question).input.value) === answer.value;
             return false;
           });
@@ -923,7 +937,7 @@
     return true;
   };
   globalThis.ResumeGthIntent = Object.freeze({
-    implementationRevision:6, installed:true, trial, listener,
+    implementationRevision:7, installed:true, trial, listener,
     fields:FIELDS.map(field => ({question:field.question, kind:field.kind, evidence:field.evidence})),
     optional:OPTIONAL.map(field => ({question:field.question, kind:field.kind, evidence:field.evidence}))
   });

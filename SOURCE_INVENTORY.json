@@ -1,6 +1,6 @@
 {
   "version": "0.1.4.9",
-  "sumsSha256": "9f31558eec4076c765cc78b5e889c142de6485efcee166fa9549b36df33f3487",
+  "sumsSha256": "80d723470a31cbd1e79241923a030562974e164133699c9ee526887aa7b92ee9",
   "inventory": [
     {
       "path": "manifest.json",
@@ -298,8 +298,8 @@
     },
     {
       "path": "src/content/gth-intent.js",
-      "sha256": "d41488ab0f56e04c3b6f665da322c4bb7b49f6d934ef93595139f84c368d2e5c",
-      "sourceSha256": "d41488ab0f56e04c3b6f665da322c4bb7b49f6d934ef93595139f84c368d2e5c",
+      "sha256": "08ea2bb2423989e2921042a83b6a6f7bcfd9efe756722687849c3c2eaa8968a0",
+      "sourceSha256": "08ea2bb2423989e2921042a83b6a6f7bcfd9efe756722687849c3c2eaa8968a0",
       "kind": "frozen-product"
     },
     {

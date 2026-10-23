@@ -281,3 +281,164 @@ test('wrong pages and unconfirmed profiles remain unclaimed and never write', as
   assert.equal(input(ctx, 'fullName').value, '');
   assert.equal(input(wrong, 'fullName').value, '');
 });
+// Rebind only existing fixture nodes/classes. These adversarial state changes
+// are offline safety cases, not a claim that a live tenant uses this lifecycle.
+function rebindFixtureItem(api, control) {
+  const item = control.closest(api.ITEM_SEL);
+  const replacement = item.cloneNode(true);
+  replacement.querySelector('input').replaceWith(control);
+  item.replaceWith(replacement);
+  return replacement;
+}
+
+test('focus rebind retaining the same input refuses writes through a new item', async (t) => {
+  const ctx = boot();
+  t.after(() => ctx.window.close());
+  const { api, document } = ctx;
+  const control = document.querySelector('[name="fullName"]');
+  const originalItem = control.closest(api.ITEM_SEL);
+  let writes = 0;
+  control.addEventListener('focus', () => { rebindFixtureItem(api, control); }, { once: true });
+  control.addEventListener('input', () => { writes += 1; });
+  const result = await api.fillBasic(values, { synthetic: true });
+  neverSave(ctx, result);
+  assert.equal(result.ok, false);
+  assert.equal(result.writeAttempted, false);
+  assert.equal(writes, 0);
+  assert.equal(originalItem.isConnected, false);
+  assert.equal(control.isConnected, true);
+  assert.equal(control.value, '');
+  assert.equal(document.querySelector('[name="mobile"]').value, '');
+  assert.equal(document.querySelector('[name="email"]').value, '');
+  assert.equal(document.querySelector('[name="years"]').value, '0');
+});
+
+test('post-write reparent preserves the occupied skip and the rebound neighbor', async (t) => {
+  const ctx = boot();
+  t.after(() => ctx.window.close());
+  const { api, document } = ctx;
+  const name = document.querySelector('[name="fullName"]');
+  const mobile = document.querySelector('[name="mobile"]');
+  const years = document.querySelector('[name="years"]');
+  name.value = '  KEEP OCCUPIED  ';
+  let occupiedEvents = 0;
+  for (const kind of ['focus', 'input', 'change', 'blur']) {
+    name.addEventListener(kind, () => { occupiedEvents += 1; });
+  }
+  let mobileWrites = 0;
+  const mobileEvents = [];
+  for (const kind of ['input', 'change', 'blur']) {
+    mobile.addEventListener(kind, () => { mobileEvents.push(kind); });
+  }
+  mobile.addEventListener('input', () => { mobileWrites += 1; });
+  mobile.addEventListener('input', () => {
+    const mobileParent = mobile.parentElement;
+    const yearsParent = years.parentElement;
+    mobileParent.append(years);
+    yearsParent.append(mobile);
+  }, { once: true });
+  const result = await api.fillBasic(values, { synthetic: true });
+  neverSave(ctx, result);
+  assert.equal(result.ok, false);
+  assert.equal(result.writeAttempted, true);
+  assert.equal(result.restored, false);
+  assert.equal(result.results[0].reason, 'skipped_existing');
+  assert.equal(result.results[0].writeAttempted, false);
+  assert.equal(name.value, '  KEEP OCCUPIED  ');
+  assert.equal(occupiedEvents, 0);
+  assert.equal(mobileWrites, 1, 'cleanup must not write through the rebound neighbor');
+  assert.deepEqual(mobileEvents, ['input'], 'no change/blur events may escape into the rebound item');
+  assert.equal(mobile.value, '13800138000');
+  assert.equal(years.value, '0');
+  assert.equal(document.querySelector('[name="email"]').value, '');
+});
+
+test('rollback refuses an earlier input rebound by the failing field event', async (t) => {
+  const ctx = boot();
+  t.after(() => ctx.window.close());
+  const { api, document } = ctx;
+  const name = document.querySelector('[name="fullName"]');
+  const mobile = document.querySelector('[name="mobile"]');
+  let nameWrites = 0;
+  name.addEventListener('input', () => { nameWrites += 1; });
+  mobile.addEventListener('input', () => {
+    mobile.value = 'REACTIVE-PHONE';
+    rebindFixtureItem(api, name);
+  }, { once: true });
+  const result = await api.fillBasic(values, { synthetic: true });
+  neverSave(ctx, result);
+  assert.equal(result.ok, false);
+  assert.equal(result.restored, false);
+  assert.equal(nameWrites, 1, 'the still-connected input no longer belongs to the original item');
+  assert.equal(name.value, '测试甲');
+  assert.equal(mobile.value, 'REACTIVE-PHONE');
+  assert.equal(document.querySelector('[name="email"]').value, '');
+  assert.equal(document.querySelector('[name="years"]').value, '0');
+});
+
+test('final readback detects same-input item rebind and rolls back only stable fields', async (t) => {
+  const ctx = boot();
+  t.after(() => ctx.window.close());
+  const { api, document } = ctx;
+  const name = document.querySelector('[name="fullName"]');
+  const email = document.querySelector('[name="email"]');
+  let nameWrites = 0;
+  name.addEventListener('input', () => { nameWrites += 1; });
+  email.addEventListener('input', () => { rebindFixtureItem(api, name); }, { once: true });
+  const result = await api.fillBasic(values, { synthetic: true });
+  neverSave(ctx, result);
+  assert.equal(result.ok, false);
+  assert.equal(result.results[0].reason, 'readback_mismatch');
+  assert.equal(result.restored, false);
+  assert.equal(nameWrites, 1);
+  assert.equal(name.value, '测试甲');
+  assert.equal(document.querySelector('[name="mobile"]').value, '');
+  assert.equal(email.value, '');
+  assert.equal(document.querySelector('[name="years"]').value, '0');
+});
+
+test('cleanup rebind invalidates a previously restored field even when its raw value still matches', async (t) => {
+  const ctx = boot();
+  t.after(() => ctx.window.close());
+  const { api, document } = ctx;
+  const name = document.querySelector('[name="fullName"]');
+  const mobile = document.querySelector('[name="mobile"]');
+  const email = document.querySelector('[name="email"]');
+  email.addEventListener('input', () => { email.value = 'reactive@example.com'; }, { once: true });
+  name.addEventListener('input', () => {
+    if (name.value === '') rebindFixtureItem(api, mobile);
+  });
+  const result = await api.fillBasic(values, { synthetic: true });
+  neverSave(ctx, result);
+  assert.equal(result.ok, false);
+  assert.equal(result.restored, false);
+  const restoredMobile = result.rollback.find((row) => row.label === '手机号码');
+  assert.equal(restoredMobile.restored, false, 'matching raw text does not prove the original field was restored');
+  assert.equal(name.value, '');
+  assert.equal(mobile.value, '');
+  assert.equal(email.value, 'reactive@example.com');
+  assert.equal(document.querySelector('[name="years"]').value, '0');
+});
+
+test('direct text cleanup refuses a change-event rebind and sends no stale blur', async (t) => {
+  const ctx = boot();
+  t.after(() => ctx.window.close());
+  const { api, document } = ctx;
+  const name = document.querySelector('[name="fullName"]');
+  const events = [];
+  for (const kind of ['input', 'change', 'blur']) {
+    name.addEventListener(kind, () => { events.push(kind); });
+  }
+  name.addEventListener('change', () => { rebindFixtureItem(api, name); }, { once: true });
+  const result = await api.fillText('姓名', '测试甲', { synthetic: true });
+  neverSave(ctx, result);
+  assert.equal(result.ok, false);
+  assert.equal(result.reason, 'readback_mismatch');
+  assert.equal(result.writeAttempted, true);
+  assert.equal(result.restored, false);
+  assert.deepEqual(events, ['input', 'change']);
+  assert.equal(name.value, '测试甲');
+  assert.equal(document.querySelector('[name="mobile"]').value, '');
+  assert.equal(document.querySelector('[name="email"]').value, '');
+  assert.equal(document.querySelector('[name="years"]').value, '0');
+});

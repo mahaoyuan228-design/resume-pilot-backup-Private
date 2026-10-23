@@ -141,14 +141,24 @@
     };
   }
 
-  function setNativeValue(input, value) {
+  // Cleanup may restore a hidden owned input, but never a node rebound to a
+  // different field/item. Connectivity and value equality alone are not ownership.
+  function hasTextBinding({ label, item, control }) {
+    const hits = matchingItems(label);
+    return control?.isConnected && item?.isConnected
+      && hits.length === 1 && hits[0] === item && control.closest(ITEM_SEL) === item;
+  }
+
+  function setNativeValue(input, value, binding) {
     const proto = Object.getPrototypeOf(input);
     const desc = Object.getOwnPropertyDescriptor(proto, 'value')
       || Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value');
     if (desc?.set) desc.set.call(input, value);
     else input.value = value;
     input.dispatchEvent(new Event('input', { bubbles: true }));
+    if (!hasTextBinding(binding)) return;
     input.dispatchEvent(new Event('change', { bubbles: true }));
+    if (!hasTextBinding(binding)) return;
     input.dispatchEvent(new Event('blur', { bubbles: true }));
   }
 
@@ -193,14 +203,14 @@
     }
     control.focus();
     const focused = classifyField(label);
-    if (!focused.ready || focused.control !== control || !emptyText(control.value)) {
+    if (!focused.ready || focused.item !== row.item || focused.control !== control || !emptyText(control.value)) {
       return { ...NEVER_SAVE, label, ok: false, reason: 'control_changed_before_write', before, after: norm(control.value), expected, writeAttempted: false };
     }
-    setNativeValue(control, expected);
+    setNativeValue(control, expected, row);
     await pause(80);
     const current = classifyField(label);
     const after = norm(control.value);
-    const ok = current.ready && current.control === control && after === expected;
+    const ok = current.ready && current.item === row.item && current.control === control && after === expected;
     return {
       ...NEVER_SAVE,
       label,
@@ -216,19 +226,23 @@
   async function rollbackOwned(writes) {
     const rollback = [];
     for (const row of [...writes].reverse()) {
+      if (!hasTextBinding(row)) {
+        rollback.push({ label: row.label, restored: false, reason: 'control_rebound' });
+        continue;
+      }
       // A reactive/user winner belongs to the page. Only undo our still-owned value.
-      if (!row.control.isConnected || row.control.value !== row.expected) {
+      if (row.control.value !== row.expected) {
         rollback.push({ label: row.label, restored: false, reason: 'competing_value_preserved' });
         continue;
       }
-      setNativeValue(row.control, row.original);
+      setNativeValue(row.control, row.original, row);
       await pause(80);
       rollback.push({ label: row.label, restored: row.control.value === row.original, reason: 'restore_attempted' });
     }
     for (const result of rollback) {
       if (result.reason === 'restore_attempted') {
         const row = writes.find((entry) => entry.label === result.label);
-        result.restored = row.control.isConnected && row.control.value === row.original;
+        result.restored = hasTextBinding(row) && row.control.value === row.original;
         result.reason = result.restored ? 'restored' : 'restore_mismatch';
       }
     }
@@ -240,7 +254,7 @@
     const original = row.control?.value;
     const result = await fillTextAttempt(label, value);
     const rollback = !result.ok && result.writeAttempted
-      ? await rollbackOwned([{ label, control: row.control, original, expected: norm(value) }])
+      ? await rollbackOwned([{ label, item: row.item, control: row.control, original, expected: norm(value) }])
       : [];
     return {
       ...result,
@@ -444,7 +458,7 @@
     let failure = null;
     for (const row of snapshots) {
       const current = classifyField(row.label);
-      if (!current.ready || current.control !== row.control || row.control.value !== row.original) {
+      if (!current.ready || current.item !== row.item || current.control !== row.control || row.control.value !== row.original) {
         failure = 'control_changed_before_write';
         results.push({ ...NEVER_SAVE, label: row.label, ok: false, reason: failure, before: norm(row.original), after: norm(row.control.value), expected: row.expected, writeAttempted: false });
         break;
@@ -462,7 +476,7 @@
       for (const row of snapshots) {
         const current = classifyField(row.label);
         const expected = writes.includes(row) ? row.expected : row.original;
-        if (!current.ready || current.control !== row.control || row.control.value !== expected) {
+        if (!current.ready || current.item !== row.item || current.control !== row.control || row.control.value !== expected) {
           failure = 'readback_mismatch';
           const result = results.find((entry) => entry.label === row.label);
           Object.assign(result, { ok: false, reason: failure, after: norm(row.control.value) });

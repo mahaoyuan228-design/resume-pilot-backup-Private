@@ -2,18 +2,19 @@
 // 联系地址 (wireable_text, input.ant-input, placeholder 请填写联系地址) and
 // 评价内容 (textarea.ant-input, placeholder 请填写评价内容).
 // The live 评价内容 control can already hold a long intro. That prose is not stored
-// here. A display that matches the profile after NFKC/whitespace clean is verified
-// and not rewritten. An empty 评价内容 is painted once with the profile string after
-// NFKC, zero-width strip, and edge trim. Internal spaces and newlines stay. Nothing
-// is added and no essay is invented.
+// here. Only an exact prose match is verified, with native textarea CRLF/CR to LF
+// normalization. An empty 评价内容 is painted once with that profile string.
+// Spaces, Unicode, and line breaks stay. Nothing is added and no essay is invented.
 // 联系地址 follows the basic text path: exact() is both the compare key and the
-// painted string.
+// painted string. Raw nonempty controls, including whitespace, are never replaced.
 // A row label matches only when it equals the field name after NFKC/whitespace clean,
 // star/question-mark strip, and a trailing colon strip. 评价内容 does not match a
 // different textarea label. Identical captions on one row still name it. Disagreeing
 // captions and a second row stay fail-closed.
 // Textarea locate rejects selects, radios, files, and any extra or non-ant textarea.
-// Placeholder drift fails closed.
+// Placeholder drift fails closed. Rows belong to the one resume-operation-wrap.
+// Ownership and control identity are checked after focus, before each write/event,
+// and at readback. A changed control cannot receive the remaining events.
 // Pending live Never-Save. This does not claim the site is supported.
 // liveSupportClaimed and supportClaimed stay false. leftUnsaved stays true.
 // Never clicks 保存/提交/投递/删除/下一步/返回/确定.
@@ -50,10 +51,7 @@
   const cleanLabel = (value) => exact(value).replace(/[＊*？?]/gu, '').replace(/[：:]+$/gu, '');
   const profileText = (value) => {
     if (typeof value !== 'string') return '';
-    return value
-      .normalize('NFKC')
-      .replace(/[\u200b-\u200d\ufeff]/gu, '')
-      .replace(/^[\s\u00a0]+|[\s\u00a0]+$/gu, '');
+    return value.replace(/\r\n?/gu, '\n');
   };
 
   function flags() {
@@ -81,13 +79,18 @@
     return node.getClientRects().length > 0;
   }
 
+  function pageRoot() {
+    const roots = [...document.querySelectorAll('.resume-operation-wrap')];
+    return roots.length === 1 ? roots[0] : null;
+  }
+
   function onPage() {
     let url;
     try { url = new URL(location.href); } catch { return false; }
     if (url.protocol !== 'https:' || url.hostname !== 'wecruit.hotjob.cn') return false;
     if (!PATH.test(url.pathname)) return false;
     if (document.querySelector('.el-form, .el-form-item, .my-list-item')) return false;
-    return !!document.querySelector('.resume-operation-wrap');
+    return !!pageRoot();
   }
 
   function canonical(label) {
@@ -96,7 +99,10 @@
   }
 
   function formItems() {
-    return [...document.querySelectorAll('.ant-row.ant-form-item')];
+    const root = pageRoot();
+    if (!root) return [];
+    return [...root.querySelectorAll('.ant-row.ant-form-item')]
+      .filter((item) => item.closest('.resume-operation-wrap') === root);
   }
 
   function ownedLabels(item) {
@@ -167,8 +173,21 @@
     const found = KINDS[name] === 'textarea'
       ? locateTextarea(items[0], PLACEHOLDERS[name])
       : locateText(items[0], PLACEHOLDERS[name]);
-    if (found.ok) found.label = name;
+    if (found.ok) {
+      found.label = name;
+      found.root = pageRoot();
+    }
     return found;
+  }
+
+  function invalidFound(found) {
+    if (document.visibilityState === 'hidden') return 'fill_interrupted_page_hidden';
+    if (!onPage()) return 'wrong_page';
+    if (pageRoot() !== found.root) return 'control_not_supported';
+    const current = locate(found.label);
+    if (!current.ok || current.item !== found.item || current.control !== found.control
+      || found.control.closest('.resume-operation-wrap') !== found.root) return 'control_not_supported';
+    return '';
   }
 
   function readRaw(found) {
@@ -211,25 +230,37 @@
 
   async function leaveUnsaved(found) {
     const surfaces = [found?.control, document.activeElement, document.body];
-    for (const surface of surfaces) dispatchEscape(surface);
+    for (const surface of surfaces) {
+      if (invalidFound(found)) return false;
+      dispatchEscape(surface);
+    }
     for (let i = 0; i < 8; i += 1) {
+      if (invalidFound(found)) return false;
       if (!anyOpen()) return true;
       await pause(10);
     }
     return !anyOpen();
   }
 
-  function writeControl(control, value) {
+  function writeControl(found, value) {
+    const control = found.control;
+    const invalid = () => invalidFound(found) || (anyOpen() ? 'control_busy' : '');
+    let reason = invalid();
+    if (reason) return reason;
     const proto = Object.getPrototypeOf(control);
     const fallback = control.tagName === 'TEXTAREA' ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
     const desc = Object.getOwnPropertyDescriptor(proto, 'value')
       || Object.getOwnPropertyDescriptor(fallback, 'value');
-    if (!desc || typeof desc.set !== 'function') return false;
+    if (!desc || typeof desc.set !== 'function') return 'control_not_supported';
+    if (readRaw(found) !== '') return 'existing_value';
     desc.set.call(control, value);
-    control.dispatchEvent(new Event('input', { bubbles: true }));
-    control.dispatchEvent(new Event('change', { bubbles: true }));
-    control.dispatchEvent(new Event('blur', { bubbles: true }));
-    return true;
+    for (const type of ['input', 'change', 'blur']) {
+      reason = invalid();
+      if (reason) return reason;
+      if (readRaw(found) !== value) return 'readback_mismatch';
+      control.dispatchEvent(new Event(type, { bubbles: true }));
+    }
+    return invalid();
   }
 
   function result(extra) {
@@ -272,18 +303,25 @@
   }
 
   async function fillText(found, label, value) {
-    const before = exact(readRaw(found));
+    const beforeRaw = readRaw(found);
+    const before = exact(beforeRaw);
     const want = typeof value === 'string' ? exact(value) : '';
     if (!want) return refused(label, 'missing_profile_value', { before, after: before, expected: '' });
     if (before === want) return kept(label, 'preexisting_same_value', before, want, 'verified', true);
-    if (before) return kept(label, 'existing_value', before, want, 'skipped', false);
+    if (beforeRaw !== '') return kept(label, 'existing_value', beforeRaw, want, 'skipped', false);
     if (anyOpen()) return refused(label, 'control_busy', { before, after: before, expected: want });
     found.control.focus();
-    if (!writeControl(found.control, want)) {
-      return refused(label, 'control_not_supported', { before, after: exact(readRaw(found)), expected: want });
+    const writeReason = writeControl(found, want);
+    if (writeReason) {
+      return refused(label, writeReason, { before, after: readRaw(found), expected: want });
     }
-    const painted = await waitFor(() => exact(readRaw(found)) === want);
+    const painted = await waitFor(() => {
+      const reason = invalidFound(found);
+      return reason ? { reason } : (exact(readRaw(found)) === want ? { matched: true } : null);
+    });
     const after = exact(readRaw(found));
+    const reason = painted?.reason || invalidFound(found);
+    if (reason) return refused(label, reason, { before, after, expected: want });
     if (!painted || after !== want) {
       return refused(label, 'readback_mismatch', { before, after, expected: want, opened: false, canceled: false });
     }
@@ -295,19 +333,23 @@
 
   async function fillArea(found, label, value) {
     const beforeRaw = readRaw(found);
-    const before = exact(beforeRaw);
     const want = profileText(value);
-    const wantKey = exact(want);
-    if (!wantKey) return refused(label, 'missing_profile_value', { before: beforeRaw, after: beforeRaw, expected: '' });
-    if (before === wantKey) return kept(label, 'preexisting_same_value', beforeRaw, want, 'verified', true);
-    if (before) return kept(label, 'existing_value', beforeRaw, want, 'skipped', false);
+    if (!exact(want)) return refused(label, 'missing_profile_value', { before: beforeRaw, after: beforeRaw, expected: '' });
+    if (beforeRaw === want) return kept(label, 'preexisting_same_value', beforeRaw, want, 'verified', true);
+    if (beforeRaw !== '') return kept(label, 'existing_value', beforeRaw, want, 'skipped', false);
     if (anyOpen()) return refused(label, 'control_busy', { before: beforeRaw, after: beforeRaw, expected: want });
     found.control.focus();
-    if (!writeControl(found.control, want)) {
-      return refused(label, 'control_not_supported', { before: beforeRaw, after: readRaw(found), expected: want });
+    const writeReason = writeControl(found, want);
+    if (writeReason) {
+      return refused(label, writeReason, { before: beforeRaw, after: readRaw(found), expected: want });
     }
-    const painted = await waitFor(() => readRaw(found) === want);
+    const painted = await waitFor(() => {
+      const reason = invalidFound(found);
+      return reason ? { reason } : (readRaw(found) === want ? { matched: true } : null);
+    });
     const after = readRaw(found);
+    const reason = painted?.reason || invalidFound(found);
+    if (reason) return refused(label, reason, { before: beforeRaw, after, expected: want });
     if (!painted || after !== want) {
       return refused(label, 'readback_mismatch', { before: beforeRaw, after, expected: want, opened: false, canceled: false });
     }
@@ -325,8 +367,8 @@
       if (!canonical(label)) return refused(name, 'label_not_allowed');
       const found = locate(label);
       if (!found.ok) return refused(name, found.reason);
-      if (found.kind === 'textarea') return fillArea(found, name, value);
-      return fillText(found, name, value);
+      if (found.kind === 'textarea') return await fillArea(found, name, value);
+      return await fillText(found, name, value);
     } catch (error) {
       if (error?.message === 'never_save' || error?.code === 'never_save') return refused(name, 'never_save');
       return refused(name, 'control_error');
@@ -344,10 +386,11 @@
       const closed = await leaveUnsaved(found);
       const after = readRaw(found);
       const open = anyOpen();
-      const ok = closed && !open && after === before;
+      const invalid = invalidFound(found);
+      const ok = !invalid && closed && !open && after === before;
       return result({
         ok, label: name, status: ok ? 'verified' : 'failed',
-        reason: after !== before ? 'readback_mismatch' : (ok ? 'left_unsaved' : 'menu_cleanup_failed'),
+        reason: invalid || (after !== before ? 'readback_mismatch' : (ok ? 'left_unsaved' : 'menu_cleanup_failed')),
         before, after, expected: before, opened: false, canceled: true, stillOpen: open ? 1 : 0
       });
     } catch (error) {

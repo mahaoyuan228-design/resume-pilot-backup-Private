@@ -743,6 +743,7 @@
     assertSafeTarget(found.matches[0]);
     selectWriteAttempted = true;
     pointerClick(found.matches[0], () => {
+      assertSafeTarget(found.matches[0]);
       const item = findSelectItem(label);
       const control = item.ok ? selectControl(item.item) : null;
       if (!control?.ok || control.select !== select || control.read.value

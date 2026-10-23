@@ -69,8 +69,12 @@ function validSuppressionShapes(report) {
   // Lookup abort failures take the fatal generic-traffic path before a row is
   // recorded. The legacy lookup check ignores abortFailed, so reject retained
   // rows that contradict successful suppression, including malformed flags.
+  // Each page ledger is append-only and capped at 80; both host reads enforce
+  // that cap. Merging their maximum row multiplicities cannot add capacity.
+  // Keep the limit per ledger, including trial and restore rows together.
   // Keep endpoint, ownership, transport, phase and before-send checks in the runner.
   return ['suppressedAutosave', 'suppressedLookup'].every(key => Array.isArray(report?.[key])
+    && report[key].length <= 80
     && report[key].every(row => object(row) && typeof row.method === 'string'
       && (row.abortFailed === undefined || row.abortFailed === false)));
 }

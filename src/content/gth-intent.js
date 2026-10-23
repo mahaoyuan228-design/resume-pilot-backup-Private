@@ -707,6 +707,10 @@
       state.progress.completedFields.push({question:field.question, status, reason});
     };
     let form = null, openedByUs = false, attempted = FIELDS;
+    let salaryFailures = () => [];
+    const recheckSalaries = () => {
+      for (const {field, reason} of salaryFailures()) record(field, 'failed', reason);
+    };
     try {
       await checkBinding();
       if (typeof request?.requestId !== 'string' || !/^[A-Za-z0-9-]{10,100}$/u.test(request.requestId)
@@ -769,7 +773,29 @@
         const answer = answerOf(plan.field);
         if (plan.field.kind === 'picker') plan.decision = closedPickerDecision(plan.target, answer.parts);
         else plan.decision = closedTextDecision(plan.target, answer.value, request.replaceExisting);
+        if (plan.field.kind === 'text' && plan.decision.action === 'same' && !siteValid(plan.target))
+          plan.decision = {action:'fail', reason:'intent_site_validation_failed'};
       }
+      // Salary receipts stay tied to the census input, its exact digits and site
+      // validation. Picker events and later salary events can invalidate them.
+      salaryFailures = () => plans.filter(plan => plan.field.kind === 'text'
+        && result.fields.some(row => row.question === plan.field.question && row.status === 'verified'))
+        .flatMap(plan => {
+          let reason = null;
+          try {
+            const live = page();
+            if (performance.timeOrigin !== origin || outside(live) !== otherBefore
+              || sectionForms(live).length !== 1 || sectionForms(live)[0] !== form
+              || otherSectionForms(live).length) stop('intent_other_values_changed');
+            const current = textTarget(form, plan.field.question);
+            if (!sameTarget(plan.target, current)) stop('intent_other_values_changed');
+            if (current.input.value !== answerOf(plan.field).value) stop('intent_readback_mismatch');
+            if (!siteValid(current)) stop('intent_site_validation_failed');
+          } catch (error) {
+            reason = error instanceof Stop ? error.code : 'intent_readback_mismatch';
+          }
+          return reason ? [{field:plan.field, reason}] : [];
+        });
       const blocked = plans.find(plan => plan.decision.action === 'fail');
       if (blocked) {
         for (const plan of plans) {
@@ -824,12 +850,17 @@
           step('field_guard');
           guard(existing);
           step('text_input_events');
-          markWrite();
-          await boundAction(() => { if (!selected.input?.isConnected) stop('profile_action_target_changed'); return setter.call(selected.input, answer.value); });
+          await boundAction(() => {
+            guard(existing);
+            if (selected.input.value !== existing) stop('intent_other_values_changed');
+            if (selected.input.maxLength >= 0 && answer.value.length > selected.input.maxLength) stop('intent_value_too_long');
+            markWrite();
+            return setter.call(selected.input, answer.value);
+          });
           guard(answer.value);
-          await boundAction(() => { if (!selected.input?.isConnected) stop('profile_action_target_changed'); return selected.input.dispatchEvent(new Event('input', {bubbles:true})); });
-          await boundAction(() => { if (!selected.input?.isConnected) stop('profile_action_target_changed'); return selected.input.dispatchEvent(new Event('change', {bubbles:true})); });
-          await boundAction(() => { if (!selected.input?.isConnected) stop('profile_action_target_changed'); return selected.input.dispatchEvent(new Event('blur', {bubbles:true})); });
+          await boundAction(() => { guard(answer.value); return selected.input.dispatchEvent(new Event('input', {bubbles:true})); });
+          await boundAction(() => { guard(answer.value); return selected.input.dispatchEvent(new Event('change', {bubbles:true})); });
+          await boundAction(() => { guard(answer.value); return selected.input.dispatchEvent(new Event('blur', {bubbles:true})); });
           step('field_readback');
           await pause(80);
           guard(answer.value);
@@ -838,6 +869,9 @@
           record(plan.field, 'verified', existing === '' ? 'readback_matched' : 'readback_reapplied');
         }
       }
+      step('salary_readback');
+      await checkBinding();
+      recheckSalaries();
       result.fields = attempted.map(field => result.fields.find(row => row.question === field.question) || fieldRow(field, 'failed', 'not_run'));
       result.supportedComplete = result.fields.length === attempted.length && result.fields.every(row => row.status === 'verified');
       result.operableComplete = result.supportedComplete;
@@ -853,7 +887,7 @@
       const info = {reason:primary ? primary.reason : null, activeField:null, selectorStep:primary ? 'field_decision' : 'complete',
         completedFields:result.fields.map(row => ({question:row.question, status:row.status, reason:row.reason})),
         writeStarted:result.writeStarted, supportedComplete:result.supportedComplete, operableComplete:result.operableComplete, complete:false};
-      state.last = {requestId:request.requestId, outcome, info, currentCheck:() => {
+      state.last = {requestId:request.requestId, outcome, info, salaryFailures, currentCheck:() => {
         try {
           if (!result.supportedComplete) return false;
           const live = page();
@@ -873,6 +907,7 @@
       return {ok:result.supportedComplete === true, ...result, ...info};
     } catch (error) {
       const reason = error instanceof Stop ? error.code : 'intent_fill_failed';
+      recheckSalaries();
       if (error instanceof Stop && error.pickerDiag) result.pickerDiag = error.pickerDiag;
       else if (typeof reason === 'string' && reason.startsWith('picker_')) {
         try { result.pickerDiag = fallbackPickerDiag(form, state.progress?.activeField, reason); }
@@ -911,9 +946,19 @@
         await checkBinding(lastBinding || activeBinding);
         const running = state.busy && state.progress?.requestId === message.requestId;
         const last = state.last?.requestId === message.requestId ? state.last : null;
-        const outcome = last?.currentCheck ? (last.currentCheck() ? last.outcome : 'unknown') : (last?.outcome || 'unknown');
+        const staleSalaries = running ? [] : (last?.salaryFailures?.() || []);
+        const outcome = staleSalaries.length ? 'unknown'
+          : last?.currentCheck ? (last.currentCheck() ? last.outcome : 'unknown') : (last?.outcome || 'unknown');
+        const salaryInfo = staleSalaries.length ? {
+          reason:staleSalaries[0].reason, activeField:staleSalaries[0].field.question, selectorStep:'salary_readback',
+          supportedComplete:false, operableComplete:false, complete:false,
+          completedFields:(last.info.completedFields || []).map(row => {
+            const stale = staleSalaries.find(item => item.field.question === row.question);
+            return stale ? {...row, status:'failed', reason:stale.reason} : row;
+          })
+        } : {};
         sendResponse({ok:true, data:{requestId:message.requestId, state:running ? 'running' : 'settled', outcome,
-          ...(running ? {writeStarted:state.progress.writeStarted === true} : last?.info || {writeStarted:false})}});
+          ...(running ? {writeStarted:state.progress.writeStarted === true} : last?.info || {writeStarted:false}), ...salaryInfo}});
       })().catch(() => sendResponse({ok:false, error:'profile_binding_changed', data:{requestId:message?.requestId, state:'settled', outcome:'unknown'}}));
       return true;
     }
@@ -923,7 +968,7 @@
     return true;
   };
   globalThis.ResumeGthIntent = Object.freeze({
-    implementationRevision:6, installed:true, trial, listener,
+    implementationRevision:7, installed:true, trial, listener,
     fields:FIELDS.map(field => ({question:field.question, kind:field.kind, evidence:field.evidence})),
     optional:OPTIONAL.map(field => ({question:field.question, kind:field.kind, evidence:field.evidence}))
   });

@@ -64,7 +64,7 @@ function request(customAnswers = answers(), questions = Object.keys(customAnswer
   };
 }
 
-function install(dom) {
+function install(dom, { onBindingCheck } = {}) {
   const { window } = dom;
   window.Element.prototype.getClientRects = () => [{ width: 8, height: 8, top: 0, left: 0, bottom: 8, right: 8 }];
   Object.defineProperty(window.document, 'readyState', { configurable: true, get: () => 'complete' });
@@ -72,7 +72,11 @@ function install(dom) {
     runtime: {
       id: 'synthetic-extension',
       getManifest: () => ({ background: { service_worker: 'src/background/worker.mjs' } }),
-      sendMessage: async (message) => (message?.type === 'RESUME_PROFILE_BINDING_CHECK' ? { allowed: true } : { allowed: false }),
+      sendMessage: async (message) => {
+        if (message?.type !== 'RESUME_PROFILE_BINDING_CHECK') return { allowed: false };
+        await onBindingCheck?.(message);
+        return { allowed: true };
+      },
       onMessage: { addListener() {}, removeListener() {} },
     },
   };
@@ -91,7 +95,7 @@ function install(dom) {
   return context.ResumeGthIntent;
 }
 
-function mount(formOptions = {}, wire = {}) {
+function mount(formOptions = {}, wire = {}, runtime = {}) {
   const sections = TITLES.map((title) => {
     if (title !== '求职意向') return `<section class="r-section"><div class="title_">${title}</div></section>`;
     return `<section class="r-section" id="intent"><div class="title_">${title}<a class="h-e-btn" href="javascript:;">编辑</a></div>${intentFormHtml(formOptions)}</section>`;
@@ -99,7 +103,7 @@ function mount(formOptions = {}, wire = {}) {
   const dom = new JSDOM(`<!DOCTYPE html><body>${sections}</body>`, { url: PAGE, pretendToBeVisual: true });
   const form = dom.window.document.getElementById('intent-form');
   const stats = wireIntentForm(form, wire);
-  return { dom, form, stats, api: install(dom) };
+  return { dom, form, stats, api: install(dom, runtime) };
 }
 
 function itemByLabel(form, label) {
@@ -226,6 +230,155 @@ test('a chip and trigger that already show the level-2 text are left unchanged',
   assert.equal(stats.panelCancel, 0);
   assert.equal(stats.formCancel, 0);
   assert.equal(assessGthIntentFill(result).outcome, 'verified_preexisting');
+});
+
+test('matching salary text needs valid site state and exact readback before verification', async () => {
+  for (const question of ['期望薪资', '现薪资']) {
+    for (const validation of ['is-error', 'is-validating', 'aria-invalid', 'native-invalid', 'padded-value']) {
+      const { dom, form, stats, api } = mount({
+        pickers: { 现从事职位类别: { trigger: '银行', chips: ['银行'], counter: '(1/5)' } },
+        salaries: { 期望薪资: '300000', 现薪资: '200000' },
+      });
+      try {
+        const item = itemByLabel(form, question), input = itemInput(form, question);
+        if (validation === 'aria-invalid') input.setAttribute('aria-invalid', 'true');
+        else if (validation === 'native-invalid') input.pattern = '[0-9]{1,5}';
+        else if (validation === 'padded-value') input.value = ` ${input.value} `;
+        else item.classList.add(validation);
+        const before = input.value;
+        const result = await api.trial(request());
+        assert.equal(result.ok, false, `${question}: ${validation}`);
+        assert.equal(result.reason, validation === 'padded-value' ? 'intent_readback_mismatch' : 'intent_site_validation_failed');
+        assert.equal(result.supportedComplete, false);
+        assert.equal(result.operableComplete, false);
+        assert.equal(result.writeStarted, false);
+        assert.equal(result.fields.some(row => row.question === question && row.status === 'verified'), false);
+        assert.equal(input.value, before);
+        assert.equal(stats.save, 0);
+        assert.equal(stats.confirm, 0);
+        flags(result);
+      } finally { dom.window.close(); }
+    }
+  }
+});
+
+test('existing picker confirmation cannot verify a stale matching salary', async () => {
+  for (const change of ['value', 'validation', 'equal-value-clone']) {
+    const { dom, form, stats, api } = mount({
+      pickers: { 期望从事职位类别: EMPTY, 现从事行业: EMPTY, 现从事职位类别: EMPTY },
+      salaries: { 期望薪资: '300000', 现薪资: '200000' },
+    });
+    try {
+      const salary = itemInput(form, '期望薪资');
+      itemByLabel(form, '现从事职位类别').querySelector('a.confirm').addEventListener('click', () => {
+        if (change === 'value') salary.value = '999999';
+        else if (change === 'validation') salary.setAttribute('aria-invalid', 'true');
+        else salary.replaceWith(salary.cloneNode(true));
+      });
+      const result = await api.trial(request());
+      assert.equal(stats.confirm, 3, change);
+      assert.equal(result.ok, false, change);
+      assert.equal(result.supportedComplete, false);
+      assert.equal(result.operableComplete, false);
+      assert.equal(result.fields.some(row => row.question === '期望薪资' && row.status === 'verified'), false);
+      assert.equal(result.coverage.some(row => row.question === '期望薪资' && row.status === 'verified'), false);
+      assert.equal(result.completedFields.some(row => row.question === '期望薪资' && row.status === 'verified'), false);
+      assert.equal(itemInput(form, '期望薪资').value, change === 'value' ? '999999' : '300000');
+      assert.equal(stats.save, 0);
+      flags(result);
+    } finally { dom.window.close(); }
+  }
+});
+
+test('an abort after a later salary event clears a changed earlier salary receipt', async () => {
+  const { dom, form, stats, api } = mount({
+    pickers: { 现从事职位类别: { trigger: '银行', chips: ['银行'], counter: '(1/5)' } },
+    salaries: { 期望薪资: '', 现薪资: '' },
+  });
+  try {
+    itemInput(form, '现薪资').addEventListener('input', () => { itemInput(form, '期望薪资').value = '999999'; });
+    const result = await api.trial(request());
+    assert.equal(result.ok, false);
+    assert.equal(result.reason, 'intent_other_values_changed');
+    assert.equal(itemInput(form, '期望薪资').value, '999999');
+    assert.equal(result.fields.some(row => row.question === '期望薪资' && row.status === 'verified'), false);
+    assert.equal(result.coverage.some(row => row.question === '期望薪资' && row.status === 'verified'), false);
+    assert.equal(result.completedFields.some(row => row.question === '期望薪资' && row.status === 'verified'), false);
+    assert.equal(stats.save, 0);
+    flags(result);
+  } finally { dom.window.close(); }
+});
+
+test('salary edited during the setter binding check is retained before any write', async () => {
+  let checks = 0, input;
+  const { dom, form, stats, api } = mount({
+    pickers: { 现从事职位类别: { trigger: '银行', chips: ['银行'], counter: '(1/5)' } },
+    salaries: { 期望薪资: '', 现薪资: '200000' },
+  }, {}, { onBindingCheck() { if (++checks === 2) input.value = '777777'; } });
+  try {
+    input = itemInput(form, '期望薪资');
+    const events = [];
+    for (const type of ['input', 'change', 'blur']) input.addEventListener(type, () => events.push(type));
+    const result = await api.trial(request());
+    assert.equal(result.ok, false);
+    assert.equal(result.reason, 'intent_other_values_changed');
+    assert.equal(result.writeStarted, false);
+    assert.equal(input.value, '777777');
+    assert.deepEqual(events, []);
+    assert.equal(stats.save, 0);
+    assert.equal(stats.confirm, 0);
+    flags(result);
+  } finally { dom.window.close(); }
+});
+
+test('an empty salary with a required error can fill when its input event clears the error', async () => {
+  const { dom, form, stats, api } = mount({
+    pickers: { 现从事职位类别: { trigger: '银行', chips: ['银行'], counter: '(1/5)' } },
+    salaries: { 期望薪资: '', 现薪资: '200000' },
+  });
+  try {
+    const item = itemByLabel(form, '期望薪资'), input = itemInput(form, '期望薪资');
+    item.classList.add('is-error');
+    input.setAttribute('aria-invalid', 'true');
+    input.addEventListener('input', () => {
+      item.classList.remove('is-error');
+      input.removeAttribute('aria-invalid');
+    });
+    const result = await api.trial(request());
+    assert.equal(result.ok, true, result.reason);
+    assert.equal(result.supportedComplete, true);
+    assert.equal(input.value, '300000');
+    assert.equal(result.fields.find(row => row.question === '期望薪资').reason, 'readback_matched');
+    assert.equal(stats.save, 0);
+    flags(result);
+  } finally { dom.window.close(); }
+});
+
+test('intent status downgrades salary completion and receipts after value, validation, or identity drift', async () => {
+  for (const change of ['value', 'validation', 'equal-value-clone']) {
+    const { dom, form, stats, api } = mount({
+      pickers: { 现从事职位类别: { trigger: '银行', chips: ['银行'], counter: '(1/5)' } },
+      salaries: { 期望薪资: '300000', 现薪资: '200000' },
+    });
+    try {
+      const result = await api.trial(request());
+      assert.equal(result.ok, true);
+      const salary = itemInput(form, '期望薪资');
+      if (change === 'value') salary.value = '999999';
+      else if (change === 'validation') salary.setAttribute('aria-invalid', 'true');
+      else salary.replaceWith(salary.cloneNode(true));
+      const status = await new Promise(resolve => api.listener({
+        type: 'GTH_INTENT_FILL_STATUS', requestId: result.requestId || '1234567890-intent', profileBinding: binding,
+      }, { id: 'synthetic-extension' }, resolve));
+      assert.equal(status.ok, true, change);
+      assert.equal(status.data.outcome, 'unknown', change);
+      assert.equal(status.data.supportedComplete, false, change);
+      assert.equal(status.data.operableComplete, false, change);
+      assert.equal(status.data.completedFields.some(row => row.question === '期望薪资' && row.status === 'verified'), false, change);
+      assert.equal(stats.save, 0);
+      flags(result);
+    } finally { dom.window.close(); }
+  }
 });
 
 test('a second 期望从事职位类别 label fails closed before any panel opens', async () => {

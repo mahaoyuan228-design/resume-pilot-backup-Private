@@ -200,6 +200,7 @@ test('empty census pickers and salaries fill the five and never save', async () 
   assert.equal(assessed.ok, true);
   assert.equal(assessed.state, 'completed');
   assert.equal(assessed.outcome, 'verified');
+  assert.equal((await intentStatus(api)).data.outcome, 'verified');
 });
 
 test('a chip and trigger that already show the level-2 text are left unchanged', async () => {
@@ -226,6 +227,7 @@ test('a chip and trigger that already show the level-2 text are left unchanged',
   assert.equal(stats.panelCancel, 0);
   assert.equal(stats.formCancel, 0);
   assert.equal(assessGthIntentFill(result).outcome, 'verified_preexisting');
+  assert.equal((await intentStatus(api)).data.outcome, 'verified_preexisting');
 });
 
 test('a second 期望从事职位类别 label fails closed before any panel opens', async () => {
@@ -1225,6 +1227,139 @@ function regionChipAfterCheck(text) {
 function regionChips(form) {
   return [...itemByLabel(form, '期望工作地区').querySelectorAll('.selected-view-data > li p')].map((node) => node.textContent.trim());
 }
+
+function regionOnlyRequest() {
+  return request({ 期望工作地区: '北京||大兴区' }, ['期望工作地区'], { omitAbsent: true });
+}
+
+function regionNeighbors(form) {
+  const region = itemByLabel(form, '期望工作地区');
+  return JSON.stringify([...form.querySelectorAll('input,select,textarea')]
+    .filter((node) => !region.contains(node))
+    .map((node) => [node.tagName, node.value, node.checked, node.selectedIndex ?? null]));
+}
+
+function intentStatus(api) {
+  return new Promise((resolve) => {
+    assert.equal(api.listener({
+      type: 'GTH_INTENT_FILL_STATUS', requestId: '1234567890-intent', profileBinding: binding
+    }, { id: 'synthetic-extension' }, resolve), true);
+  });
+}
+
+test('joined region readback stays verified in STATUS after filling an empty picker', async () => {
+  const mounted = mount({ pickers: { 期望工作地区: EMPTY } }, {
+    pickers: { 期望工作地区: regionChipAfterCheck('北京大兴区') }
+  });
+  const neighbors = regionNeighbors(mounted.form);
+  const result = await mounted.api.trial(regionOnlyRequest());
+  assert.equal(result.ok, true);
+  assert.equal(result.writeStarted, true);
+  assert.equal(result.fields[0].reason, 'readback_matched');
+  flags(result);
+  assert.equal(itemInput(mounted.form, '期望工作地区').value, '北京大兴区');
+  assert.deepEqual(regionChips(mounted.form), ['北京大兴区']);
+  assert.equal(regionNeighbors(mounted.form), neighbors);
+  const stats = { ...mounted.stats };
+  const status = await intentStatus(mounted.api);
+  assert.equal(status.ok, true);
+  assert.equal(status.data.outcome, 'verified');
+  assert.equal(status.data.writeStarted, true);
+  assert.equal(status.data.complete, false);
+  assert.deepEqual(mounted.stats, stats);
+  assert.equal(regionNeighbors(mounted.form), neighbors);
+  assert.equal(mounted.stats.save, 0);
+  assert.equal(mounted.stats.formCancel, 0);
+});
+
+test('an occupied different joined region is preserved without replacement or saving', async () => {
+  const mounted = mount({ pickers: {
+    期望工作地区: { trigger: '北京朝阳区', chips: ['北京朝阳区'], counter: '(1/5)' }
+  } });
+  const neighbors = regionNeighbors(mounted.form);
+  const result = await mounted.api.trial(regionOnlyRequest());
+  assert.equal(result.ok, false);
+  assert.equal(result.writeStarted, false);
+  assert.equal(result.reason, 'picker_existing_selection_conflict');
+  flags(result);
+  assert.equal(itemInput(mounted.form, '期望工作地区').value, '北京朝阳区');
+  assert.deepEqual(regionChips(mounted.form), ['北京朝阳区']);
+  assert.equal(regionNeighbors(mounted.form), neighbors);
+  assert.equal(mounted.stats.remove, 0);
+  assert.equal(mounted.stats.checkbox, 0);
+  assert.equal(mounted.stats.confirm, 0);
+  assert.equal(mounted.stats.save, 0);
+  assert.equal((await intentStatus(mounted.api)).data.outcome, 'failed_before_write');
+});
+
+test('an identical joined region skips the picker and keeps STATUS verified without writes', async () => {
+  const mounted = mount({ pickers: {
+    期望工作地区: { trigger: '北京大兴区', chips: ['北京大兴区'], counter: '(1/5)' }
+  } });
+  const region = itemByLabel(mounted.form, '期望工作地区');
+  let opens = 0;
+  region.querySelector('.cascader-wrap > .input-l.pointer').addEventListener('click', () => { opens += 1; });
+  const before = mounted.dom.window.document.body.innerHTML;
+  const result = await mounted.api.trial(regionOnlyRequest());
+  assert.equal(result.ok, true);
+  assert.equal(result.writeStarted, false);
+  assert.equal(result.fields[0].reason, 'preexisting_same_value');
+  flags(result);
+  assert.equal((await intentStatus(mounted.api)).data.outcome, 'verified_preexisting');
+  assert.equal(mounted.dom.window.document.body.innerHTML, before);
+  assert.equal(opens, 0);
+  assert.equal(Object.values(mounted.stats).every((count) => count === 0), true);
+});
+
+test('joined region STATUS rejects changed chips, input, validation, shape, and neighbors', async (t) => {
+  const mutations = [
+    ['input', (mounted, region) => { region.querySelector('.input-l.pointer input').value = '北京朝阳区'; }],
+    ['chip', (mounted, region) => { region.querySelector('.selected-view-data > li p').textContent = '北京朝阳区'; }],
+    ['missing chip', (mounted, region) => { region.querySelector('.selected-view-data > li').remove(); }],
+    ['extra chip', (mounted, region) => {
+      const list = region.querySelector('.selected-view-data');
+      list.appendChild(list.firstElementChild.cloneNode(true));
+    }],
+    ['validation', (mounted, region) => { region.classList.add('is-error'); }],
+    ['shape', (mounted, region) => { region.querySelector('.input-l.pointer input').readOnly = false; }],
+    ['neighbor', (mounted) => { mounted.dom.window.document.querySelectorAll('.r-section')[1].append(' changed'); }]
+  ];
+  for (const [name, mutate] of mutations) {
+    await t.test(name, async () => {
+      const mounted = mount({ pickers: {
+        期望工作地区: { trigger: '北京大兴区', chips: ['北京大兴区'], counter: '(1/5)' }
+      } });
+      const result = await mounted.api.trial(regionOnlyRequest());
+      assert.equal(result.ok, true);
+      flags(result);
+      assert.equal((await intentStatus(mounted.api)).data.outcome, 'verified_preexisting');
+      mutate(mounted, itemByLabel(mounted.form, '期望工作地区'));
+      const before = mounted.dom.window.document.body.innerHTML;
+      const status = await intentStatus(mounted.api);
+      assert.equal(status.ok, true);
+      assert.equal(status.data.outcome, 'unknown');
+      assert.equal(status.data.writeStarted, false);
+      assert.equal(status.data.complete, false);
+      assert.equal(mounted.dom.window.document.body.innerHTML, before);
+      assert.equal(Object.values(mounted.stats).every((count) => count === 0), true);
+    });
+  }
+});
+
+test('a joined region with an existing validation error cannot become preexisting success', async () => {
+  const mounted = mount({ pickers: {
+    期望工作地区: { trigger: '北京大兴区', chips: ['北京大兴区'], counter: '(1/5)' }
+  } });
+  itemByLabel(mounted.form, '期望工作地区').classList.add('is-error');
+  const before = mounted.dom.window.document.body.innerHTML;
+  const result = await mounted.api.trial(regionOnlyRequest());
+  assert.equal(result.ok, false);
+  assert.equal(result.writeStarted, false);
+  assert.equal(result.reason, 'intent_site_validation_failed');
+  flags(result);
+  assert.equal(mounted.dom.window.document.body.innerHTML, before);
+  assert.equal(Object.values(mounted.stats).every((count) => count === 0), true);
+});
 
 test('a multi-select panel verifies when the chip and input join level-1 and level-2', async () => {
   const fresh = mount({

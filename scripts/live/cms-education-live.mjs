@@ -30,7 +30,7 @@ import {
 
 export { readPort, readOutDir, readStepTimeout, classifyCmsTabUrl, selectCmsResumeTarget };
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
-export const BASE_TIP = '3b51254e38268a69b3d478b1432ee6315fcbf37b';
+export const BASE_TIP = 'f3f32545eaf32ee23a9b7d75c335acef86e700bf';
 export const DEFAULT_PORT = 9239;
 export const EVIDENCE_NAME = 'cms-education-live.json';
 export const READBACK_WAIT_MS = 500;
@@ -117,7 +117,8 @@ export function isEducationAutosave(request, page = CMS_BASELINE_PAGE) {
 
 function validSuppressedAutosave(row) {
   return isEducationAutosave(row) && row.via === 'xhr' && row.blockedBeforeSend === true
-    && ['trial', 'restore'].includes(row.phase);
+    && ['trial', 'restore'].includes(row.phase)
+    && (row.abortFailed === undefined || typeof row.abortFailed === 'boolean');
 }
 
 // School opening/searching has this one separately evidenced lookup POST.
@@ -238,8 +239,13 @@ function installEducationTrial(view, page, readSerialization, verifySerializatio
   let ownedOverlaySpec = null;
   let ownedPortal = null;
   let autosavePhase = null;
-  const pendingTimers = new Set();
-  let untrackedTimer = false;
+  const pendingTimers = new Map();
+  const timerObservers = new Map();
+  const observerOwners = new Map();
+  const unobservableTimers = new Set();
+  let observedNonFunctionTimeouts = 0;
+  let foreignTimerAttempt = false;
+  let autosaveAbortFailed = false;
   let prepared = null;
   let running = null;
   let settled = false;
@@ -249,7 +255,37 @@ function installEducationTrial(view, page, readSerialization, verifySerializatio
     ? Object.fromEntries(Object.keys(item).sort().map((key) => [key, item[key]])) : item);
   // Harness waits must not count as page callbacks waiting to settle.
   const nativeSetTimeout = view.setTimeout;
+  const nativeClearTimeout = view.clearTimeout;
   const wait = (ms) => new Promise((resolve) => nativeSetTimeout.call(view, resolve, ms));
+  const timerSettle = () => ({ pendingTimers: pendingTimers.size,
+    unobservableTimers: unobservableTimers.size, observedNonFunctionTimeouts });
+  function detachObserver(handle) {
+    const observer = timerObservers.get(handle);
+    if (observer) {
+      timerObservers.delete(handle);
+      if (observerOwners.get(observer.id) === observer) {
+        observerOwners.delete(observer.id);
+        nativeClearTimeout.call(view, observer.id);
+      }
+    }
+  }
+  function loseObserver(id) {
+    const observer = observerOwners.get(id);
+    if (!observer) return;
+    observerOwners.delete(id);
+    if (timerObservers.get(observer.handle) === observer) {
+      timerObservers.delete(observer.handle);
+      if (pendingTimers.get(observer.handle) === observer.token) unobservableTimers.add(observer.handle);
+    }
+  }
+  function trackTimer(handle, token) {
+    // Native IDs may be reused even from within a cleared timer's callback.
+    // Retire an old observer without letting it erase a newer generation.
+    loseObserver(handle);
+    detachObserver(handle);
+    unobservableTimers.delete(handle);
+    pendingTimers.set(handle, token);
+  }
   const fail = (reason) => { throw new Error(reason); };
   const safeReason = (error) => /^[a-z0-9_]+$/u.test(error?.message || '') ? error.message : 'control_error';
   function patch(object, key, replacement) {
@@ -291,22 +327,66 @@ function installEducationTrial(view, page, readSerialization, verifySerializatio
       const originalSchedule = view[schedule], originalCancel = view[cancel];
       patch(view, schedule, function (callback, delay, ...args) {
         if (!autosavePhase) return originalSchedule.call(this, callback, delay, ...args);
-        // String callbacks cannot be wrapped without evaluating site code here.
+        if (this !== view) {
+          // Timer IDs and the companion ordering proof belong to one Window.
+          foreignTimerAttempt = true;
+          fail('autosave_timer_receiver_unobservable');
+        }
+        // Preserve native string compilation, global scope, and CSP checks.
+        // A later native timeout at the same numeric delay observes the first
+        // timer task's completion (HTML timer ordering), including its promise
+        // continuations. Never eval site code or discard its callback.
         if (typeof callback !== 'function') {
-          untrackedTimer = true;
-          return originalSchedule.call(this, callback, delay, ...args);
+          const handle = originalSchedule.call(this, callback, delay, ...args);
+          // CSP may reject native string compilation without creating a timer.
+          if (handle === 0) return handle;
+          const token = {};
+          trackTimer(handle, token);
+          if (!repeating && (delay === undefined || typeof delay === 'number')) {
+            observedNonFunctionTimeouts += 1;
+            const observer = { handle, token, id: null };
+            observer.id = nativeSetTimeout.call(view, () => {
+              if (timerObservers.get(handle) === observer) {
+                timerObservers.delete(handle);
+                observerOwners.delete(observer.id);
+                if (pendingTimers.get(handle) === token) {
+                  pendingTimers.delete(handle);
+                  unobservableTimers.delete(handle);
+                }
+              }
+            }, delay);
+            loseObserver(observer.id);
+            timerObservers.set(handle, observer);
+            observerOwners.set(observer.id, observer);
+          } else if (!repeating) {
+            // Do not coerce an object delay twice or assume an unknown delay
+            // has elapsed. Explicit cancellation can still settle this timer.
+            unobservableTimers.add(handle);
+          }
+          return handle;
         }
         let handle;
+        const token = {};
         handle = originalSchedule.call(this, function (...values) {
           try { return callback.apply(this, values); }
-          finally { if (!repeating) pendingTimers.delete(handle); }
+          finally { if (!repeating && pendingTimers.get(handle) === token) pendingTimers.delete(handle); }
         }, delay, ...args);
-        pendingTimers.add(handle);
+        trackTimer(handle, token);
         return handle;
       });
       patch(view, cancel, function (handle) {
-        originalCancel.call(this, handle);
-        pendingTimers.delete(handle);
+        // Another Window can have the same native ID; its cancellation must
+        // never remove an entry from this Window's ledger.
+        if (this !== view) return originalCancel.call(this, handle);
+        // Match the native Web IDL long conversion once, including string IDs.
+        const id = handle >> 0;
+        originalCancel.call(this, id);
+        // A site's clear-all loop can also cancel an observer ID. Do not later
+        // clear that ID after native reuse, or pretend its parent was observed.
+        loseObserver(id);
+        pendingTimers.delete(id);
+        unobservableTimers.delete(id);
+        detachObserver(id);
       });
     }
     const nativeClick = view.HTMLElement.prototype.click;
@@ -334,7 +414,7 @@ function installEducationTrial(view, page, readSerialization, verifySerializatio
     const xhr = view.XMLHttpRequest?.prototype;
     if (xhr) {
       const metadata = new WeakMap();
-      const open = xhr.open, send = xhr.send;
+      const open = xhr.open, send = xhr.send, abort = xhr.abort;
       patch(xhr, 'open', function (method, url, ...rest) {
         const result = open.call(this, method, url, ...rest);
         metadata.set(this, { method, url, openedDuringTrial: !!autosavePhase, openedForSchool: activeControl?.kind === 'school' });
@@ -344,16 +424,20 @@ function installEducationTrial(view, page, readSerialization, verifySerializatio
         const request = metadata.get(this);
         // Unknown requests may have been opened before the guard was installed.
         if (!request || isNonGetMethod(request.method)) {
-          // Only the evidenced autosave may continue local verification. Abort
-          // before logging success of the block; never invoke native send or
-          // synthesize an HTTP success/save response. All other attempts fail.
+          // Only the evidenced autosave may continue local verification. Native
+          // send is never reached, even if abort throws. Record the block in
+          // either case; an abort failure remains fatal and retains guards.
           if (autosavePhase && request?.openedDuringTrial && isEducationAutosave(request, page)) {
-            try { this.abort(); }
-            catch (error) { note(request.method, request.url, 'xhr'); throw error; }
-            if (suppressedAutosave.length < 80) suppressedAutosave.push({
-              method: 'POST', url: new URL(request.url, page).href, via: 'xhr',
-              blockedBeforeSend: true, phase: autosavePhase
-            });
+            const phase = autosavePhase;
+            let abortFailed = false;
+            try { abort.call(this); }
+            catch { abortFailed = true; autosaveAbortFailed = true; }
+            finally {
+              if (suppressedAutosave.length < 80) suppressedAutosave.push({
+                method: 'POST', url: new URL(request.url, page).href, via: 'xhr',
+                blockedBeforeSend: true, phase, ...(abortFailed ? { abortFailed: true } : {})
+              });
+            }
             return undefined;
           }
           if (autosavePhase && request?.openedDuringTrial && request.openedForSchool && activeControl?.kind === 'school' && isSchoolLookup(request, page)) {
@@ -400,6 +484,7 @@ function installEducationTrial(view, page, readSerialization, verifySerializatio
     if (aborted) fail('trial_aborted');
     if (clicks.length) fail('click_not_allowed');
     if (posts.length) fail('non_get_request');
+    if (autosaveAbortFailed) fail('autosave_abort_failed');
   }
   async function settleCallbacks() {
     const deadline = view.performance.now() + AUTOSAVE_SETTLE_TIMEOUT_MS;
@@ -408,10 +493,10 @@ function installEducationTrial(view, page, readSerialization, verifySerializatio
     do {
       await wait(pendingTimers.size ? 25 : 0);
       pageCheck();
-      if (untrackedTimer) fail('autosave_callbacks_unverifiable');
+      if (foreignTimerAttempt) fail('autosave_timer_receiver_unobservable');
       if (!pendingTimers.size) return;
     } while (view.performance.now() < deadline);
-    fail('autosave_callbacks_pending');
+    fail(unobservableTimers.size ? 'autosave_timer_unobservable' : 'autosave_callbacks_pending');
   }
   function readProof() {
     const proof = readSerialization();
@@ -779,7 +864,9 @@ function installEducationTrial(view, page, readSerialization, verifySerializatio
         } catch { result.restored = false; result.pageLeftAsFound = false; }
         if (!result.restored) { result.ok = false; result.reason ||= 'restore_failed'; }
       } else result.pageLeftAsFound = true;
+      if (autosaveAbortFailed) { result.ok = false; result.reason = 'autosave_abort_failed'; }
       if (clicks.length || posts.length) { result.ok = false; result.reason = clicks.length ? 'click_not_allowed' : 'non_get_request'; }
+      result.timerSettle = timerSettle();
     }
     return result;
   }
@@ -794,6 +881,7 @@ function installEducationTrial(view, page, readSerialization, verifySerializatio
     posts: () => posts.slice(),
     suppressedAutosave: () => suppressedAutosave.slice(),
     suppressedLookup: () => suppressedLookup.slice(),
+    timerSettle,
     widgetClickCount: () => widgetClickCount,
     clicks: () => clicks.slice(),
     async cleanup() {
@@ -805,9 +893,10 @@ function installEducationTrial(view, page, readSerialization, verifySerializatio
         if (autosavePhase) {
           if (!(await restore()).ok) fail('restore_failed');
         } else await settleCallbacks();
+        if (autosaveAbortFailed) fail('autosave_abort_failed');
       } catch (error) {
         return { ok: false, reason: safeReason(error), posts: posts.slice(), clicks: clicks.slice(),
-          suppressedAutosave: suppressedAutosave.slice(), suppressedLookup: suppressedLookup.slice(), widgetClickCount };
+          suppressedAutosave: suppressedAutosave.slice(), suppressedLookup: suppressedLookup.slice(), widgetClickCount, timerSettle: timerSettle() };
       }
       for (const remove of [...removers].reverse()) remove();
       for (const { key, descriptor } of previous) {
@@ -816,7 +905,7 @@ function installEducationTrial(view, page, readSerialization, verifySerializatio
       }
       if (view.__cmsEducationLive === api) delete view.__cmsEducationLive;
       return { ok: true, posts: posts.slice(), clicks: clicks.slice(), suppressedAutosave: suppressedAutosave.slice(),
-        suppressedLookup: suppressedLookup.slice(), widgetClickCount };
+        suppressedLookup: suppressedLookup.slice(), widgetClickCount, timerSettle: timerSettle() };
     }
   };
   view.__cmsEducationLive = api;
@@ -841,7 +930,7 @@ export function evidenceExitCode(evidence) {
   const specs = fieldSpecsForRow(details.rowIndex, controls);
   const fields = evidence?.fields || [];
   const ok = evidence?.neverSave === true && evidence.liveSupportClaimed === false
-    && Array.isArray(evidence.suppressedAutosave) && evidence.suppressedAutosave.every(validSuppressedAutosave)
+    && Array.isArray(evidence.suppressedAutosave) && evidence.suppressedAutosave.every((row) => validSuppressedAutosave(row) && !row.abortFailed)
     && (controls ? Array.isArray(evidence.suppressedLookup) && evidence.suppressedLookup.every(validSuppressedLookup)
       && Number.isSafeInteger(details.widgetClickCount) && details.widgetClickCount >= 0
       : evidence.suppressedLookup === undefined || Array.isArray(evidence.suppressedLookup) && evidence.suppressedLookup.every(validSuppressedLookup))
@@ -884,6 +973,7 @@ export async function runCmsEducationLive(options = {}) {
   let installed = false;
   let fetchEnabled = false;
   let cleanupOk = false;
+  let timerSettle = null;
   let interceptionFailed = false;
   let href = null;
   let tabAction = 'none';
@@ -894,8 +984,9 @@ export async function runCmsEducationLive(options = {}) {
   };
   const readSuppression = (rows) => {
     if (!Array.isArray(rows) || rows.length > 80 || !rows.every(validSuppressedAutosave)) throw new Error('autosave_guard_invalid');
-    return rows.map(({ method, url, via, blockedBeforeSend, phase }) => ({
-      method: method.toUpperCase(), url: new URL(url, CMS_BASELINE_PAGE).href, via, blockedBeforeSend, phase
+    return rows.map(({ method, url, via, blockedBeforeSend, phase, abortFailed }) => ({
+      method: method.toUpperCase(), url: new URL(url, CMS_BASELINE_PAGE).href, via, blockedBeforeSend, phase,
+      ...(abortFailed ? { abortFailed: true } : {})
     }));
   };
   const readLookupSuppression = (rows) => {
@@ -1006,6 +1097,11 @@ export async function runCmsEducationLive(options = {}) {
       } catch { reason ||= 'guard_read_failed'; }
       try {
         const cleanup = await evaluate('globalThis.__cmsEducationLive.cleanup()', 'cleanup', true);
+        const timers = cleanup?.timerSettle;
+        if (timers && ['pendingTimers', 'unobservableTimers', 'observedNonFunctionTimeouts']
+          .every((key) => Number.isSafeInteger(timers[key]) && timers[key] >= 0)) {
+          timerSettle = Object.fromEntries(['pendingTimers', 'unobservableTimers', 'observedNonFunctionTimeouts'].map((key) => [key, timers[key]]));
+        }
         if (Array.isArray(cleanup?.posts)) trafficRows.push(...cleanup.posts);
         if (Array.isArray(cleanup?.clicks)) clicks = mergeObservations(clicks, cleanup.clicks);
         // Even unsuccessful cleanup can report late blocked attempts. Preserve
@@ -1016,7 +1112,9 @@ export async function runCmsEducationLive(options = {}) {
           if (!Number.isSafeInteger(cleanup?.widgetClickCount) || cleanup.widgetClickCount < 0) throw new Error('click_read_failed');
           widgetClickCount = cleanup.widgetClickCount;
         }
-        cleanupOk = cleanup?.ok === true && Array.isArray(cleanup.posts) && Array.isArray(cleanup.clicks);
+        cleanupOk = cleanup?.ok === true && Array.isArray(cleanup.posts) && Array.isArray(cleanup.clicks)
+          && !suppressedAutosave.some((row) => row.abortFailed);
+        if (suppressedAutosave.some((row) => row.abortFailed)) reason ||= 'autosave_abort_failed';
         if (!cleanupOk) reason ||= safeReason(cleanup?.reason, 'cleanup_failed');
       } catch { reason ||= 'cleanup_failed'; }
     }
@@ -1036,6 +1134,7 @@ export async function runCmsEducationLive(options = {}) {
   if (!clickDecision.ok) reason = clickDecision.reason;
   else if (traffic.nonGet.length) reason = 'non_get_request';
   else if (interceptionFailed) reason = 'interception_failed';
+  else if (suppressedAutosave.some((row) => row.abortFailed)) reason = 'autosave_abort_failed';
   const verified = !reason && cleanupOk && outcome?.ok === true && outcome.liveSupportClaimed === false
     && outcome.rowIndex === rowIndex && outcome.recordCount === recordCount
     && outcome.restored === true && outcome.pageLeftAsFound === true && outcome.otherChanged === false
@@ -1057,7 +1156,7 @@ export async function runCmsEducationLive(options = {}) {
       cleanupOk, restored: outcome?.restored === true,
       pageLeftAsFound: cleanupOk && outcome?.pageLeftAsFound === true,
       restoreVia: outcome ? controls ? 'product_adapters_and_native_events' : 'native_events' : null, otherChanged: outcome?.otherChanged === true,
-      waitedMs: Number(outcome?.waitedMs) || 0, productReason: safeReason(outcome?.productReason, null),
+      waitedMs: Number(outcome?.waitedMs) || 0, productReason: safeReason(outcome?.productReason, null), timerSettle,
       limits: [
         'Offline-tested fixture trial only. No live site support is claimed.',
         'ROW_INDEX selects one existing row by the shipped controller identity; all other rows are bound with no ready facts and must stay unchanged. Zero Add, Save, Submit, Next, Deliver, or Delete clicks.',
@@ -1067,7 +1166,7 @@ export async function runCmsEducationLive(options = {}) {
         'Cleanup restores text with native setters/events and re-verifies unchanged widget values without option/day replacement. Exact DOM, raw public props, DTO proof, and closed overlays must match before guards are removed. Original values and proof stay in the page.',
         'All form submissions and forbidden clicks are blocked. Controls mode permits only the active bound opener and evidenced outside-click cleanup; options, days, navigation, clear icons, and confirmations cannot be clicked. An opened select needs one linked owned menu; a date needs one owned calendar portal. Only exact education autosave and active-school fuzzyMatchDic XHRs opened after arming are aborted before native send, in separate suppression logs. No HTTP success response or catalog option is synthesized.',
         'Every other non-GET attempt, including HEAD/OPTIONS or any CDP-observed request, fails; CDP interception is mandatory and never allows non-GET transmission.',
-        'Tracked page timeouts drain under the guards; an uncleared interval or unresolved callback fails cleanup and retains page hooks. Original DOM and serialization are reverified before hooks are removed.',
+        'Function timeouts drain under the guards. Non-function timeouts with numeric/default delays keep native execution and drain through a later native timer at the same delay; cancellation removes both tracking and observer. An uncleared interval, unresolved callback, or non-function timeout with an unobservable delay fails cleanup and retains page hooks. Timer diagnostics contain counts only. Original DOM and serialization are reverified before hooks are removed.',
         'This bounded trial does not prove absence of arbitrary future callbacks through previously captured APIs, workers, or later asynchronous responses.',
         'If CDP disconnects or times out, cleanup may be unverifiable. Evidence fails and does not claim the page was restored.'
       ],

@@ -163,7 +163,7 @@ for (const [value, wanted, reason, ok] of [
   } finally { h.dom.window.close(); }
 });
 
-for (const phase of ['before fill', 'focus', 'input']) test(`${SLUG}: a row outside the PB wrapper during ${phase} cannot verify`, async () => {
+for (const phase of ['before fill', 'focus', 'input', 'change', 'blur']) test(`${SLUG}: a row outside the PB wrapper during ${phase} cannot verify`, async () => {
   const h = boot();
   try {
     const target = h.document.getElementById('target');
@@ -174,8 +174,10 @@ for (const phase of ['before fill', 'focus', 'input']) test(`${SLUG}: a row outs
     assert.equal(result.ok, false);
     assert.equal(result.reason, 'control_not_supported');
     assert.equal(target.closest(`.${probe.page.rootClass}`), null);
-    assert.equal(target.value, phase === 'input' ? CALLER : '');
-    if (phase !== 'input') assert.deepEqual(h.stats.events, []);
+    const eventTypes = ['input', 'change', 'blur'];
+    const eventIndex = eventTypes.indexOf(phase);
+    assert.equal(target.value, eventIndex >= 0 ? CALLER : '');
+    assert.deepEqual(h.stats.events, eventTypes.slice(0, eventIndex + 1));
     assert.equal(h.api.inspect().ok, false);
     safe(h, result);
   } finally { h.dom.window.close(); }

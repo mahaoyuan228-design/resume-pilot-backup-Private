@@ -118,7 +118,11 @@
         before, after: focusedValue, expected: want });
       if (anyOpen()) return refused('control_busy', kept);
       setter.call(found.control, want);
-      for (const type of ['input', 'change', 'blur']) found.control.dispatchEvent(new Event(type, { bubbles: true }));
+      for (const type of ['input', 'change', 'blur']) {
+        const current = locate();
+        if (!current.ok || current.control !== found.control) break;
+        found.control.dispatchEvent(new Event(type, { bubbles: true }));
+      }
       // Let event handlers settle before reading the current framework-owned control.
       await pause(0);
       // Re-locate after events: framework replacement must not verify a detached old node.

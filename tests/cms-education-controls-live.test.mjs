@@ -13,7 +13,7 @@ import { fileURLToPath } from 'node:url';
 import { webcrypto } from 'node:crypto';
 import { JSDOM } from 'jsdom';
 import { integrationFixture } from './fixtures/cms-education-fixture.mjs';
-import { mountHarvestSelectFixture } from './fixtures/cms-education-harvest-selects.mjs';
+import { harvestSelects, mountHarvestSelectFixture } from './fixtures/cms-education-harvest-selects.mjs';
 import { installHarvestedDates } from './fixtures/cms-education-harvest-dates.mjs';
 import { readCmsEducationSerialization } from '../src/content/cms-education-serialization.mjs';
 import { validatePlan } from '../src/profile/cms-education-plan.mjs';
@@ -120,7 +120,8 @@ async function setup(t, { install = true, onSchoolOpen, emptyDegree = false, con
   });
   for (const input of Object.values(textInputs)) for (const type of ['input', 'change', 'blur']) input.addEventListener(type, () => xhr());
   school.addEventListener('click', () => { xhr(LOOKUP); onSchoolOpen?.({ window, document, xhr }); });
-  const probeTiming = { delayed: 0, instanceClicks: 0, mouseSequences: [], hiddenCloses: 0 };
+  const probeTiming = { delayed: 0, instanceClicks: 0, mouseSequences: [], hiddenCloses: 0,
+    focusReplacements: 0, detachedMouseEvents: [], replacementMouseEvents: [] };
   const openers = [...document.querySelectorAll('.form-cell[id="14"] .ant-select-selection[role="combobox"],.form-cell[id="14"] input.ant-calendar-picker-input[readonly]')];
   // The harvest retry scripts use mousePressed/mouseReleased on these exact
   // surfaces. Their React handlers were not captured. These fictional event
@@ -137,6 +138,43 @@ async function setup(t, { install = true, onSchoolOpen, emptyDegree = false, con
     }, true);
   }
   if (openerMode === 'noop-school') school.addEventListener('click', event => event.stopImmediatePropagation(), true);
+  if (openerMode === 'focus-replace-school') {
+    for (const type of ['mousedown', 'mouseup', 'click']) school.addEventListener(type,
+      event => probeTiming.detachedMouseEvents.push(event.type), true);
+    school.addEventListener('focus', () => {
+      // A deliberately fictional focus handler models a pre-dispatch render.
+      // Only the already captured selection is cloned inside its existing
+      // wrapper; the school owner, value, and harvested markup stay identical.
+      // The live count=0 evidence does not establish this as the site's cause.
+      const replacement = school.cloneNode(true);
+      school.replaceWith(replacement); probeTiming.focusReplacements++;
+      replacement.click = () => { probeTiming.instanceClicks++; };
+      for (const type of ['mousedown', 'mouseup', 'click']) replacement.addEventListener(type,
+        event => probeTiming.replacementMouseEvents.push(event.type), true);
+      let menu;
+      replacement.addEventListener('click', () => {
+        // Rebind fictional behavior to the new node using the existing exact
+        // captured menu template; cloning DOM cannot preserve event listeners.
+        replacement.closest('.ant-select').classList.add('ant-select-open');
+        replacement.setAttribute('aria-expanded', 'true');
+        const searchWrap = replacement.querySelector('.ant-select-search');
+        if (searchWrap) searchWrap.style.display = 'block';
+        const template = document.createElement('template');
+        template.innerHTML = harvestSelects.menus['学校'].html;
+        menu = template.content.firstElementChild;
+        menu.classList.remove('ant-select-dropdown-hidden'); menu.style.display = 'block';
+        document.body.append(menu); selects.counts.opens++;
+        xhr(LOOKUP);
+      });
+      replacement.addEventListener('keydown', event => {
+        if (event.key !== 'Escape') return;
+        menu?.remove(); replacement.closest('.ant-select').classList.remove('ant-select-open');
+        replacement.setAttribute('aria-expanded', 'false');
+        const searchWrap = replacement.querySelector('.ant-select-search');
+        if (searchWrap) searchWrap.style.display = 'none';
+      });
+    }, { once: true });
+  }
   if (['delayed-school', 'delayed-calendar'].includes(openerMode)) {
     const surface = openerMode === 'delayed-school' ? school : dates.inputFor('startDate');
     const resumed = new WeakSet();
@@ -239,6 +277,69 @@ test('activation helper stops if a captured wrapper is replaced between mouse do
   assert.equal(activated, false); assert.deepEqual(events, ['mousedown']);
   assert.equal(h.api.widgetClickCount(), 0); assert.equal(h.native.sends, 0); assert.equal(h.native.forbidden, 0);
   assert.equal((await h.api.cleanup()).ok, true);
+});
+
+test('activation diagnostics expose a validate rejection before any counted opener click', async t => {
+  const h = await setup(t), surface = h.document.getElementById('14_51_0').querySelector('.ant-select-selection');
+  const events = [], reports = [];
+  for (const type of ['mousedown', 'mouseup', 'click']) surface.addEventListener(type, event => events.push(event.type), true);
+  const activated = h.window.ResumeCmsEducationMultiWidgetControls.activateSurface(surface, () => null,
+    report => reports.push(plain(report)));
+  assert.equal(activated, false); assert.deepEqual(events, []);
+  assert.deepEqual(reports.at(-1), { stage: 'preflight', reason: 'validation_rejected', events: [] });
+  assert.equal(h.api.widgetClickCount(), 0); assert.deepEqual(plain(h.api.clicks()), []);
+  assert.equal(h.native.sends, 0); assert.equal(h.native.forbidden, 0);
+  assert.equal((await h.api.cleanup()).ok, true);
+});
+
+for (const replacementKind of ['aria-owner', 'wrapper']) test(`focus replacement with a changed ${replacementKind} fails before mouse dispatch`, async t => {
+  const h = await setup(t), wrapper = h.document.getElementById('14_51_0');
+  const surface = wrapper.querySelector('.ant-select-selection'), events = [], reports = [];
+  for (const type of ['mousedown', 'mouseup', 'click']) h.document.addEventListener(type, event => events.push(event.type), true);
+  surface.addEventListener('focus', () => {
+    if (replacementKind === 'wrapper') wrapper.replaceWith(wrapper.cloneNode(true));
+    else {
+      const replacement = surface.cloneNode(true);
+      replacement.setAttribute('aria-controls', h.document.getElementById('14_102301_0')
+        .querySelector('.ant-select-selection').getAttribute('aria-controls'));
+      surface.replaceWith(replacement);
+    }
+  }, { once: true });
+  const activated = h.window.ResumeCmsEducationMultiWidgetControls.activateSurface(surface,
+    () => h.document.getElementById('14_51_0').querySelector('.ant-select-selection'),
+    report => reports.push(plain(report)));
+  assert.equal(activated, false); assert.deepEqual(events, []);
+  assert.deepEqual(reports.at(-1), { stage: 'focus', reason: 'binding_changed', events: [] });
+  assert.equal(h.api.widgetClickCount(), 0); assert.deepEqual(plain(h.api.clicks()), []);
+  assert.equal(h.native.sends, 0); assert.equal(h.native.forbidden, 0);
+  assert.equal((await h.api.cleanup()).ok, true);
+});
+
+test('a same-owner school render on focus rebinds before mousedown and produces owned open/close proof', async t => {
+  // #175 pinned the initial Element through focus. This models an uncovered
+  // pre-dispatch failure that can produce widgetClickCount=0, unlike its existing
+  // click-sequence fixtures. It is an offline regression, not a live diagnosis.
+  const h = await setup(t, { openerMode: 'focus-replace-school' }), before = h.readProof();
+  const prepared = h.api.prepare(); assert.equal(prepared.ok, true, JSON.stringify(prepared));
+  const result = await h.api.run(await runner.createLivePlan(plain(prepared.identities), 0, true));
+  assert.equal(result.ok, true, JSON.stringify({ result, widgetClickCount: h.api.widgetClickCount() }));
+  assert.equal(h.probeTiming.focusReplacements, 1);
+  assert.deepEqual(h.probeTiming.detachedMouseEvents, [], 'a detached opener receives no mouse events');
+  assert.deepEqual(h.probeTiming.replacementMouseEvents, ['mousedown', 'mouseup', 'click']);
+  assert.equal(h.probeTiming.instanceClicks, 0); assert.equal(h.api.widgetClickCount(), 8);
+  const probes = plain(h.api.widgetProbes());
+  assert.equal(probes.length, 7); assert.equal(probes[0].key, 'school');
+  assert.ok(probes.every(probe => probe.opened && probe.closed));
+  assert.ok(probes.every(probe => probe.openerClicks >= 1), 'each activation is counted before any outside-click cleanup');
+  assert.deepEqual(probes[0].activation, { stage: 'complete', reason: null, events: ['mousedown', 'mouseup', 'click'] });
+  assert.equal(result.liveSupportClaimed, false); assert.equal(result.restored, true); assert.equal(result.pageLeftAsFound, true);
+  assert.deepEqual(h.readProof(), before); assert.equal(h.selects.counts.selections, 0); assert.equal(h.dates.snapshot().selections, 0);
+  assert.equal(h.document.querySelectorAll('.ant-select-dropdown,.ant-select-open,.ant-calendar-picker-container').length, 0);
+  assert.equal(h.native.sends, 0); assert.equal(h.native.forbidden, 0);
+  assert.deepEqual(plain(h.api.clicks()), []); assert.deepEqual(plain(h.api.posts()), []);
+  const cleanup = await h.api.cleanup(); assert.equal(cleanup.ok, true, JSON.stringify(cleanup));
+  assert.deepEqual(plain(cleanup.widgetProbes), probes, 'cleanup retains bounded activation and overlay diagnostics');
+  assert.equal(JSON.stringify({ result, cleanup }).includes('private fictional'), false);
 });
 
 test('empty original control fails before any trial events or writes', async t => {
@@ -377,6 +478,16 @@ test('fake CDP controls host reports exact restored proof and validates separate
   assert.equal(runner.evidenceExitCode(spoofed), 2);
   const count = structuredClone(evidence); delete count.finalDetails.widgetClickCount;
   assert.equal(runner.evidenceExitCode(count), 2);
+  const noAttempts = structuredClone(evidence); noAttempts.finalDetails.widgetClickCount = 0;
+  assert.equal(runner.evidenceExitCode(noAttempts), 2, 'the live zero-click symptom cannot become successful evidence');
+  const noProbes = structuredClone(evidence); delete noProbes.finalDetails.widgetProbes;
+  assert.equal(runner.evidenceExitCode(noProbes), 2);
+  const unopened = structuredClone(evidence); unopened.finalDetails.widgetProbes[0].opened = false;
+  assert.equal(runner.evidenceExitCode(unopened), 2, 'a complete activation is not visible owned-overlay proof');
+  const noActivation = structuredClone(evidence); noActivation.finalDetails.widgetProbes[0].activation.events = [];
+  assert.equal(runner.evidenceExitCode(noActivation), 2, 'probe reports cannot bypass the counted mouse sequence');
+  const uncountedOpener = structuredClone(evidence); uncountedOpener.finalDetails.widgetProbes[0].openerClicks = 0;
+  assert.equal(runner.evidenceExitCode(uncountedOpener), 2, 'other opener and outside cleanup clicks cannot excuse an uncounted activation');
 });
 
 for (const [label, action, reason] of [

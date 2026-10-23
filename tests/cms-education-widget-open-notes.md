@@ -1,5 +1,78 @@
 # CMS education widget open/close regression
 
+## R2 follow-up: zero counted opener clicks at #175
+
+R2 starts at `2ffb6f6b3e55fbe3864a3d5fd8f32d3f6a17f62b`, fetched and
+hard-reset before creating `codex/cms-edu-widget-open-r2`. The #175 notes below
+are historical offline results, not proof that the live failure was fixed.
+
+Evidence supplied in `_temp-scripts/cms-edu-widget-open-r2-materials/`:
+
+- `REAL_USE_CMS_EDU_CONTROLS1_2ffb6f6b_2026-10-23.md`,
+  `live/cms-education-live.controls1.json`, and
+  `live/evidence-summary-extract.json` report `widget_open_failed` for all nine
+  planned fields, `widgetClickCount=0`, forbidden clicks zero, empty non-GET and
+  suppression logs, and successful restoration/cleanup. The handover verifies
+  9/9 synced tip files, including the live runner and activation helper. Its
+  documented Dev HEAD explains the JSON's different `tipSha` value.
+- The controller visits school first. One aborted probe propagates its failure
+  to all nine planned fields; these are not nine independent failed openings.
+- `CMS_EDU_DOM_HARVEST_2026-10-23-2030.md`,
+  `harvest/field-school.json`, `harvest/field-school-open.json`, and
+  `harvest/field-degree-xueli-open-mouse.json` establish the existing opener and
+  ownership selectors. The degree retry still reports `opened=false`; expanded
+  ARIA and its hidden linked options remain insufficient proof.
+- `prior-notes/cms-education-widget-open-notes.md` and
+  `prior-notes/STATUS_CODEX_CMS_EDU_WIDGET_OPEN_2026-10-23.md` describe #175's
+  offline tests, which did not model opener replacement during scroll/focus.
+
+#175 pins the initial Element across preparatory scroll/focus. R2 permits a
+fresh caller-validated opener only before the first mouse event, in the same
+original wrapper, section, document, opener kind, and ARIA owner. Changed values
+or serialization fail the probe. Once mousedown begins, replacement still
+aborts; there is no retry, toggle, or retargeting of a partial press. The product
+adapter receives the freshly located field after successful close.
+
+The new fictional focus-render handler clones only the already harvested school
+selection within its wrapper and rebinds test behavior using the existing
+captured menu template. With the actual #175 helper injected in memory, this
+regression fails with `widget_open_failed`, `widgetClickCount=0`, and successful
+restoration. With R2 it passes: no mouse events reach the detached opener, the
+replacement receives down/up/click, and all seven owned overlays open and close
+without selecting any option/day or changing values. This reproduces and fixes
+an uncovered zero-click mechanism; supplied live JSON does not identify the
+exact rejected #175 guard or prove a live focus replacement occurred.
+
+CONTROLS evidence now retains per-field activation stage/reason/event names,
+opener click counts measured before close, owned-open/close booleans, and a reason
+code, including unsuccessful cleanup.
+These contain no DOM, applicant values, or request bodies. Both host verification
+and exit classification require all seven complete, counted probes. A complete
+mouse sequence without an owned visible overlay still fails. Existing linked
+select ownership, calendar portal checks, and Never-Save click restrictions are
+preserved; no new DOM selector or tenant was added.
+
+The #174 timer tracking, autosave suppression, text writer, and `CONTROLS=0`
+behavior are unchanged. No live CMS/CDP session was accessed for R2.
+`liveSupportClaimed=false`; a separate Never-Save live retest is still required.
+
+R2 offline validation:
+
+- CMS education suite: **169/169 passed**, zero failures/skips.
+- Controls suite: **29/29 passed**. After the final per-opener count requirement,
+  the focus-replacement and fake-CDP host tests passed again (**2/2**), including
+  rejection of a zero per-opener count despite other widget/cleanup clicks.
+- Actual #175 helper substituted in memory: the new focus-replacement test
+  intentionally fails with the zero-click signature described above. No source
+  files were replaced for this comparison.
+- Source/test syntax checks and `git diff --check` pass. #174 timer/XHR guards,
+  restoration, and execution/text blocks match the base after newline
+  normalization; the record controller and autosave test retain their base blobs.
+
+The test counts overlap; they are not additive. No live result is claimed.
+
+## Original #175 offline notes
+
 Base: `13df12e56075e69bdb7d92403028da30620ed257`, including #173 and #174.
 `liveSupportClaimed=false`. This change is offline tested; no live site support is claimed.
 

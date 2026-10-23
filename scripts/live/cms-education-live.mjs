@@ -234,6 +234,9 @@ function installEducationTrial(view, page, readSerialization, verifySerializatio
   const suppressedAutosave = [];
   const suppressedLookup = [];
   const clicks = [];
+  const widgetProbes = [];
+  const probeDiagnostics = () => widgetProbes.map(probe => ({ ...probe,
+    activation: { ...probe.activation, events: probe.activation.events.slice() } }));
   let widgetClickCount = 0;
   let activeControl = null;
   let ownedOverlaySpec = null;
@@ -804,30 +807,41 @@ function installEducationTrial(view, page, readSerialization, verifySerializatio
   async function widgetAdapter(spec, field, fact, binding, context) {
     if (activeControl) fail('control_adapter_reentrant');
     activeControl = spec;
+    const probe = { key: spec.key, activation: { stage: 'preflight', reason: 'helper_unavailable', events: [] },
+      openerClicks: 0, opened: false, closed: false, reason: null };
+    widgetProbes.push(probe);
     try {
       {
         // Exercise each captured opener without choosing options or days.
         // City opens the first province select only. The exact fixture display
         // was required for every widget before any trial text writes.
         const before = stable({ value: field.value, proof: readProof() });
+        if (widgetOverlays().length) fail('control_busy');
         const surface = probeSurface(spec);
         ownedOverlaySpec = spec;
         // One complete activation of the captured opener. Do not retry/toggle
         // on a delayed mount, and do not infer a successful open from events.
-        if (!view.ResumeCmsEducationMultiWidgetControls?.activateSurface(surface, () => {
-          safetyCheck();
-          const current = probeSurface(spec);
-          return allowedWidgetClick(current) ? current : null;
-        })) fail('widget_open_failed');
+        const clicksBeforeActivation = widgetClickCount;
+        try {
+          if (!view.ResumeCmsEducationMultiWidgetControls?.activateSurface(surface, () => {
+            safetyCheck();
+            const current = probeSurface(spec);
+            if (stable({ value: locateField(spec).value, proof: readProof() }) !== before) fail('education_control_open_changed_value');
+            return allowedWidgetClick(current) ? current : null;
+          }, activation => { probe.activation = activation; })) fail('widget_open_failed');
+        } finally { probe.openerClicks = widgetClickCount - clicksBeforeActivation; }
         await waitForProbeOpen(spec);
+        probe.opened = true;
         await closeProbe(spec);
+        probe.closed = true;
         if (stable({ value: locateField(spec).value, proof: readProof() }) !== before) fail('education_control_open_changed_value');
       }
       // Opening is read-only; exact preexisting values were required before any
       // writes. Product adapters verify them without reselecting raw codes.
-      return await view.ResumeCmsEducationMultiAdapters[spec.kind](field, fact,
+      return await view.ResumeCmsEducationMultiAdapters[spec.kind](locateField(spec), fact,
         { ...binding, replaceExisting: false }, context);
     }
+    catch (error) { probe.reason = safeReason(error); throw error; }
     finally { activeControl = null; }
   }
 
@@ -932,6 +946,7 @@ function installEducationTrial(view, page, readSerialization, verifySerializatio
     suppressedLookup: () => suppressedLookup.slice(),
     timerSettle,
     widgetClickCount: () => widgetClickCount,
+    ...(CONTROLS ? { widgetProbes: probeDiagnostics } : {}),
     clicks: () => clicks.slice(),
     async cleanup() {
       aborted = true;
@@ -945,7 +960,8 @@ function installEducationTrial(view, page, readSerialization, verifySerializatio
         if (autosaveAbortFailed) fail('autosave_abort_failed');
       } catch (error) {
         return { ok: false, reason: safeReason(error), posts: posts.slice(), clicks: clicks.slice(),
-          suppressedAutosave: suppressedAutosave.slice(), suppressedLookup: suppressedLookup.slice(), widgetClickCount, timerSettle: timerSettle() };
+          suppressedAutosave: suppressedAutosave.slice(), suppressedLookup: suppressedLookup.slice(), widgetClickCount,
+          ...(CONTROLS ? { widgetProbes: probeDiagnostics() } : {}), timerSettle: timerSettle() };
       }
       for (const remove of [...removers].reverse()) remove();
       for (const { key, descriptor } of previous) {
@@ -954,7 +970,7 @@ function installEducationTrial(view, page, readSerialization, verifySerializatio
       }
       if (view.__cmsEducationLive === api) delete view.__cmsEducationLive;
       return { ok: true, posts: posts.slice(), clicks: clicks.slice(), suppressedAutosave: suppressedAutosave.slice(),
-        suppressedLookup: suppressedLookup.slice(), widgetClickCount, timerSettle: timerSettle() };
+        suppressedLookup: suppressedLookup.slice(), widgetClickCount, ...(CONTROLS ? { widgetProbes: probeDiagnostics() } : {}), timerSettle: timerSettle() };
     }
   };
   view.__cmsEducationLive = api;
@@ -966,6 +982,15 @@ function plannedFields(reason = 'not_run', specs = FIELD_SPECS, controls = false
     ...specs.map((spec) => ({ q: spec.q, path: spec.path, status: 'failed', reason, value: null })),
     ...(controls ? [] : UNCLAIMED.map((q) => ({ q, status: 'skipped', reason: 'control_not_supported', value: null })))
   ];
+}
+
+function completeWidgetProbes(probes, clickCount) {
+  return Number.isSafeInteger(clickCount) && clickCount >= CONTROL_SPECS.length
+    && Array.isArray(probes) && probes.length === CONTROL_SPECS.length
+    && CONTROL_SPECS.every(spec => probes.filter(probe => probe?.key === spec.key && !probe.reason
+      && Number.isSafeInteger(probe.openerClicks) && probe.openerClicks > 0
+      && probe.opened === true && probe.closed === true && probe.activation?.stage === 'complete'
+      && probe.activation.reason === null && JSON.stringify(probe.activation.events) === '["mousedown","mouseup","click"]').length === 1);
 }
 
 export function evidenceExitCode(evidence) {
@@ -981,7 +1006,7 @@ export function evidenceExitCode(evidence) {
   const ok = evidence?.neverSave === true && evidence.liveSupportClaimed === false
     && Array.isArray(evidence.suppressedAutosave) && evidence.suppressedAutosave.every((row) => validSuppressedAutosave(row) && !row.abortFailed)
     && (controls ? Array.isArray(evidence.suppressedLookup) && evidence.suppressedLookup.every(validSuppressedLookup)
-      && Number.isSafeInteger(details.widgetClickCount) && details.widgetClickCount >= 0
+      && completeWidgetProbes(details.widgetProbes, details.widgetClickCount)
       : evidence.suppressedLookup === undefined || Array.isArray(evidence.suppressedLookup) && evidence.suppressedLookup.every(validSuppressedLookup))
     && details.liveSupportClaimed === false && details.moduleClaimedSupport === false
     && !details.reason && details.restored === true && details.pageLeftAsFound === true
@@ -1019,6 +1044,7 @@ export async function runCmsEducationLive(options = {}) {
   let suppressedAutosave = [];
   let suppressedLookup = [];
   let widgetClickCount = 0;
+  let widgetProbeResults = [];
   let installed = false;
   let fetchEnabled = false;
   let cleanupOk = false;
@@ -1160,6 +1186,7 @@ export async function runCmsEducationLive(options = {}) {
           suppressedLookup = mergeObservations(suppressedLookup, readLookupSuppression(cleanup?.suppressedLookup));
           if (!Number.isSafeInteger(cleanup?.widgetClickCount) || cleanup.widgetClickCount < 0) throw new Error('click_read_failed');
           widgetClickCount = cleanup.widgetClickCount;
+          widgetProbeResults = Array.isArray(cleanup.widgetProbes) ? cleanup.widgetProbes : [];
         }
         cleanupOk = cleanup?.ok === true && Array.isArray(cleanup.posts) && Array.isArray(cleanup.clicks)
           && !suppressedAutosave.some((row) => row.abortFailed);
@@ -1185,6 +1212,7 @@ export async function runCmsEducationLive(options = {}) {
   else if (interceptionFailed) reason = 'interception_failed';
   else if (suppressedAutosave.some((row) => row.abortFailed)) reason = 'autosave_abort_failed';
   const verified = !reason && cleanupOk && outcome?.ok === true && outcome.liveSupportClaimed === false
+    && (!controls || completeWidgetProbes(widgetProbeResults, widgetClickCount))
     && outcome.rowIndex === rowIndex && outcome.recordCount === recordCount
     && outcome.restored === true && outcome.pageLeftAsFound === true && outcome.otherChanged === false
     && outcome.waitedMs >= READBACK_WAIT_MS && specs.every((spec) => {
@@ -1202,6 +1230,7 @@ export async function runCmsEducationLive(options = {}) {
       baseTip: BASE_TIP, port, rowIndex, recordCount, controls, href, tabAction, reason, steps,
       neverSave: true, liveSupportClaimed: false, moduleClaimedSupport: false,
       clickCount: clicks.length, widgetClickCount, bannedClick: clickDecision.banned === true,
+      ...(controls ? { widgetProbes: widgetProbeResults } : {}),
       cleanupOk, restored: outcome?.restored === true,
       pageLeftAsFound: cleanupOk && outcome?.pageLeftAsFound === true,
       restoreVia: outcome ? controls ? 'product_adapters_and_native_events' : 'native_events' : null, otherChanged: outcome?.otherChanged === true,

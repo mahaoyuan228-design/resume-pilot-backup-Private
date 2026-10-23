@@ -17,7 +17,7 @@ import {
 } from '../src/license/signed-entitlement.mjs';
 
 const fixtureDir = resolve('tests/fixtures/license');
-const publicKeyPem = readFileSync(resolve(fixtureDir, 'EXAMPLE_ed25519_public.pem'), 'utf8');
+const publicKeyPem = readFileSync(resolve(fixtureDir, 'EXAMPLE_ed25519_public.txt'), 'utf8');
 const signedActive = JSON.parse(
   readFileSync(resolve(fixtureDir, 'EXAMPLE_signed_entitlement.json'), 'utf8'),
 );
@@ -251,11 +251,13 @@ describe('packaging / docs: signed module in paid build, not internal', () => {
     assert.equal(script.includes('src/license/'), false);
   });
 
-  it('EXAMPLE fixtures are clearly marked and private key stays under tests/', () => {
+  it('EXAMPLE fixtures are clearly marked and verification uses a public-only key', () => {
     const readme = readFileSync(resolve(fixtureDir, 'README.md'), 'utf8');
     assert.match(readme, /NOT production/i);
     assert.match(readme, /EXAMPLE/);
-    const priv = readFileSync(resolve(fixtureDir, 'EXAMPLE_ed25519_private.pem'), 'utf8');
-    assert.match(priv, /BEGIN PRIVATE KEY/);
+    assert.match(publicKeyPem, /BEGIN PUBLIC KEY/);
+    assert.doesNotMatch(publicKeyPem, /PRIVATE KEY/);
+    const paidBuilder = readFileSync(resolve('scripts/build-paid.ps1'), 'utf8');
+    assert.match(paidBuilder, /if\s*\(\$pemRaw -match 'BEGIN PRIVATE KEY'\)\s*\{\s*throw/u);
   });
 });

@@ -7,6 +7,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 import vm from 'node:vm';
 import { JSDOM } from 'jsdom';
@@ -45,7 +46,7 @@ import {
   signalsMatch
 } from '../scripts/live/cms-basic-info-live.mjs';
 
-const repoRoot = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..');
+const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const source = fs.readFileSync(new URL('../scripts/live/cms-basic-info-live.mjs', import.meta.url), 'utf8');
 const LIVE_URL = 'https://wecruit.hotjob.cn/SU629dbc0c0dcad452299bc0f7/pb/resumeOperation.html?recruitType=1&resumeId=fixture&tid=fixture&lang=1';
 const ORIGINALS = Object.freeze({
@@ -823,7 +824,7 @@ test('a stale engine install is cleared before inject and a clear failure skips 
   assert.equal(failed.evidence.finalDetails.steps.includes('install_live'), false);
   assert.equal(failed.evidence.fields.every((field) => field.status === 'failed' && field.reason === 'inject_failed'), true);
 
-  const expression = source.match(/step: 'clear_engine_install' \}\);\n {10}steps\.push\('clear_engine_install'\)/);
+  const expression = source.match(/step: 'clear_engine_install' \}\);\r?\n {10}steps\.push\('clear_engine_install'\)/);
   const body = source.slice(source.indexOf('const cleared = await evaluate'), source.indexOf("step: 'clear_engine_install'"));
   const iife = body.match(/\(\(\) => \{[\s\S]*\}\)\(\)/u);
   assert.ok(expression);

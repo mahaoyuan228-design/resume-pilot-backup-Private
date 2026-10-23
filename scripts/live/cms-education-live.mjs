@@ -236,9 +236,11 @@ function installEducationTrial(view, page, readSerialization, verifySerializatio
   const clicks = [];
   const widgetProbes = [];
   const probeDiagnostics = () => widgetProbes.map(probe => ({ ...probe,
-    activation: { ...probe.activation, events: probe.activation.events.slice() } }));
+    activation: { ...probe.activation, events: probe.activation.events.slice(),
+      observedEvents: probe.activation.observedEvents?.slice() || [] } }));
   let widgetClickCount = 0;
   let activeControl = null;
+  let activeProbe = null;
   let ownedOverlaySpec = null;
   let ownedPortal = null;
   let autosavePhase = null;
@@ -321,7 +323,13 @@ function installEducationTrial(view, page, readSerialization, verifySerializatio
     return false;
   }
   const onClick = (event) => {
-    if (allowedWidgetClick(event.target)) { widgetClickCount += 1; return; }
+    if (allowedWidgetClick(event.target)) {
+      widgetClickCount += 1;
+      // Count only a delivered click on this probe's bound opener. Outside
+      // cleanup clicks and activation attempt logs cannot supply this proof.
+      if (activeProbe && event.target !== doc.body && event.target === probeSurface(activeControl)) activeProbe.openerClicks += 1;
+      return;
+    }
     event.preventDefault(); event.stopImmediatePropagation(); clickNote(event.target);
   };
   const onSubmit = (event) => { event.preventDefault(); event.stopImmediatePropagation(); clickNote(event.target, 'submit'); };
@@ -738,7 +746,9 @@ function installEducationTrial(view, page, readSerialization, verifySerializatio
     const menu = menus[0] || (closing && ownedPortal) || hiddenLinkedMenu;
     if (open.length > 1 || open.length === 1 && open[0] !== select || menus.length > 1
       || overlays.length !== open.length + menus.length || !menu || !linked || !menu.contains(linked)
-      || ownedPortal && menu !== ownedPortal || !closing && (open.length !== 1 || menus.length !== 1)) return null;
+      || ownedPortal && menu !== ownedPortal || !closing && menus.length !== 1) return null;
+    // A unique visible dropdown linked to the bound select proves opening
+    // even if its root open class lags. The class/expanded ARIA alone never do.
     // A captured menu can outlive the open class during its exit animation,
     // or hide just before the open class is removed. Neither is closed yet.
     return { surface, overlay: menu, closed: false };
@@ -763,7 +773,7 @@ function installEducationTrial(view, page, readSerialization, verifySerializatio
     for (const node of surfaces.filter(Boolean)) {
       currentSurface();
       if (node !== doc && !node.isConnected) fail('menu_cleanup_failed');
-      node.dispatchEvent(new view.KeyboardEvent('keydown', {
+      view.EventTarget.prototype.dispatchEvent.call(node, new view.KeyboardEvent('keydown', {
         key: 'Escape', code: 'Escape', keyCode: 27, which: 27, bubbles: true, cancelable: true
       }));
     }
@@ -783,7 +793,7 @@ function installEducationTrial(view, page, readSerialization, verifySerializatio
     if (!await waitClosed(Math.min(deadline, view.performance.now() + 650))) {
       for (const type of ['mousedown', 'mouseup', 'click']) {
         if (!probeOverlay(spec, true)) fail('menu_cleanup_failed');
-        doc.body.dispatchEvent(new view.MouseEvent(type, { bubbles: true, cancelable: true }));
+        view.EventTarget.prototype.dispatchEvent.call(doc.body, new view.MouseEvent(type, { bubbles: true, cancelable: true }));
       }
       if (!await waitClosed(deadline)) fail('menu_cleanup_failed');
     }
@@ -807,9 +817,10 @@ function installEducationTrial(view, page, readSerialization, verifySerializatio
   async function widgetAdapter(spec, field, fact, binding, context) {
     if (activeControl) fail('control_adapter_reentrant');
     activeControl = spec;
-    const probe = { key: spec.key, activation: { stage: 'preflight', reason: 'helper_unavailable', events: [] },
+    const probe = { key: spec.key, activation: { stage: 'preflight', reason: 'helper_unavailable', events: [], observedEvents: [] },
       openerClicks: 0, opened: false, closed: false, reason: null };
     widgetProbes.push(probe);
+    activeProbe = probe;
     try {
       {
         // Exercise each captured opener without choosing options or days.
@@ -821,15 +832,14 @@ function installEducationTrial(view, page, readSerialization, verifySerializatio
         ownedOverlaySpec = spec;
         // One complete activation of the captured opener. Do not retry/toggle
         // on a delayed mount, and do not infer a successful open from events.
-        const clicksBeforeActivation = widgetClickCount;
-        try {
-          if (!view.ResumeCmsEducationMultiWidgetControls?.activateSurface(surface, () => {
-            safetyCheck();
-            const current = probeSurface(spec);
-            if (stable({ value: locateField(spec).value, proof: readProof() }) !== before) fail('education_control_open_changed_value');
-            return allowedWidgetClick(current) ? current : null;
-          }, activation => { probe.activation = activation; })) fail('widget_open_failed');
-        } finally { probe.openerClicks = widgetClickCount - clicksBeforeActivation; }
+        if (!view.ResumeCmsEducationMultiWidgetControls?.activateSurface(surface, () => {
+          safetyCheck();
+          const current = probeSurface(spec);
+          if (stable({ value: locateField(spec).value, proof: readProof() }) !== before) fail('education_control_open_changed_value');
+          return allowedWidgetClick(current) ? current : null;
+        }, activation => { probe.activation = activation; })) fail('widget_open_failed');
+        if (probe.openerClicks !== 1) fail('widget_open_failed');
+        activeProbe = null;
         await waitForProbeOpen(spec);
         probe.opened = true;
         await closeProbe(spec);
@@ -842,7 +852,7 @@ function installEducationTrial(view, page, readSerialization, verifySerializatio
         { ...binding, replaceExisting: false }, context);
     }
     catch (error) { probe.reason = safeReason(error); throw error; }
-    finally { activeControl = null; }
+    finally { activeProbe = null; activeControl = null; }
   }
 
   async function execute(plan) {
@@ -988,9 +998,10 @@ function completeWidgetProbes(probes, clickCount) {
   return Number.isSafeInteger(clickCount) && clickCount >= CONTROL_SPECS.length
     && Array.isArray(probes) && probes.length === CONTROL_SPECS.length
     && CONTROL_SPECS.every(spec => probes.filter(probe => probe?.key === spec.key && !probe.reason
-      && Number.isSafeInteger(probe.openerClicks) && probe.openerClicks > 0
+      && probe.openerClicks === 1
       && probe.opened === true && probe.closed === true && probe.activation?.stage === 'complete'
-      && probe.activation.reason === null && JSON.stringify(probe.activation.events) === '["mousedown","mouseup","click"]').length === 1);
+      && probe.activation.reason === null && JSON.stringify(probe.activation.events) === '["mousedown","mouseup","click"]'
+      && JSON.stringify(probe.activation.observedEvents) === '["mousedown","mouseup","click"]').length === 1);
 }
 
 export function evidenceExitCode(evidence) {

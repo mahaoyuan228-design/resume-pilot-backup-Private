@@ -286,7 +286,7 @@ test('activation diagnostics expose a validate rejection before any counted open
   const activated = h.window.ResumeCmsEducationMultiWidgetControls.activateSurface(surface, () => null,
     report => reports.push(plain(report)));
   assert.equal(activated, false); assert.deepEqual(events, []);
-  assert.deepEqual(reports.at(-1), { stage: 'preflight', reason: 'validation_rejected', events: [] });
+  assert.deepEqual(reports.at(-1), { stage: 'preflight', reason: 'validation_rejected', events: [], observedEvents: [] });
   assert.equal(h.api.widgetClickCount(), 0); assert.deepEqual(plain(h.api.clicks()), []);
   assert.equal(h.native.sends, 0); assert.equal(h.native.forbidden, 0);
   assert.equal((await h.api.cleanup()).ok, true);
@@ -309,7 +309,7 @@ for (const replacementKind of ['aria-owner', 'wrapper']) test(`focus replacement
     () => h.document.getElementById('14_51_0').querySelector('.ant-select-selection'),
     report => reports.push(plain(report)));
   assert.equal(activated, false); assert.deepEqual(events, []);
-  assert.deepEqual(reports.at(-1), { stage: 'focus', reason: 'binding_changed', events: [] });
+  assert.deepEqual(reports.at(-1), { stage: 'focus', reason: 'binding_changed', events: [], observedEvents: [] });
   assert.equal(h.api.widgetClickCount(), 0); assert.deepEqual(plain(h.api.clicks()), []);
   assert.equal(h.native.sends, 0); assert.equal(h.native.forbidden, 0);
   assert.equal((await h.api.cleanup()).ok, true);
@@ -331,7 +331,8 @@ test('a same-owner school render on focus rebinds before mousedown and produces 
   assert.equal(probes.length, 7); assert.equal(probes[0].key, 'school');
   assert.ok(probes.every(probe => probe.opened && probe.closed));
   assert.ok(probes.every(probe => probe.openerClicks >= 1), 'each activation is counted before any outside-click cleanup');
-  assert.deepEqual(probes[0].activation, { stage: 'complete', reason: null, events: ['mousedown', 'mouseup', 'click'] });
+  assert.deepEqual(probes[0].activation, { stage: 'complete', reason: null, events: ['mousedown', 'mouseup', 'click'],
+    observedEvents: ['mousedown', 'mouseup', 'click'] });
   assert.equal(result.liveSupportClaimed, false); assert.equal(result.restored, true); assert.equal(result.pageLeftAsFound, true);
   assert.deepEqual(h.readProof(), before); assert.equal(h.selects.counts.selections, 0); assert.equal(h.dates.snapshot().selections, 0);
   assert.equal(h.document.querySelectorAll('.ant-select-dropdown,.ant-select-open,.ant-calendar-picker-container').length, 0);
@@ -488,6 +489,10 @@ test('fake CDP controls host reports exact restored proof and validates separate
   assert.equal(runner.evidenceExitCode(noActivation), 2, 'probe reports cannot bypass the counted mouse sequence');
   const uncountedOpener = structuredClone(evidence); uncountedOpener.finalDetails.widgetProbes[0].openerClicks = 0;
   assert.equal(runner.evidenceExitCode(uncountedOpener), 2, 'other opener and outside cleanup clicks cannot excuse an uncounted activation');
+  const duplicateOpener = structuredClone(evidence); duplicateOpener.finalDetails.widgetProbes[0].openerClicks = 2;
+  assert.equal(runner.evidenceExitCode(duplicateOpener), 2, 'one probe authorizes exactly one opener activation');
+  const noReceipt = structuredClone(evidence); delete noReceipt.finalDetails.widgetProbes[0].activation.observedEvents;
+  assert.equal(runner.evidenceExitCode(noReceipt), 2, 'attempted event names alone cannot prove DOM delivery');
 });
 
 for (const [label, action, reason] of [

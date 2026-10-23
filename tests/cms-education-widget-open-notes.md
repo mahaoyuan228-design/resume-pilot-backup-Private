@@ -1,5 +1,71 @@
 # CMS education widget open/close regression
 
+## R3: complete mouse attempts with zero delivered opener clicks at #177
+
+Base `d22734a92b130ca58fbd7c44b4ec7d1d45c41caa` was fetched, hard-reset, and
+reverified before creating `codex/cms-edu-widget-open-r3`. #177's offline results
+below did **not** fix the supplied live retest.
+
+Evidence is supplied in `_temp-scripts/cms-edu-widget-open-r3-materials/`:
+
+- `REAL_USE_CMS_EDU_CONTROLS1_d22734a9_2026-10-23.md`,
+  `live/cms-education-live.controls1.json`, `live/evidence-summary-extract.json`,
+  and `live/RESULT_NOTE.txt`: the school-first probe reports activation complete,
+  mouse event names `mousedown/mouseup/click`, `openerClicks=0`,
+  `widgetClickCount=0`, and `opened=false`. Its failure propagates to all nine
+  fields. Forbidden clicks are zero; restoration/cleanup succeed. The handover
+  verifies tip product bytes synced 9/9; this is not a stale #175 helper result.
+- `CMS_EDU_DOM_HARVEST_2026-10-23-2030.md`, `harvest/field-school.json`, and
+  `harvest/field-school-open.json`: the existing selection and visible dropdown
+  link through `aria-controls` to an inner dropdown DIV. The degree mouse retry
+  (`harvest/field-degree-xueli-open-mouse.json`) reports expanded ARIA and open
+  class with no visible dropdown; these flags cannot prove opening. Isolated
+  start/end captures establish the existing readonly calendar surfaces/portals.
+- `prior-notes/cms-education-widget-open-notes-tip-d22734a9.md` and
+  `prior-r2/STATUS_CODEX_CMS_EDU_WIDGET_OPEN_R2_2026-10-23.md` document #177's
+  pre-mousedown replacement fix. R3 retains those binding checks.
+
+#177 appended event names after calling an opener's overridable `dispatchEvent`.
+R3 uses the owning window's `EventTarget.prototype.dispatchEvent` for the
+controls probe's mouse activation and Escape/outside close signals. Each mouse
+event must also reach a temporary document capture listener as the exact Event
+object on the bound opener; the listener is removed in `finally`. Attempted
+names and actually observed names are reported separately. This is native DOM
+dispatch of synthetic events, not trusted browser input. An earlier capture
+stop still fails with `event_not_observed`; no retry or toggle is attempted.
+
+The Never-Save click guard independently counts the active probe's exact opener
+click. It must receive exactly one before the open wait. Outside cleanup clicks
+cannot supply this count, and host evidence requires one click and all three
+observed events for each of the seven probes. Open confirmation requires one
+visible, uniquely ARIA-linked dropdown; the bound root's open class may lag.
+Foreign open roots, extra/foreign menus, and hidden linked menus still fail.
+Close ownership, unchanged values/serialization, and closed overlays remain
+required. No option/day, Save, Submit, Next, Deliver, or Delete is authorized.
+
+`cms-education-widget-open-r3.test.mjs` compares an immutable activation helper
+from the #177 blob (`58222ca8fb4d72339545d9579269c3c8a4b53312`) against R3.
+A fictional inert instance `dispatchEvent` reproduces the exact supplied
+complete-mouse/zero-count/unopened signature with #177, while R3 delivers one
+counted activation and opens/closes all seven captured surfaces. Other cases
+cover an earlier capture stop, body/duplicate click accounting, visible linked
+menus before the open class, and hidden/ARIA-only negatives. Fixture event
+handlers are explicitly fictional; the live JSON does not identify the site's
+event interception mechanism. This regression fixes the demonstrated code gap
+without claiming that mechanism is the established live root cause.
+
+#174's timer tracking, autosave suppression, native text writer, restore/cleanup,
+and `CONTROLS=0` path remain intact. No live CMS/CDP session or other workdir was
+accessed. `liveSupportClaimed=false`; a separate Never-Save live retest is needed.
+
+R3 offline validation: `node --test --test-concurrency=3` across every
+`tests/cms-education*.test.mjs` passed **177/177**, zero failures/skips (including
+**29/29** controls and **8/8** new R3 regressions; counts overlap). All five
+changed/new JavaScript files pass `node --check`; `git diff --check` passes.
+The immutable #177 comparison helper matches the base activation source.
+Protected #174 blocks and autosave files match the exact base after newline
+normalization. The existing props test's generated report was restored unchanged.
+
 ## R2 follow-up: zero counted opener clicks at #175
 
 R2 starts at `2ffb6f6b3e55fbe3864a3d5fd8f32d3f6a17f62b`, fetched and

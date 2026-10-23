@@ -75,6 +75,13 @@ function validSuppressionShapes(report) {
       && (row.abortFailed === undefined || row.abortFailed === false)));
 }
 
+function validSuccessReasons(details) {
+  // Successful host reports and probes retain explicit null reasons. The
+  // legacy verdict uses truthiness, accepting omitted/false/0/empty reasons.
+  return details?.reason === null && Array.isArray(details.widgetProbes)
+    && details.widgetProbes.every(probe => object(probe) && probe.reason === null);
+}
+
 export function validateControlsDaytimeEvidence(artifact) {
   const report = artifact?.report;
   const details = report?.finalDetails;
@@ -87,7 +94,7 @@ export function validateControlsDaytimeEvidence(artifact) {
     { key: 'policy', ok: object(artifact) && artifact.schemaVersion === EVIDENCE_SCHEMA_VERSION
       && artifact.neverSave === true && artifact.liveSupportClaimed === false },
     { key: 'runner_report', ok: object(report) && object(details) && Array.isArray(report.fields)
-      && validSuppressionShapes(report)
+      && validSuppressionShapes(report) && validSuccessReasons(details)
       && reportExitCode === 0 && details.controls === true
       && details.neverSave === true && details.bannedClick === false
       && typeof details.waitedMs === 'number' && Number.isFinite(details.waitedMs)

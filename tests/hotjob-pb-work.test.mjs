@@ -353,14 +353,14 @@ test('empty text, textarea, and the flat select read back', async () => {
     assert.equal(nature.stillOpen, 0);
     assert.equal(position.after, '合成职位');
     assert.equal(description.reason, 'readback_matched');
-    assert.equal(description.after, '第一句。第二句。');
+    assert.equal(description.after, ' 第一句。\n第二句。 ');
     assert.equal(h.stats.triggerClass, probe.select.triggerClass);
     assert.match(h.stats.openClass, /ant-select-open/);
     assert.match(h.stats.openClass, /ant-select-focused/);
     assert.match(h.stats.openClass, /ant-select-enabled/);
     assert.equal(h.document.getElementById('organization-input').value, '合成企业甲');
     assert.equal(h.document.getElementById('position-input').value, '合成职位');
-    assert.equal(h.document.getElementById('description-input').value, '第一句。\n第二句。');
+    assert.equal(h.document.getElementById('description-input').value, ' 第一句。\n第二句。 ');
     assert.equal(h.document.getElementById('nature-value').textContent, '实习');
     assert.equal(h.document.querySelectorAll('.ant-select-open').length, 0);
     assert.equal(h.document.getElementById('select-menu').hidden, true);
@@ -401,7 +401,7 @@ test('preexisting same values do not focus, reopen, or paint', async () => {
   try {
     const org = await h.api.fillField(ORG.label, '合成企业甲');
     const position = await h.api.fillField(POSITION.label, ' 合成职位 ');
-    const description = await h.api.fillField(DESCRIPTION, '合成工作描述甲');
+    const description = await h.api.fillField(DESCRIPTION, '合成 工作描述甲');
     const nature = await h.api.fillField(NATURE, ' 实习 ');
     assert.equal(org.reason, 'preexisting_same_value');
     assert.equal(org.status, 'verified');
@@ -694,4 +694,134 @@ test('a hidden page fails closed before a click or write', async () => {
     assert.equal(row.liveSupportClaimed, false);
     unchanged(h.document, h.stats);
   } finally { h.dom.window.close(); }
+});
+
+test('work description preserves authored Unicode, spacing, and browser line endings', async () => {
+  const h = await boot();
+  try {
+    const authored = '  Ａ\u200b  first\tline\r\nsecond\rthird  ';
+    const expected = '  Ａ\u200b  first\tline\nsecond\nthird  ';
+    const row = await h.api.fillField(DESCRIPTION, authored);
+    assert.equal(row.ok, true, JSON.stringify(row));
+    assert.equal(row.reason, 'readback_matched');
+    assert.equal(row.expected, expected);
+    assert.equal(row.after, expected);
+    assert.equal(h.document.getElementById('description-input').value, expected);
+    assert.equal(h.api.inspect().fields.find((field) => field.label === DESCRIPTION).value, expected);
+    const repeated = await h.api.fillField(DESCRIPTION, authored);
+    assert.equal(repeated.reason, 'preexisting_same_value');
+    assert.equal(repeated.before, expected);
+    assert.equal(h.stats.textInput, 1);
+    assert.equal(h.stats.focus, 1);
+    unchanged(h.document, h.stats);
+  } finally { h.dom.window.close(); }
+});
+
+test('work description keeps existing whitespace and distinct prose without false verification', async () => {
+  for (const [existing, requested] of [
+    ['Project A\nProject B', 'Project AProject B'],
+    ['Project  A', 'Project A'],
+    ['Ａ', 'A'],
+    [' \n\t ', 'New description']
+  ]) {
+    const h = await boot({ description: existing });
+    try {
+      const row = await h.api.fillField(DESCRIPTION, requested);
+      assert.equal(row.ok, false, JSON.stringify(row));
+      assert.equal(row.status, 'skipped');
+      assert.equal(row.reason, 'existing_value');
+      assert.equal(row.before, existing);
+      assert.equal(row.after, existing);
+      assert.equal(h.document.getElementById('description-input').value, existing);
+      assert.equal(h.stats.textInput, 0);
+      assert.equal(h.stats.focus, 0);
+      assert.equal(h.stats.open, 0);
+      unchanged(h.document, h.stats);
+    } finally { h.dom.window.close(); }
+  }
+});
+
+test('work text and prose outside the single resume root fail before focus or writes', async () => {
+  for (const [label, id] of [[ORG.label, 'organization-input'], [DESCRIPTION, 'description-input']]) {
+    for (const duplicateRoot of [false, true]) {
+      const h = await boot();
+      try {
+        if (duplicateRoot) {
+          h.document.body.append(h.document.querySelector(`.${probe.page.rootClass}`).cloneNode(false));
+        } else {
+          h.document.body.append(h.document.getElementById(id).closest('.ant-row.ant-form-item'));
+        }
+        const row = await h.api.fillField(label, 'Authored value');
+        assert.equal(row.ok, false, JSON.stringify(row));
+        assert.equal(row.reason, duplicateRoot ? 'wrong_page' : 'control_not_supported');
+        assert.equal(h.document.getElementById(id).value, '');
+        assert.equal(h.stats.focus, 0);
+        assert.equal(h.stats.textInput, 0);
+        unchanged(h.document, h.stats);
+      } finally { h.dom.window.close(); }
+    }
+  }
+});
+
+test('focus cannot move or replace a work control before its write', async () => {
+  for (const [label, id] of [[ORG.label, 'organization-input'], [DESCRIPTION, 'description-input']]) {
+    for (const replace of [false, true]) {
+      const h = await boot();
+      try {
+        const original = h.document.getElementById(id);
+        const replacement = original.cloneNode(true);
+        const events = [];
+        for (const type of ['input', 'change', 'blur']) original.addEventListener(type, () => events.push(type));
+        original.addEventListener('focus', () => {
+          if (replace) original.replaceWith(replacement);
+          else h.document.body.append(original.closest('.ant-row.ant-form-item'));
+        }, { once: true });
+        const row = await h.api.fillField(label, 'Authored value');
+        assert.equal(row.ok, false, JSON.stringify(row));
+        assert.equal(row.reason, 'control_not_supported');
+        assert.equal(original.value, '');
+        assert.equal(replacement.value, '');
+        assert.deepEqual(events, []);
+        assert.equal(h.stats.textInput, 0);
+        unchanged(h.document, h.stats);
+      } finally { h.dom.window.close(); }
+    }
+  }
+});
+
+test('a focus-populated work control is kept without overwriting its value', async () => {
+  for (const [label, id] of [[ORG.label, 'organization-input'], [DESCRIPTION, 'description-input']]) {
+    const h = await boot();
+    try {
+      const input = h.document.getElementById(id);
+      input.addEventListener('focus', () => { input.value = 'Value supplied during focus'; }, { once: true });
+      const row = await h.api.fillField(label, 'Authored value');
+      assert.equal(row.ok, false, JSON.stringify(row));
+      assert.equal(row.reason, 'existing_value');
+      assert.equal(input.value, 'Value supplied during focus');
+      assert.equal(h.stats.textInput, 0);
+      unchanged(h.document, h.stats);
+    } finally { h.dom.window.close(); }
+  }
+});
+
+test('work input events stop when ownership changes and readback cannot verify a moved control', async () => {
+  for (const [label, id] of [[ORG.label, 'organization-input'], [DESCRIPTION, 'description-input']]) {
+    for (const driftEvent of ['input', 'blur']) {
+      const h = await boot();
+      try {
+        const input = h.document.getElementById(id);
+        const events = [];
+        for (const type of ['input', 'change', 'blur']) input.addEventListener(type, () => events.push(type));
+        input.addEventListener(driftEvent, () => h.document.body.append(input.closest('.ant-row.ant-form-item')), { once: true });
+        const row = await h.api.fillField(label, 'Authored value');
+        assert.equal(row.ok, false, JSON.stringify(row));
+        assert.equal(row.reason, 'control_not_supported');
+        assert.equal(input.value, 'Authored value');
+        assert.deepEqual(events, driftEvent === 'input' ? ['input'] : ['input', 'change', 'blur']);
+        assert.equal(h.stats.textInput, 1);
+        unchanged(h.document, h.stats);
+      } finally { h.dom.window.close(); }
+    }
+  }
 });

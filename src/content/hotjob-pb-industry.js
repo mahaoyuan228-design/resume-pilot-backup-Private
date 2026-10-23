@@ -2,12 +2,15 @@
 // 如应聘研究发展中心行业研究类岗位请勾选（建议仅勾选3~5项）
 // Probe 2026-10-23 recorded valueSample as an internal code triple. Those
 // codes are not display captions and are not matched here. Options were not
-// opened. Option text is the caption beside each input.ant-checkbox-input,
-// the same walk as 性别 / 期望工作地是否服从分配. Nothing is hardcoded.
+// opened. The same-page certs and intent-salary fixtures capture the one
+// exclusion caption 非研究类岗位，不涉及. Other captions are page-derived beside
+// each input.ant-checkbox-input, the same walk as 性别 / 期望工作地是否服从分配.
 // The label suggests 3~5 captions. A preexisting checked set that already
 // matches is verified without toggling, including when its count is outside
-// that suggestion. An empty control is filled only for a unique list inside
-// the suggestion. A different preexisting set is left untouched.
+// that suggestion. An empty control accepts that exclusion alone or a unique
+// list inside the suggestion, never both. A different preexisting set is kept.
+// Each toggle and final readback requires the original wrapper, row, and inputs
+// on the same visible PB page. Context drift cannot verify or continue toggling.
 // There is no option menu. Cancel sends Escape and leaves the checks.
 // Pending live Never-Save. This does not claim the site is supported.
 // liveSupportClaimed and supportClaimed stay false. leftUnsaved stays true.
@@ -19,6 +22,7 @@
   const KIND = 'checkbox';
   const SUGGESTED_MIN = 3;
   const SUGGESTED_MAX = 5;
+  const EXCLUSION = '非研究类岗位，不涉及';
   const FORBIDDEN = /^(?:保存|提交|投递|删除|下一步|返回|确定|取消)$/u;
   const PATH = /^\/SU[0-9A-Za-z]{8,64}\/pb\/resumeOperation\.html$/u;
   const DROPDOWN_CLASSES = Object.freeze([
@@ -61,17 +65,23 @@
     return node.getClientRects().length > 0;
   }
 
+  function pageRoot() {
+    const roots = document.querySelectorAll('.resume-operation-wrap');
+    return roots.length === 1 ? roots[0] : null;
+  }
+
   function onPage() {
     let url;
     try { url = new URL(location.href); } catch { return false; }
     if (url.protocol !== 'https:' || url.hostname !== 'wecruit.hotjob.cn') return false;
     if (!PATH.test(url.pathname)) return false;
     if (document.querySelector('.el-form, .el-form-item, .my-list-item')) return false;
-    return !!document.querySelector('.resume-operation-wrap');
+    return !!pageRoot();
   }
 
   function formItems() {
-    return [...document.querySelectorAll('.ant-row.ant-form-item')];
+    const root = pageRoot();
+    return root ? [...root.querySelectorAll('.ant-row.ant-form-item')] : [];
   }
 
   function ownedLabels(item) {
@@ -149,7 +159,10 @@
     if (items.length > 1) return { ok: false, reason: 'ambiguous_label' };
     if (items.length !== 1) return { ok: false, reason: 'control_not_supported' };
     const found = locateCheckbox(items[0]);
-    if (found.ok) found.label = QUESTION;
+    if (found.ok) {
+      found.label = QUESTION;
+      found.root = pageRoot();
+    }
     return found;
   }
 
@@ -247,8 +260,9 @@
 
   function safeClick(node) {
     const button = node.closest?.('button, a, [type="submit"]');
-    const label = exact((button || node).textContent || '');
-    if (button && FORBIDDEN.test(label)) {
+    // No captured checkbox needs a button or link ancestor. A submit control
+    // can carry an ordinary option caption, so its text cannot establish safety.
+    if (button || FORBIDDEN.test(exact(node.textContent || ''))) {
       const error = Error('never_save');
       error.code = 'never_save';
       throw error;
@@ -299,10 +313,15 @@
     });
   }
 
-  function seenChecked(fallback) {
+  function seenChecked(original, fallback) {
+    const refused = (reason) => ({ reason, found: null, read: { ok: false, value: fallback } });
+    if (document.visibilityState === 'hidden') return refused('fill_interrupted_page_hidden');
+    if (!onPage()) return refused('wrong_page');
+    if (pageRoot() !== original.root) return refused('control_not_supported');
     const live = locate(QUESTION);
-    if (!live.ok) return { found: null, read: { ok: false, value: fallback } };
-    return { found: live, read: readChecked(live) };
+    if (!live.ok || live.item !== original.item || live.boxes.length !== original.boxes.length
+      || live.boxes.some((box, index) => box !== original.boxes[index])) return refused('control_not_supported');
+    return { reason: '', found: live, read: readChecked(live) };
   }
 
   async function fillCheckbox(found, label, value) {
@@ -314,7 +333,11 @@
     const want = parsed.list;
     if (sameSet(before, want)) return kept(label, 'preexisting_same_value', before, want, 'verified', true);
     if (before.length) return kept(label, 'existing_value', before, want, 'skipped', false);
-    if (want.length < SUGGESTED_MIN || want.length > SUGGESTED_MAX) {
+    const exclusion = want.includes(exact(EXCLUSION));
+    if (exclusion && want.length !== 1) {
+      return refused(label, 'conflicting_options', { before, after: before, expected: want });
+    }
+    if (!exclusion && (want.length < SUGGESTED_MIN || want.length > SUGGESTED_MAX)) {
       return refused(label, 'suggested_count', { before, after: before, expected: want });
     }
     if (anyOpen()) return refused(label, 'control_busy', { before, after: before, expected: want, stillOpen: 1 });
@@ -331,9 +354,9 @@
     let clicked = 0;
     try {
       for (const caption of picked) {
-        const live = seenChecked(before);
+        const live = seenChecked(found, before);
         if (!live.found || !live.read.ok || !sameSet(live.read.value, want.slice(0, clicked)) || anyOpen()) {
-          return refused(label, 'readback_mismatch', {
+          return refused(label, live.reason || 'readback_mismatch', {
             before, after: live.read.value, expected: want, clickedOptions: clicked, stillOpen: anyOpen() ? 1 : 0
           });
         }
@@ -347,13 +370,14 @@
         safeClick(box);
         clicked += 1;
         const painted = await waitFor(() => {
-          const next = seenChecked(before);
+          const next = seenChecked(found, before);
+          if (next.reason) return { reason: next.reason };
           if (!next.found || !next.read.ok || !sameSet(next.read.value, want.slice(0, clicked))) return null;
-          return next.read.value;
+          return { value: next.read.value };
         });
-        if (!painted) {
-          const next = seenChecked(before);
-          return refused(label, 'readback_mismatch', {
+        if (!painted || painted.reason) {
+          const next = seenChecked(found, before);
+          return refused(label, painted?.reason || next.reason || 'readback_mismatch', {
             before, after: next.read.ok ? next.read.value : before, expected: want, clickedOptions: clicked
           });
         }
@@ -361,7 +385,7 @@
     } catch (error) {
       if (error?.message === 'never_save' || error?.code === 'never_save') {
         await leaveUnsaved(found);
-        const next = seenChecked(before);
+        const next = seenChecked(found, before);
         return refused(label, 'never_save', {
           before,
           after: next.read.ok ? next.read.value : before,
@@ -373,9 +397,9 @@
       }
       throw error;
     }
-    const done = seenChecked(before);
+    const done = seenChecked(found, before);
     if (!done.found || !done.read.ok || !sameSet(done.read.value, want) || anyOpen()) {
-      return refused(label, 'readback_mismatch', {
+      return refused(label, done.reason || 'readback_mismatch', {
         before,
         after: done.read.ok ? done.read.value : before,
         expected: want,

@@ -1,4 +1,5 @@
-// Offline Never-Save trials for hotjob pb education-history 学校 and 城市.
+// Offline Never-Save trials for hotjob pb education-history 学校, 城市,
+// 学位, 学历, 专业名称, and 专业排名.
 // Markup is built from tests/fixtures/hotjob-pb-edu-history-probe-dom.json
 // (2026-10-23 probe classes, labels, and the captured display tokens only).
 // A green run is not a live support claim.
@@ -25,14 +26,36 @@ const probe = JSON.parse(readFileSync(new URL('../tests/fixtures/hotjob-pb-edu-h
 const PAGE = `https://${probe.page.hostname}${probe.page.samplePath}`;
 const SCHOOL = probe.school.label;
 const CITY = probe.city.label;
+const DEGREE = probe.degree.label;
+const LEVEL = probe.level.label;
+const MAJOR = probe.major.label;
+const RANK = probe.rank.label;
 const SCHOOL_VALUE = probe.school.valueSample;
 const CITY_VALUE = probe.city.valueSample;
+const DEGREE_VALUE = probe.degree.valueSample;
+const LEVEL_VALUE = probe.level.valueSample;
+const MAJOR_VALUE = probe.major.valueSample;
+const RANK_VALUE = probe.rank.valueSample;
 const FORBIDDEN = probe.page.forbiddenButtons;
 const OUT = probe.outOfScope;
 const LIVE = probe.school.liveReadback;
 const PAIR = probe.city.livePair;
 const FILL_PREFIX = probe.school.childrenTextSample.slice(0, probe.school.childrenTextSample.length - SCHOOL_VALUE.length);
 const OTHER = 'NOT_IN_MENU';
+const HISTORY_FILLED = Object.freeze({
+  degree: DEGREE_VALUE,
+  level: LEVEL_VALUE,
+  major: MAJOR_VALUE,
+  rank: RANK_VALUE
+});
+
+function compact(value) {
+  return String(value ?? '')
+    .normalize('NFKC')
+    .replace(/[\u200b-\u200d\ufeff]/gu, '')
+    .replace(/[\s\u00a0]+/gu, '')
+    .trim();
+}
 
 function esc(value) {
   return String(value).replace(/[&<>"]/gu, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));
@@ -160,6 +183,7 @@ function schoolPartner(state) {
 }
 
 function schoolBlock(state) {
+  if (state.dropSchool) return '';
   const field = schoolField(state.school ?? '', state);
   const partner = schoolPartner(state);
   return state.hiddenSchoolTextFirst ? `${partner}${field}` : `${field}${partner}`;
@@ -204,6 +228,7 @@ function cityMenu(state) {
 }
 
 function cityField(value, state) {
+  if (state.dropCity) return '';
   if (state.cityAsSelect) {
     return row('city', CITY, `<div class="${esc(probe.school.controlClass)}" id="city-select"><span id="city-value">${esc(value)}</span><input class="${esc(probe.school.triggerClass)}" type="text" value=""></div>`, state);
   }
@@ -248,6 +273,136 @@ function duplicateCity(state) {
   return row('city-copy', CITY, `<span class="${esc(probe.city.menuClass)}"><div class="${esc(probe.city.controlClass)}" id="city-select-copy"><span id="city-copy-value">${esc(CITY_VALUE)}</span></div><ul hidden><li>${esc(CITY_VALUE)}</li></ul></span>`, {});
 }
 
+function flatMenu(key, label, value, options, flags = {}) {
+  const disabled = flags.disabled ? ' ant-select-disabled' : '';
+  const selectClass = `${flags.dropAllowClear ? probe.city.controlClass : probe.school.controlClass}${disabled}`;
+  const trigger = flags.dropSearch ? '' : `<input class="${esc(probe.school.triggerClass)}" type="text" value="">`;
+  const valueId = `${key}-value`;
+  let inner;
+  if (flags.ambiguous) {
+    inner = `<span class="${esc(LIVE.selectedValueClass)}">${esc(value || '甲')}</span><span class="${esc(LIVE.selectedValueClass)}">乙</span>`;
+  } else if (flags.mash === 'class') {
+    inner = `<span class="${esc(LIVE.placeholderClass)}">${esc(`${LIVE.placeholderPrefix}${label}`)}</span><span class="${esc(LIVE.selectedValueClass)}" id="${esc(valueId)}">${esc(value)}</span>`;
+  } else if (flags.mash === 'text') {
+    inner = `<span id="${esc(valueId)}">${esc(`${LIVE.placeholderPrefix}${label}${value}`)}</span>`;
+  } else {
+    inner = `<span id="${esc(valueId)}">${esc(value)}</span>`;
+  }
+  const faced = flags.closedSearch || flags.mash === 'class'
+    ? `<div class="${esc(LIVE.faceClass)}" role="${esc(LIVE.faceRole)}">${inner}</div>`
+    : inner;
+  const hidden = flags.hidden ? ' hidden' : '';
+  const extra = flags.extraSelect
+    ? `<div class="${esc(probe.school.controlClass)}"><span></span><input class="${esc(probe.school.triggerClass)}" type="text" value=""></div>`
+    : '';
+  const control = `<div class="${esc(selectClass)}" id="${esc(key)}-select"${hidden}>${faced}${trigger}</div>${extra}`;
+  const dropdownClass = flags.badDropdown
+    ? 'ant-select-dropdown ant-select-dropdown-placement-bottomLeft'
+    : probe.school.dropdownClass;
+  let body = '';
+  if (flags.saveOption) body = `<li><button type="button">${esc(FORBIDDEN[0])}</button></li>`;
+  else if (!flags.emptyMenu) {
+    const rows = [...options];
+    if (flags.duplicateOption) {
+    const sample = options.find(Boolean) || value;
+    if (sample) rows.push(sample);
+  }
+    body = rows.map((text) => `<li>${esc(text)}</li>`).join('');
+  }
+  const menu = `<div class="${esc(dropdownClass)}" id="${esc(key)}-select-menu" hidden><ul>${body}</ul></div>`;
+  return { control, menu };
+}
+
+function selectFlags(state, key) {
+  return {
+    disabled: !!state[`${key}Disabled`],
+    dropAllowClear: !!state[`${key}DropAllowClear`],
+    dropSearch: !!state[`${key}DropSearch`],
+    hidden: !!state[`${key}Hidden`],
+    extraSelect: !!state[`${key}ExtraSelect`],
+    ambiguous: !!state[`${key}Ambiguous`],
+    mash: state[`${key}Mash`] || '',
+    closedSearch: !!state[`${key}ClosedSearch`],
+    badDropdown: !!state[`${key}BadDropdown`],
+    emptyMenu: !!state[`${key}EmptyMenu`],
+    duplicateOption: !!state[`${key}DuplicateOption`],
+    saveOption: !!state[`${key}SaveOption`]
+  };
+}
+
+function historySelect(key, label, value, options, state) {
+  if (state[`${key}AsText`]) {
+    return row(key, label, `<input id="${esc(key)}-input" class="${esc(probe.text.controlClass)}" type="text" value="${esc(value)}">`, state);
+  }
+  const stray = [
+    state[`${key}StrayText`] ? `<input class="${esc(probe.text.controlClass)}" type="text" value="">` : '',
+    state[`${key}StrayRadio`] ? '<input class="ant-radio-input" type="radio">' : '',
+    state[`${key}StrayFile`] ? '<input type="file">' : ''
+  ].join('');
+  const built = flatMenu(key, label, value, options, selectFlags(state, key));
+  return row(key, label, `${stray}${built.control}`, state, {
+    extraLabel: state[`${key}Disagree`] ? OUT.graduation.label : '',
+    wrapControl: !!state[`${key}Wrap`]
+  }) + built.menu;
+}
+
+function basicSelect(key, label, value, state) {
+  const shown = state.hintInSelect && key === 'basic-degree' ? probe.section.hint : value;
+  const built = flatMenu(key, label, shown, [shown], {});
+  return row(key, label, built.control, state) + built.menu;
+}
+
+function hintMarkup(state) {
+  if (state.dropHint || state.hintInSelect) return '';
+  const text = state.hintText || probe.section.hint;
+  const second = state.secondHint ? `<p id="edu-history-hint-2">${esc(text)}</p>` : '';
+  return `<p id="edu-history-hint">${esc(text)}</p>${second}`;
+}
+
+function degreeBlock(state) {
+  if (state.dropDegree) return '';
+  return historySelect('degree', DEGREE, state.degree ?? '', probe.degree.optionsSample, state);
+}
+
+function levelBlock(state) {
+  if (state.dropLevel) return '';
+  return historySelect('level', LEVEL, state.level ?? '', probe.level.optionsSample, state);
+}
+
+function rankBlock(state) {
+  if (state.dropRank) return '';
+  return historySelect('rank', RANK, state.rank ?? '', probe.rank.optionsSample, state);
+}
+
+function majorField(state) {
+  const value = state.major ?? '';
+  if (state.dropMajor) return '';
+  if (state.majorAsSelect) {
+    const built = flatMenu('major', MAJOR, value, [value || '甲'], {});
+    return row('major', MAJOR, built.control, state) + built.menu;
+  }
+  const placeholder = Object.hasOwn(state, 'majorPlaceholder') ? state.majorPlaceholder : probe.major.placeholder;
+  const readonly = state.majorReadonly ? ' readonly' : '';
+  const disabled = state.majorDisabled ? ' disabled' : '';
+  const type = state.majorTypeNumber ? 'number' : probe.major.inputType;
+  const className = state.majorDropClass ? 'plain-input' : probe.major.controlClass;
+  const extra = state.majorExtra ? `<input class="${esc(probe.text.controlClass)}" type="text" value="MAJOR_EXTRA">` : '';
+  const area = state.majorTextarea ? `<textarea class="${esc(probe.text.controlClass)}"></textarea>` : '';
+  const holder = placeholder ? ` placeholder="${esc(placeholder)}"` : '';
+  const input = `<input id="major-input" class="${esc(className)}" type="${esc(type)}"${holder}${readonly}${disabled} value="${esc(value)}">`;
+  return row('major', MAJOR, `${input}${extra}${area}`, state, {
+    hidden: !!state.majorHidden,
+    extraLabel: state.majorDisagree ? OUT.graduation.label : '',
+    wrapControl: !!state.majorWrap
+  });
+}
+
+function duplicateFlat(state, flag, key, label, value, options) {
+  if (!state[flag]) return '';
+  const built = flatMenu(key, label, value, options, {});
+  return row(key, label, built.control, state) + built.menu;
+}
+
 function html(state) {
   const rootClass = state.dropRoot ? 'page-root' : probe.page.rootClass;
   const shell = [
@@ -256,25 +411,39 @@ function html(state) {
   ].join('');
   const buttons = [...probe.page.buttonLabels, ...FORBIDDEN.filter((label) => !probe.page.buttonLabels.includes(label))]
     .map((label) => `<button type="button">${esc(label)}</button>`).join('');
-  const description = row('description', OUT.description.label, `<textarea id="description-input" class="${esc(probe.text.controlClass)}" placeholder="${esc(OUT.description.placeholder)}">${esc(OUT.description.token)}</textarea>`, {}, { noStar: true });
+  const description = row('description', OUT.description.label, `<textarea id="description-input" class="${esc(probe.text.controlClass)}" placeholder="${esc(OUT.description.placeholder)}">${esc(state.description ?? OUT.description.token)}</textarea>`, {}, { noStar: true });
+  const hint = hintMarkup(state);
+  const hintEarly = state.hintBeforeBasic ? hint : '';
+  const hintMid = !state.hintBeforeBasic && !state.hintAfterFields ? hint : '';
+  const hintLate = state.hintAfterFields ? hint : '';
+  const degreeEarly = state.degreeBeforeCity ? degreeBlock(state) : '';
+  const degree = state.degreeBeforeCity ? '' : degreeBlock(state);
   return `<!doctype html><body>${shell}<div class="${esc(rootClass)}"><div class="${esc(probe.page.contentClass)}">${
     tokenRow('email', OUT.email.label, OUT.email.token)
   }${residenceField()
   }${tokenRow('origin', OUT.origin.label, OUT.origin.token)
   }${tokenRow('graduation', OUT.graduation.label, OUT.graduation.token)
-  }${tokenRow('basic-degree', OUT.basicDegree.label, OUT.basicDegree.token)
-  }${tokenRow('basic-level', OUT.basicLevel.label, OUT.basicLevel.token)
-  }${textRow('basic-major', OUT.basicMajor.label, 'basic-major-input', OUT.basicMajor.token, OUT.basicMajor.placeholder)
+  }${hintEarly
+  }${basicSelect('basic-degree', OUT.basicDegree.label, OUT.basicDegree.token, state)
+  }${basicSelect('basic-level', OUT.basicLevel.label, OUT.basicLevel.token, state)
+  }${textRow('basic-major', OUT.basicMajor.label, 'basic-major-input', state.basicMajor ?? OUT.basicMajor.token, OUT.basicMajor.placeholder)
+  }${hintMid
   }${row('start', OUT.start.label, `<input id="start-input" class="${esc(OUT.start.controlClass)}" type="text" readonly value="${esc(OUT.start.token)}">`, {})
   }${schoolBlock(state)
+  }${degreeEarly
   }${cityField(state.city ?? '', state)
   }${duplicateSchool(state)
   }${duplicateCity(state)
-  }${tokenRow('history-degree', OUT.historyDegree.label, OUT.historyDegree.token)
-  }${tokenRow('history-level', OUT.historyLevel.label, OUT.historyLevel.token)
-  }${textRow('history-major', OUT.historyMajor.label, 'history-major-input', OUT.historyMajor.token, OUT.historyMajor.placeholder)
+  }${degree
+  }${levelBlock(state)
+  }${majorField(state)
   }${description
-  }${tokenRow('rank', OUT.rank.label, OUT.rank.token)
+  }${rankBlock(state)
+  }${duplicateFlat(state, 'duplicateDegree', 'degree-copy', DEGREE, state.degreeCopy ?? '', probe.degree.optionsSample)
+  }${duplicateFlat(state, 'duplicateLevel', 'level-copy', LEVEL, '', probe.level.optionsSample)
+  }${duplicateFlat(state, 'duplicateRank', 'rank-copy', RANK, '', probe.rank.optionsSample)
+  }${state.duplicateMajor ? row('major-copy', MAJOR, `<input id="major-copy-input" class="${esc(probe.major.controlClass)}" type="text" placeholder="${esc(probe.major.placeholder)}" value="">`, state) : ''
+  }${hintLate
   }${row('photo', OUT.photo.label, '<input id="photo" type="file">', {})
   }<button type="button" id="add-edu">${esc(probe.page.addEducation)}</button>${buttons}</div></div></body>`;
 }
@@ -289,8 +458,14 @@ function closeWidgets(document) {
   for (const select of document.querySelectorAll('.ant-select')) {
     select.classList.remove('ant-select-open', 'ant-select-focused');
   }
-  hide(document.getElementById('school-menu'), true);
-  for (const menu of document.querySelectorAll('.cascader-plugins-wrap ul')) hide(menu, true);
+  for (const menu of document.querySelectorAll('.ant-select-dropdown, .cascader-plugins-wrap ul')) hide(menu, true);
+}
+
+function menuFor(document, select) {
+  const wrap = select.closest('.cascader-plugins-wrap');
+  if (wrap) return wrap.querySelector('ul');
+  return document.getElementById(`${select.id}-menu`)
+    || (select.id === 'school-select' ? document.getElementById('school-menu') : null);
 }
 
 function wire(document, state) {
@@ -304,12 +479,11 @@ function wire(document, state) {
     if (button && button.id === 'add-edu') stats.addEdu += 1;
     if (event.target.matches?.('input[type="file"]')) stats.file += 1;
   }, true);
+  const wiredMenus = new Set();
   for (const select of document.querySelectorAll('.ant-select')) {
-    const wrap = select.closest('.cascader-plugins-wrap');
-    const menu = wrap?.querySelector('ul') || null;
+    const menu = menuFor(document, select);
     select.addEventListener('click', (event) => {
       if (menu && menu.contains(event.target)) return;
-      if (select.id === 'school-select' && document.getElementById('school-menu')?.contains(event.target)) return;
       stats.open += 1;
       stats.openedIds.push(select.id || 'anon');
       if (event.target.classList?.contains(probe.school.triggerClass)) stats.triggerClass = probe.school.triggerClass;
@@ -317,26 +491,18 @@ function wire(document, state) {
       select.classList.add(...classes(probe.school.openClass));
       stats.openClass = select.className;
       if (menu) hide(menu, false);
-      if (select.id === 'school-select') hide(document.getElementById('school-menu'), false);
     });
-  }
-  document.getElementById('school-menu')?.addEventListener('click', (event) => {
-    const li = event.target.closest('li');
-    if (!li) return;
-    stats.option += 1;
-    const select = document.getElementById('school-select');
-    const slot = select?.querySelector('.ant-select-selection-selected-value, #school-value') || select?.querySelector('span');
-    if (slot) slot.textContent = li.textContent.trim();
-    closeWidgets(document);
-  });
-  for (const menu of document.querySelectorAll('.cascader-plugins-wrap ul')) {
+    if (!menu || wiredMenus.has(menu)) continue;
+    wiredMenus.add(menu);
     menu.addEventListener('click', (event) => {
       const li = event.target.closest('li');
       if (!li || !menu.contains(li)) return;
       stats.option += 1;
       const wrap = menu.closest('.cascader-plugins-wrap');
-      const select = wrap?.querySelector('.ant-select.ant-select-open') || wrap?.querySelector('.ant-select');
-      const slot = select?.querySelector('.ant-select-selection-selected-value, [id$="-value"]') || select?.querySelector('span');
+      const target = wrap
+        ? (wrap.querySelector('.ant-select.ant-select-open') || wrap.querySelector('.ant-select'))
+        : select;
+      const slot = target?.querySelector('.ant-select-selection-selected-value, [id$="-value"]') || target?.querySelector('span');
       if (slot) slot.textContent = li.textContent.trim();
       closeWidgets(document);
     });
@@ -355,6 +521,11 @@ function wire(document, state) {
     const select = document.getElementById('city-select');
     select.classList.add('ant-select-open', 'ant-select-focused');
     hide(select.closest('.cascader-plugins-wrap')?.querySelector('ul'), false);
+  }
+  if (state.busyDegree && document.getElementById('degree-select')) {
+    const select = document.getElementById('degree-select');
+    select.classList.add('ant-select-open', 'ant-select-focused');
+    hide(document.getElementById('degree-select-menu'), false);
   }
   return stats;
 }
@@ -393,20 +564,24 @@ function assertNeverSaved(row) {
   assert.equal(row.softwareClickedNext, false);
 }
 
-function unchanged(document, stats) {
+function unchanged(document, stats, history = {}) {
   assert.equal(textOf(document, 'email-token'), OUT.email.token);
   assert.equal(textOf(document, 'residence-value'), OUT.residence.token);
   assert.equal(textOf(document, 'origin-token'), OUT.origin.token);
   assert.equal(textOf(document, 'graduation-token'), OUT.graduation.token);
-  assert.equal(textOf(document, 'basic-degree-token'), OUT.basicDegree.token);
-  assert.equal(textOf(document, 'basic-level-token'), OUT.basicLevel.token);
-  assert.equal(document.getElementById('basic-major-input').value, OUT.basicMajor.token);
+  assert.equal(textOf(document, 'basic-degree-value'), history.basicDegree ?? OUT.basicDegree.token);
+  assert.equal(textOf(document, 'basic-level-value'), history.basicLevel ?? OUT.basicLevel.token);
+  assert.equal(document.getElementById('basic-major-input').value, history.basicMajor ?? OUT.basicMajor.token);
   assert.equal(document.getElementById('start-input').value, OUT.start.token);
-  assert.equal(textOf(document, 'history-degree-token'), OUT.historyDegree.token);
-  assert.equal(textOf(document, 'history-level-token'), OUT.historyLevel.token);
-  assert.equal(document.getElementById('history-major-input').value, OUT.historyMajor.token);
-  assert.equal(document.getElementById('description-input').value, '');
-  assert.equal(textOf(document, 'rank-token'), OUT.rank.token);
+  assert.ok(document.getElementById('degree-value'));
+  assert.equal(textOf(document, 'degree-value'), history.degree ?? '');
+  assert.ok(document.getElementById('level-value'));
+  assert.equal(textOf(document, 'level-value'), history.level ?? '');
+  assert.ok(document.getElementById('major-input'));
+  assert.equal(document.getElementById('major-input').value, history.major ?? '');
+  assert.ok(document.getElementById('rank-value'));
+  assert.equal(textOf(document, 'rank-value'), history.rank ?? '');
+  assert.equal(document.getElementById('description-input').value, history.description ?? '');
   const schoolText = document.getElementById('school-text-input');
   if (schoolText) assert.equal(schoolText.value, '');
   const schoolText2 = document.getElementById('school-text-input-2');
@@ -459,10 +634,19 @@ test('source stays on the probed pb classes and does not claim support', () => {
     'ant-select-allow-clear',
     OUT.start.controlClass.split(/\s+/u)[0],
     SCHOOL,
-    CITY
+    CITY,
+    DEGREE,
+    LEVEL,
+    MAJOR,
+    RANK,
+    probe.section.anchor,
+    probe.major.placeholder
   ]) {
     assert.match(source, new RegExp(token.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&')));
   }
+  assert.match(source, /专业描述/);
+  assert.doesNotMatch(source, /学士|本科|无排名|Economics|金融学|硕士研究生/);
+  assert.doesNotMatch(source, /硕士/);
 });
 
 test('fixture html uses the probe class list, labels, and display tokens', () => {
@@ -475,9 +659,15 @@ test('fixture html uses the probe class list, labels, and display tokens', () =>
     probe.text.controlClass, OUT.start.controlClass.split(/\s+/u)[0],
     LIVE.selectedValueClass, LIVE.placeholderClass, LIVE.faceClass, LIVE.faceRole
   ]) assert.match(built, new RegExp(token.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&')));
-  for (const label of [SCHOOL, CITY, OUT.graduation.label, OUT.historyDegree.label, OUT.historyLevel.label, OUT.historyMajor.label, OUT.description.label, OUT.rank.label, OUT.residence.label, OUT.email.label]) {
+  for (const label of [SCHOOL, CITY, OUT.graduation.label, DEGREE, LEVEL, MAJOR, OUT.description.label, RANK, OUT.residence.label, OUT.email.label, OUT.basicDegree.label]) {
     assert.match(built, new RegExp(label.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&')));
   }
+  assert.match(built, new RegExp(probe.section.hint.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&')));
+  assert.match(built, new RegExp(probe.major.placeholder.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&')));
+  for (const option of [DEGREE_VALUE, LEVEL_VALUE, RANK_VALUE, OUT.basicDegree.token, OUT.basicLevel.token]) {
+    assert.match(built, new RegExp(`>${option}<`));
+  }
+  assert.match(built, new RegExp(`value="${OUT.basicMajor.token}"`));
   assert.match(built, new RegExp(`>${SCHOOL}\\*`));
   assert.match(built, new RegExp(`>${CITY}\\*`));
   for (const option of [...probe.school.optionsSample, ...probe.city.optionsSample]) {
@@ -500,13 +690,14 @@ test('fixture html uses the probe class list, labels, and display tokens', () =>
   assert.equal(OUT.description.token, '');
 });
 
-test('inspect matches 学校 and 城市 and does not claim support', async () => {
+test('inspect matches the education-history row and does not claim support', async () => {
   const h = await boot({
     url: `${PAGE}?lang=1`,
     school: SCHOOL_VALUE,
     city: CITY_VALUE,
     twinSelect: true,
-    fillPlaceholder: true
+    fillPlaceholder: true,
+    ...HISTORY_FILLED
   });
   try {
     const view = h.api.inspect();
@@ -528,17 +719,24 @@ test('inspect matches 学校 and 城市 and does not claim support', async () =>
     assert.equal(view.skippedSave, true);
     assert.equal(view.ok, true);
     assert.equal(view.reason, 'structure_matched');
-    assert.equal(view.fields.length, 2);
+    assert.equal(view.fields.length, 6);
     assert.equal(view.fields.every((field) => field.supported === false), true);
-    assert.deepEqual(Array.from(view.fields, (field) => field.label), [SCHOOL, CITY]);
-    assert.deepEqual(Array.from(view.fields, (field) => field.kind), ['select', 'cascader']);
-    assert.equal(view.fields[0].reason, 'structure_matched');
-    assert.equal(view.fields[1].reason, 'structure_matched');
+    assert.deepEqual(Array.from(view.fields, (field) => field.label), [SCHOOL, CITY, DEGREE, LEVEL, MAJOR, RANK]);
+    assert.deepEqual(Array.from(view.fields, (field) => field.kind), ['select', 'cascader', 'select', 'select', 'text', 'select']);
+    assert.equal(view.fields.every((field) => field.reason === 'structure_matched'), true);
     assert.equal(view.fields[0].value, SCHOOL_VALUE);
     assert.equal(view.fields[1].value, CITY_VALUE);
+    assert.equal(view.fields[2].value, DEGREE_VALUE);
+    assert.equal(view.fields[3].value, LEVEL_VALUE);
+    assert.equal(view.fields[4].value, compact(MAJOR_VALUE));
+    assert.equal(view.fields[5].value, RANK_VALUE);
     assert.notEqual(view.fields[0].value, probe.school.childrenTextSample);
+    assert.notEqual(view.fields[2].value, OUT.basicDegree.token);
+    assert.notEqual(view.fields[3].value, OUT.basicLevel.token);
+    assert.notEqual(view.fields[4].value, compact(OUT.basicMajor.token));
+    assert.equal(h.document.getElementById('major-input').value, MAJOR_VALUE);
     assert.equal(h.stats.open, 0);
-    unchanged(h.document, h.stats);
+    unchanged(h.document, h.stats, HISTORY_FILLED);
   } finally { h.dom.window.close(); }
 });
 
@@ -577,26 +775,56 @@ test('empty 学校 and 城市 read back the captured display token', async () =>
   } finally { h.dom.window.close(); }
 });
 
-test('fillFields reads back both fields and leaves the other education rows untouched', async () => {
-  const h = await boot({});
+test('fillFields reads back the education-history row and leaves the basic block untouched', async () => {
+  const h = await boot({ description: '' });
   try {
-    const filled = await h.api.fillFields({ [SCHOOL]: SCHOOL_VALUE, [CITY]: CITY_VALUE });
+    const filled = await h.api.fillFields({
+      [SCHOOL]: SCHOOL_VALUE,
+      [CITY]: CITY_VALUE,
+      [DEGREE]: DEGREE_VALUE,
+      [LEVEL]: LEVEL_VALUE,
+      [MAJOR]: ` \u200b${MAJOR_VALUE} `,
+      [RANK]: RANK_VALUE,
+      [OUT.description.label]: 'SHOULD_NOT_WRITE'
+    });
     assert.equal(filled.ok, true, JSON.stringify(filled.fields));
     assertNeverSaved(filled);
-    assert.equal(filled.fields.map((field) => field.reason).join(','), 'readback_matched,readback_matched');
+    assert.equal(filled.fields.length, 6);
+    assert.equal(filled.fields.map((field) => field.reason).join(','), [
+      'readback_matched', 'readback_matched', 'readback_matched',
+      'readback_matched', 'readback_matched', 'readback_matched'
+    ].join(','));
+    assert.equal(filled.fields[4].after, compact(MAJOR_VALUE));
     assert.equal(textOf(h.document, 'school-value'), SCHOOL_VALUE);
     assert.equal(textOf(h.document, 'city-value'), CITY_VALUE);
-    assert.deepEqual(h.stats.openedIds, ['school-select', 'city-select']);
-    unchanged(h.document, h.stats);
+    assert.equal(textOf(h.document, 'degree-value'), DEGREE_VALUE);
+    assert.equal(textOf(h.document, 'level-value'), LEVEL_VALUE);
+    assert.equal(h.document.getElementById('major-input').value, MAJOR_VALUE);
+    assert.equal(textOf(h.document, 'rank-value'), RANK_VALUE);
+    assert.equal(h.document.getElementById('description-input').value, '');
+    assert.deepEqual(h.stats.openedIds, ['school-select', 'city-select', 'degree-select', 'level-select', 'rank-select']);
+    assert.equal(h.stats.openedIds.includes('basic-degree-select'), false);
+    assert.equal(h.stats.openedIds.includes('basic-level-select'), false);
+    unchanged(h.document, h.stats, HISTORY_FILLED);
   } finally { h.dom.window.close(); }
 });
 
-test('a filled page verifies without opening either menu', async () => {
-  const h = await boot({ school: SCHOOL_VALUE, city: CITY_VALUE, twinSelect: true });
+test('a filled page verifies without opening a menu', async () => {
+  const h = await boot({
+    school: SCHOOL_VALUE,
+    city: CITY_VALUE,
+    twinSelect: true,
+    ...HISTORY_FILLED
+  });
   try {
     const filled = await h.api.fillFields({
       [SCHOOL]: ` ${SCHOOL_VALUE} `,
-      [CITY]: CITY_VALUE
+      [CITY]: CITY_VALUE,
+      [DEGREE]: DEGREE_VALUE,
+      [LEVEL]: ` ${LEVEL_VALUE} `,
+      [MAJOR]: ` ${MAJOR_VALUE} `,
+      [RANK]: RANK_VALUE,
+      [OUT.description.label]: 'SHOULD_NOT_WRITE'
     });
     assert.equal(filled.ok, true, JSON.stringify(filled.fields));
     assert.equal(filled.fields.every((field) => field.reason === 'preexisting_same_value'), true);
@@ -605,21 +833,29 @@ test('a filled page verifies without opening either menu', async () => {
     assert.equal(filled.fields[0].before, SCHOOL_VALUE);
     assert.equal(filled.fields[1].before, CITY_VALUE);
     assert.equal(filled.fields[1].after, CITY_VALUE);
+    assert.equal(filled.fields[2].before, DEGREE_VALUE);
+    assert.equal(filled.fields[4].before, compact(MAJOR_VALUE));
+    assert.equal(h.document.getElementById('major-input').value, MAJOR_VALUE);
     assertNeverSaved(filled);
     assert.equal(h.stats.open, 0);
     assert.equal(h.stats.option, 0);
     assert.equal(textOf(h.document, 'school-value'), SCHOOL_VALUE);
     assert.equal(textOf(h.document, 'city-value'), CITY_VALUE);
     assert.equal(textOf(h.document, 'city-twin'), CITY_VALUE);
-    unchanged(h.document, h.stats);
+    assert.equal(h.document.getElementById('description-input').value, '');
+    unchanged(h.document, h.stats, HISTORY_FILLED);
   } finally { h.dom.window.close(); }
 });
 
 test('a different existing value is kept and the menu stays closed', async () => {
-  const h = await boot({ school: SCHOOL_VALUE, city: CITY_VALUE });
+  const h = await boot({ school: SCHOOL_VALUE, city: CITY_VALUE, ...HISTORY_FILLED });
   try {
     const school = await h.api.fillField(SCHOOL, OTHER);
     const city = await h.api.fillField(CITY, OTHER);
+    const degree = await h.api.fillField(DEGREE, OTHER);
+    const level = await h.api.fillField(LEVEL, OTHER);
+    const major = await h.api.fillField(MAJOR, 'Other Major');
+    const rank = await h.api.fillField(RANK, OTHER);
     assert.equal(school.reason, 'existing_value');
     assert.equal(school.status, 'skipped');
     assert.equal(school.ok, false);
@@ -627,11 +863,19 @@ test('a different existing value is kept and the menu stays closed', async () =>
     assert.equal(school.after, SCHOOL_VALUE);
     assert.equal(city.reason, 'existing_value');
     assert.equal(city.ok, false);
+    assert.equal(degree.reason, 'existing_value');
+    assert.equal(degree.after, DEGREE_VALUE);
+    assert.equal(level.reason, 'existing_value');
+    assert.equal(major.reason, 'existing_value');
+    assert.equal(major.opened, false);
+    assert.equal(major.after, compact(MAJOR_VALUE));
+    assert.equal(rank.reason, 'existing_value');
     assert.equal(h.stats.open, 0);
     assert.equal(h.stats.option, 0);
     assert.equal(textOf(h.document, 'school-value'), SCHOOL_VALUE);
     assert.equal(textOf(h.document, 'city-value'), CITY_VALUE);
-    unchanged(h.document, h.stats);
+    assert.equal(h.document.getElementById('major-input').value, MAJOR_VALUE);
+    unchanged(h.document, h.stats, HISTORY_FILLED);
   } finally { h.dom.window.close(); }
 });
 
@@ -646,12 +890,7 @@ test('empty values and out-of-scope labels fail closed without opening', async (
     }
     for (const label of [
       OUT.graduation.label,
-      OUT.basicDegree.label,
-      OUT.basicLevel.label,
-      OUT.basicMajor.label,
-      OUT.historyDegree.label,
       OUT.description.label,
-      OUT.rank.label,
       OUT.residence.label,
       OUT.origin.label,
       OUT.start.label,
@@ -663,6 +902,9 @@ test('empty values and out-of-scope labels fail closed without opening', async (
       assert.equal(rowResult.reason, 'label_not_allowed', label);
       assert.equal(rowResult.ok, false);
     }
+    const described = await h.api.fillField(OUT.description.label, '');
+    assert.equal(described.reason, 'label_not_allowed');
+    assert.equal(h.document.getElementById('description-input').value, '');
     const none = await h.api.fillFields(null);
     assert.equal(none.ok, false);
     assertNeverSaved(none);
@@ -887,9 +1129,11 @@ test('a visible 学校 select is used when a hidden text row repeats the label',
     assert.equal(view.fields[1].reason, 'structure_matched');
     assert.equal(view.fields[1].value, CITY_VALUE);
     const result = await filled.api.fillFields({ [SCHOOL]: ` ${SCHOOL_VALUE} `, [CITY]: CITY_VALUE });
-    assert.equal(result.ok, true, JSON.stringify(result.fields));
-    assert.equal(result.fields.every((field) => field.reason === 'preexisting_same_value'), true);
+    assert.equal(result.fields[0].reason, 'preexisting_same_value', JSON.stringify(result.fields));
+    assert.equal(result.fields[1].reason, 'preexisting_same_value');
+    assert.equal(result.fields.slice(2).every((field) => field.reason === 'missing_profile_value'), true);
     assert.equal(result.fields.every((field) => field.opened === false), true);
+    assert.equal(result.ok, false);
     assert.equal(result.fields[0].before, SCHOOL_VALUE);
     assert.equal(result.fields[0].after, SCHOOL_VALUE);
     assertNeverSaved(result);
@@ -997,8 +1241,11 @@ test('dual-face city, placeholder readback, and a closed search field stay fail-
     assert.equal(view.fields[1].value, CITY_VALUE);
     assert.equal(view.fields.every((field) => field.supported === false && field.reason === 'structure_matched'), true);
     const filled = await plain.api.fillFields({ [SCHOOL]: SCHOOL_VALUE, [CITY]: CITY_VALUE });
-    assert.equal(filled.ok, true, JSON.stringify(filled.fields));
-    assert.equal(filled.fields.every((field) => field.reason === 'preexisting_same_value'), true);
+    assert.equal(filled.fields[0].reason, 'preexisting_same_value', JSON.stringify(filled.fields));
+    assert.equal(filled.fields[1].reason, 'preexisting_same_value');
+    assert.equal(filled.fields.slice(2).every((field) => field.reason === 'missing_profile_value'), true);
+    assert.equal(filled.fields.every((field) => field.opened === false), true);
+    assert.equal(filled.ok, false);
     assert.equal(plain.stats.open, 0);
     unchanged(plain.document, plain.stats);
   } finally { plain.dom.window.close(); }
@@ -1163,4 +1410,321 @@ test('inspect on the wrong page does not claim support', async () => {
     assert.equal(h.api.liveSupportClaimed, false);
     assert.equal(h.api.supportClaimed, false);
   } finally { h.dom.window.close(); }
+});
+
+test('education-history degree, level, major, and rank do not cross-fill the basic block', async () => {
+  const h = await boot({});
+  try {
+    const degree = await h.api.fillField(DEGREE, OUT.basicDegree.token);
+    const level = await h.api.fillField(LEVEL, OUT.basicLevel.token);
+    const major = await h.api.fillField(MAJOR, OUT.basicMajor.token);
+    assert.equal(degree.reason, 'option_not_found', JSON.stringify(degree));
+    assert.equal(degree.before, '');
+    assert.equal(degree.after, '');
+    assert.equal(degree.stillOpen, 0);
+    assert.equal(level.reason, 'option_not_found', JSON.stringify(level));
+    assert.equal(level.before, '');
+    assert.equal(major.reason, 'readback_matched', JSON.stringify(major));
+    assert.equal(major.before, '');
+    assert.equal(major.opened, false);
+    assert.equal(h.document.getElementById('major-input').value, OUT.basicMajor.token);
+    assert.deepEqual(h.stats.openedIds, ['degree-select', 'level-select']);
+    assert.equal(textOf(h.document, 'basic-degree-value'), OUT.basicDegree.token);
+    assert.equal(textOf(h.document, 'basic-level-value'), OUT.basicLevel.token);
+    assert.equal(h.document.getElementById('basic-major-input').value, OUT.basicMajor.token);
+    const painted = await h.api.fillFields({
+      [SCHOOL]: SCHOOL_VALUE,
+      [CITY]: CITY_VALUE,
+      [DEGREE]: DEGREE_VALUE,
+      [LEVEL]: LEVEL_VALUE,
+      [MAJOR]: OUT.basicMajor.token,
+      [RANK]: RANK_VALUE
+    });
+    assert.equal(painted.fields.find((field) => field.label === DEGREE).reason, 'readback_matched');
+    assert.equal(painted.fields.find((field) => field.label === LEVEL).reason, 'readback_matched');
+    assert.equal(painted.fields.find((field) => field.label === RANK).reason, 'readback_matched');
+    assert.equal(painted.fields.find((field) => field.label === MAJOR).reason, 'preexisting_same_value');
+    assert.equal(textOf(h.document, 'degree-value'), DEGREE_VALUE);
+    assert.equal(textOf(h.document, 'level-value'), LEVEL_VALUE);
+    assert.equal(textOf(h.document, 'rank-value'), RANK_VALUE);
+    assert.notEqual(DEGREE_VALUE, OUT.basicDegree.token);
+    assert.notEqual(LEVEL_VALUE, OUT.basicLevel.token);
+    assert.equal(h.document.getElementById('description-input').value, '');
+    assert.equal(h.stats.openedIds.includes('basic-degree-select'), false);
+    assert.equal(h.stats.openedIds.includes('basic-level-select'), false);
+    unchanged(h.document, h.stats, {
+      degree: DEGREE_VALUE,
+      level: LEVEL_VALUE,
+      major: OUT.basicMajor.token,
+      rank: RANK_VALUE
+    });
+  } finally { h.dom.window.close(); }
+});
+
+test('Escape closes 学位 and 专业排名 and a text row cannot be canceled', async () => {
+  const h = await boot({ degree: DEGREE_VALUE, rank: '' });
+  try {
+    const degree = await h.api.cancelField(DEGREE);
+    assert.equal(degree.ok, true, JSON.stringify(degree));
+    assert.equal(degree.reason, 'menu_closed');
+    assert.equal(degree.canceled, true);
+    assert.equal(degree.stillOpen, 0);
+    assert.equal(degree.before, DEGREE_VALUE);
+    assert.equal(degree.after, DEGREE_VALUE);
+    assertNeverSaved(degree);
+    const rank = await h.api.cancelField(RANK);
+    assert.equal(rank.reason, 'menu_closed');
+    assert.equal(rank.after, '');
+    assert.equal(rank.canceled, true);
+    assert.equal(h.document.getElementById('degree-select-menu').hidden, true);
+    assert.equal(h.document.getElementById('rank-select-menu').hidden, true);
+    assert.equal(h.document.querySelectorAll('.ant-select-open').length, 0);
+    const major = await h.api.cancelField(MAJOR);
+    assert.equal(major.reason, 'cancel_not_applicable');
+    assert.equal(major.opened, false);
+    assert.equal(major.canceled, false);
+    assert.equal(h.document.getElementById('major-input').value, '');
+    assert.ok(h.stats.escape >= 1);
+    assert.equal(h.stats.option, 0);
+    unchanged(h.document, h.stats, { degree: DEGREE_VALUE });
+  } finally { h.dom.window.close(); }
+});
+
+test('missing, duplicate, and forbidden education-history options fail closed', async () => {
+  const missing = await boot({});
+  try {
+    const degree = await missing.api.fillField(DEGREE, OTHER);
+    const rank = await missing.api.fillField(RANK, OTHER);
+    assert.equal(degree.reason, 'option_not_found', JSON.stringify(degree));
+    assert.equal(degree.after, '');
+    assert.equal(degree.stillOpen, 0);
+    assert.equal(rank.reason, 'option_not_found');
+    assert.equal(rank.after, '');
+    assert.equal(missing.stats.option, 0);
+    unchanged(missing.document, missing.stats);
+  } finally { missing.dom.window.close(); }
+
+  const ambiguous = await boot({ degreeDuplicateOption: true, rankDuplicateOption: true, degree: '', rank: '' });
+  try {
+    const degree = await ambiguous.api.fillField(DEGREE, DEGREE_VALUE);
+    const rank = await ambiguous.api.fillField(RANK, RANK_VALUE);
+    assert.equal(degree.reason, 'ambiguous_option', JSON.stringify(degree));
+    assert.equal(degree.after, '');
+    assert.equal(rank.reason, 'ambiguous_option');
+    assert.equal(rank.after, '');
+    assert.equal(ambiguous.stats.option, 0);
+    unchanged(ambiguous.document, ambiguous.stats);
+  } finally { ambiguous.dom.window.close(); }
+
+  const blocked = await boot({ degreeSaveOption: true, rankSaveOption: true });
+  try {
+    const degree = await blocked.api.fillField(DEGREE, FORBIDDEN[0]);
+    const rank = await blocked.api.fillField(RANK, FORBIDDEN[0]);
+    assert.equal(degree.reason, 'never_save', JSON.stringify(degree));
+    assert.equal(degree.canceled, true);
+    assert.equal(degree.stillOpen, 0);
+    assert.equal(rank.reason, 'never_save');
+    assert.equal(blocked.stats.forbidden, 0);
+    assert.equal(blocked.stats.option, 0);
+    assert.equal(textOf(blocked.document, 'degree-value'), '');
+    assert.equal(textOf(blocked.document, 'rank-value'), '');
+    unchanged(blocked.document, blocked.stats);
+  } finally { blocked.dom.window.close(); }
+});
+
+test('section drift fails closed and does not paint the basic block', async () => {
+  const blocked = [
+    { dropHint: true },
+    { secondHint: true },
+    { hintAfterFields: true },
+    { hintText: '教育经历' },
+    { hintInSelect: true },
+    { dropSchool: true },
+    { dropCity: true },
+    { onlyHiddenSchoolText: true },
+    { duplicateSchool: true, school: SCHOOL_VALUE },
+    { duplicateCity: true, city: CITY_VALUE }
+  ];
+  for (const state of blocked) {
+    const h = await boot(state);
+    try {
+      const degree = await h.api.fillField(DEGREE, DEGREE_VALUE);
+      const level = await h.api.fillField(LEVEL, LEVEL_VALUE);
+      const major = await h.api.fillField(MAJOR, MAJOR_VALUE);
+      const rank = await h.api.fillField(RANK, RANK_VALUE);
+      for (const rowResult of [degree, level, major, rank]) {
+        assert.equal(rowResult.ok, false, JSON.stringify({ state, rowResult }));
+        assert.equal(rowResult.reason, 'control_not_supported', JSON.stringify({ state, rowResult }));
+        assert.equal(rowResult.liveSupportClaimed, false);
+        assert.equal(rowResult.supportClaimed, false);
+      }
+      assert.equal(h.stats.open, 0, JSON.stringify(state));
+      assert.equal(h.stats.option, 0, JSON.stringify(state));
+      assert.equal(h.stats.openedIds.includes('basic-degree-select'), false, JSON.stringify(state));
+      assert.equal(h.stats.openedIds.includes('basic-level-select'), false, JSON.stringify(state));
+      if (!state.hintInSelect) {
+        assert.equal(textOf(h.document, 'basic-degree-value'), OUT.basicDegree.token, JSON.stringify(state));
+      } else {
+        assert.equal(textOf(h.document, 'basic-degree-value'), probe.section.hint);
+      }
+      assert.equal(textOf(h.document, 'basic-level-value'), OUT.basicLevel.token, JSON.stringify(state));
+      assert.equal(h.document.getElementById('basic-major-input').value, OUT.basicMajor.token, JSON.stringify(state));
+      const historyMajor = h.document.getElementById('major-input');
+      if (historyMajor) assert.equal(historyMajor.value, '', JSON.stringify(state));
+      assert.equal(h.document.getElementById('description-input').value, '');
+    } finally { h.dom.window.close(); }
+  }
+
+  const degreeOnly = [
+    { degreeBeforeCity: true },
+    { duplicateDegree: true },
+    { dropDegree: true }
+  ];
+  for (const state of degreeOnly) {
+    const h = await boot(state);
+    try {
+      const degree = await h.api.fillField(DEGREE, DEGREE_VALUE);
+      const level = await h.api.fillField(LEVEL, LEVEL_VALUE);
+      assert.equal(degree.reason, 'control_not_supported', JSON.stringify({ state, degree }));
+      assert.equal(degree.ok, false);
+      assert.equal(level.reason, 'readback_matched', JSON.stringify({ state, level }));
+      assert.equal(textOf(h.document, 'basic-level-value'), OUT.basicLevel.token, JSON.stringify(state));
+      assert.equal(h.stats.openedIds.includes('basic-degree-select'), false, JSON.stringify(state));
+      assert.equal(h.stats.openedIds.includes('basic-level-select'), false, JSON.stringify(state));
+      if (h.document.getElementById('degree-value')) assert.equal(textOf(h.document, 'degree-value'), '', JSON.stringify(state));
+      assert.equal(textOf(h.document, 'level-value'), LEVEL_VALUE, JSON.stringify(state));
+    } finally { h.dom.window.close(); }
+  }
+
+  const oneLabel = [
+    [{ duplicateLevel: true }, LEVEL, LEVEL_VALUE],
+    [{ duplicateMajor: true }, MAJOR, MAJOR_VALUE],
+    [{ duplicateRank: true }, RANK, RANK_VALUE]
+  ];
+  for (const [state, label, value] of oneLabel) {
+    const h = await boot(state);
+    try {
+      const rowResult = await h.api.fillField(label, value);
+      const degree = await h.api.fillField(DEGREE, DEGREE_VALUE);
+      assert.equal(rowResult.reason, 'control_not_supported', JSON.stringify({ state, rowResult }));
+      assert.equal(degree.reason, 'readback_matched', JSON.stringify({ state, degree }));
+      assert.equal(textOf(h.document, 'basic-degree-value'), OUT.basicDegree.token);
+      assert.equal(textOf(h.document, 'degree-value'), DEGREE_VALUE);
+      assert.equal(h.stats.openedIds.includes('basic-degree-select'), false);
+    } finally { h.dom.window.close(); }
+  }
+
+  const early = await boot({ hintBeforeBasic: true });
+  try {
+    const degree = await early.api.fillField(DEGREE, DEGREE_VALUE);
+    const major = await early.api.fillField(MAJOR, MAJOR_VALUE);
+    assert.equal(degree.reason, 'readback_matched', JSON.stringify(degree));
+    assert.equal(major.reason, 'readback_matched', JSON.stringify(major));
+    assert.equal(textOf(early.document, 'basic-degree-value'), OUT.basicDegree.token);
+    assert.equal(early.document.getElementById('basic-major-input').value, OUT.basicMajor.token);
+    assert.equal(textOf(early.document, 'degree-value'), DEGREE_VALUE);
+    assert.equal(early.document.getElementById('major-input').value, MAJOR_VALUE);
+    assert.deepEqual(early.stats.openedIds, ['degree-select']);
+    unchanged(early.document, early.stats, { degree: DEGREE_VALUE, major: MAJOR_VALUE });
+  } finally { early.dom.window.close(); }
+});
+
+test('education-history control drift fails closed without painting', async () => {
+  const cases = [
+    [{ degreeDropAllowClear: true }, DEGREE, DEGREE_VALUE],
+    [{ degreeDisabled: true }, DEGREE, DEGREE_VALUE],
+    [{ degreeHidden: true }, DEGREE, DEGREE_VALUE],
+    [{ degreeExtraSelect: true }, DEGREE, DEGREE_VALUE],
+    [{ degreeStrayText: true }, DEGREE, DEGREE_VALUE],
+    [{ degreeStrayRadio: true }, DEGREE, DEGREE_VALUE],
+    [{ degreeStrayFile: true }, DEGREE, DEGREE_VALUE],
+    [{ degreeAsText: true }, DEGREE, DEGREE_VALUE],
+    [{ degreeDisagree: true }, DEGREE, DEGREE_VALUE],
+    [{ degreeAmbiguous: true, degree: DEGREE_VALUE }, DEGREE, DEGREE_VALUE],
+    [{ degreeBadDropdown: true }, DEGREE, DEGREE_VALUE],
+    [{ degreeEmptyMenu: true }, DEGREE, DEGREE_VALUE],
+    [{ degreeDropSearch: true }, DEGREE, DEGREE_VALUE],
+    [{ levelDropAllowClear: true }, LEVEL, LEVEL_VALUE],
+    [{ rankHidden: true }, RANK, RANK_VALUE],
+    [{ rankDropAllowClear: true }, RANK, RANK_VALUE],
+    [{ majorReadonly: true }, MAJOR, MAJOR_VALUE],
+    [{ majorDisabled: true }, MAJOR, MAJOR_VALUE],
+    [{ majorHidden: true }, MAJOR, MAJOR_VALUE],
+    [{ majorPlaceholder: '请填写其他' }, MAJOR, MAJOR_VALUE],
+    [{ majorPlaceholder: '' }, MAJOR, MAJOR_VALUE],
+    [{ majorDropClass: true }, MAJOR, MAJOR_VALUE],
+    [{ majorTypeNumber: true }, MAJOR, MAJOR_VALUE],
+    [{ majorExtra: true }, MAJOR, MAJOR_VALUE],
+    [{ majorTextarea: true }, MAJOR, MAJOR_VALUE],
+    [{ majorAsSelect: true }, MAJOR, MAJOR_VALUE],
+    [{ majorDisagree: true }, MAJOR, MAJOR_VALUE],
+    [{ busyDegree: true }, MAJOR, MAJOR_VALUE],
+    [{ busyDegree: true }, RANK, RANK_VALUE],
+    [{ busySchool: true }, DEGREE, DEGREE_VALUE]
+  ];
+  for (const [state, label, value] of cases) {
+    const h = await boot(state);
+    try {
+      const rowResult = await h.api.fillField(label, value);
+      assert.equal(rowResult.ok, false, JSON.stringify({ state, rowResult }));
+      assert.notEqual(rowResult.reason, 'readback_matched', JSON.stringify(state));
+      assert.notEqual(rowResult.reason, 'preexisting_same_value', JSON.stringify(state));
+      assert.ok(['control_not_supported', 'control_busy'].includes(rowResult.reason), JSON.stringify({ state, rowResult }));
+      assert.equal(rowResult.liveSupportClaimed, false);
+      assert.equal(rowResult.supportClaimed, false);
+      assert.equal(h.stats.option, 0, JSON.stringify(state));
+      assert.equal(h.stats.forbidden, 0, JSON.stringify(state));
+      assert.equal(textOf(h.document, 'basic-degree-value'), OUT.basicDegree.token, JSON.stringify(state));
+      assert.equal(h.document.getElementById('basic-major-input').value, OUT.basicMajor.token, JSON.stringify(state));
+      const historyMajor = h.document.getElementById('major-input');
+      if (historyMajor && !state.majorReadonly && !state.majorDisabled) assert.equal(historyMajor.value, '', JSON.stringify(state));
+      assert.equal(h.document.getElementById('description-input').value, '');
+      if (!state.degreeBadDropdown && !state.degreeEmptyMenu && !state.busyDegree && !state.busySchool) {
+        assert.equal(h.stats.open, 0, JSON.stringify(state));
+      }
+    } finally { h.dom.window.close(); }
+  }
+});
+
+test('a closed 学位 search field still paints through the visible face', async () => {
+  const h = await boot({ closedSearch: true, degreeClosedSearch: true, degreeMash: 'class' });
+  try {
+    const degree = await h.api.fillField(DEGREE, DEGREE_VALUE);
+    assert.equal(degree.reason, 'readback_matched', JSON.stringify(degree));
+    assert.equal(degree.after, DEGREE_VALUE);
+    assert.equal(degree.stillOpen, 0);
+    assertNeverSaved(degree);
+    assert.equal(h.stats.open, 1);
+    assert.equal(h.stats.option, 1);
+    assert.equal(h.stats.triggerClass, '');
+    assert.equal(h.stats.faceClass, LIVE.faceClass);
+    assert.equal(h.document.querySelector('#degree-select .ant-select-selection-selected-value').textContent, DEGREE_VALUE);
+    assert.equal(h.document.getElementById('degree-select-menu').hidden, true);
+    assert.equal(textOf(h.document, 'basic-degree-value'), OUT.basicDegree.token);
+    unchanged(h.document, h.stats, { degree: DEGREE_VALUE });
+  } finally { h.dom.window.close(); }
+});
+
+test('an open education menu blocks 专业名称 and a hidden page does not type', async () => {
+  const busy = await boot({ busyDegree: true });
+  try {
+    const major = await busy.api.fillField(MAJOR, MAJOR_VALUE);
+    assert.equal(major.reason, 'control_busy', JSON.stringify(major));
+    assert.equal(busy.document.getElementById('major-input').value, '');
+    assert.equal(busy.stats.option, 0);
+    unchanged(busy.document, busy.stats);
+  } finally { busy.dom.window.close(); }
+
+  const hidden = await boot({});
+  try {
+    Object.defineProperty(hidden.document, 'visibilityState', { configurable: true, get: () => 'hidden' });
+    const degree = await hidden.api.fillField(DEGREE, DEGREE_VALUE);
+    const major = await hidden.api.fillField(MAJOR, MAJOR_VALUE);
+    assert.equal(degree.reason, 'fill_interrupted_page_hidden');
+    assert.equal(major.reason, 'fill_interrupted_page_hidden');
+    assertNeverSaved(degree);
+    assert.equal(hidden.stats.open, 0);
+    assert.equal(hidden.document.getElementById('major-input').value, '');
+    unchanged(hidden.document, hidden.stats);
+  } finally { hidden.dom.window.close(); }
 });

@@ -72,41 +72,101 @@
       "placeholderPrefix": "请选择"
     }
   },
+  "section": {
+    "hint": "从最高学历开始填写，填写至高中",
+    "anchor": "从最高学历开始填写",
+    "note": "Page text inside 教育经历, before 开始时间 / 学校 / 城市. sectionTitles was empty. The phrase is the textSample anchor, not a support claim. 个人基本信息 学位/学历/专业名称 sit before this phrase."
+  },
+  "degree": {
+    "label": "学位",
+    "kind": "select",
+    "controlClass": "ant-select ant-select-enabled ant-select-allow-clear",
+    "triggerClass": "ant-select-search__field",
+    "dropdownClass": "ant-select-dropdown ant-select-dropdown--single ant-select-dropdown-placement-bottomLeft",
+    "valueSample": "学士",
+    "optionsSample": ["学士"],
+    "optionsNote": "The 学位 menu was not opened. The education-history page text is 学士. The 个人基本信息 page text is 硕士 and is not an option on this row.",
+    "clickOpens": "select_dropdown",
+    "cancel": "Escape",
+    "selectorClasses": "ant-row ant-form-item | label=学位 | ant-select ant-select-enabled ant-select-allow-clear"
+  },
+  "level": {
+    "label": "学历",
+    "kind": "select",
+    "controlClass": "ant-select ant-select-enabled ant-select-allow-clear",
+    "triggerClass": "ant-select-search__field",
+    "dropdownClass": "ant-select-dropdown ant-select-dropdown--single ant-select-dropdown-placement-bottomLeft",
+    "valueSample": "本科",
+    "optionsSample": ["本科"],
+    "optionsNote": "The 学历 menu was not opened. The education-history page text is 本科. The 个人基本信息 page text is 硕士研究生 and is not an option on this row.",
+    "clickOpens": "select_dropdown",
+    "cancel": "Escape",
+    "selectorClasses": "ant-row ant-form-item | label=学历 | ant-select ant-select-enabled ant-select-allow-clear"
+  },
+  "major": {
+    "label": "专业名称",
+    "kind": "text",
+    "controlClass": "ant-input",
+    "inputType": "text",
+    "placeholder": "请填写专业名称",
+    "valueSample": "Economics Major, Financial Economics Minor",
+    "selectorClasses": "ant-row ant-form-item | label=专业名称 | ant-input | ph=请填写专业名称",
+    "note": "Education-history valueSample. The 个人基本信息 JSON valueSample is 金融学. Internal spaces are part of the probed text."
+  },
+  "rank": {
+    "label": "专业排名",
+    "kind": "select",
+    "controlClass": "ant-select ant-select-enabled ant-select-allow-clear",
+    "triggerClass": "ant-select-search__field",
+    "dropdownClass": "ant-select-dropdown ant-select-dropdown--single ant-select-dropdown-placement-bottomLeft",
+    "valueSample": "无排名",
+    "optionsSample": ["无排名"],
+    "optionsNote": "The 专业排名 menu was not opened. The only captured display token is valueSample.",
+    "clickOpens": "select_dropdown",
+    "cancel": "Escape",
+    "selectorClasses": "ant-row ant-form-item | label=专业排名 | ant-select ant-select-enabled ant-select-allow-clear"
+  },
   "text": {
     "controlClass": "ant-input",
     "inputType": "text"
   },
   "outOfScope": {
-    "note": "Nearby rows this module must not fill. Sentinels are not probed display values. History 学位, 学历, 专业名称, and empty 专业描述 stay unread.",
+    "note": "Nearby rows this module must not fill. Basic 学位/学历/专业名称 are the 个人基本信息 page-text values and must stay put. 专业描述 stays empty and is not filled. Education-history 学位/学历/专业名称/专业排名 are degree, level, major, and rank.",
     "graduation": {
       "label": "毕业院校",
       "token": "GRAD_KEEP"
     },
     "basicDegree": {
       "label": "学位",
-      "token": "BASIC_DEGREE_KEEP"
+      "token": "硕士",
+      "note": "个人基本信息 page text. Not the education-history 学士 row."
     },
     "basicLevel": {
       "label": "学历",
-      "token": "BASIC_LEVEL_KEEP"
+      "token": "硕士研究生",
+      "note": "个人基本信息 page text. Not the education-history 本科 row."
     },
     "basicMajor": {
       "label": "专业名称",
       "placeholder": "请填写专业名称",
-      "token": "BASIC_MAJOR_KEEP"
+      "token": "金融学",
+      "note": "JSON valueSample on the 个人基本信息 专业名称 row. Not the education-history Economics string."
     },
     "historyDegree": {
       "label": "学位",
-      "token": "HIST_DEGREE_KEEP"
+      "token": "学士",
+      "note": "Label alias of degree. The rendered education-history control is degree."
     },
     "historyLevel": {
       "label": "学历",
-      "token": "HIST_LEVEL_KEEP"
+      "token": "本科",
+      "note": "Label alias of level. The rendered education-history control is level."
     },
     "historyMajor": {
       "label": "专业名称",
       "placeholder": "请填写专业名称",
-      "token": "HIST_MAJOR_KEEP"
+      "token": "Economics Major, Financial Economics Minor",
+      "note": "Label alias of major. The rendered education-history control is major."
     },
     "description": {
       "label": "专业描述",
@@ -116,7 +176,8 @@
     },
     "rank": {
       "label": "专业排名",
-      "token": "RANK_KEEP"
+      "token": "无排名",
+      "note": "Label alias of rank. The rendered education-history control is rank. Do not treat this as a second row."
     },
     "residence": {
       "label": "现居住地",

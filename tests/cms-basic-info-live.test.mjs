@@ -824,7 +824,7 @@ test('a stale engine install is cleared before inject and a clear failure skips 
   assert.equal(failed.evidence.finalDetails.steps.includes('install_live'), false);
   assert.equal(failed.evidence.fields.every((field) => field.status === 'failed' && field.reason === 'inject_failed'), true);
 
-  const expression = source.match(/step: 'clear_engine_install' \}\);\n {10}steps\.push\('clear_engine_install'\)/);
+  const expression = source.match(/step: 'clear_engine_install' \}\);\r?\n {10}steps\.push\('clear_engine_install'\)/);
   const body = source.slice(source.indexOf('const cleared = await evaluate'), source.indexOf("step: 'clear_engine_install'"));
   const iife = body.match(/\(\(\) => \{[\s\S]*\}\)\(\)/u);
   assert.ok(expression);

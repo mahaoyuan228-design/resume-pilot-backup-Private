@@ -1,0 +1,50 @@
+{
+  "source": "dist/site-probes/cmb-remaining-dom-ids-20261019.json",
+  "sourceCommit": "3fd7a99d7044230f5210b8fa146dba5b67378cac",
+  "url": "https://career.cmbchina.com/center/resume",
+  "harvestedAt": "2026-10-19T05:08:44.887Z",
+  "neverSave": true,
+  "neighbors": [
+  {
+    "tag": "input",
+    "id": "resume_basicInfo_name",
+    "name": null,
+    "type": "text",
+    "role": null,
+    "className": "ant-input ant-input-status-success",
+    "placeholder": "请输入",
+    "ariaControls": null,
+    "ariaLabel": null,
+    "labelText": "姓名",
+    "reason": "resume_prefix"
+  },
+  {
+    "tag": "input",
+    "id": "resume_basicInfo_idCardType",
+    "name": null,
+    "type": "search",
+    "role": "combobox",
+    "className": "ant-select-selection-search-input",
+    "placeholder": null,
+    "ariaControls": "resume_basicInfo_idCardType_list",
+    "ariaLabel": null,
+    "labelText": "证件类型",
+    "reason": "resume_prefix"
+  }
+],
+  "fields": [
+    {
+      "tag": "input",
+      "id": "resume_awardList_0_awardName",
+      "name": null,
+      "type": "text",
+      "role": null,
+      "className": "ant-input",
+      "placeholder": "请输入",
+      "ariaControls": null,
+      "ariaLabel": null,
+      "labelText": "奖项名称",
+      "reason": "keyword_match"
+    }
+  ]
+}

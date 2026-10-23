@@ -1,0 +1,115 @@
+{
+  "source": "dist/site-probes/cmb-remaining-dom-ids-20261019.json",
+  "sourceCommit": "3fd7a99d7044230f5210b8fa146dba5b67378cac",
+  "url": "https://career.cmbchina.com/center/resume",
+  "harvestedAt": "2026-10-19T05:08:44.887Z",
+  "neverSave": true,
+  "neighbors": [
+  {
+    "tag": "input",
+    "id": "resume_basicInfo_name",
+    "name": null,
+    "type": "text",
+    "role": null,
+    "className": "ant-input ant-input-status-success",
+    "placeholder": "请输入",
+    "ariaControls": null,
+    "ariaLabel": null,
+    "labelText": "姓名",
+    "reason": "resume_prefix"
+  },
+  {
+    "tag": "input",
+    "id": "resume_basicInfo_idCardType",
+    "name": null,
+    "type": "search",
+    "role": "combobox",
+    "className": "ant-select-selection-search-input",
+    "placeholder": null,
+    "ariaControls": "resume_basicInfo_idCardType_list",
+    "ariaLabel": null,
+    "labelText": "证件类型",
+    "reason": "resume_prefix"
+  }
+],
+  "fields": [
+    {
+      "tag": "input",
+      "id": "resume_internshipExperienceList_0_companyName",
+      "name": null,
+      "type": "text",
+      "role": null,
+      "className": "ant-input",
+      "placeholder": "请输入",
+      "ariaControls": null,
+      "ariaLabel": null,
+      "labelText": "公司或组织",
+      "reason": "resume_prefix"
+    },
+    {
+      "tag": "input",
+      "id": "resume_internshipExperienceList_0_city",
+      "name": null,
+      "type": "text",
+      "role": null,
+      "className": "ant-input",
+      "placeholder": "请输入",
+      "ariaControls": null,
+      "ariaLabel": null,
+      "labelText": "所在城市",
+      "reason": "keyword_match"
+    },
+    {
+      "tag": "input",
+      "id": "resume_internshipExperienceList_0_jobResponsibility",
+      "name": null,
+      "type": "text",
+      "role": null,
+      "className": "ant-input",
+      "placeholder": "请输入",
+      "ariaControls": null,
+      "ariaLabel": null,
+      "labelText": "职位或职责",
+      "reason": "resume_prefix"
+    },
+    {
+      "tag": "input",
+      "id": "resume_internshipExperienceList_0_hrContact",
+      "name": null,
+      "type": "text",
+      "role": null,
+      "className": "ant-input",
+      "placeholder": "请输入",
+      "ariaControls": null,
+      "ariaLabel": null,
+      "labelText": "单位联系人",
+      "reason": "resume_prefix"
+    },
+    {
+      "tag": "input",
+      "id": "resume_internshipExperienceList_0_hrPhone",
+      "name": null,
+      "type": "text",
+      "role": null,
+      "className": "ant-input",
+      "placeholder": "请输入",
+      "ariaControls": null,
+      "ariaLabel": null,
+      "labelText": "单位联系电话",
+      "reason": "resume_prefix"
+    },
+    {
+      "tag": "textarea",
+      "id": "resume_internshipExperienceList_0_practiceContent",
+      "name": null,
+      "type": null,
+      "role": null,
+      "className": "ant-input",
+      "placeholder": "请输入",
+      "ariaControls": null,
+      "ariaLabel": null,
+      "labelText": "内容与收获",
+      "reason": "resume_prefix"
+    }
+  ]
+}

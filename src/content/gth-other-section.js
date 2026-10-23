@@ -5,7 +5,7 @@
 // stays false. This file does not claim the site is supported. Never clicks
 // 保存 / 提交 / 投递 / 删除. The editor is left open.
 (() => {
-  if (globalThis.ResumeGthOtherSection && globalThis.ResumeGthOtherSectionRevision===4) return;
+  if (globalThis.ResumeGthOtherSection && globalThis.ResumeGthOtherSectionRevision===5) return;
 
   const PAGE = 'https://hr.gtht.com/resume/edit/';
   const TITLES = ['基本信息', '教育经历', '求职意向', '工作经验',
@@ -20,6 +20,12 @@
   const visible = node => !!node?.getClientRects().length
     && getComputedStyle(node).display !== 'none'
     && getComputedStyle(node).visibility !== 'hidden';
+  const safeEditLink = node => {
+    const href = node?.getAttribute('href');
+    return !!node && !node.disabled
+      && !node.closest('[disabled],[aria-disabled="true"],.is-disabled,.disabled,[formaction]')
+      && (!href || /^(#|javascript:(?:;|void\(0\)))$/iu.test(href));
+  };
   const controlState = node => [node.tagName, node.type || '', node.value || '',
     !!node.checked, node.selectedIndex ?? null,
     [...(node.files || [])].map(file => [file.name, file.size, file.type])];
@@ -139,10 +145,24 @@
         stop('editor_structure_changed');
       const outsideBefore = outsideState(sections);
       if (!forms.length) {
-        const links = [...sections[6].querySelectorAll('.title_ a.h-e-btn')]
+        const section = sections[6];
+        const editLinks = root => [...root.querySelectorAll('.title_ a.h-e-btn')]
           .filter(node => norm(node.textContent) === '编辑' && visible(node));
-        if (links.length !== 1) stop('edit_link_not_unique');
-        await boundAction(()=>{if(!(links[0])?.isConnected)stop('profile_action_target_changed');return links[0].click();});
+        const links = editLinks(section);
+        if (links.length !== 1 || !safeEditLink(links[0])
+          || links[0].closest('.title_') !== section.querySelector('.title_')) stop('edit_link_not_unique');
+        const editTitle = links[0].closest('.title_');
+        const editHref = links[0].getAttribute('href');
+        await boundAction(() => {
+          const current = sectionsAt(timeOrigin);
+          const currentLinks = editLinks(current[6]);
+          if (current[6] !== section || formsOf(current).length || outsideState(current) !== outsideBefore
+            || currentLinks.length !== 1 || currentLinks[0] !== links[0] || !links[0].isConnected
+            || !safeEditLink(links[0]) || links[0].getAttribute('href') !== editHref
+            || links[0].closest('.title_') !== editTitle || current[6].querySelector('.title_') !== editTitle)
+            stop('profile_action_target_changed');
+          return links[0].click();
+        });
         const deadline = Date.now() + 4000;
         do {
           await pause(60);
@@ -186,22 +206,41 @@
       if (formsOf(sections).length !== 1 || formsOf(sections)[0] !== form
         || !form.isConnected || outsideState(sections) !== outsideBefore
         || otherControls(form, stable) !== otherBefore
-        || stable.some((target, index) => target.node !== targets[index].node
+        || stable.some((target, index) => target.item !== targets[index].item || target.node !== targets[index].node
           || target.node.value !== '')) stop('original_value_changed');
       targets = stable;
+      const expected = [...originals];
+      const guardAction = () => {
+        const currentSections = sectionsAt(timeOrigin);
+        const latest = controlsOf(form);
+        if (formsOf(currentSections).length !== 1 || formsOf(currentSections)[0] !== form
+          || !form.isConnected || !currentSections[6].contains(form)
+          || latest.some((target, index) => target.item !== targets[index].item || target.node !== targets[index].node
+            || target.node.value !== expected[index])
+          || otherControls(form, latest) !== otherBefore || outsideState(currentSections) !== outsideBefore)
+          stop(result.writeStarted ? 'other_values_changed' : 'original_value_changed');
+      };
       for (let index = 0; index < targets.length; index += 1) {
         const target = targets[index];
-        sectionsAt(timeOrigin);
         const prototype = target.kind === 'textarea'
           ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
         const setter = Object.getOwnPropertyDescriptor(prototype, 'value')?.set;
         if (!setter) stop('native_setter_missing');
-        result.writeStarted = true;
-        await boundAction(()=>{if(!(target.node)?.isConnected)stop('profile_action_target_changed');return setter.call(target.node, values[index]);});
-        sectionsAt(timeOrigin);
-        await boundAction(()=>{if(!(target.node)?.isConnected)stop('profile_action_target_changed');return target.node.dispatchEvent(new Event('input', { bubbles: true }));});
-        sectionsAt(timeOrigin);
-        await boundAction(()=>{if(!(target.node)?.isConnected)stop('profile_action_target_changed');return target.node.dispatchEvent(new Event('change', { bubbles: true }));});
+        await boundAction(() => {
+          guardAction();
+          if (target.node.maxLength >= 0 && values[index].length > target.node.maxLength) stop('value_too_long');
+          result.writeStarted = true;
+          setter.call(target.node, values[index]);
+          expected[index] = values[index];
+        });
+        await boundAction(() => {
+          guardAction();
+          return target.node.dispatchEvent(new Event('input', { bubbles: true }));
+        });
+        await boundAction(() => {
+          guardAction();
+          return target.node.dispatchEvent(new Event('change', { bubbles: true }));
+        });
       }
       await pause(250);
       const verifyReadback = () => {
@@ -232,6 +271,6 @@
     }
   }
 
-  globalThis.ResumeGthOtherSectionRevision=4;
+  globalThis.ResumeGthOtherSectionRevision=5;
   globalThis.ResumeGthOtherSection = Object.freeze({ fill });
 })();

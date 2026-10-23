@@ -162,6 +162,15 @@
     input.dispatchEvent(new Event('blur', { bubbles: true }));
   }
 
+  // Test only the existing input's native contract, without touching the page
+  // or dispatching invalid events via checkValidity/reportValidity.
+  function nativeTextValueValid(control, value) {
+    if (control.validity.customError) return false;
+    const candidate = control.cloneNode(false);
+    candidate.value = String(value ?? '');
+    return candidate.validity.valid;
+  }
+
   function readText(item) {
     const control = textControl(item);
     return control ? norm(control.value) : '';
@@ -201,21 +210,28 @@
     if (!emptyText(control.value)) {
       return { ...NEVER_SAVE, label, ok: true, reason: 'skipped_existing', before, after: before, expected, skipped: true, writeAttempted: false };
     }
+    if (!nativeTextValueValid(control, expected)) {
+      return { ...NEVER_SAVE, label, ok: false, reason: 'native_validation_failed', before, after: before, expected, writeAttempted: false };
+    }
     control.focus();
     const focused = classifyField(label);
     if (!focused.ready || focused.item !== row.item || focused.control !== control || !emptyText(control.value)) {
       return { ...NEVER_SAVE, label, ok: false, reason: 'control_changed_before_write', before, after: norm(control.value), expected, writeAttempted: false };
     }
+    if (!nativeTextValueValid(control, expected)) {
+      return { ...NEVER_SAVE, label, ok: false, reason: 'native_validation_failed', before, after: norm(control.value), expected, writeAttempted: false };
+    }
     setNativeValue(control, expected, row);
     await pause(80);
     const current = classifyField(label);
     const after = norm(control.value);
-    const ok = current.ready && current.item === row.item && current.control === control && after === expected;
+    const matched = current.ready && current.item === row.item && current.control === control && after === expected;
+    const ok = matched && control.validity.valid;
     return {
       ...NEVER_SAVE,
       label,
       ok,
-      reason: ok ? 'matched' : 'readback_mismatch',
+      reason: ok ? 'matched' : matched ? 'native_validation_failed' : 'readback_mismatch',
       before,
       after,
       expected,
@@ -429,7 +445,14 @@
       ['手机号码', values.mobile],
       ['邮箱', values.email]
     ];
-    const classified = textPlan.map(([label, value]) => ({ ...classifyField(label), expected: norm(value) }));
+    const classified = textPlan.map(([label, value]) => {
+      const row = { ...classifyField(label), expected: norm(value) };
+      // Occupied values retain their existing soft-skip semantics.
+      if (row.ready && String(row.control.value).trim() === '' && !nativeTextValueValid(row.control, row.expected)) {
+        return { ...row, ready: false, reason: 'native_validation_failed' };
+      }
+      return row;
+    });
     if (classified.some((row) => !row.ready)) {
       return {
         ok: false,
@@ -480,6 +503,11 @@
           failure = 'readback_mismatch';
           const result = results.find((entry) => entry.label === row.label);
           Object.assign(result, { ok: false, reason: failure, after: norm(row.control.value) });
+          break;
+        } else if (writes.includes(row) && !row.control.validity.valid) {
+          failure = 'native_validation_failed';
+          const result = results.find((entry) => entry.label === row.label);
+          Object.assign(result, { ok: false, reason: failure });
           break;
         }
       }

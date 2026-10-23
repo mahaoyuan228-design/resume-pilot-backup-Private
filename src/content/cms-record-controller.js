@@ -3,7 +3,7 @@ globalThis.installResumeCmsRecordController=function(recordKind){
   const internship=recordKind==='internship',controllerName=internship?'ResumeCmsInternshipMulti':'ResumeCmsEducationMulti';
   const setId=internship?'49170501':'14',sectionName=internship?'实习经历':'教育经历必填',rowIdPattern=internship?/^49170501_\d+_\d+$/u:/^14_\d+_\d+$/u;
   'use strict';
-  if(globalThis[controllerName]?.version===3&&globalThis[controllerName].implementationRevision===16)return;
+  if(globalThis[controllerName]?.version===3&&globalThis[controllerName].implementationRevision===17)return;
   if(globalThis.ResumeProfileWriteContext)throw Error('profile_write_context_busy');
   async function checkProfileWrite(){const context=globalThis.ResumeProfileWriteContext;if(context)await context.check();}
   const PAGE='https://wecruit.hotjob.cn/SU629dbc0c0dcad452299bc0f7/pb/resumeOperation.html';
@@ -168,8 +168,12 @@ globalThis.installResumeCmsRecordController=function(recordKind){
           publicFields.push({...base,status:outcome?.status==='verified'&&domMatch?'verified':outcome?.status==='skipped'?'skipped':'failed',reason:outcome?.status==='verified'&&!domMatch?'dom_readback_mismatch':outcome?.reason||'widget_outcome_unknown',...(typeof outcome?.primaryReason==='string'&&/^[a-z0-9_]+$/u.test(outcome.primaryReason)?{primaryReason:outcome.primaryReason}:{}),...(typeof outcome?.selectionAttempted==='boolean'?{selectionAttempted:outcome.selectionAttempted}:{}),...(typeof outcome?.selectionReadbackMatched==='boolean'?{selectionReadbackMatched:outcome.selectionReadbackMatched}:{}),...(typeof outcome?.searchText==='string'?{searchText:outcome.searchText.slice(0,160)}:{}),...(typeof outcome?.desiredOptionText==='string'?{desiredOptionText:outcome.desiredOptionText.slice(0,160)}:{}),...(typeof outcome?.visibleOptionCount==='number'?{visibleOptionCount:outcome.visibleOptionCount}:{}),...(typeof outcome?.createTemplatePresent==='boolean'?{createTemplatePresent:outcome.createTemplatePresent}:{}),...(Array.isArray(outcome?.sampleOptions)?{sampleOptions:outcome.sampleOptions.slice(0,5).map(v=>String(v).slice(0,80))}:{}),...(Array.isArray(outcome?.candidateOptions)?{candidateOptions:outcome.candidateOptions.slice(0,12).map(v=>String(v).slice(0,80))}:{}),...(typeof outcome?.hint==='string'?{hint:outcome.hint.slice(0,120)}:{}),...(typeof outcome?.rowWasEmpty==='boolean'?{rowWasEmpty:outcome.rowWasEmpty}:{})});
         }
       }
-      phase='verify_react_serialization';for(const record of plan.records)await checkSource(record);guard();
-      const proof=await services.readSerialization(bindings),verification=await services.verifySerialization(plan,bindings,proof);
+      phase='verify_react_serialization';for(const record of plan.records)await checkSource(record);
+      // Recheck live fields after each bridge await to reject stale captured props.
+      const verificationRecords=stable(guard().records);
+      const guardVerification=()=>{if(stable(guard().records)!==verificationRecords)fail('education_records_changed_during_verification');};
+      const proof=await services.readSerialization(bindings);guardVerification();
+      const verification=await services.verifySerialization(plan,bindings,proof);guardVerification();
       if(!verification?.ok)fail(verification?.reason||'education_serialization_unavailable');
       rows=verification.records;
       for(const field of publicFields){const serialized=rows.find(row=>row.profileIndex===field.profileIndex)?.fields.find(item=>item.key===field.key);if(field.status==='verified'&&serialized?.status==='failed'){field.domStatus='verified';field.status='failed';field.reason=serialized.reason;}}
@@ -184,5 +188,5 @@ globalThis.installResumeCmsRecordController=function(recordKind){
       return {ok:true,complete,reason,writeStarted,addClicks,bindings,fields:publicFields,serialization:rows,serializedRecordCount:verification.serializedRecordCount,provisionalNewRecords:addClicks,saveClicks:0,deleteClicks:0,finalSubmitClicks:0};
     }catch(error){if(registered){if(writeStarted&&executions.has(plan?.fingerprint))executions.get(plan.fingerprint).state='unknown';else executions.delete(plan.fingerprint);}return {ok:false,complete:false,reason:/^[a-z0-9_]+$/u.test(error?.message||'')?error.message:'education_candidate_failed',phase,writeStarted,addClicks,bindings,fields:publicFields,provisionalNewRecords:addClicks,saveClicks:0,deleteClicks:0,finalSubmitClicks:0};}finally{if(profileContext&&globalThis.ResumeProfileWriteContext===profileContext)delete globalThis.ResumeProfileWriteContext;}
   }
-  globalThis[controllerName]=Object.freeze({version:3,implementationRevision:16,inspect,locateRow,locateField,rowIdentity,run});
+  globalThis[controllerName]=Object.freeze({version:3,implementationRevision:17,inspect,locateRow,locateField,rowIdentity,run});
 };

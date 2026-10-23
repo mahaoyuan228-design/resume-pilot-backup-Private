@@ -508,7 +508,23 @@ test('fake CDP refuses orphaned prior guards before injection or activation and 
 });
 
 test('fake CDP controls host reports exact restored proof and validates separate lookup suppression', async t => {
-  const h = await setup(t, { install: false, onSchoolOpen: ({ xhr }) => {
+  let hooks, trialReadbacks;
+  const h = await setup(t, { install: false, beforeInstall: ({ window, native }) => {
+    native.beacons = 0;
+    Object.defineProperty(window.navigator, 'sendBeacon', {
+      configurable: true, enumerable: false, writable: false,
+      value: () => { native.beacons++; return true; }
+    });
+    hooks = [
+      ['fetch', window, 'fetch'],
+      ['click', window.HTMLElement.prototype, 'click'],
+      ['submit', window.HTMLFormElement.prototype, 'submit'],
+      ['requestSubmit', window.HTMLFormElement.prototype, 'requestSubmit'],
+      ...['open', 'send', 'abort'].map(key => [`XHR.${key}`, window.XMLHttpRequest.prototype, key]),
+      ...['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'].map(key => [key, window, key]),
+      ['sendBeacon', window.navigator, 'sendBeacon']
+    ].map(([label, object, key]) => ({ label, object, key, descriptor: Object.getOwnPropertyDescriptor(object, key) }));
+  }, onSchoolOpen: ({ xhr }) => {
     xhr(HOUSEKEEPING_LOOKUP); xhr(HOUSEKEEPING_AUTOSAVE);
   } }), before = h.readProof();
   const outDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cms-education-controls-'));
@@ -519,15 +535,46 @@ test('fake CDP controls host reports exact restored proof and validates separate
   const evidence = await runner.runCmsEducationLive({ controls: true, repoRoot: root, outDir, tipSha: runner.BASE_TIP,
     getJson: async () => [{ id: 'controls-offline', type: 'page', url: PAGE,
       webSocketDebuggerUrl: 'ws://127.0.0.1:9239/devtools/page/controls-offline' }],
-    connectCdp: async () => ({ close() {}, async send(method, params) {
+    connectCdp: async () => ({ close() {}, async send(method, params, options) {
       if (method !== 'Runtime.evaluate') return {};
-      return { result: { value: plain(await h.window.eval(params.expression)) } };
+      const value = plain(await h.window.eval(params.expression));
+      if (options.step === 'education_run') trialReadbacks = value.readbacks;
+      return { result: { value } };
     } })
   });
   assert.equal(evidence.finalDetails.exitCode, 0, JSON.stringify(evidence));
   assert.equal(evidence.liveSupportClaimed, false); assert.equal(evidence.fields.length, 9);
+  const specs = runner.fieldSpecsForRow(0, true);
+  assert.deepEqual(evidence.fields, specs.map(spec => ({ q: spec.q, path: spec.path,
+    status: 'verified', reason: 'readback_matched', value: spec.fixture })));
+  assert.deepEqual(trialReadbacks, specs.map(spec => ({ path: spec.path,
+    ok: true, reason: 'readback_matched', value: spec.fixture })));
+  const probes = evidence.finalDetails.widgetProbes;
+  assert.deepEqual(probes.map(probe => probe.key).sort(), runner.CONTROL_SPECS.map(spec => spec.key).sort());
+  for (const probe of probes) {
+    assert.equal(probe.openerClicks, 1, probe.key);
+    assert.equal(probe.opened, true, probe.key); assert.equal(probe.closed, true, probe.key);
+    assert.equal(probe.reason, null, probe.key);
+    assert.deepEqual(probe.activation, { stage: 'complete', reason: null,
+      events: ['mousedown', 'mouseup', 'click'], observedEvents: ['mousedown', 'mouseup', 'click'] }, probe.key);
+  }
   assert.equal(evidence.finalDetails.widgetClickCount, 8); assert.equal(evidence.finalDetails.clickCount, 0);
-  assert.ok(evidence.suppressedLookup.length > 0); assert.deepEqual(evidence.nonGet, []);
+  assert.ok(evidence.suppressedLookup.length > 0); assert.deepEqual(evidence.nonGet, []); assert.deepEqual(evidence.saveLikePost, []);
+  for (const key of ['nonGet', 'saveLikePost']) for (const [label, value] of [
+    ['missing', undefined], ['null', null], ['object', {}], ['zero', 0], ['empty string', '']
+  ]) {
+    const invalid = structuredClone(evidence);
+    if (value === undefined) delete invalid[key]; else invalid[key] = value;
+    assert.equal(runner.evidenceExitCode(invalid), 2, `${key} ${label} cannot prove empty generic traffic`);
+  }
+  for (const [label, value] of [
+    ['missing', undefined], ['null', null], ['negative', -1], ['fractional', 0.5],
+    ['NaN', NaN], ['infinite', Infinity], ['string zero', '0']
+  ]) {
+    const invalid = structuredClone(evidence);
+    if (value === undefined) delete invalid.finalDetails.clickCount; else invalid.finalDetails.clickCount = value;
+    assert.notEqual(runner.evidenceExitCode(invalid), 0, `${label} clickCount cannot prove zero forbidden clicks`);
+  }
   assert.ok(evidence.suppressedLookup.some(row => row.url === HOUSEKEEPING_LOOKUP), 'host validation preserves the bounded harvested housekeeping query');
   const controlAutosave = evidence.suppressedAutosave.find(row => row.url === HOUSEKEEPING_AUTOSAVE);
   assert.deepEqual(controlAutosave, { method: 'POST', url: HOUSEKEEPING_AUTOSAVE, via: 'xhr',
@@ -540,7 +587,16 @@ test('fake CDP controls host reports exact restored proof and validates separate
   const invalidAutosave = structuredClone(evidence);
   invalidAutosave.suppressedAutosave.find(row => row.url === HOUSEKEEPING_AUTOSAVE).url += '&private=1';
   assert.equal(runner.evidenceExitCode(invalidAutosave), 2);
-  assert.deepEqual(h.readProof(), before); assert.equal(h.native.sends, 0); assert.equal(h.native.forbidden, 0);
+  assert.deepEqual(h.readProof(), before); assert.equal(h.native.sends, 0); assert.equal(h.native.forbidden, 0); assert.equal(h.native.beacons, 0);
+  for (const { label, object, key, descriptor } of hooks) {
+    assert.deepEqual(Object.getOwnPropertyDescriptor(object, key), descriptor, `${label} descriptor is restored after controls cleanup`);
+  }
+  for (const key of ['__cmsEducationLive', 'ResumeCmsSession', 'installResumeCmsRecordController', 'ResumeCmsEducationMulti',
+    'ResumeCmsMultiSchoolSearch', 'ResumeCmsMultiEducationDates', 'ResumeCmsInternshipDates', 'ResumeCmsMultiSelect',
+    'ResumeCmsInternshipSelect', 'ResumeCmsMultiRegion', 'ResumeCmsEducationMultiAdapters', 'ResumeCmsEducationMultiWidgetControls']) {
+    assert.equal(Object.hasOwn(h.window, key), false, `${key} is removed after controls cleanup`);
+  }
+  assert.equal(h.document.querySelectorAll('.ant-select-open,.ant-select-dropdown:not(.ant-select-dropdown-hidden),.ant-calendar-picker-container').length, 0);
   const missing = structuredClone(evidence); delete missing.suppressedLookup;
   assert.equal(runner.evidenceExitCode(missing), 2);
   const spoofed = structuredClone(evidence); spoofed.suppressedLookup[0].url += '?private';

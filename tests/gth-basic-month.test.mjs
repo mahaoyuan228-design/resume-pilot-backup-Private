@@ -489,3 +489,136 @@ test('name native fills still verify blank and explicitly overwritten values', a
     });
   }
 });
+
+// Reuse the same checked-in gender group. A binding check may yield after the
+// field decision but before the radio label click, just as for the name setter.
+async function genderActionTrial({ initial = '', replaceExisting = false, mutate, refuseBinding = false } = {}, verify) {
+  const h = await boot({ replaceExisting, onlyField: 'gender' });
+  const radios = [...h.document.querySelectorAll('input[type="radio"]')];
+  const [male, female] = radios;
+  const label = male.closest('label.el-radio');
+  for (const control of radios) control.checked = control.value === initial;
+  h.request.profile.gender = '男';
+  let clicks = 0, bindingChecks = 0;
+  label.addEventListener('click', () => { clicks += 1; });
+  const sendMessage = h.window.chrome.runtime.sendMessage;
+  h.window.chrome.runtime.sendMessage = async message => {
+    if (message?.type === 'RESUME_PROFILE_BINDING_CHECK' && ++bindingChecks === 2) {
+      mutate?.({ ...h, male, female, label });
+      if (refuseBinding) return { allowed: false };
+    }
+    return sendMessage(message);
+  };
+  try {
+    const result = await h.window.ResumeGthBasic.trial(h.request);
+    await verify({ ...h, male, female, label, clicks, bindingChecks }, result);
+    assert.equal(result.complete, false);
+    assert.equal(result.liveSupportClaimed, false);
+    assert.equal(result.softwareClickedSave, false);
+    assert.equal(result.softwareClickedSubmit, false);
+    assert.equal(result.softwareClickedDelete, false);
+    assert.equal(h.window.__gthFullLive.clicks().some(row => row.allowed !== true), false);
+    assert.equal(h.window.__gthFullLive.clicks().some(row => /保存|提交|投递|删除/u.test(row.label)), false);
+    if (!result.ok) {
+      assert.equal(result.fields.some(row => row.path === 'gender' && row.status === 'verified'), false);
+      assert.equal(result.coverage.some(row => row.path === 'gender' && row.status === 'verified'), false);
+      assert.equal(result.completedFields.some(row => row.key === 'gender' && row.status === 'verified'), false);
+    }
+  } finally {
+    h.window.__gthFullLive.restore();
+    h.window.__gthFullResumeChromeRestore();
+    h.dom.window.close();
+  }
+}
+
+function assertGenderStopped(h, result) {
+  assert.equal(result.ok, false);
+  assert.equal(result.writeStarted, false);
+  assert.equal(result.activeField, 'gender');
+  assert.equal(result.selectorStep, 'gender_option_click');
+  assert.equal(h.clicks, 0);
+}
+
+test('gender binding checks preserve a new selection before empty fill or overwrite', async () => {
+  for (const options of [
+    { initial: '', replaceExisting: false, next: '女' },
+    { initial: '女', replaceExisting: true, next: '' },
+    { initial: '', replaceExisting: false, next: '男' },
+  ]) {
+    await genderActionTrial({ ...options, mutate: ({ male, female }) => {
+      male.checked = options.next === '男';
+      female.checked = options.next === '女';
+    } }, (h, result) => {
+      assertGenderStopped(h, result);
+      assert.equal(h.male.checked, options.next === '男');
+      assert.equal(h.female.checked, options.next === '女');
+      assert.equal(result.reason, 'basic_other_values_changed');
+    });
+  }
+});
+
+test('gender binding checks preserve a peer edited before the option click', async () => {
+  await genderActionTrial({ mutate: h => { h.workInput.value = '2024-03'; } }, (h, result) => {
+    assertGenderStopped(h, result);
+    assert.equal(h.workInput.value, '2024-03');
+    assert.equal(h.male.checked, false);
+    assert.equal(result.reason, 'basic_other_values_changed');
+  });
+});
+
+test('gender binding checks revalidate option state and captions before clicking', async () => {
+  for (const mutate of [
+    h => { h.male.disabled = true; },
+    h => { h.label.classList.add('is-disabled'); },
+    h => { h.label.setAttribute('aria-disabled', 'true'); },
+    h => { h.label.style.display = 'none'; },
+    h => {
+      h.label.querySelector('.el-radio__label').textContent = '女';
+      h.female.closest('label').querySelector('.el-radio__label').textContent = '男';
+    },
+  ]) {
+    await genderActionTrial({ mutate }, (h, result) => {
+      assertGenderStopped(h, result);
+      assert.equal(h.male.checked, false);
+    });
+  }
+});
+
+test('gender binding checks refuse replaced or reparented options before clicking', async () => {
+  for (const mutate of [
+    h => { h.label.replaceWith(h.label.cloneNode(true)); },
+    h => { h.document.querySelectorAll('.r-section')[1].append(h.label); },
+    h => {
+      const replacement = h.label.cloneNode(true);
+      replacement.querySelector('input').replaceWith(h.male);
+      h.label.replaceWith(replacement);
+    },
+  ]) {
+    await genderActionTrial({ mutate }, (h, result) => {
+      assertGenderStopped(h, result);
+      assert.equal(h.male.checked, false);
+    });
+  }
+});
+
+test('gender binding refusal before the click reports no write', async () => {
+  await genderActionTrial({ refuseBinding: true }, (h, result) => {
+    assertGenderStopped(h, result);
+    assert.equal(result.reason, 'profile_binding_changed');
+    assert.equal(h.male.checked, false);
+  });
+});
+
+test('gender radio fills still verify blank and explicitly overwritten values', async () => {
+  for (const options of [{ initial: '', replaceExisting: false }, { initial: '女', replaceExisting: true }]) {
+    await genderActionTrial(options, (h, result) => {
+      assert.equal(result.ok, true, JSON.stringify(result));
+      assert.equal(result.writeStarted, true);
+      assert.ok(h.clicks > 0);
+      assert.equal(h.male.checked, true);
+      assert.equal(h.female.checked, false);
+      assert.equal(result.fields.find(row => row.path === 'gender').reason,
+        options.initial ? 'readback_reapplied' : 'readback_matched');
+    });
+  }
+});

@@ -120,15 +120,15 @@ async function fixture(t, kind, stage, { rowCount = 1 } = {}) {
 }
 
 for (const kind of ['education', 'internship']) {
-  test(`${kind} replaces revision 17 with the settlement guard and reuses revision 20`, async t => {
+  test(`${kind} replaces revision 20 with the retained-text guard and reuses revision 21`, async t => {
     const h = await fixture(t, kind);
     const name = kind === 'internship' ? 'ResumeCmsInternshipMulti' : 'ResumeCmsEducationMulti';
-    const prior = { version: 3, implementationRevision: 17 };
+    const prior = { version: 3, implementationRevision: 20 };
     h.window[name] = prior;
     h.window.installResumeCmsRecordController(kind);
     const current = h.window[name];
     assert.notEqual(current, prior);
-    assert.equal(current.implementationRevision, 20);
+    assert.equal(current.implementationRevision, 21);
     h.window.installResumeCmsRecordController(kind);
     assert.equal(h.window[name], current);
     const result = await current.run(h.plan, h.services);

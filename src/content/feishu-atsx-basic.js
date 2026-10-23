@@ -137,14 +137,24 @@
     };
   }
 
-  function setNativeValue(input, value) {
+  // Cleanup may restore a hidden owned input, but never a node rebound to a
+  // different field/item. Connectivity and value equality alone are not ownership.
+  function hasTextBinding({ label, item, control }) {
+    const hits = matchingItems(label);
+    return control?.isConnected && item?.isConnected
+      && hits.length === 1 && hits[0] === item && control.closest(ITEM_SEL) === item;
+  }
+
+  function setNativeValue(input, value, binding) {
     const proto = Object.getPrototypeOf(input);
     const desc = Object.getOwnPropertyDescriptor(proto, 'value')
       || Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value');
     if (desc?.set) desc.set.call(input, value);
     else input.value = value;
     input.dispatchEvent(new Event('input', { bubbles: true }));
+    if (!hasTextBinding(binding)) return;
     input.dispatchEvent(new Event('change', { bubbles: true }));
+    if (!hasTextBinding(binding)) return;
     input.dispatchEvent(new Event('blur', { bubbles: true }));
   }
 
@@ -156,7 +166,7 @@
   async function rollbackText(snapshots) {
     const restored = [];
     for (const snap of [...snapshots].reverse()) {
-      if (!snap.control.isConnected) {
+      if (!hasTextBinding(snap)) {
         restored.push({ label: snap.label, ok: false, reason: 'rollback_control_changed' });
         continue;
       }
@@ -169,13 +179,13 @@
         restored.push({ label: snap.label, ok: false, reason: 'rollback_skipped_value_changed' });
         continue;
       }
-      setNativeValue(snap.control, snap.before);
+      setNativeValue(snap.control, snap.before, snap);
       await pause(80);
       restored.push({ label: snap.label, ok: snap.control.value === snap.before, reason: 'rollback_readback' });
     }
     for (const row of restored) {
       const snap = snapshots.find((candidate) => candidate.label === row.label);
-      row.ok = snap.control.isConnected && snap.control.value === snap.before;
+      row.ok = hasTextBinding(snap) && snap.control.value === snap.before;
       row.after = snap.control.value;
     }
     return restored;
@@ -211,20 +221,20 @@
     if (String(control.value).trim() !== '') {
       return seal({ label, ok: true, reason: 'skipped_existing', before, after: before, expected, writeAttempted: false });
     }
-    const snapshot = { label, control, before: control.value, expected: String(value ?? '') };
+    const snapshot = { label, item: row.item, control, before: control.value, expected: String(value ?? '') };
     control.focus();
     const focused = classifyField(label);
-    if (!focused.ready || focused.control !== control) {
+    if (!focused.ready || focused.item !== row.item || focused.control !== control) {
       return seal({ label, ok: false, reason: 'control_changed', before, after: norm(control.value), expected, writeAttempted: false });
     }
     if (String(control.value).trim() !== '') {
       return seal({ label, ok: true, reason: 'skipped_existing', before, after: norm(control.value), expected, writeAttempted: false });
     }
-    setNativeValue(control, snapshot.expected);
+    setNativeValue(control, snapshot.expected, snapshot);
     await pause(80);
     const current = classifyField(label);
     const after = current.ready ? norm(current.control.value) : norm(control.value);
-    const ok = current.ready && current.control === control && after === expected;
+    const ok = current.ready && current.item === row.item && current.control === control && after === expected;
     const restore = ok ? [] : await rollbackText([snapshot]);
     return seal({
       label,
@@ -429,7 +439,7 @@
       };
     }
     const snapshots = classified.map((row) => ({
-      label: row.label, control: row.control, before: row.control.value, expected: row.expected
+      label: row.label, item: row.item, control: row.control, before: row.control.value, expected: row.expected
     }));
     const results = [];
     let failed = false;
@@ -440,7 +450,7 @@
       }
       const snap = snapshots.find((row) => row.label === label);
       const current = classifyField(label);
-      if (!current.ready || current.control !== snap.control) {
+      if (!current.ready || current.item !== snap.item || current.control !== snap.control) {
         results.push({ label, ok: false, reason: 'control_changed', writeAttempted: false, expected: norm(value) });
         failed = true;
         continue;
@@ -453,7 +463,7 @@
     for (const result of results.filter((row) => row.writeAttempted && row.ok)) {
       const current = classifyField(result.label);
       const snap = snapshots.find((row) => row.label === result.label);
-      if (!current.ready || current.control !== snap.control || norm(current.control.value) !== result.expected) {
+      if (!current.ready || current.item !== snap.item || current.control !== snap.control || norm(current.control.value) !== result.expected) {
         result.ok = false;
         result.reason = 'readback_mismatch';
         result.after = current.ready ? norm(current.control.value) : norm(snap.control.value);

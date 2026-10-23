@@ -517,6 +517,7 @@ test('assessCmbFillReport rejects an ambiguous ok row and a hint attached to a g
   const green = {
     ok: true,
     siteId: 'cmb',
+    href: TAB,
     skippedSave: true,
     saved: false,
     writeAttempted: true,

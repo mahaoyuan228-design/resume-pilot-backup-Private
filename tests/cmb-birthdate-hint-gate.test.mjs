@@ -69,6 +69,7 @@ function assertCannotSave(decision) {
   assert.equal(decision.schema, CMB_BIRTHDATE_GATE_SCHEMA);
   assert.equal(decision.field, 'birthDate');
   assert.equal(decision.supported, false);
+  assert.equal(decision.liveSupportClaimed, false);
   assert.equal(decision.liveFillClaimed, false);
   assert.equal(decision.fillAllowed, false);
   assert.equal(decision.saveAllowed, false);
@@ -93,7 +94,7 @@ function assertCannotSave(decision) {
 test('offline fixture keeps datepicker_hint_only and cannot Save', () => {
   const recorded = withoutNote(load('offline.json'));
   const decision = assessCmbBirthDateHint(null);
-  assert.deepEqual(decision, recorded);
+  assert.deepEqual(decision, { ...recorded, liveSupportClaimed: false });
   assert.deepEqual(decision, {
     ...CMB_BIRTHDATE_OFFLINE_GATE,
     hint: { ...CMB_BIRTHDATE_OFFLINE_GATE.hint }
@@ -128,6 +129,7 @@ test('harvest packets map onto the five hint codes and never a selector', () => 
   const missingFacts = birthDateObservedFacts(missing);
   assert.equal(missingFacts.selector, null);
   assert.equal(missingFacts.saveAllowed, false);
+  assert.equal(missingFacts.liveSupportClaimed, false);
   assert.equal(String(missingFacts.observedId).includes('#'), false);
   assertCannotSave(missing);
 
@@ -208,6 +210,34 @@ test('partial packets and the earlier birthday hint file do not upgrade support'
   assert.equal(assessCmbBirthDateHint([]).reason, 'schema_unrecognized');
 });
 
+test('nested selector evidence and every forbidden action remain intake refusals', () => {
+  const base = load('still-hint-only.json');
+  for (const actions of [
+    { saveAttempted: true },
+    { submitAttempted: true },
+    { nextAttempted: true },
+    { deliverAttempted: true },
+    { deleteAttempted: true }
+  ]) {
+    const decision = assessCmbBirthDateHint({ ...base, actions });
+    assert.equal(decision.reason, 'save_forbidden');
+    assert.equal(decision.observedFacts, null);
+    assertCannotSave(decision);
+  }
+  for (const extra of [
+    { evidence: [{ selector: '#unexpected' }] },
+    { evidence: { a: { b: { c: { d: { e: { xpath: '//unexpected' } } } } } } }
+  ]) {
+    const decision = assessCmbBirthDateHint({ ...base, ...extra });
+    assert.equal(decision.reason, 'selector_rejected');
+    assert.equal(decision.observedFacts, null);
+    assertCannotSave(decision);
+  }
+  const cyclic = { ...base };
+  cyclic.evidence = cyclic;
+  assert.equal(assessCmbBirthDateHint(cyclic).reason, 'selector_rejected');
+});
+
 test('hint-only plans cannot Save and do not keep a birthDate value', () => {
   const probe = createCmbBirthDateSaveProbe();
   const ready = plan({ birthDate: '1990-01-02' }, ['birthDate']);
@@ -226,6 +256,7 @@ test('hint-only plans cannot Save and do not keep a birthDate value', () => {
   assert.equal(locked.birthDateReason, 'birthdate_unparseable');
   assert.equal(locked.saveAllowed, false);
   assert.equal(locked.saved, false);
+  assert.equal(locked.liveSupportClaimed, false);
   assert.equal(locked.skippedSave, true);
   assert.equal(locked.writeAttempted, false);
   assert.equal(locked.calendarClicked, false);

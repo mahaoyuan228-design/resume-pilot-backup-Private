@@ -1,6 +1,6 @@
 {
   "version": "0.1.4.9",
-  "sumsSha256": "9f31558eec4076c765cc78b5e889c142de6485efcee166fa9549b36df33f3487",
+  "sumsSha256": "153831a47151c3022013f21f45cebb63565d58f16bf545d1e6ea4a0722bca17a",
   "inventory": [
     {
       "path": "manifest.json",
@@ -484,8 +484,8 @@
     },
     {
       "path": "src/popup/popup.js",
-      "sha256": "3023315baaf83646a362d90f07be0ce9cc7a3427278c55de192240ef6f98f6b5",
-      "sourceSha256": "3023315baaf83646a362d90f07be0ce9cc7a3427278c55de192240ef6f98f6b5",
+      "sha256": "bbba7c055bf81125f62885f1cf5515e019904d546f0153e809251e7ddc69890b",
+      "sourceSha256": "bbba7c055bf81125f62885f1cf5515e019904d546f0153e809251e7ddc69890b",
       "kind": "frozen-product"
     },
     {
@@ -760,8 +760,8 @@
     },
     {
       "path": "src/background/cmb-basic-auto.mjs",
-      "sha256": "b159a2c7b246323e6c0ea3b5e7fd60cf65a8965849f9f09768b70a13932db4c7",
-      "sourceSha256": "b159a2c7b246323e6c0ea3b5e7fd60cf65a8965849f9f09768b70a13932db4c7",
+      "sha256": "3d0720749014e49c5e2fe643489ca419ed167721fe4ef6bbf41383b79cb960f6",
+      "sourceSha256": "3d0720749014e49c5e2fe643489ca419ed167721fe4ef6bbf41383b79cb960f6",
       "kind": "frozen-product"
     },
     {
@@ -778,14 +778,14 @@
     },
     {
       "path": "src/content/cmb-basic.js",
-      "sha256": "a3f5930d8aeb3b03a5b640ff56baefd870bb3c966d59c99c07668618616450fb",
-      "sourceSha256": "a3f5930d8aeb3b03a5b640ff56baefd870bb3c966d59c99c07668618616450fb",
+      "sha256": "1d43aea1ec62217872f8db72ceaebda381fb49712e8a23f5f08023f16c0198c9",
+      "sourceSha256": "1d43aea1ec62217872f8db72ceaebda381fb49712e8a23f5f08023f16c0198c9",
       "kind": "frozen-product"
     },
     {
       "path": "src/content/cmb-birthdate-picker.mjs",
-      "sha256": "44c982b46a279f43fc6b61aa2e48cf0fe96e36c38f79bb939869466a12985f14",
-      "sourceSha256": "44c982b46a279f43fc6b61aa2e48cf0fe96e36c38f79bb939869466a12985f14",
+      "sha256": "d2e3169e81823f6e2904c112861d7042056e8b78891fe29fb7ac6ee76696f710",
+      "sourceSha256": "d2e3169e81823f6e2904c112861d7042056e8b78891fe29fb7ac6ee76696f710",
       "kind": "frozen-product"
     },
     {

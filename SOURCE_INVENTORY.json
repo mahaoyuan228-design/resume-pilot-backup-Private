@@ -1,6 +1,6 @@
 {
   "version": "0.1.4.9",
-  "sumsSha256": "ec0146713f515a5aad179c2eae746c786b54906611849278ee8f8c84b42c9856",
+  "sumsSha256": "f42216bfbeed9e10293f2d9963744c26066106f91bb8ab95b33c5a3743749784",
   "inventory": [
     {
       "path": "manifest.json",
@@ -292,14 +292,14 @@
     },
     {
       "path": "src/content/gth-education.js",
-      "sha256": "e951fcaa3fefd3dc579d581c1615063cb06465bc2a98cf75cdb0210423d1277c",
-      "sourceSha256": "e951fcaa3fefd3dc579d581c1615063cb06465bc2a98cf75cdb0210423d1277c",
+      "sha256": "1ade4a1f67f5ce01c3ceac44e96a1cbcb9931cb3a5ae299ff0506b8d5113252e",
+      "sourceSha256": "1ade4a1f67f5ce01c3ceac44e96a1cbcb9931cb3a5ae299ff0506b8d5113252e",
       "kind": "frozen-product"
     },
     {
       "path": "src/content/gth-intent.js",
-      "sha256": "c8f31ee9434f28a50204c98202b7e3fede9731435d5bd1b198f09ae6f2a95524",
-      "sourceSha256": "c8f31ee9434f28a50204c98202b7e3fede9731435d5bd1b198f09ae6f2a95524",
+      "sha256": "d5c29043fe498984de4b8dcde98818dc189a4290283942fe1b3e7b198ec492cb",
+      "sourceSha256": "d5c29043fe498984de4b8dcde98818dc189a4290283942fe1b3e7b198ec492cb",
       "kind": "frozen-product"
     },
     {

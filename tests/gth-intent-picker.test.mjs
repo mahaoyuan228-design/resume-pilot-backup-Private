@@ -565,6 +565,132 @@ test('到岗日期 uses the in-item el-select and reads the exact option back', 
   assert.equal(assessGthIntentFill(result).ok, true);
 });
 
+test('matching 到岗日期 needs valid site state and exact readback before verification', async (t) => {
+  for (const validation of ['is-error', 'is-validating', 'aria-invalid', 'visible-error', 'native-invalid', 'padded-value']) {
+    await t.test(validation, async () => {
+      const { dom, form, stats, api } = mount({ arrival: '一个月内' });
+      try {
+        const item = itemByLabel(form, '到岗日期'), input = itemInput(form, '到岗日期');
+        if (validation === 'aria-invalid') input.setAttribute('aria-invalid', 'true');
+        else if (validation === 'native-invalid') input.setCustomValidity('arrival_invalid');
+        else if (validation === 'padded-value') input.value = ` ${input.value} `;
+        else if (validation === 'visible-error') {
+          const error = item.querySelector('.el-input__suffix-inner');
+          error.classList.add('el-form-item__error');
+          error.textContent = '请选择到岗日期';
+        } else item.classList.add(validation);
+        const before = input.value;
+        const result = await api.trial(request({ 到岗日期: '一个月内' }, ['到岗日期'], { omitAbsent: true }));
+        assert.equal(result.ok, false);
+        assert.equal(result.reason, validation === 'padded-value' ? 'intent_readback_mismatch' : 'intent_site_validation_failed');
+        assert.equal(result.supportedComplete, false);
+        assert.equal(result.operableComplete, false);
+        assert.equal(result.writeStarted, false);
+        assert.equal(result.fields.some(row => row.question === '到岗日期' && row.status === 'verified'), false);
+        assert.equal(result.completedFields.some(row => row.question === '到岗日期' && row.status === 'verified'), false);
+        assert.equal(input.value, before);
+        assert.equal(stats.option, 0);
+        assert.equal(stats.save, 0);
+        flags(result);
+      } finally { dom.window.close(); }
+    });
+  }
+});
+
+test('到岗日期 accepts a valid same value and an empty select whose option clears a required error', async (t) => {
+  for (const arrival of ['一个月内', '']) {
+    await t.test(arrival || 'empty', async () => {
+      const { dom, form, stats, api } = mount({ arrival });
+      try {
+        const item = itemByLabel(form, '到岗日期');
+        if (!arrival) {
+          item.classList.add('is-error');
+          itemInput(form, '到岗日期').setAttribute('aria-invalid', 'true');
+          [...item.querySelectorAll('li.el-select-dropdown__item')]
+            .find(option => option.textContent.trim() === '一个月内').addEventListener('click', () => {
+              item.classList.remove('is-error');
+              itemInput(form, '到岗日期').removeAttribute('aria-invalid');
+            });
+        }
+        const result = await api.trial(request({ 到岗日期: '一个月内' }, ['到岗日期'], { omitAbsent: true }));
+        assert.equal(result.ok, true, result.reason);
+        assert.equal(result.supportedComplete, true);
+        assert.equal(result.operableComplete, true);
+        assert.equal(result.writeStarted, arrival === '');
+        assert.equal(result.fields[0].status, 'verified');
+        assert.equal(result.fields[0].reason, arrival ? 'preexisting_same_value' : 'readback_matched');
+        assert.equal(itemInput(form, '到岗日期').value, '一个月内');
+        assert.equal(stats.option, arrival ? 0 : 1);
+        assert.equal(stats.save, 0);
+        flags(result);
+      } finally { dom.window.close(); }
+    });
+  }
+});
+
+test('a later salary event clears stale 到岗日期 receipts after value, validation, or identity drift', async (t) => {
+  for (const arrival of ['一个月内', '']) {
+    for (const change of ['value', 'validation', 'equal-value-clone']) {
+      await t.test(`${arrival || 'empty'}: ${change}`, async () => {
+        const { dom, form, stats, api } = mount({ arrival, salaries: { 期望薪资: '' } });
+        try {
+          itemInput(form, '期望薪资').addEventListener('input', () => {
+            const input = itemInput(form, '到岗日期');
+            if (change === 'value') input.value = '面议';
+            else if (change === 'validation') input.setAttribute('aria-invalid', 'true');
+            else input.replaceWith(input.cloneNode(true));
+          });
+          const result = await api.trial(request({ 期望薪资: '300000', 到岗日期: '一个月内' }, ['期望薪资', '到岗日期'], { omitAbsent: true }));
+          assert.equal(result.ok, false);
+          assert.equal(result.supportedComplete, false);
+          assert.equal(result.operableComplete, false);
+          assert.equal(result.writeStarted, true);
+          const field = result.fields.find(row => row.question === '到岗日期');
+          assert.equal(field.status, 'failed');
+          assert.equal(field.reason, change === 'value' ? 'intent_readback_mismatch'
+            : change === 'validation' ? 'intent_site_validation_failed' : 'intent_other_values_changed');
+          assert.equal(result.completedFields.some(row => row.question === '到岗日期' && row.status === 'verified'), false);
+          assert.equal(itemInput(form, '到岗日期').value, change === 'value' ? '面议' : '一个月内');
+          assert.equal(stats.option, arrival ? 0 : 1);
+          assert.equal(stats.save, 0);
+          flags(result);
+        } finally { dom.window.close(); }
+      });
+    }
+  }
+});
+
+test('intent status downgrades 到岗日期 completion and receipts after value, validation, or identity drift', async (t) => {
+  for (const arrival of ['一个月内', '']) {
+    for (const change of ['value', 'validation', 'equal-value-clone']) {
+      await t.test(`${arrival || 'empty'}: ${change}`, async () => {
+        const { dom, form, stats, api } = mount({ arrival });
+        try {
+          const result = await api.trial(request({ 到岗日期: '一个月内' }, ['到岗日期'], { omitAbsent: true }));
+          assert.equal(result.ok, true);
+          const input = itemInput(form, '到岗日期');
+          if (change === 'value') input.value = '面议';
+          else if (change === 'validation') input.setAttribute('aria-invalid', 'true');
+          else input.replaceWith(input.cloneNode(true));
+          const status = await new Promise(resolve => api.listener({
+            type: 'GTH_INTENT_FILL_STATUS', requestId: '1234567890-intent', profileBinding: binding,
+          }, { id: 'synthetic-extension' }, resolve));
+          assert.equal(status.ok, true);
+          assert.equal(status.data.outcome, 'unknown');
+          assert.equal(status.data.supportedComplete, false);
+          assert.equal(status.data.operableComplete, false);
+          assert.equal(status.data.complete, false);
+          assert.equal(status.data.writeStarted, arrival === '');
+          assert.equal(status.data.completedFields.some(row => row.question === '到岗日期' && row.status === 'verified'), false);
+          assert.equal(stats.option, arrival ? 0 : 1);
+          assert.equal(stats.save, 0);
+          flags(result);
+        } finally { dom.window.close(); }
+      });
+    }
+  }
+});
+
 test('请选择 is not a 到岗日期 answer and blocks every write', async () => {
   const custom = answers({ 到岗日期: '请选择' });
   const { stats, api } = mount({

@@ -273,7 +273,7 @@ for (const state of [{ revert: true }, { stripNewlines: true }, { replace: true 
   });
 }
 
-for (const state of [{ duplicate: true }, { disabled: true }, { readonly: true }, { hidden: true }, { placeholder: 'DRIFT' }, { plain: true }, { extraArea: true }, { stray: true }, { badCaption: true }, { asInput: true }]) {
+for (const state of [{ disabled: true }, { readonly: true }, { hidden: true }, { placeholder: 'DRIFT' }, { plain: true }, { extraArea: true }, { stray: true }, { badCaption: true }, { asInput: true }]) {
   test(`${SLUG}: ${Object.keys(state)[0]} fails closed before an event`, async () => {
     const h = boot(state);
     try {
@@ -285,6 +285,21 @@ for (const state of [{ duplicate: true }, { disabled: true }, { readonly: true }
     } finally { h.dom.window.close(); }
   });
 }
+
+test(`${SLUG}: repeated valid form-items fill only the first empty target`, async () => {
+  const h = boot({ duplicate: true });
+  try {
+    const result = await h.api.fillField(LABEL, CALLER);
+    assert.equal(result.ok, true);
+    assert.equal(result.reason, 'readback_matched');
+    assert.equal(result.rowIndex, 0);
+    assert.equal(result.rowCount, 2);
+    assert.equal(h.document.getElementById('target').value, CALLER);
+    assert.equal(h.document.getElementById('copy').value, '');
+    assert.deepEqual(h.stats.events, ['input', 'change', 'blur']);
+    safe(h, result);
+  } finally { h.dom.window.close(); }
+});
 
 test(`${SLUG}: repeated identical captions on the same row retain one target`, async () => {
   const h = boot({ sameCaption: true });

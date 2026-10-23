@@ -1021,6 +1021,11 @@
       }
       return entries;
     }
+    function samePickerChips(current, expected) {
+      return current !== null && current.length === expected.length
+        && current.every((entry, index) => entry.li === expected[index].li
+          && entry.remove === expected[index].remove && entry.text === expected[index].text);
+    }
     function footHidden(panel) {
       const feet = [...panel.querySelectorAll(':scope > .pop-foot, .pop-foot')].filter(node => panel.contains(node));
       return feet.length === 1 && !shown(feet[0]);
@@ -1239,22 +1244,61 @@
       }
       const occupied = chips.length > 0 || norm(input.value) !== '';
       if (occupied && replaceExisting !== true) await abort('existing_value');
+      if (chips.filter(entry => entry.text === leaf).length > 1) await abort('control_not_supported');
       if (occupied && replaceExisting === true && chips.some(entry => entry.text !== leaf) && !singleSelect()) {
         while (chips.some(entry => entry.text !== leaf)) {
           const entry = chips.find(row => row.text !== leaf);
           if (!entry?.remove?.isConnected) await abort('control_not_supported');
           const beforeCount = chips.length;
+          const remaining = chips.filter(row => row !== entry);
           guard();
-          markWrite();
-          await guardedClick(entry.remove, boundAction);
+          await guardedClick(entry.remove, action => boundAction(() => {
+            guard();
+            if (!shown(panel) || !samePickerChips(pickerChips(panel), chips)) stop('control_not_supported');
+            markWrite();
+            return action();
+          }));
           const next = await waitUntil(() => {
             const now = pickerChips(panel);
             if (now === null) return { bad: true };
             return now.length === beforeCount - 1 ? now : null;
           });
-          if (!next || next.bad) await abort('control_not_supported');
+          if (!next || next.bad || !samePickerChips(next, remaining)) await abort('control_not_supported');
           chips = next;
         }
+      }
+      // Selected-view rows reflect the picker selection even when a cached
+      // leaf checkbox is unchecked. Retain the requested row after removing
+      // foreign rows; selecting that leaf again can create a duplicate or toggle
+      // it off. The existing local confirmation commits the retained selection.
+      if (!singleSelect() && chips.length === 1 && chips[0].text === leaf) {
+        const confirms = visibleConfirms(panel);
+        if (confirms.length !== 1) await abort('control_not_supported');
+        const beforeValue = input.value;
+        const form = item.closest('form');
+        const question = ownLabel(item);
+        step('picker_confirm');
+        await guardedClick(confirms[0], action => boundAction(() => {
+          guard();
+          const current = cascaderTarget(form, { question });
+          const open = visibleCascaderPanels();
+          const liveConfirms = visibleConfirms(panel);
+          if (current.unsupported || current.item !== item || current.wrap !== target.wrap
+            || current.input !== input || current.trigger !== trigger || current.panel !== panel
+            || open.length !== 1 || open[0] !== panel || input.value !== beforeValue
+            || !samePickerChips(pickerChips(panel), chips)
+            || liveConfirms.length !== 1 || liveConfirms[0] !== confirms[0]) stop('control_not_supported');
+          markWrite();
+          return action();
+        }));
+        const matched = await waitUntil(() => norm(input.value) === leaf && !shown(panel) ? true : null);
+        if (!matched || !siteValid(item, input)) await abort('readback_mismatch');
+        await dispatchInputChange(input);
+        opened = false;
+        guard();
+        if (norm(input.value) !== leaf || shown(panel) || !samePickerChips(pickerChips(panel), chips)
+          || !siteValid(item, input)) stop('readback_mismatch');
+        return { status: 'verified', reason: 'readback_reapplied' };
       }
       step('picker_level1');
       const menus = strictMenus(panel);
@@ -1286,7 +1330,9 @@
       await commitPickerRow(panel, level2.row, leaf, input, item, single, markWrite, guard, abort);
       opened = false;
       guard();
-      if (norm(input.value) !== leaf || shown(panel) || !siteValid(item, input)) stop('readback_mismatch');
+      const selected = pickerChips(panel);
+      if (norm(input.value) !== leaf || shown(panel) || !siteValid(item, input)
+        || selected === null || selected.length !== 1 || selected[0].text !== leaf) stop('readback_mismatch');
       return { status: 'verified', reason: occupied ? 'readback_reapplied' : 'readback_matched' };
     }
     async function trial(request) {

@@ -6,12 +6,14 @@ import path from 'node:path';
 import vm from 'node:vm';
 import { EventEmitter } from 'node:events';
 import { fileURLToPath } from 'node:url';
+import { JSDOM } from 'jsdom';
 import {
   BG_PROBE_HTML,
   HINTS,
   PAID_EXT_ID,
   READ_SAVE_CLICKS,
   REASON,
+  SAVE_TEXT_RE,
   SITE_HOSTS,
   autoPageSnapshotExpression,
   bgProbeExpression,
@@ -40,6 +42,31 @@ import {
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const EXT = PAID_EXT_ID;
 const LIVE_STUCK_TEXT = '正在请求后台 GTH_BASIC_AUTO（mode=fill）…\n{"educationIndex":5,"replaceExisting":true,"openIfMissing":true,"reportPort":53754}';
+
+// Guard installed on a retained tab by ff0c5dd, before 投递 coverage was added.
+const LEGACY_SAVE_GUARD_SOURCE = `(() => {
+  if (window.__rqfSaveGuardInstalled) return true;
+  window.__rqfSaveGuardInstalled = true;
+  if (!Array.isArray(window.__rqfSaveClicks)) window.__rqfSaveClicks = [];
+  const re = /保存|提交|Save|Submit/;
+  const own = (el) => {
+    if (!el) return '';
+    const aria = el.getAttribute ? (el.getAttribute('aria-label') || el.getAttribute('title') || '') : '';
+    const value = el.value || '';
+    const text = String(el.innerText || el.textContent || '').trim();
+    return [aria, value, text.length <= 40 ? text : ''].filter(Boolean).join(' ');
+  };
+  document.addEventListener('click', (event) => {
+    try {
+      const el = event.target;
+      const label = own(el) || own(el && el.parentElement);
+      if (re.test(label)) {
+        window.__rqfSaveClicks.push({ text: String(label).slice(0, 180), tag: (el && el.tagName) || '', at: Date.now() });
+      }
+    } catch { /* ignore */ }
+  }, true);
+  return true;
+})()`;
 
 function baseTargets(extra = []) {
   return [
@@ -283,7 +310,7 @@ test('section status and fill counts', () => {
   assert.match(HINTS.EXT_BLOCKED_BY_CLIENT, /edge:\/\/extensions/);
 });
 
-test('save-click guard records capture-phase 保存/提交/Save/Submit only', () => {
+test('save-click guard records capture-phase 保存/提交/投递/Save/Submit only', () => {
   const script = `
     const listeners = [];
     const window = {};
@@ -304,6 +331,7 @@ test('save-click guard records capture-phase 保存/提交/Save/Submit only', ()
     }, extra || {});
     fire(el('保存'));
     fire(el('提交简历'));
+    fire(el('投递'));
     fire(el('Save draft'));
     fire(el('Submit'));
     fire(el('下一步'));
@@ -322,7 +350,94 @@ test('save-click guard records capture-phase 保存/提交/Save/Submit only', ()
   assert.equal(result.capture, true);
   assert.equal(result.count, 1);
   assert.equal(result.twice, 1);
-  assert.deepEqual(result.texts, ['保存', '提交简历', 'Save draft', 'Submit', '提交']);
+  assert.deepEqual(result.texts, ['保存', '提交简历', '投递', 'Save draft', 'Submit', '提交']);
+});
+
+for (const site of ['beisen-2022', 'feishu-atsx', 'moka']) {
+  test(`paid QA rejects 投递 captured from the existing ${site} fixture`, async () => {
+    const fixturePath = path.join(root, 'tests', 'fixtures', `${site}-basic-ambiguous.html`);
+    const dom = new JSDOM(fs.readFileSync(fixturePath, 'utf8'), { runScripts: 'outside-only' });
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'paid-qa-deliver-'));
+    try {
+      const button = dom.window.document.getElementById('deliver-btn');
+      assert.equal(button.disabled, false);
+      assert.equal(button.textContent, '投递');
+      assert.equal(SAVE_TEXT_RE.test(button.textContent), true);
+      dom.window.eval(saveClickGuardSource());
+      button.click();
+      const clicksAfter = JSON.parse(JSON.stringify(dom.window.eval(READ_SAVE_CLICKS)));
+      assert.equal(clicksAfter.length, 1);
+      assert.equal(clicksAfter[0].text, '投递');
+      assert.equal(clicksAfter[0].tag, 'BUTTON');
+      const { outcome } = await runWith(dir, { state: { clicksAfter } });
+      assert.equal(outcome.results[0].summary.status, 'fail');
+      assert.equal(outcome.results[0].summary.reason, REASON.SAVE_CLICK_FORBIDDEN);
+      assert.deepEqual(outcome.results[0].evidence.saveClicksAfter, clicksAfter);
+    } finally {
+      dom.window.close();
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test(`paid QA upgrades the existing ${site} fixture legacy guard once and preserves history`, () => {
+    const fixturePath = path.join(root, 'tests', 'fixtures', `${site}-basic-ambiguous.html`);
+    const dom = new JSDOM(fs.readFileSync(fixturePath, 'utf8'), { runScripts: 'outside-only' });
+    try {
+      assert.equal(dom.window.eval(LEGACY_SAVE_GUARD_SOURCE), true);
+      const history = dom.window.__rqfSaveClicks;
+      dom.window.document.getElementById('save-btn').click();
+      dom.window.document.getElementById('deliver-btn').click();
+      assert.deepEqual(Array.from(history, row => row.text), ['保存']);
+      const originalEntry = history[0];
+      for (let install = 0; install < 3; install++) {
+        assert.equal(dom.window.eval(saveClickGuardSource()), true);
+      }
+      assert.equal(dom.window.__rqfSaveClicks, history);
+      assert.equal(history[0], originalEntry);
+      assert.equal(dom.window.__rqfSaveGuardDeliveryCovered, true);
+      dom.window.document.getElementById('deliver-btn').click();
+      dom.window.document.getElementById('save-btn').click();
+      dom.window.document.getElementById('submit-btn').click();
+      assert.deepEqual(Array.from(history, row => row.text), ['保存', '投递', '保存', '提交']);
+    } finally {
+      dom.window.close();
+    }
+  });
+}
+
+test('upgrading a legacy save guard does not repair unavailable history', () => {
+  for (const legacy of [
+    { __rqfSaveGuardInstalled: true },
+    { __rqfSaveGuardInstalled: true, __rqfSaveClicks: null },
+    { __rqfSaveGuardInstalled: true, __rqfSaveClicks: {} },
+  ]) {
+    const window = { ...legacy };
+    let listeners = 0;
+    assert.equal(vm.runInNewContext(saveClickGuardSource(), {
+      window, document: { addEventListener() { listeners++; } },
+    }), true);
+    assert.deepEqual(window, legacy);
+    assert.equal(listeners, 0);
+    assert.equal(vm.runInNewContext(READ_SAVE_CLICKS, { window }), null);
+  }
+});
+
+test('legacy delivery supplement does not duplicate labels already captured by the old guard', () => {
+  const listeners = [];
+  const window = {};
+  const context = {
+    window,
+    document: { addEventListener(_type, listener) { listeners.push(listener); } },
+  };
+  vm.runInNewContext(LEGACY_SAVE_GUARD_SOURCE, context);
+  vm.runInNewContext(saveClickGuardSource(), context);
+  vm.runInNewContext(saveClickGuardSource(), context);
+  const labels = ['保存 投递', '提交 投递', 'Save 投递', 'Submit 投递'];
+  for (const textContent of labels) {
+    for (const listener of listeners) listener({ target: { textContent, tagName: 'BUTTON' } });
+  }
+  assert.equal(listeners.length, 2);
+  assert.deepEqual(Array.from(window.__rqfSaveClicks, row => row.text), labels);
 });
 
 test('save guard readback requires the installed guard and an array history', () => {

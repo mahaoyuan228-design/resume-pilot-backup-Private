@@ -466,6 +466,141 @@ test('replaceExisting rewrites a different position and job leaf', async () => {
   assert.equal(forbidden(clicks).length, 0);
 });
 
+function matchingWorkOptions(extra = {}) {
+  return {
+    position: ROW.position, organization: ROW.organization, description: ROW.description,
+    job: ROW.jobCategory.split('||')[1], industry: ROW.industry.split('||')[1],
+    start: ROW.startDate, end: ROW.endDate, area: ROW.workArea, intro: ROW.companyIntro,
+    department: ROW.department, report: ROW.reportTo, reports: ROW.subordinateCount,
+    leave: ROW.leaveReason, jobCounter: '(1/5)', industryCounter: '(1/1)', industrySingle: true,
+    ...extra,
+  };
+}
+
+test('job overwrite retains an intended chip while removing foreign leftovers without clicking the leaf again', async () => {
+  const intended = ROW.jobCategory.split('||')[1];
+  const foreign = JOB_LEAVES[ROW.jobCategory.split('||')[0]][1];
+  for (const selected of [[intended, foreign], [foreign, intended]]) {
+    for (const existing of [intended, foreign]) {
+      const { dom, clicks, context } = boot(shell(formWrap(workFields(matchingWorkOptions({ job: existing, jobCounter: '(2/5)' })))));
+      const doc = dom.window.document;
+      const list = doc.querySelector('#job-panel .selected-view-data');
+      list.innerHTML = selected.map((text, index) => `<li uid="${index + 1}"><p>${text}</p><i></i></li>`).join('');
+      const stats = wire(doc, { industrySingle: true });
+      let leafClicks = 0;
+      doc.getElementById('job-cascader').addEventListener('click', (event) => {
+        if (event.target.matches('input[type="checkbox"]')) leafClicks += 1;
+      });
+      const result = await context.ResumeGthWorkOpen.trial(request(workProfile(ROW), { replaceExisting: true }));
+      assert.equal(result.ok, true, JSON.stringify({ selected, existing, reason: result.reason }));
+      assert.deepEqual([...list.querySelectorAll('li > p')].map((node) => node.textContent), [intended]);
+      assert.equal(doc.getElementById('job').value, intended);
+      assert.equal(result.fields.find((field) => field.question === '职位类别').reason, 'readback_reapplied');
+      assert.equal(stats.job.remove, 1);
+      assert.equal(stats.job.confirm, 1);
+      assert.equal(leafClicks, 0);
+      flags(result);
+      assert.equal(forbidden(clicks).length, 0);
+      dom.window.close();
+    }
+  }
+});
+
+test('job overwrite rejects duplicate intended chips before changing or confirming the picker', async () => {
+  const intended = ROW.jobCategory.split('||')[1];
+  const { dom, clicks, context } = boot(shell(formWrap(workFields(matchingWorkOptions({ jobCounter: '(2/5)' })))));
+  const doc = dom.window.document;
+  const list = doc.querySelector('#job-panel .selected-view-data');
+  list.insertAdjacentHTML('beforeend', `<li uid="2"><p>${intended}</p><i></i></li>`);
+  const stats = wire(doc, { industrySingle: true });
+  const result = await context.ResumeGthWorkOpen.trial(request(workProfile(ROW), { replaceExisting: true }));
+  assert.equal(result.ok, false);
+  assert.equal(result.reason, 'control_not_supported');
+  assert.equal(result.writeStarted, false);
+  assert.deepEqual([...list.querySelectorAll('li > p')].map((node) => node.textContent), [intended, intended]);
+  assert.equal(stats.job.confirm, 0);
+  assert.equal(stats.job.remove, 0);
+  flags(result);
+  assert.equal(forbidden(clicks).length, 0);
+  dom.window.close();
+});
+
+test('job overwrite stops when a foreign-chip removal removes the retained intended chip instead', async () => {
+  const intended = ROW.jobCategory.split('||')[1];
+  const foreign = JOB_LEAVES[ROW.jobCategory.split('||')[0]][1];
+  const { dom, clicks, context } = boot(shell(formWrap(workFields(matchingWorkOptions({ jobCounter: '(2/5)' })))));
+  const doc = dom.window.document;
+  const list = doc.querySelector('#job-panel .selected-view-data');
+  list.insertAdjacentHTML('beforeend', `<li uid="2"><p>${foreign}</p><i></i></li>`);
+  let removals = 0;
+  list.addEventListener('click', (event) => {
+    if (!event.target.matches('i')) return;
+    event.stopImmediatePropagation();
+    removals += 1;
+    list.firstElementChild?.remove();
+    doc.querySelector('#job-panel .selected-counter > p').textContent = '(1/5)';
+  }, { capture: true });
+  const stats = wire(doc, { industrySingle: true });
+  let leafClicks = 0;
+  doc.getElementById('job-cascader').addEventListener('click', (event) => {
+    if (event.target.matches('input[type="checkbox"]')) leafClicks += 1;
+  });
+  const result = await context.ResumeGthWorkOpen.trial(request(workProfile(ROW), { replaceExisting: true }));
+  assert.equal(result.ok, false);
+  assert.equal(result.reason, 'control_not_supported');
+  assert.equal(result.writeStarted, true);
+  assert.equal(removals, 1);
+  assert.deepEqual([...list.querySelectorAll('li > p')].map((node) => node.textContent), [foreign]);
+  assert.equal(stats.job.confirm, 0);
+  assert.equal(leafClicks, 0);
+  flags(result);
+  assert.equal(forbidden(clicks).length, 0);
+  dom.window.close();
+});
+
+test('job overwrite does not confirm a retained chip rebound during the profile-binding await', async () => {
+  const intended = ROW.jobCategory.split('||')[1];
+  const foreign = JOB_LEAVES[ROW.jobCategory.split('||')[0]][1];
+  const { dom, clicks, context } = boot(shell(formWrap(workFields(matchingWorkOptions({ jobCounter: '(2/5)' })))));
+  const doc = dom.window.document;
+  const list = doc.querySelector('#job-panel .selected-view-data');
+  const retained = list.firstElementChild;
+  list.insertAdjacentHTML('beforeend', `<li uid="2"><p>${foreign}</p><i></i></li>`);
+  const stats = wire(doc, { industrySingle: true });
+  let rebindOnNextCheck = false;
+  let rebound = false;
+  list.addEventListener('click', (event) => {
+    if (event.target.matches('i')) rebindOnNextCheck = true;
+  });
+  const sendMessage = context.chrome.runtime.sendMessage;
+  context.chrome.runtime.sendMessage = async (message) => {
+    if (rebindOnNextCheck && message?.type === 'RESUME_PROFILE_BINDING_CHECK') {
+      rebindOnNextCheck = false;
+      retained.replaceWith(retained.cloneNode(true));
+      rebound = true;
+    }
+    return sendMessage(message);
+  };
+  let leafClicks = 0;
+  doc.getElementById('job-cascader').addEventListener('click', (event) => {
+    if (event.target.matches('input[type="checkbox"]')) leafClicks += 1;
+  });
+  const result = await context.ResumeGthWorkOpen.trial(request(workProfile(ROW), { replaceExisting: true }));
+  assert.equal(rebound, true);
+  assert.equal(retained.isConnected, false);
+  assert.equal(result.ok, false);
+  assert.equal(result.reason, 'control_not_supported');
+  assert.equal(result.writeStarted, true);
+  assert.equal(result.fields.find((field) => field.question === '职位类别').status, 'failed');
+  assert.deepEqual([...list.querySelectorAll('li > p')].map((node) => node.textContent), [intended]);
+  assert.equal(stats.job.remove, 1);
+  assert.equal(stats.job.confirm, 0);
+  assert.equal(leafClicks, 0);
+  flags(result);
+  assert.equal(forbidden(clicks).length, 0);
+  dom.window.close();
+});
+
 test('an existing value without replaceExisting fails before any write', async () => {
   const html = shell(formWrap(workFields({ position: '旧职位' })));
   const { dom, clicks, context } = boot(html);

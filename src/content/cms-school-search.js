@@ -110,42 +110,51 @@
       || opened[0] !== current.selection.closest(".ant-select")) return null;
     const linkedId = current.selection.getAttribute("aria-controls");
     const linked = linkedId && document.getElementById(linkedId);
-    if (linked && !menus[0].contains(linked)) return null;
+    if (!linkedId || !linked || !menus[0].contains(linked) || otherOverlays().length) return null;
     return { ...current, menu: menus[0] };
   }
 
   function escape(input) {
     const event = new KeyboardEvent("keydown", {
-      key: "Escape", code: "Escape", bubbles: true, cancelable: true
-    });
-    Object.defineProperties(event, {
-      keyCode: { get: () => 27 }, which: { get: () => 27 }
+      key: "Escape", code: "Escape", keyCode: 27, which: 27, bubbles: true, cancelable: true
     });
     input.dispatchEvent(event);
   }
 
+  function cleanupState(baseline) {
+    const current = locate(baseline), menus = openMenus(), opened = openSelects();
+    if (!current || otherOverlays().length) return null;
+    if (!menus.length && !opened.length) return { current, closed: true };
+    if (menus.length !== 1 || opened.length > 1
+      || opened.length === 1 && opened[0] !== current.selection.closest('.ant-select')) return null;
+    const id = current.selection.getAttribute('aria-controls'), linked = id && document.getElementById(id);
+    if (!id || !linked || !menus[0].contains(linked)) return null;
+    return { current, closed: false, opened: opened.length === 1, menu: menus[0] };
+  }
+
   async function closeOwnMenu(baseline) {
-    if (!openMenus().length && !openSelects().length) return true;
-    const current = uniqueOpenMenu(baseline);
-    if (!current) return false; // Never close an unrelated or ambiguous menu.
-    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
-    if (!setter) return false;
-    if (current.search.value) {
-      await checkProfileWrite(); setter.call(current.search, "");
-      await checkProfileWrite(); current.search.dispatchEvent(new Event("input", { bubbles: true }));
-    }
-    escape(current.search);
-    current.search.blur();
-    current.selection.blur();
-    if (openMenus().length) {
-      for (const type of ["mousedown", "mouseup", "click"])
-        document.body.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true }));
+    requireVisiblePage();
+    const initial = cleanupState(baseline);
+    if (!initial) return false;
+    if (initial.closed) return true;
+    const selected = selectedText(initial.current.selection), search = initial.current.search.value;
+    // Search changes can reopen rc-select. Close only the proven owner, without
+    // clearing its query, dispatching input/change, or clicking the page body.
+    if (initial.opened) {
+      await checkProfileWrite(); requireVisiblePage();
+      const live = cleanupState(baseline);
+      if (!live || live.closed || !live.opened || live.menu !== initial.menu
+        || live.current.selection !== initial.current.selection || live.current.search !== initial.current.search
+        || selectedText(live.current.selection) !== selected || live.current.search.value !== search) return false;
+      escape(live.current.search);
+      live.current.search.blur();
+      live.current.selection.blur();
     }
     for (let i = 0; i < 30; i += 1) {
-      if (!openMenus().length && !openSelects().length) {
-        const live = locate(baseline);
-        return !!live && live.search.value === "";
-      }
+      requireVisiblePage();
+      const live = cleanupState(baseline);
+      if (!live || selectedText(live.current.selection) !== selected) return false;
+      if (live.closed) return live.current.search.value === '' || live.current.search.value === search;
       await pause(40);
     }
     return false;
@@ -207,7 +216,19 @@
     let decision = { status: "failed", reason: "control_error" };
     try {
       requireVisiblePage();
-      await checkProfileWrite(); initial.selection.click();
+      await checkProfileWrite(); requireVisiblePage();
+      const beforeOpen = locate(baseline);
+      if (!beforeOpen) return { status: "failed", reason: "field_changed" };
+      const nowSelected = selectedText(beforeOpen.selection);
+      if (nowSelected) return schoolDisplayMatches(nowSelected, desiredOptionText)
+        ? { status: "verified", reason: "preexisting_same_value", existingDisplay: nowSelected }
+        : { status: "skipped", reason: "existing_value" };
+      if (beforeOpen.selection !== initial.selection || beforeOpen.search !== initial.search)
+        return { status: "failed", reason: "field_changed" };
+      if (beforeOpen.search.value !== "" || visible(beforeOpen.search)
+        || openMenus().length || openSelects().length || otherOverlays().length)
+        return { status: "skipped", reason: "control_busy" };
+      beforeOpen.selection.click();
       openedByThisCall = true;
       let opened = null;
       for (let i = 0; i < 35; i += 1) {
@@ -223,11 +244,17 @@
         if (document.activeElement !== opened.search)
           decision = { status: "failed", reason: "search_focus_failed" };
         else {
+          await checkProfileWrite(); requireVisiblePage();
+          const beforeSearch = uniqueOpenMenu(baseline);
+          if (!beforeSearch || beforeSearch.selection !== opened.selection || beforeSearch.search !== opened.search
+            || selectedText(beforeSearch.selection) || beforeSearch.search.value !== ""
+            || document.activeElement !== beforeSearch.search) throw new Error("field_changed");
           let trusted = false;
           const watch = (event) => { trusted ||= event.isTrusted; };
           opened.search.addEventListener("input", watch);
-          await checkProfileWrite(); const inserted = document.execCommand("insertText", false, searchText);
-          opened.search.removeEventListener("input", watch);
+          let inserted;
+          try { inserted = document.execCommand("insertText", false, searchText); }
+          finally { opened.search.removeEventListener("input", watch); }
           if (!inserted || !trusted || opened.search.value !== searchText)
             decision = { status: "failed", reason: "trusted_search_unavailable" };
           else {
@@ -239,6 +266,7 @@
               requireVisiblePage();
               const live = uniqueOpenMenu(baseline);
               if (!live) { decision = { status: "failed", reason: "menu_changed" }; break; }
+              if (selectedText(live.selection)) { decision = { status: "failed", reason: "unexpected_value" }; break; }
               if (live.search.value !== searchText) {
                 decision = { status: "failed", reason: "search_changed" }; break;
               }
@@ -267,17 +295,18 @@
             }
             if (candidate) {
               requireVisiblePage();
+              await checkProfileWrite(); requireVisiblePage();
               const live = uniqueOpenMenu(baseline);
               const currentState=live&&candidateState(live.menu,desired,desiredOptionText,searchText);
               const current=currentState?.exact;
               if (!live || !candidate.isConnected || current?.length !== 1
                 || current[0] !== candidate || !live.menu.contains(candidate)
-                || currentState.candidateKind!==candidateKind
+                || currentState.candidateKind!==candidateKind || currentState.busy || selectedText(live.selection)
                 || live.search.value !== searchText || candidate.tagName !== "LI"
                 || candidate.getAttribute("role") !== "option")
                 decision = { status: "failed", reason: "candidate_changed" };
               else {
-                await checkProfileWrite(); candidate.click();
+                candidate.click();
                 selectedByThisCall = true;
                 let readback = false;
                 for (let i = 0; i < 30; i += 1) {
@@ -302,7 +331,7 @@
       }
     } catch (error) { if(/^profile_[a-z_]+$/u.test(error?.message||''))throw error;
       decision = { status: "failed", reason: error?.message === "fill_interrupted_page_hidden"
-        ? "fill_interrupted_page_hidden" : "control_error" };
+        ? "fill_interrupted_page_hidden" : error?.message === "field_changed" ? "field_changed" : "control_error" };
     }
     if (openedByThisCall && document.visibilityState === "visible") {
       for (let i = 0; i < 20 && openMenus().length; i += 1) await pause(40);
@@ -325,5 +354,5 @@
     return decision;
   }
 
-  globalThis.ResumeCmsSchoolSearch = Object.freeze({implementationRevision:2, fillSchool });
+  globalThis.ResumeCmsSchoolSearch = Object.freeze({implementationRevision:3, fillSchool });
 })();

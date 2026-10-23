@@ -299,6 +299,7 @@
           selectorStep('degree_option_click');commit();await boundAction(()=>{if(!(exact[0])?.isConnected)stop('profile_action_target_changed');return exact[0].click();});
         } else if (field.kind === 'month') {
           selectorStep('month_year_read');
+          const originalMonth = control.value;
           const year = Number(answer.slice(0,4));const month = Number(answer.slice(5));
           const readYear = () => {
             const years = [...popup.querySelectorAll('.el-date-picker__header-label')]
@@ -326,7 +327,37 @@
             || norm(node.textContent).replace(/\s/gu,'') === `${month}月`);
           if (cells.length !== 12 || choices.length !== 1) stop('education_month_option_unknown');
           if (!enabled(choices[0])) stop('education_option_disabled');
-          selectorStep('month_option_click');guard();commit();await boundAction(()=>{if(!(choices[0])?.isConnected)stop('profile_action_target_changed');return choices[0].click();});
+          const anchors = [...choices[0].querySelectorAll('a.cell')].filter(visible);
+          if (anchors.length !== 1) stop('education_month_option_unknown');
+          if (!enabled(anchors[0])) stop('education_option_disabled');
+          const checkMonthChoice = () => {
+            const liveTables = [...popup.querySelectorAll('.el-month-table')].filter(visible);
+            const liveCells = [...tables[0].querySelectorAll('td')].filter(visible);
+            const liveChoices = liveCells.filter(node => norm(node.textContent).replace(/\s/gu,'') === names[month-1]
+              || norm(node.textContent).replace(/\s/gu,'') === `${month}月`);
+            const liveAnchors = [...choices[0].querySelectorAll('a.cell')].filter(visible);
+            if (!popup.isConnected || !visible(popup) || liveTables.length !== 1 || liveTables[0] !== tables[0]
+              || liveCells.length !== 12 || liveChoices.length !== 1 || liveChoices[0] !== choices[0]
+              || !choices[0].isConnected || !tables[0].contains(choices[0])
+              || liveAnchors.length !== 1 || liveAnchors[0] !== anchors[0]
+              || !anchors[0].isConnected || anchors[0].closest('td') !== choices[0]
+              || readYear() !== year) stop('education_month_option_unknown');
+            if (!enabled(choices[0]) || !enabled(anchors[0])) stop('education_option_disabled');
+            const href = anchors[0].getAttribute('href');
+            if (href && !/^(#|javascript:(?:;|void\(0\)))$/iu.test(href)
+              || anchors[0].hasAttribute('target') || anchors[0].hasAttribute('download'))
+              stop('education_month_option_unknown');
+          };
+          // Use the existing Element UI anchor first, retaining the connected
+          // cell fallback for a table handler that only accepts a TD target.
+          checkMonthChoice();
+          selectorStep('month_option_click');guard();commit();await boundAction(()=>{guard();checkMonthChoice();return anchors[0].click();});
+          await pause(80);
+          if (control.value === originalMonth && choices[0].isConnected
+            && popup.isConnected && visible(popup)) {
+            guard();
+            await boundAction(()=>{guard();checkMonthChoice();return choices[0].click();});
+          }
         } else {
           selectorStep('category_option_lookup');
           const path = answer.split('/').map(norm);
@@ -681,7 +712,7 @@
     const FIELDS = full ? [...FULL_FIELDS, ...COMPLEX_FIELDS] : TEXT_FIELDS;
     const result = { fields: [], editorLeftOpen: false, writeStarted: false,
       savedOnSite: null, submitted: null, softwareClickedSave: false,
-      softwareClickedSubmit: false, softwareClickedDelete: false };
+      softwareClickedSubmit: false, softwareClickedDelete: false, liveSupportClaimed: false };
     if (state.busy) return { ok: false, reason: 'fill_in_progress', ...result };
     state.busy = true;activeBinding=request?.profileBinding;lastBinding=activeBinding;
     const progress = {requestId:request?.requestId,activeField:null,
@@ -693,6 +724,25 @@
     };
     const timeOrigin = performance.timeOrigin;
     let openedByUs = false, form;
+    let targets;
+    const verifiedReads = new Map();
+    const invalidateChangedVerifiedFields = () => {
+      for (const field of result.fields.filter(row => row.status === 'verified')) {
+        const spec = FIELDS.find(row => row.question === field.question);
+        let reason = 'education_editor_changed_after_fill';
+        try {
+          const live = spec && target(form, spec);
+          if (live && sameTarget(targets[spec.key], live)) {
+            if (live.read() !== verifiedReads.get(spec.key)) reason = 'readback_mismatch';
+            else if (!live.controls.every(node => validationClear(live.item, node))) reason = 'site_validation_failed';
+            else continue;
+          }
+        } catch {}
+        field.status = 'failed';field.reason = reason;
+        const completed = progress.completedFields.find(row => row.key === spec?.key);
+        if (completed) {completed.status = 'failed';completed.reason = reason;}
+      }
+    };
     const targetMode=request?.targetMode??'existing',newTarget=targetMode==='new';
     result.targetMode=targetMode;result.addClickCount=0;
     try {
@@ -774,7 +824,7 @@
       if (performance.timeOrigin !== timeOrigin || outside(sections) !== outsideBefore
         || forms(sections).length !== 1 || forms(sections)[0] !== form)
         stop('editor_structure_changed');
-      const targets = Object.fromEntries(FIELDS.map(field => {
+      targets = Object.fromEntries(FIELDS.map(field => {
         progress.activeField = field.key;selectorStep('target_preflight');
         return [field.key, target(form, field)];
       }));
@@ -805,7 +855,6 @@
       form.dataset.resumeGthEducationRecordCount = String(targetRecordCount);
       const otherRecordsBefore = JSON.stringify(records(sections[1]).map(snapshot));
       let allValuesBefore = valuesExcept(form, []);
-      const verifiedReads = new Map();
       const dateKeys=['startDate','endDate'],confirmedDate=key=>!!candidate[key]
         &&candidate.confirmedPaths.has(`education.${candidate.profileIndex}.${key}`);
       const validMonth=value=>/^(19|20)\d{2}-(0[1-9]|1[0-2])$/u.test(value||'');
@@ -938,6 +987,15 @@
                 || error.code === 'education_category_cleared_need_reselect'
                 || error.code === 'original_value_changed'
                   && selectedTarget.allowCategoryOverwrite===true)) {
+              // Only the active category may be uncertain. A changed peer,
+              // record, editor or outside section must still stop the trial.
+              const live = page();
+              if (performance.timeOrigin !== timeOrigin || forms(live).length !== 1
+                || forms(live)[0] !== form || outside(live) !== outsideBefore
+                || valuesExcept(form, selectedTarget.controls) !== untouchedBefore
+                || JSON.stringify(records(live[1]).map(snapshot)) !== otherRecordsBefore
+                || !sameTarget(selectedTarget, target(form, field)))
+                stop('original_value_changed');
               // Belt-and-suspenders: page already shows intended category →
               // treat as verified rather than overwrite_guard skip.
               const pathParts = String(answer).split('/').map(norm);
@@ -1057,6 +1115,7 @@
       return {ok:true, ...result, ...diagnostics};
     } catch (error) {
       const reason = error instanceof TrialStop ? error.code : 'education_trial_failed';
+      invalidateChangedVerifiedFields();
       if (openedByUs && !result.writeStarted && form?.isConnected) {
         const cancel = cancelButtons(form);
         if (cancel.length === 1) {

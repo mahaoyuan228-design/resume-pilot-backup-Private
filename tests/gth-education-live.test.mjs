@@ -568,7 +568,7 @@ test('fullTrial opens the row icon, fills plain fields, and the runner cancels',
   armEditor(page.window, 'edu-edit');
   const result = await page.window.ResumeGthEducationTextTrial.fullTrial(liveFillRequest({}));
   assert.equal(result.ok, true, result.reason);
-  assert.equal(result.liveSupportClaimed, undefined);
+  assert.equal(result.liveSupportClaimed, false);
   assert.equal(result.softwareClickedSave, false);
   assert.equal(result.editorLeftOpen, true);
   assert.equal(result.addClickCount, 0);

@@ -21,13 +21,13 @@
   // Labels/control kinds recorded in dist/site-probes/citics-field-map-20261018.json.
   // Pinyin components are independent confirmed facts; never transliterate a name.
   const OPTIONAL_TEXT_FIELDS = [
-    { label: '姓（拼音）', key: 'lastNamePinyin' },
-    { label: '名（拼音）', key: 'firstNamePinyin' },
-    { label: '联系地址', key: 'address' },
-    { label: '邮编', key: 'postalCode' },
-    { label: '微信', key: 'wechat' },
-    { label: '紧急联系人', key: 'emergencyContact' },
-    { label: '紧急联系人手机', key: 'emergencyContactPhone' }
+    { label: '姓（拼音）', key: 'lastNamePinyin', section: '个人信息' },
+    { label: '名（拼音）', key: 'firstNamePinyin', section: '个人信息' },
+    { label: '联系地址', key: 'address', section: '个人信息' },
+    { label: '邮编', key: 'postalCode', section: '个人信息' },
+    { label: '微信', key: 'wechat', section: '联系方式' },
+    { label: '紧急联系人', key: 'emergencyContact', section: '联系方式' },
+    { label: '紧急联系人手机', key: 'emergencyContactPhone', section: '联系方式' }
   ];
   const TEXT_LABELS = ["姓", "名", "证件号码", "手机", "电子邮箱", "确认邮箱", ...OPTIONAL_TEXT_FIELDS.map((row) => row.label)];
   const RADIO_LABEL = "性别";
@@ -179,8 +179,32 @@
   }
 
   function basicEnvelope(partial = {}) {
-    return { siteId: 'citics', saved: false, skippedSave: true, skippedYidun: true,
-      saveAllowed: false, liveSupportClaimed: false, writeAttempted: false, neighborsUnchanged: true, ...partial };
+    return { siteId: 'citics', writeAttempted: false, neighborsUnchanged: true, ...partial,
+      saved: false, skippedSave: true, skippedYidun: true, saveAllowed: false,
+      liveSupportClaimed: false, supportClaimed: false, neverSave: true, leftUnsaved: true,
+      softwareClickedSave: false, softwareClickedSubmit: false, softwareClickedNext: false,
+      softwareClickedDeliver: false, softwareClickedDelete: false };
+  }
+
+  function basicPageStopReason(options) {
+    if (!pageAllowed(options)) return 'wrong_page';
+    return document.hidden === true || document.visibilityState === 'hidden' ? 'page_hidden' : null;
+  }
+
+  function optionalAnswerScopeReason(profile, spec, answer) {
+    if (profile.customFacts != null && !Array.isArray(profile.customFacts)) return 'invalid_profile_value';
+    const peers = Array.isArray(profile.customFacts) ? profile.customFacts.filter((row) =>
+      typeof row?.question === 'string' && cleanLabel(row.question) === cleanLabel(spec.label)) : [];
+    if (peers.length > 1) return 'profile_value_ambiguous';
+    if (peers.length === 0) return null; // Legacy unscoped customAnswers profile.
+    const fact = peers[0];
+    if (typeof fact.answer !== 'string' || norm(fact.answer) !== answer) return 'profile_value_ambiguous';
+    const scope = ['sitePageUrl', 'sectionName', 'rowContext'].map((key) =>
+      fact[key] == null ? '' : (typeof fact[key] === 'string' ? fact[key].trim() : null));
+    if (scope.every((value) => value === '')) return null;
+    if (scope[0] !== `https://${HOST}${PATH}` || scope[1] !== spec.section
+      || !['none', 'single'].includes(scope[2])) return 'question_scope_mismatch';
+    return null;
   }
 
   function basicVisible(node) {
@@ -278,14 +302,16 @@
     const neighbors = snapshotBasicNeighbors(item);
     control.focus();
     const occupied = norm(control.value);
+    if (findItem(label) !== item) return result({ reason: 'control_changed', before, after: occupied });
     if (!basicNeighborsUnchanged(neighbors, item)) return result({ reason: 'neighbor_changed', before, after: occupied, neighborsUnchanged: false });
     if (occupied) return result({ ok: true, reason: 'occupied_skip', before: occupied, after: occupied, neighborsUnchanged: true });
     if (textControl(item) !== control) return result({ reason: 'control_changed', before, after: occupied });
-    if (!pageAllowed(options)) return result({ reason: 'wrong_page', before, after: occupied });
+    const pageStop = basicPageStopReason(options);
+    if (pageStop) return result({ reason: pageStop, before, after: occupied });
     if (yidunCovering()) return result({ reason: 'yidun_visible', before, after: occupied });
     setNativeValue(control, expected);
     await pause(80);
-    const after = readText(item);
+    const after = findItem(label) === item ? readText(item) : '';
     const neighborsUnchanged = basicNeighborsUnchanged(neighbors, item);
     return result({ ok: after === expected && neighborsUnchanged,
       reason: !neighborsUnchanged ? 'neighbor_changed' : (after === expected ? 'matched' : 'readback_mismatch'),
@@ -324,13 +350,14 @@
       return result({ reason: 'radio_control_unavailable', before, after: before });
     }
     if (!basicClickSafe(target.wrap || target.control)) return result({ reason: 'commit_or_yidun_target', before, after: before });
-    if (!pageAllowed(options)) return result({ reason: 'wrong_page', before, after: before });
+    const pageStop = basicPageStopReason(options);
+    if (pageStop) return result({ reason: pageStop, before, after: before });
     if (yidunCovering()) return result({ reason: 'yidun_visible', before, after: before });
     const neighbors = snapshotBasicNeighbors(item);
     if (target.wrap) target.wrap.click();
     else target.control.click();
     await pause(100);
-    const after = readGender(item);
+    const after = findItem(RADIO_LABEL) === item && item.isConnected ? readGender(item) : '';
     const neighborsUnchanged = basicNeighborsUnchanged(neighbors, item);
     return result({ ok: after === want && neighborsUnchanged,
       reason: !neighborsUnchanged ? 'neighbor_changed' : (after === want ? 'matched' : 'readback_mismatch'),
@@ -363,13 +390,15 @@
       };
     }
     const confirmed = new Set(profile.confirmedFields.filter((path) => typeof path === "string"));
-    const split = splitName(profile.fullName || "");
+    const profileText = (key) => typeof profile[key] === 'string' ? norm(profile[key]) : '';
+    const invalidType = (key) => profile[key] != null && typeof profile[key] !== 'string';
+    const split = splitName(profileText('fullName'));
     const lastName = split.lastName;
     const firstName = split.firstName;
-    const idNumber = norm(profile.identityNumber || "");
-    const mobile = norm(profile.phone || "");
-    const email = norm(profile.email || "");
-    const genderRaw = norm(profile.gender || "");
+    const idNumber = profileText('identityNumber');
+    const mobile = profileText('phone');
+    const email = profileText('email');
+    const genderRaw = profileText('gender');
 
     const core = [
       { label: "姓", path: "fullName", value: lastName },
@@ -380,33 +409,39 @@
       { label: "确认邮箱", path: "email", value: email }
     ].map((row) => {
       let reason = null;
-      if (!row.value) reason = "missing_profile_value";
+      if (invalidType(row.path)) reason = 'invalid_profile_value';
+      else if (!row.value) reason = "missing_profile_value";
       else if (!confirmed.has(row.path)) reason = "profile_fact_unconfirmed";
       return { ...row, ready: reason === null, reason };
     });
 
     const fields = [...core];
-    if (genderRaw) {
+    if (genderRaw || invalidType('gender')) {
       let reason = null;
-      if (!confirmed.has("gender")) reason = "profile_fact_unconfirmed";
+      if (invalidType('gender')) reason = 'invalid_profile_value';
+      else if (!confirmed.has("gender")) reason = "profile_fact_unconfirmed";
       else if (genderRaw !== "男" && genderRaw !== "女") reason = "invalid_profile_value";
       fields.push({ label: RADIO_LABEL, path: "gender", value: genderRaw, ready: reason === null, reason });
     }
     for (const spec of OPTIONAL_TEXT_FIELDS) {
-      const direct = norm(profile[spec.key] || '');
-      const answer = norm(profile.customAnswers?.[spec.label] || '');
-      if (!direct && !answer) continue;
+      const directRaw = profile[spec.key];
+      const answerRaw = profile.customAnswers && typeof profile.customAnswers === 'object' && !Array.isArray(profile.customAnswers)
+        ? profile.customAnswers[spec.label] : undefined;
+      const directInvalid = directRaw != null && typeof directRaw !== 'string';
+      const answerInvalid = answerRaw != null && typeof answerRaw !== 'string';
+      const direct = typeof directRaw === 'string' ? norm(directRaw) : '';
+      const answer = typeof answerRaw === 'string' ? norm(answerRaw) : '';
+      if (!direct && !answer && !directInvalid && !answerInvalid) continue;
       const answerPath = `customAnswers.${spec.label}`;
       const directReady = !!direct && confirmed.has(spec.key);
       const answerReady = !!answer && confirmed.has(answerPath);
-      const path = directReady || (!answerReady && direct) ? spec.key : answerPath;
+      const path = directReady || (!answerReady && (direct || directInvalid)) ? spec.key : answerPath;
       const value = path === spec.key ? direct : answer;
-      const peers = Array.isArray(profile.customFacts)
-        ? profile.customFacts.filter((row) => cleanLabel(row?.question) === cleanLabel(spec.label)) : [];
       let reason = null;
-      if (directReady && answerReady && direct !== answer) reason = 'profile_value_ambiguous';
-      else if (path === answerPath && peers.length > 1) reason = 'profile_value_ambiguous';
-      else if (!confirmed.has(path)) reason = 'profile_fact_unconfirmed';
+      if (directInvalid || answerInvalid) reason = 'invalid_profile_value';
+      else if (directReady && answerReady && direct !== answer) reason = 'profile_value_ambiguous';
+      else if (path === answerPath) reason = optionalAnswerScopeReason(profile, spec, answer);
+      if (!reason && !confirmed.has(path)) reason = 'profile_fact_unconfirmed';
       fields.push({ label: spec.label, key: spec.key, path, value, ready: reason === null, reason });
     }
 
@@ -923,6 +958,9 @@
   }
 
   async function fillBasic(rawValues = {}, options = {}) {
+    if (!rawValues || typeof rawValues !== 'object' || Array.isArray(rawValues)) {
+      return basicEnvelope({ ok: false, reason: 'invalid_fill_values', results: [] });
+    }
     // Select-only shapes: { '婚姻状况'|'政治面貌'|'户口类型'|'证件类型'|'民族': '…' } — route without touching text/radio path.
     if (rawValues && typeof rawValues === 'object' && !Array.isArray(rawValues)
       && !rawValues.profile && rawValues.allowExplicitValues !== true
@@ -939,9 +977,13 @@
       }
     }
 
-    if (!pageAllowed(options)) return basicEnvelope({ ok: false, reason: 'wrong_page', href: location.href, results: [] });
+    const pageStop = basicPageStopReason(options);
+    if (pageStop) return basicEnvelope({ ok: false, reason: pageStop, href: location.href, results: [] });
     if (!(await assertPaidGate())) return basicEnvelope({ ok: false, reason: 'license_required', results: [] });
     if (yidunCovering()) return basicEnvelope({ ok: false, reason: 'yidun_visible', results: [] });
+    if (['marital', MARITAL].some((key) => rawValues[key] != null && typeof rawValues[key] !== 'string')) {
+      return basicEnvelope({ ok: false, reason: 'invalid_fill_values', results: [] });
+    }
 
     const profile = rawValues.profile;
     const allowExplicit = rawValues.allowExplicitValues === true;
@@ -950,6 +992,10 @@
 
     if (allowExplicit && (rawValues.lastName || rawValues.firstName || rawValues.idNumber || rawValues.mobile || rawValues.email)) {
       // Explicit CDP/dev override only when flagged — never default path.
+      const explicitKeys = ['lastName', 'firstName', 'idNumber', 'mobile', 'email', 'confirmEmail', 'gender', 'marital', MARITAL];
+      if (explicitKeys.some((key) => rawValues[key] != null && typeof rawValues[key] !== 'string')) {
+        return basicEnvelope({ ok: false, reason: 'invalid_explicit_value', results: [] });
+      }
       values = {
         lastName: norm(rawValues.lastName || ""),
         firstName: norm(rawValues.firstName || ""),
@@ -1011,15 +1057,16 @@
     ];
     const results = [];
     for (const [label, value] of textPlan) {
-      if (!pageAllowed(options) || yidunCovering()) {
-        results.push(basicEnvelope({ label, ok: false, reason: !pageAllowed(options) ? 'wrong_page' : 'yidun_visible' }));
+      const stopped = basicPageStopReason(options);
+      if (stopped || yidunCovering()) {
+        results.push(basicEnvelope({ label, ok: false, reason: stopped || 'yidun_visible' }));
         break;
       }
       const result = await fillText(label, value, options);
       results.push(result);
-      if (result.reason === 'neighbor_changed') break;
+      if (['neighbor_changed', 'control_changed', 'wrong_page', 'page_hidden', 'yidun_visible'].includes(result.reason)) break;
     }
-    const safeToContinue = results.every((row) => !['neighbor_changed', 'wrong_page', 'yidun_visible'].includes(row.reason));
+    const safeToContinue = results.every((row) => !['neighbor_changed', 'control_changed', 'wrong_page', 'page_hidden', 'yidun_visible'].includes(row.reason));
     if (safeToContinue && norm(values.gender) && (values.gender === "男" || values.gender === "女")) {
       results.push(await fillGender(values.gender, options));
     }

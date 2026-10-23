@@ -56,6 +56,10 @@ function neverSave(result, clicks) {
   assert.equal(result.saved, false);
   assert.equal(result.skippedSave, true);
   assert.equal(result.liveSupportClaimed, false);
+  assert.equal(result.supportClaimed, false);
+  assert.equal(result.neverSave, true);
+  assert.equal(result.leftUnsaved, true);
+  for (const action of ['Save', 'Submit', 'Next', 'Deliver', 'Delete']) assert.equal(result[`softwareClicked${action}`], false);
   assert.equal(result.saveAllowed, false);
   assert.deepEqual(clicks, []);
 }
@@ -103,6 +107,74 @@ test('normalized exact-label custom answers preserve confirmed facts without sch
     confirmedFields: [...core.confirmedFields, 'customAnswers.微信'] });
   assert.equal(duplicate.values.wechat, undefined);
   assert.equal(duplicate.blockers[0].reason, 'profile_value_ambiguous');
+});
+
+test('all seven custom-answer fields require unscoped facts or the exact CITICS section and a single row', async (t) => {
+  const { api, input, fill, clicks } = harness(t);
+  occupyCore(input);
+  for (const [index, [label, key, id, value]] of extra.entries()) {
+    const sectionName = index < 4 ? '个人信息' : '联系方式';
+    const scoped = { sitePageUrl: 'https://careers.citics.com/my/jl', sectionName, rowContext: 'single' };
+    const profileFor = (scope) => normalizeProfile({ ...core,
+      customFacts: [{ question: label, answer: value, ...scope }],
+      confirmedFields: [...core.confirmedFields, `customAnswers.${label}`] });
+    for (const scope of [{}, scoped, { ...scoped, rowContext: 'none' }]) {
+      assert.equal(api.planFromProfile(profileFor(scope)).values[key], value, `${label}: allowed ${JSON.stringify(scope)}`);
+    }
+    const deniedScopes = [
+      { ...scoped, sitePageUrl: 'https://other.example.invalid/my/jl' },
+      { ...scoped, sitePageUrl: 'https://careers.citics.com/other' },
+      { ...scoped, sitePageUrl: 'http://careers.citics.com/my/jl' },
+      { ...scoped, sitePageUrl: 'https://careers.citics.com/my/jl?other=1' },
+      { ...scoped, sectionName: sectionName === '个人信息' ? '联系方式' : '个人信息' },
+      { ...scoped, rowContext: 'repeated' },
+      { ...scoped, rowContext: '' },
+      { sitePageUrl: scoped.sitePageUrl }, { sectionName }, { rowContext: 'none' }
+    ];
+    for (const scope of deniedScopes) {
+      const profile = profileFor(scope);
+      // Unique-question projection can retain this global flag even for a different site.
+      assert.ok(profile.confirmedFields.includes(`customAnswers.${label}`));
+      const planned = api.planFromProfile(profile);
+      assert.equal(planned.values[key], undefined, `${label}: denied ${JSON.stringify(scope)}`);
+      assert.equal(planned.blockers[0].reason, 'question_scope_mismatch');
+    }
+    const result = await fill(profileFor(deniedScopes[0]));
+    assert.equal(result.writeAttempted, false);
+    assert.equal(input(id).value, '');
+    neverSave(result, clicks);
+  }
+});
+
+test('numbers, booleans, arrays, and objects cannot become confirmed text facts', async (t) => {
+  const { api, input, fill, clicks } = harness(t);
+  occupyCore(input);
+  const invalidValues = [0, 123, false, {}, [], { toString() { throw new Error('must not coerce facts'); } }];
+  for (const value of invalidValues) {
+    for (const useAnswer of [false, true]) {
+      const profile = { ...core, ...(useAnswer ? { customAnswers: { '微信': value } } : { wechat: value }),
+        confirmedFields: [...core.confirmedFields, useAnswer ? 'customAnswers.微信' : 'wechat'] };
+      const planned = api.planFromProfile(profile);
+      assert.equal(planned.values.wechat, undefined);
+      assert.equal(planned.blockers[0].reason, 'invalid_profile_value');
+      const result = await fill(profile);
+      assert.equal(result.writeAttempted, false);
+      assert.equal(input('wechat').value, '');
+      neverSave(result, clicks);
+    }
+    const planned = api.planFromProfile({ ...core, phone: value });
+    assert.equal(planned.ok, false);
+    assert.equal(planned.fields.find((row) => row.path === 'phone').reason, 'invalid_profile_value');
+  }
+});
+
+test('probe and fill envelopes hard-lock every Never-Save flag', async (t) => {
+  const { api, clicks } = harness(t);
+  neverSave(await api.probeLabels(), clicks);
+  const result = await api.fillBasic({ profile: core, saved: true, skippedSave: false, neverSave: false,
+    liveSupportClaimed: true, supportClaimed: true, softwareClickedSave: true, softwareClickedSubmit: true,
+    softwareClickedNext: true, softwareClickedDeliver: true, softwareClickedDelete: true });
+  neverSave(result, clicks);
 });
 
 test('empty core, all seven extra text fields, and gender fill with exact readback and preserved neighbors', async (t) => {
@@ -189,6 +261,23 @@ test('focus-time occupation is preserved and rejected readback is reported', asy
   neverSave(result, clicks);
 });
 
+test('focus-time duplicate labels are re-resolved before writing and halt subsequent fields', async (t) => {
+  const { input, fill, clicks } = harness(t);
+  occupyCore(input);
+  const target = input('last-pinyin');
+  target.addEventListener('focus', () => {
+    const item = target.closest('.ant-form-item');
+    item.after(item.cloneNode(true));
+  });
+  const result = await fill(confirmedExtras());
+  assert.equal(result.ok, false);
+  assert.equal(result.writeAttempted, false);
+  assert.equal(result.results.at(-1).reason, 'control_changed');
+  assert.equal(target.value, '');
+  assert.equal(input('first-pinyin').value, '');
+  neverSave(result, clicks);
+});
+
 test('text/radio/select neighbor side effects are detected and stop subsequent writes', async (t) => {
   for (const neighbor of ['neighbor-input', 'neighbor-radio', 'neighbor-textarea', 'neighbor-select', 'ethnicity-readback']) {
     const { input, fill, clicks } = harness(t);
@@ -235,6 +324,17 @@ test('gender refuses disabled, hidden, ambiguous, dangerous, and mismatching con
   }
 });
 
+test('a detached gender control cannot satisfy readback', async (t) => {
+  const { input, fill, clicks } = harness(t);
+  occupyCore(input);
+  input('female').addEventListener('change', () => input('female').closest('.ant-form-item').remove());
+  const result = await fill({ ...core, gender: '女', confirmedFields: [...core.confirmedFields, 'gender'] });
+  assert.equal(result.ok, false);
+  assert.equal(result.results.at(-1).reason, 'readback_mismatch');
+  assert.equal(result.results.at(-1).after, '');
+  neverSave(result, clicks);
+});
+
 test('wrong page, remote synthetic bypass, license denial, captcha, and core blockers stop every write', async (t) => {
   const deniedChrome = { runtime: { getManifest: () => ({ background: { service_worker: 'src/license/guard-worker.mjs' } }),
     sendMessage: async () => ({ allowed: false }), onMessage: { addListener() {} } } };
@@ -256,4 +356,45 @@ test('wrong page, remote synthetic bypass, license denial, captcha, and core blo
   const result = await local.fill(core, { synthetic: true });
   assert.equal(result.ok, true);
   neverSave(result, local.clicks);
+});
+
+test('hidden documents, malformed requests, and invalid explicit values fail before a write', async (t) => {
+  for (const state of ['hidden', 'visibility', 'focus-hidden']) {
+    const { w, input, fill, clicks } = harness(t);
+    if (state === 'hidden') Object.defineProperty(w.document, 'hidden', { value: true });
+    if (state === 'visibility') Object.defineProperty(w.document, 'visibilityState', { value: 'hidden' });
+    if (state === 'focus-hidden') input('last').addEventListener('focus', () => {
+      Object.defineProperty(w.document, 'hidden', { value: true });
+    });
+    const result = await fill(core);
+    assert.equal(result.ok, false, state);
+    assert.equal(result.writeAttempted, false, state);
+    assert.equal(result.reason || result.results.at(-1).reason, 'page_hidden', state);
+    assert.equal(input('last').value, '', state);
+    neverSave(result, clicks);
+  }
+  const { api, input, clicks } = harness(t);
+  for (const raw of [null, 0, false, 'malformed', [], () => {}]) {
+    const result = await api.fillBasic(raw);
+    assert.equal(result.ok, false);
+    assert.equal(result.reason, 'invalid_fill_values');
+    assert.equal(result.writeAttempted, false);
+    neverSave(result, clicks);
+  }
+  for (const profile of [null, [], 0, 'bad']) {
+    const result = await api.fillBasic({ profile });
+    assert.equal(result.ok, false);
+    assert.equal(result.writeAttempted, false);
+    neverSave(result, clicks);
+  }
+  const malformedSelectValue = await api.fillBasic({ profile: core, marital: { toString() { throw new Error('do not coerce'); } } });
+  assert.equal(malformedSelectValue.reason, 'invalid_fill_values');
+  assert.equal(malformedSelectValue.writeAttempted, false);
+  neverSave(malformedSelectValue, clicks);
+  const explicit = await api.fillBasic({ allowExplicitValues: true, lastName: 123, firstName: '试',
+    idNumber: 'offline-identity', mobile: '13800138000', email: 'offline@example.invalid' });
+  assert.equal(explicit.reason, 'invalid_explicit_value');
+  assert.equal(explicit.writeAttempted, false);
+  assert.equal(input('last').value, '');
+  neverSave(explicit, clicks);
 });

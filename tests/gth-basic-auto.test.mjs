@@ -493,3 +493,43 @@ test('GTH_BASIC_AUTO fill fails closed when 现居住地 is not a unique region 
   assert.equal(h.data[basicJobKey(tabId)]?.state, 'unknown');
   assert.equal(JSON.stringify(response).includes('已支持'), false);
 });
+
+test('GTH_BASIC_AUTO retains scoped province readback while photo stays incomplete', async () => {
+  const profile = fixture();
+  profile.customFacts = [{ question: '现居住地', answer: '上海', sitePageUrl: BASIC_PAGE, sectionName: '基本信息', rowContext: 'single' }];
+  profile.customAnswers = { 现居住地: '上海' };
+  profile.confirmedFields.push('customAnswers.现居住地');
+  const h = await harness({
+    profile, statusOutcome: 'verified',
+    patchTrial: (trial) => {
+      trial.fields.push({ question: '现居住地', path: 'currentCity', status: 'verified', reason: 'readback_matched' });
+      trial.writeStarted = true;
+      trial.liveSupportClaimed = false;
+      trial.coverage = basicCoverage({ ...trial, coverage: undefined }, 5);
+      return trial;
+    },
+  });
+  const readiness = await h.invoke({ type: 'GTH_BASIC_AUTO', mode: 'readiness', educationIndex: 5 });
+  const residence = readiness.readiness.coverageReadiness.fields.find(row => row.key === 'currentCity');
+  assert.equal(residence.fillAllowed, true);
+  assert.equal(residence.reason, 'residence_trial_ready');
+  assert.equal(residence.liveSupportClaimed, false);
+  assert.equal(h.stats.trial, 0);
+
+  const result = await h.invoke({ ...fillMessage, replaceExisting: false });
+  assert.equal(h.stats.trialProfile.currentCity, '上海');
+  assert.ok(h.stats.trialProfile.confirmedFields.includes('currentCity'));
+  assert.equal(result.ok, false);
+  assert.equal(result.reason, 'control_not_supported', 'photo prevents whole-basic completion');
+  assert.equal(result.job.coverage.find(row => row.key === 'currentCity').status, 'verified');
+  assert.equal(result.job.coverage.find(row => row.key === 'currentCity').reason, 'readback_matched');
+  assert.equal(result.job.coverage.find(row => row.key === 'photo').status, 'failed');
+  assert.equal(result.job.coverage.filter(row => row.status === 'failed').length, 1);
+  assert.equal(result.complete, false);
+  assert.equal(result.liveSupportClaimed, false);
+  assert.equal(result.softwareClickedSave, false);
+  assert.equal(result.softwareClickedSubmit, false);
+  assert.equal(result.softwareClickedDelete, false);
+  assert.equal(result.saveAttempted, false);
+  assert.equal(result.saveAllowedByPolicy, false);
+});

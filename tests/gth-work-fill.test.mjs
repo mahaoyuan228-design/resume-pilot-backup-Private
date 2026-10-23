@@ -466,17 +466,81 @@ test('replaceExisting rewrites a different position and job leaf', async () => {
   assert.equal(forbidden(clicks).length, 0);
 });
 
-test('an existing value without replaceExisting fails before any write', async () => {
+test('fill-empty skips an occupied position and verifies its empty work peers', async () => {
   const html = shell(formWrap(workFields({ position: '旧职位' })));
   const { dom, clicks, context } = boot(html);
   wire(dom.window.document);
   const result = await context.ResumeGthWorkOpen.trial(request(workProfile(ROW)));
   assert.equal(result.ok, false);
-  assert.equal(result.writeStarted, false);
+  assert.equal(result.writeStarted, true);
+  assert.equal(result.supportedComplete, false);
+  assert.equal(result.operableComplete, false);
   assert.equal(result.reason, 'existing_value');
   assert.equal(dom.window.document.getElementById('position').value, '旧职位');
-  assert.equal(dom.window.document.getElementById('job').value, '');
+  assert.equal(dom.window.document.getElementById('job').value, '银行');
+  assert.equal(result.fields.find((field) => field.question === '职位名称').status, 'skipped');
+  assert.equal(result.fields.filter((field) => field.question !== '职位名称').every((field) => field.status === 'verified'), true);
+  assert.equal(assessGthWorkOpenFill(result).ok, false);
+  assert.equal(assessGthWorkOpenFill(result).reason, 'existing_value');
+  flags(result);
   assert.equal(forbidden(clicks).length, 0);
+});
+
+test('fill-empty preserves occupied work text, textarea, cascaders, range and probe salary', async () => {
+  const html = shell(formWrap(withProbeSalary({
+    position: '旧职位', description: '已核对的原职责', job: '投资/证券/基金',
+    industry: '银行', start: '2019-01', salary: '9000',
+    jobCounter: '(1/5)', industryCounter: '(1/5)',
+  })));
+  const { dom, clicks, context } = boot(html);
+  const doc = dom.window.document;
+  const stats = wire(doc);
+  const preserved = ['position', 'description', 'job', 'industry', 'start-date', 'end-date', 'salary'];
+  const before = preserved.map((id) => doc.getElementById(id).value);
+  const events = [];
+  for (const id of preserved) doc.getElementById(id).addEventListener('input', () => events.push(id));
+  const result = await context.ResumeGthWorkOpen.trial(request(workProfile({ ...ROW, salary: '12000' })));
+  assert.deepEqual(preserved.map((id) => doc.getElementById(id).value), before);
+  assert.deepEqual(events, []);
+  assert.equal(doc.getElementById('organization').value, ROW.organization);
+  assert.equal(doc.getElementById('area').value, ROW.workArea);
+  assert.equal(doc.getElementById('intro').value, ROW.companyIntro);
+  for (const question of ['职位名称', '职责与业绩', '职位类别', '公司所属行业', '任职时间', '薪资']) {
+    const field = result.fields.find((row) => row.question === question);
+    assert.equal(field.status, 'skipped', question);
+    assert.equal(field.reason, 'existing_value', question);
+  }
+  assert.equal(result.fields.find((row) => row.question === '公司名称').reason, 'readback_matched');
+  assert.equal(stats.months.open, 0);
+  assert.equal(stats.job.open, 0);
+  assert.equal(stats.industry.open, 0);
+  assert.equal(result.ok, false);
+  assert.equal(result.writeStarted, true);
+  assert.equal(result.supportedComplete, false);
+  assert.equal(result.operableComplete, false);
+  flags(result);
+  assert.equal(forbidden(clicks).length, 0);
+});
+
+test('fill-empty treats either occupied month endpoint as one preserved work range', async () => {
+  for (const dates of [{ start: '2019-01' }, { end: '2024-08' }]) {
+    const { dom, clicks, context } = boot(shell(formWrap(workFields({
+      ...dates, job: '银行', industry: '证券/投资/基金/信托',
+      jobCounter: '(1/5)', industryCounter: '(1/5)',
+    }))));
+    const doc = dom.window.document;
+    const stats = wire(doc);
+    const result = await context.ResumeGthWorkOpen.trial(request(workProfile(ROW)));
+    assert.equal(doc.getElementById('start-date').value, dates.start || '');
+    assert.equal(doc.getElementById('end-date').value, dates.end || '');
+    assert.equal(doc.getElementById('position').value, ROW.position);
+    assert.equal(result.fields.find((field) => field.question === '任职时间').status, 'skipped');
+    assert.equal(result.fields.find((field) => field.question === '任职时间').reason, 'existing_value');
+    assert.equal(stats.months.open, 0);
+    assert.equal(result.ok, false);
+    flags(result);
+    assert.equal(forbidden(clicks).length, 0);
+  }
 });
 
 test('a missing level-2 menu cancels and leaves later fields not_run', async () => {
@@ -2217,12 +2281,17 @@ test('probe 薪资 keeps a matching value and rewrites only when replaceExisting
 
   const occupied = shell(formWrap(withProbeSalary({ salary: '8000', industrySingle: true, industryCounter: '(0/1)' })));
   const blocked = boot(occupied);
+  wire(blocked.dom.window.document, { industrySingle: true });
   const blockedResult = await blocked.context.ResumeGthWorkOpen.trial(request(workProfile({ ...ROW, salary: '12000' })));
   assert.equal(blockedResult.ok, false);
-  assert.equal(blockedResult.writeStarted, false);
+  assert.equal(blockedResult.writeStarted, true);
   assert.equal(blockedResult.reason, 'existing_value');
+  assert.equal(blockedResult.fields.find((field) => field.question === '薪资').status, 'skipped');
   assert.equal(blocked.dom.window.document.getElementById('salary').value, '8000');
-  assert.equal(blocked.dom.window.document.getElementById('position').value, '');
+  assert.equal(blocked.dom.window.document.getElementById('position').value, ROW.position);
+  assert.equal(blockedResult.fields.find((field) => field.question === '职位名称').reason, 'readback_matched');
+  assert.equal(blockedResult.supportedComplete, false);
+  assert.equal(blockedResult.operableComplete, false);
   assert.equal(blockedResult.liveSupportClaimed, false);
   assert.equal(forbidden(blocked.clicks).length, 0);
 

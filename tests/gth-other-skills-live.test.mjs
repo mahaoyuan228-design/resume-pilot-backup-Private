@@ -9,6 +9,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import vm from 'node:vm';
+import { fileURLToPath } from 'node:url';
 import { JSDOM } from 'jsdom';
 import { assessGthOtherFill, assessGthSkillsFill } from '../src/background/gth-open-fills.mjs';
 import {
@@ -413,7 +414,7 @@ test('CDP unreachable and a missing tab still write never-save evidence', async 
 
 test('help text names the PowerShell command', () => {
   const help = spawnSync(process.execPath, ['scripts/live/gth-other-skills-live.mjs', '--help'], {
-    cwd: path.resolve(path.dirname(new URL(import.meta.url).pathname), '..'),
+    cwd: path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..'),
     encoding: 'utf8'
   });
   assert.equal(help.status, 0);

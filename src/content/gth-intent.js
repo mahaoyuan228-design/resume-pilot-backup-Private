@@ -711,6 +711,10 @@
     const recheckSalaries = () => {
       for (const {field, reason} of salaryFailures()) record(field, 'failed', reason);
     };
+    let arrivalFailures = () => [];
+    const recheckArrival = () => {
+      for (const {field, reason} of arrivalFailures()) record(field, 'failed', reason);
+    };
     try {
       await checkBinding();
       if (typeof request?.requestId !== 'string' || !/^[A-Za-z0-9-]{10,100}$/u.test(request.requestId)
@@ -773,7 +777,8 @@
         const answer = answerOf(plan.field);
         if (plan.field.kind === 'picker') plan.decision = closedPickerDecision(plan.target, answer.parts);
         else plan.decision = closedTextDecision(plan.target, answer.value, request.replaceExisting);
-        if (plan.field.kind === 'text' && plan.decision.action === 'same' && !siteValid(plan.target))
+        if ((plan.field.kind === 'text' || plan.field.kind === 'select')
+          && plan.decision.action === 'same' && !siteValid(plan.target))
           plan.decision = {action:'fail', reason:'intent_site_validation_failed'};
       }
       // Salary receipts stay tied to the census input, its exact digits and site
@@ -789,6 +794,27 @@
               || otherSectionForms(live).length) stop('intent_other_values_changed');
             const current = textTarget(form, plan.field.question);
             if (!sameTarget(plan.target, current)) stop('intent_other_values_changed');
+            if (current.input.value !== answerOf(plan.field).value) stop('intent_readback_mismatch');
+            if (!siteValid(current)) stop('intent_site_validation_failed');
+          } catch (error) {
+            reason = error instanceof Stop ? error.code : 'intent_readback_mismatch';
+          }
+          return reason ? [{field:plan.field, reason}] : [];
+        });
+      // Arrival receipts also belong to the original census select. A later
+      // field event must not leave a changed or invalid select verified.
+      arrivalFailures = () => plans.filter(plan => plan.field.kind === 'select'
+        && result.fields.some(row => row.question === plan.field.question && row.status === 'verified'))
+        .flatMap(plan => {
+          let reason = null;
+          try {
+            const live = page();
+            if (performance.timeOrigin !== origin || outside(live) !== otherBefore
+              || sectionForms(live).length !== 1 || sectionForms(live)[0] !== form
+              || otherSectionForms(live).length) stop('intent_other_values_changed');
+            const current = selectTarget(form, plan.field.question);
+            if (!sameTarget(plan.target, current) || current.widget !== plan.target.widget)
+              stop('intent_other_values_changed');
             if (current.input.value !== answerOf(plan.field).value) stop('intent_readback_mismatch');
             if (!siteValid(current)) stop('intent_site_validation_failed');
           } catch (error) {
@@ -872,12 +898,14 @@
       step('salary_readback');
       await checkBinding();
       recheckSalaries();
+      recheckArrival();
       result.fields = attempted.map(field => result.fields.find(row => row.question === field.question) || fieldRow(field, 'failed', 'not_run'));
       result.supportedComplete = result.fields.length === attempted.length && result.fields.every(row => row.status === 'verified');
       result.operableComplete = result.supportedComplete;
       result.complete = false;
       if (openedByUs && !result.writeStarted && result.supportedComplete !== true && form?.isConnected) {
         if (await dismissCancelOnly(form)) result.editorLeftOpen = false;
+        recheckArrival();
       }
       const primary = result.fields.find(row => row.status !== 'verified' && row.reason !== 'blocked_by_unsettled_field')
         || result.fields.find(row => row.status !== 'verified');
@@ -887,7 +915,7 @@
       const info = {reason:primary ? primary.reason : null, activeField:null, selectorStep:primary ? 'field_decision' : 'complete',
         completedFields:result.fields.map(row => ({question:row.question, status:row.status, reason:row.reason})),
         writeStarted:result.writeStarted, supportedComplete:result.supportedComplete, operableComplete:result.operableComplete, complete:false};
-      state.last = {requestId:request.requestId, outcome, info, salaryFailures, currentCheck:() => {
+      state.last = {requestId:request.requestId, outcome, info, salaryFailures, arrivalFailures, currentCheck:() => {
         try {
           if (!result.supportedComplete) return false;
           const live = page();
@@ -899,7 +927,12 @@
               return current.input.value === answer.value && siteValid(current);
             }
             if (field.kind === 'picker') return norm(pickerTarget(form, field.question).input.value) === answer.parts.l2;
-            if (field.kind === 'select') return norm(selectTarget(form, field.question).input.value) === answer.value;
+            if (field.kind === 'select') {
+              const current = selectTarget(form, field.question);
+              const original = plans.find(plan => plan.field === field).target;
+              return sameTarget(original, current) && original.widget === current.widget
+                && current.input.value === answer.value && siteValid(current);
+            }
             return false;
           });
         } catch { return false; }
@@ -908,6 +941,7 @@
     } catch (error) {
       const reason = error instanceof Stop ? error.code : 'intent_fill_failed';
       recheckSalaries();
+      recheckArrival();
       if (error instanceof Stop && error.pickerDiag) result.pickerDiag = error.pickerDiag;
       else if (typeof reason === 'string' && reason.startsWith('picker_')) {
         try { result.pickerDiag = fallbackPickerDiag(form, state.progress?.activeField, reason); }
@@ -928,10 +962,11 @@
           } catch { /* leave the editor; the failure is already recorded */ }
         }
       }
+      recheckArrival();
       const info = {reason, activeField:state.progress?.activeField || null, selectorStep:state.progress?.selectorStep || 'not_started',
         completedFields:(state.progress?.completedFields || []).map(item => ({...item})), writeStarted:result.writeStarted,
         supportedComplete:false, operableComplete:false, complete:false};
-      state.last = {requestId:request?.requestId, outcome:result.writeStarted ? 'unknown' : 'failed_before_write', info};
+      state.last = {requestId:request?.requestId, outcome:result.writeStarted ? 'unknown' : 'failed_before_write', info, arrivalFailures};
       return {ok:false, ...result, supportedComplete:false, operableComplete:false, ...info};
     } finally {
       state.busy = false;
@@ -947,18 +982,21 @@
         const running = state.busy && state.progress?.requestId === message.requestId;
         const last = state.last?.requestId === message.requestId ? state.last : null;
         const staleSalaries = running ? [] : (last?.salaryFailures?.() || []);
-        const outcome = staleSalaries.length ? 'unknown'
+        const staleArrival = running ? [] : (last?.arrivalFailures?.() || []);
+        const staleReceipts = [...staleSalaries, ...staleArrival];
+        const outcome = staleReceipts.length ? 'unknown'
           : last?.currentCheck ? (last.currentCheck() ? last.outcome : 'unknown') : (last?.outcome || 'unknown');
-        const salaryInfo = staleSalaries.length ? {
-          reason:staleSalaries[0].reason, activeField:staleSalaries[0].field.question, selectorStep:'salary_readback',
+        const receiptInfo = staleReceipts.length ? {
+          reason:staleReceipts[0].reason, activeField:staleReceipts[0].field.question,
+          selectorStep:staleSalaries.length ? 'salary_readback' : 'select_readback',
           supportedComplete:false, operableComplete:false, complete:false,
           completedFields:(last.info.completedFields || []).map(row => {
-            const stale = staleSalaries.find(item => item.field.question === row.question);
+            const stale = staleReceipts.find(item => item.field.question === row.question);
             return stale ? {...row, status:'failed', reason:stale.reason} : row;
           })
         } : {};
         sendResponse({ok:true, data:{requestId:message.requestId, state:running ? 'running' : 'settled', outcome,
-          ...(running ? {writeStarted:state.progress.writeStarted === true} : last?.info || {writeStarted:false}), ...salaryInfo}});
+          ...(running ? {writeStarted:state.progress.writeStarted === true} : last?.info || {writeStarted:false}), ...receiptInfo}});
       })().catch(() => sendResponse({ok:false, error:'profile_binding_changed', data:{requestId:message?.requestId, state:'settled', outcome:'unknown'}}));
       return true;
     }

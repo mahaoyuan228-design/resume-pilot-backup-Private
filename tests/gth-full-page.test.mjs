@@ -7,7 +7,7 @@ import { SECTION_TITLES } from '../scripts/live/gth-intent-live.mjs';
 const PAGE = 'https://hr.gtht.com/resume/edit/';
 const item = '<div class="el-form-item"><label class="el-form-item__label">标题</label><div class="el-form-item__content"><input value="自我介绍"></div></div>';
 
-function boot({ cancel = 'remove', delayedItems = false, stubXhr = false } = {}) {
+function boot({ cancel = 'remove', delayedItems = false, stubXhr = false, waitTimeoutMs = 80 } = {}) {
   // Shell and controls mirror gth-other-skills-live.test.mjs; picker structure
   // mirrors gth-intent-census-dom.mjs / gth-work-fill.test.mjs.
   const dom = new JSDOM(`<!doctype html><body>${SECTION_TITLES.map(title =>
@@ -41,7 +41,7 @@ function boot({ cancel = 'remove', delayedItems = false, stubXhr = false } = {})
       });
     });
   });
-  window.eval(buildPageExpression({ waitTimeoutMs: 80, pollMs: 1 }));
+  window.eval(buildPageExpression({ waitTimeoutMs, pollMs: 1 }));
   return { dom, window, sections, api: window.__gthFullLive, sent, nativeClick, nativeFetch };
 }
 
@@ -116,7 +116,8 @@ test('cancel physically removes a hidden or replacement editor before the next s
 });
 
 test('an existing editor also waits for .el-form-item before returning ready', async () => {
-  const { dom, window, api, sections } = boot();
+  // Allow delayed fixture rendering when parallel Windows test processes are busy.
+  const { dom, window, api, sections } = boot({ waitTimeoutMs: 1000 });
   try {
     sections[6].querySelector('a.h-e-btn').remove();
     sections[6].insertAdjacentHTML('beforeend', '<form class="el-form sec-form"><button type="button">取消</button></form>');

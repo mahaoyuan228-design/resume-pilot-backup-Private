@@ -12,7 +12,7 @@
     .replace(/[\u200b-\u200d\ufeff]/gu, '').replace(/[\s\u00a0]+/gu, '');
   const labelKey = (value) => exact(value).replace(/[＊*？?]/gu, '').replace(/[：:]+$/gu, '');
   const prose = (value) => typeof value === 'string' ? value.normalize('NFKC')
-    .replace(/[\u200b-\u200d\ufeff]/gu, '').trim() : '';
+    .replace(/[\u200b-\u200d\ufeff]/gu, '').replace(/\r\n?/gu, '\n').trim() : '';
   const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
   const allowed = (label) => labelKey(label) === labelKey(FIELD);
 
@@ -54,7 +54,11 @@
     return labelKey(clone.textContent);
   }
   function locate() {
-    const items = [...document.querySelectorAll('.ant-row.ant-form-item')].filter((item) => {
+    const roots = [...document.querySelectorAll('.resume-operation-wrap')];
+    if (roots.length !== 1) return { ok: false, reason: 'control_not_supported' };
+    const root = roots[0];
+    const items = [...root.querySelectorAll('.ant-row.ant-form-item')].filter((item) => {
+      if (item.closest('.resume-operation-wrap') !== root) return false;
       const labels = [...new Set(owned(item, 'label').map(caption).filter(Boolean))];
       return labels.length === 1 && labels[0] === labelKey(FIELD);
     });
@@ -95,7 +99,7 @@
       const want = prose(value);
       const kept = { before, after: before, expected: want };
       if (!exact(want)) return refused('missing_profile_value', kept);
-      if (exact(before) === exact(want)) return result({ ok: true, label: FIELD,
+      if (before === want) return result({ ok: true, label: FIELD,
         status: 'verified', reason: 'preexisting_same_value', opened: false, canceled: false,
         stillOpen: 0, ...kept });
       if (before !== '') return result({ ok: false, label: FIELD, status: 'skipped',
@@ -114,7 +118,11 @@
         before, after: focusedValue, expected: want });
       if (anyOpen()) return refused('control_busy', kept);
       setter.call(found.control, want);
-      for (const type of ['input', 'change', 'blur']) found.control.dispatchEvent(new Event(type, { bubbles: true }));
+      for (const type of ['input', 'change', 'blur']) {
+        const current = locate();
+        if (!current.ok || current.control !== found.control) break;
+        found.control.dispatchEvent(new Event(type, { bubbles: true }));
+      }
       // Let event handlers settle before reading the current framework-owned control.
       await pause(0);
       // Re-locate after events: framework replacement must not verify a detached old node.

@@ -36,6 +36,14 @@ function boot(state = {}) {
   const dom = new JSDOM(markup(state), { url: state.url || PAGE, pretendToBeVisual: true, runScripts: 'dangerously' });
   const { window } = dom;
   const { document } = window;
+  if (state.outsideRoot) document.body.append(document.getElementById('target').closest('.ant-row.ant-form-item'));
+  if (state.multipleRoots) document.body.append(document.querySelector('.resume-operation-wrap').cloneNode());
+  if (state.externalDuplicate) {
+    const external = document.getElementById('target').closest('.ant-row.ant-form-item').cloneNode(true);
+    external.querySelector('textarea').id = 'external';
+    external.querySelector('textarea').value = 'KEEP_EXTERNAL';
+    document.body.append(external);
+  }
   window.HTMLElement.prototype.getClientRects = function () {
     for (let node = this; node; node = node.parentElement) {
       if (node.hidden || window.getComputedStyle(node).display === 'none') return [];
@@ -50,6 +58,10 @@ function boot(state = {}) {
   for (const type of ['input', 'change', 'blur']) document.addEventListener(type, (event) => {
     if (event.target.id !== 'target') return;
     stats.events.push(type);
+    if (type === 'input' && state.inputReparent) {
+      document.body.append(event.target.closest('.ant-row.ant-form-item'));
+      event.target.value = 'KEEP_REPARENTED';
+    }
     if (type === 'input' && state.revert) event.target.value = '';
     if (type === 'input' && state.stripNewlines) event.target.value = event.target.value.replace(/\n/gu, ' ');
     if (type === 'input' && state.replace) {
@@ -73,6 +85,7 @@ function boot(state = {}) {
     if (event.target.id !== 'target') return;
     if (state.focusValue) event.target.value = state.focusValue;
     if (state.focusReplace) event.target.replaceWith(event.target.cloneNode());
+    if (state.focusReparent) document.body.append(event.target.closest('.ant-row.ant-form-item'));
     if (state.focusHidden) Object.defineProperty(document, 'visibilityState', { value: 'hidden', configurable: true });
     if (state.focusNavigate) dom.reconfigure({ url: PAGE.replace('/pb/', '/mc/') });
     if (state.focusBusy) document.getElementById('menu').hidden = false;
@@ -146,7 +159,10 @@ for (const [value, wanted, reason, ok] of [
   ['KEEP_EXISTING', CALLER, 'existing_value', false],
   [' \n ', CALLER, 'existing_value', false],
   ['\u200b', CALLER, 'existing_value', false],
-  ['  Explicit caller fact\nSecond line keeps spaces  ', CALLER, 'preexisting_same_value', true]
+  ['  Explicit caller fact\nSecond line keeps spaces  ', CALLER, 'existing_value', false],
+  [CALLER.replace('\n', ' '), CALLER, 'existing_value', false],
+  ['Passed A B', 'Passed AB', 'existing_value', false],
+  [CALLER, CALLER, 'preexisting_same_value', true]
 ]) test(`${SLUG}: ${reason} preserves the original raw value`, async () => {
   const h = boot({ value });
   try {
@@ -160,9 +176,48 @@ for (const [value, wanted, reason, ok] of [
   } finally { h.dom.window.close(); }
 });
 
+for (const newline of ['\r\n', '\r']) test(`${SLUG}: caller ${JSON.stringify(newline)} line endings match textarea LF readback`, async () => {
+  const h = boot();
+  try {
+    const result = await h.api.fillField(LABEL, CALLER.replace('\n', newline));
+    assert.equal(result.ok, true);
+    assert.equal(result.reason, 'readback_matched');
+    assert.equal(result.expected, CALLER);
+    assert.equal(result.after, CALLER);
+    assert.equal(h.document.getElementById('target').value, CALLER);
+    safe(h, result);
+  } finally { h.dom.window.close(); }
+});
+
+for (const state of [{ outsideRoot: true }, { multipleRoots: true }]) {
+  test(`${SLUG}: ${Object.keys(state)[0]} cannot receive text or events`, async () => {
+    const h = boot(state);
+    try {
+      const result = await h.api.fillField(LABEL, CALLER);
+      assert.equal(result.ok, false);
+      assert.equal(result.reason, 'control_not_supported');
+      assert.equal(h.document.getElementById('target').value, '');
+      assert.deepEqual(h.stats.events, []);
+      safe(h, result);
+    } finally { h.dom.window.close(); }
+  });
+}
+
+test(`${SLUG}: an external matching row remains unchanged while the owned target fills`, async () => {
+  const h = boot({ externalDuplicate: true });
+  try {
+    const result = await h.api.fillField(LABEL, CALLER);
+    assert.equal(result.ok, true);
+    assert.equal(h.document.getElementById('target').value, CALLER);
+    assert.equal(h.document.getElementById('external').value, 'KEEP_EXTERNAL');
+    safe(h, result);
+  } finally { h.dom.window.close(); }
+});
+
 for (const [state, reason] of [
   [{ focusValue: 'FOCUS_KEEP' }, 'existing_value'],
   [{ focusReplace: true }, 'control_not_supported'],
+  [{ focusReparent: true }, 'control_not_supported'],
   [{ focusHidden: true }, 'fill_interrupted_page_hidden'],
   [{ focusNavigate: true }, 'wrong_page'],
   [{ focusBusy: true }, 'control_busy']
@@ -174,6 +229,20 @@ for (const [state, reason] of [
     assert.equal(result.reason, reason);
     assert.equal(h.document.getElementById('target').value, state.focusValue || '');
     assert.deepEqual(h.stats.events, []);
+    safe(h, result);
+  } finally { h.dom.window.close(); }
+});
+
+test(`${SLUG}: input-time reparenting stops later events and cannot verify an external row`, async () => {
+  const h = boot({ inputReparent: true });
+  try {
+    const result = await h.api.fillField(LABEL, CALLER);
+    assert.equal(result.ok, false);
+    assert.equal(result.reason, 'control_not_supported');
+    const target = h.document.getElementById('target');
+    assert.equal(target.closest('.resume-operation-wrap'), null);
+    assert.equal(target.value, 'KEEP_REPARENTED');
+    assert.deepEqual(h.stats.events, ['input']);
     safe(h, result);
   } finally { h.dom.window.close(); }
 });
@@ -237,7 +306,6 @@ test(`${SLUG}: absent or non-string caller data never invents text`, async () =>
     assert.deepEqual(h.stats.events, []);
   } finally { h.dom.window.close(); }
 });
-
 for (const state of [
   { url: PAGE.replace('/pb/', '/mc/') }, { url: PAGE.replace('https:', 'http:') },
   { url: PAGE.replace('wecruit.hotjob.cn', 'example.invalid') }, { noRoot: true }, { element: true }
@@ -329,4 +397,3 @@ test('passed-subject note: missing, unconfirmed, ambiguous, and other-page facts
     assert.deepEqual(h.stats.events, []);
   } finally { h.dom.window.close(); }
 });
-

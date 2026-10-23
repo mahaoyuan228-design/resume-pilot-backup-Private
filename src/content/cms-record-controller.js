@@ -3,7 +3,7 @@ globalThis.installResumeCmsRecordController=function(recordKind){
   const internship=recordKind==='internship',controllerName=internship?'ResumeCmsInternshipMulti':'ResumeCmsEducationMulti';
   const setId=internship?'49170501':'14',sectionName=internship?'实习经历':'教育经历必填',rowIdPattern=internship?/^49170501_\d+_\d+$/u:/^14_\d+_\d+$/u;
   'use strict';
-  if(globalThis[controllerName]?.version===3&&globalThis[controllerName].implementationRevision===19)return;
+  if(globalThis[controllerName]?.version===3&&globalThis[controllerName].implementationRevision===20)return;
   if(globalThis.ResumeProfileWriteContext)throw Error('profile_write_context_busy');
   async function checkProfileWrite(){const context=globalThis.ResumeProfileWriteContext;if(context)await context.check();}
   const PAGE='https://wecruit.hotjob.cn/SU629dbc0c0dcad452299bc0f7/pb/resumeOperation.html';
@@ -67,7 +67,10 @@ globalThis.installResumeCmsRecordController=function(recordKind){
   function outsideEducation(form){const section=sectionOf(form);return stable([...form.querySelectorAll('input,textarea,select,.ant-select-selection-selected-value,.ant-select-selection-item')].filter(node=>!section.contains(node)).map(node=>[node.tagName,node.type||'',node.value??node.textContent??'',!!node.checked]));}
   function overlayOpen(){return [...document.querySelectorAll('.ant-select-dropdown:not(.ant-select-dropdown-hidden),.ant-calendar-picker-container,.ant-modal,.ant-cascader-menus')].some(visible);}
   async function textAdapter(field,fact,binding,context={}){const input=field.input;if(!input||!['INPUT','TEXTAREA'].includes(input.tagName)||input.disabled||input.readOnly)return {status:'skipped',reason:'control_not_supported'};
-    const initialValue=input.value,same=initialValue===fact.value;if(same&&!binding.replaceExisting)return {status:'verified',reason:'preexisting_same_value'};
+    // Native textareas expose LF line endings, including after a CRLF/CR set.
+    // Keep the source fact and exact initial-value guard unchanged.
+    const desiredValue=input.tagName==='TEXTAREA'?fact.value.replace(/\r\n?/gu,'\n'):fact.value;
+    const initialValue=input.value,same=initialValue===desiredValue;if(same&&!binding.replaceExisting)return {status:'verified',reason:'preexisting_same_value'};
     if(initialValue&&!binding.replaceExisting)return {status:'skipped',reason:'existing_value'};
     // replaceExisting applies to the captured value, never a later native edit.
     // Recheck after every pre-set await, including focus recovery and ownership.
@@ -93,7 +96,7 @@ globalThis.installResumeCmsRecordController=function(recordKind){
       input.blur();await checkProfileWrite();await pause(40);
       if(document.activeElement===input)return {status:'failed',reason:'text_blur_not_observed'};
       if(!blurEventSeen&&!focusoutEventSeen)return {status:'failed',reason:'text_blur_event_not_observed'};
-      return input.isConnected&&input.value===fact.value?{status:'verified',reason:same?'reapplied':'dom_readback_matched'}:{status:'failed',reason:'text_readback_mismatch'};
+      return input.isConnected&&input.value===desiredValue?{status:'verified',reason:same?'reapplied':'dom_readback_matched'}:{status:'failed',reason:'text_readback_mismatch'};
     }finally{input.removeEventListener('blur',onBlur,true);input.removeEventListener('focusout',onFocusOut,true);}
   }
   // The owned normal-popup worker supplies source validation and the read-only
@@ -193,5 +196,5 @@ globalThis.installResumeCmsRecordController=function(recordKind){
       return {ok:true,complete,reason,writeStarted,addClicks,bindings,fields:publicFields,serialization:rows,serializedRecordCount:verification.serializedRecordCount,provisionalNewRecords:addClicks,saveClicks:0,deleteClicks:0,finalSubmitClicks:0};
     }catch(error){if(registered){if(writeStarted&&executions.has(plan?.fingerprint))executions.get(plan.fingerprint).state='unknown';else executions.delete(plan.fingerprint);}return {ok:false,complete:false,reason:/^[a-z0-9_]+$/u.test(error?.message||'')?error.message:'education_candidate_failed',phase,writeStarted,addClicks,bindings,fields:publicFields,provisionalNewRecords:addClicks,saveClicks:0,deleteClicks:0,finalSubmitClicks:0};}finally{if(profileContext&&globalThis.ResumeProfileWriteContext===profileContext)delete globalThis.ResumeProfileWriteContext;}
   }
-  globalThis[controllerName]=Object.freeze({version:3,implementationRevision:19,inspect,locateRow,locateField,rowIdentity,run});
+  globalThis[controllerName]=Object.freeze({version:3,implementationRevision:20,inspect,locateRow,locateField,rowIdentity,run});
 };

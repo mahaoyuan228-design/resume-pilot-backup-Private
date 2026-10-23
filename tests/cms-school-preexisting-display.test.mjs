@@ -40,10 +40,10 @@ test('schoolDisplayMatches: 悉尼大学 ↔ bilingual profile; reject trivial s
 });
 
 
-test('controller rev19 + serialization use schoolDisplayEquals for school DOM/readback', async () => {
+test('controller rev20 + serialization use schoolDisplayEquals for school DOM/readback', async () => {
   const controllerSrc = await readFile(resolve('src/content/cms-record-controller.js'), 'utf8');
   const serialSrc = await readFile(resolve('src/content/cms-education-serialization.mjs'), 'utf8');
-  assert.match(controllerSrc, /implementationRevision:19/);
+  assert.match(controllerSrc, /implementationRevision:20/);
   assert.match(controllerSrc, /schoolDisplayEquals/);
   assert.match(controllerSrc, /equals=key==='school'\?schoolDisplayEquals:optionEquals/);
   assert.match(serialSrc, /schoolDisplayEquals/);

@@ -1,6 +1,6 @@
 {
   "version": "0.1.4.9",
-  "sumsSha256": "1fca6cdd99eac9405392a5c8bc4671ae89dd57c5678601f3184421288246e727",
+  "sumsSha256": "6b7f414029ebe5158d4a15930da0ad09ccb542f18dc66d95d4985ca395d32ab0",
   "inventory": [
     {
       "path": "manifest.json",
@@ -304,8 +304,8 @@
     },
     {
       "path": "src/content/gth-open-fill.js",
-      "sha256": "4166299fadd3e13b8d8047e138f570cc2bf9c63cfa5546acf0f8654b123c0d13",
-      "sourceSha256": "4166299fadd3e13b8d8047e138f570cc2bf9c63cfa5546acf0f8654b123c0d13",
+      "sha256": "d90afa7714cc05bbe9a75b6bca466555e9803e189675124c0390cc6af5e418e0",
+      "sourceSha256": "d90afa7714cc05bbe9a75b6bca466555e9803e189675124c0390cc6af5e418e0",
       "kind": "frozen-product"
     },
     {
@@ -334,8 +334,8 @@
     },
     {
       "path": "src/content/gth-other-section.js",
-      "sha256": "d7766c85cdcb80efe5944de05ed23717419179f14e010113eaa3ede02825f612",
-      "sourceSha256": "d7766c85cdcb80efe5944de05ed23717419179f14e010113eaa3ede02825f612",
+      "sha256": "4e96a8c4f7bf4f041f3589324f7abe5710d1e72982ca9fea364a32b20f2e780c",
+      "sourceSha256": "4e96a8c4f7bf4f041f3589324f7abe5710d1e72982ca9fea364a32b20f2e780c",
       "kind": "frozen-product"
     },
     {
@@ -346,8 +346,8 @@
     },
     {
       "path": "src/content/gth-simple-section.js",
-      "sha256": "39b8b73abe539f632b838c874d75b4909b23076fbf8c14f1690991addce631b8",
-      "sourceSha256": "39b8b73abe539f632b838c874d75b4909b23076fbf8c14f1690991addce631b8",
+      "sha256": "faa7f30dd09535032eca63dda3a45dccc8a57b4e40620a05fd06fca29a38523f",
+      "sourceSha256": "faa7f30dd09535032eca63dda3a45dccc8a57b4e40620a05fd06fca29a38523f",
       "kind": "frozen-product"
     },
     {

@@ -31,7 +31,7 @@ test('gth-other-auto fill sends GTH_OTHER_FILL; probe stays MAIN', () => {
   assert.equal(/world:'MAIN',\s*\n\s*func:async\(payload\)=>typeof globalThis\.ResumeGthOtherSection/.test(src), false);
   const section = load('src/content/gth-other-section.js');
   assert.match(section, /const formsOf = sections => \[\.\.\.sections\[6\]\.querySelectorAll\('form'\)\]/);
-  assert.match(section, /ResumeGthOtherSectionRevision=3/);
+  assert.match(section, /ResumeGthOtherSectionRevision=4/);
   assert.match(section, /missing_profile_value/);
   assert.match(section, /profile_fact_unconfirmed/);
   assert.match(section, /liveSupportClaimed: false/);
@@ -52,7 +52,7 @@ test('gth-simple-auto fill sends GTH_SKILLS_FILL; probe stays MAIN', () => {
   assert.equal(/world:'MAIN',\s*\n\s*func:async\(payload\)=>typeof globalThis\.ResumeGthSimpleSection/.test(src), false);
   const section = load('src/content/gth-simple-section.js');
   assert.match(section, /const formsOf = sections => \[\.\.\.sections\[4\]\.querySelectorAll\('form'\)\]/);
-  assert.match(section, /ResumeGthSimpleSectionRevision=3/);
+  assert.match(section, /ResumeGthSimpleSectionRevision=4/);
   assert.match(section, /missing_profile_value/);
   assert.match(section, /profile_fact_unconfirmed/);
   assert.match(section, /liveSupportClaimed: false/);
@@ -121,7 +121,7 @@ function boot(sectionFile, html) {
     clearTimeout: window.clearTimeout.bind(window),
   });
   vm.runInContext(load(sectionFile), context);
-  return { dom, clicks, context };
+  return { dom, clicks, context, chrome };
 }
 
 function assertNeverSaved(clicks) {
@@ -218,4 +218,186 @@ test('skills section ignores a TEST answer and writes the confirmed profile fact
   assert.equal(result.fields[0].reason, 'readback_matched');
   assert.deepEqual(editRun.clicks.map((node) => String(node.textContent).trim()), ['编辑']);
   assertNeverSaved(editRun.clicks);
+});
+
+const invalidExistingStates = [
+  ['aria-invalid', node => node.setAttribute('aria-invalid', 'true')],
+  ['is-error', node => node.closest('.el-form-item').classList.add('is-error')],
+  ['is-validating', node => node.closest('.el-form-item').classList.add('is-validating')],
+  ['visible error', node => node.insertAdjacentHTML('afterend', '<div class="el-form-item__error">字段有误</div>')],
+  ['native validity', node => node.setCustomValidity('字段有误')],
+];
+
+for (const [state, invalidate] of invalidExistingStates) {
+  test(`legacy skills and other same-value readback requires validation: ${state}`, async () => {
+    const cases = [
+      {
+        section: '职业技能与特长', file: 'src/content/gth-simple-section.js', api: 'ResumeGthSimpleSection',
+        pairs: [['职业技能与特长', 'Python']],
+        body: control('职业技能与特长', { tag: 'textarea', value: 'Python' }),
+      },
+      {
+        section: '其他信息', file: 'src/content/gth-other-section.js', api: 'ResumeGthOtherSection',
+        pairs: [['描述', '维护过一个小工具'], ['标题', '开源贡献']],
+        body: control('描述', { tag: 'textarea', value: '维护过一个小工具' }) + control('标题', { value: '开源贡献' }),
+      },
+    ];
+    for (const fixture of cases) {
+      const page = boot(fixture.file, pageHtml(fixture.section, `<form>${fixture.body}</form>`));
+      try {
+        const target = page.dom.window.document.getElementById(`field-${fixture.pairs[0][0]}`);
+        invalidate(target);
+        const result = await page.context[fixture.api].fill({
+          sectionName: fixture.section, profileBinding: binding,
+          profile: confirmedProfile(fixture.section, fixture.pairs),
+        });
+        assert.equal(result.ok, false);
+        assert.equal(result.reason, 'site_validation_failed');
+        assert.equal(result.fields.some(row => row.status === 'verified'), false);
+        assert.equal(result.fields.every(row => row.status === 'failed'), true);
+        assert.equal(result.writeStarted, false);
+        assert.equal(result.liveSupportClaimed, false);
+        assert.equal(result.softwareClickedSave, false);
+        assert.equal(result.softwareClickedSubmit, false);
+        assert.equal(result.softwareClickedDelete, false);
+        for (const [question, answer] of fixture.pairs) {
+          assert.equal(page.dom.window.document.getElementById(`field-${question}`).value, answer);
+        }
+        assert.deepEqual(page.clicks, []);
+      } finally {
+        page.dom.window.close();
+      }
+    }
+  });
+}
+
+test('legacy matching values still verify without dispatching input or change', async () => {
+  const skills = boot('src/content/gth-simple-section.js', pageHtml('职业技能与特长',
+    `<form>${control('职业技能与特长', { tag: 'textarea', value: 'Python' })}</form>`));
+  const other = boot('src/content/gth-other-section.js', pageHtml('其他信息',
+    `<form>${control('描述', { tag: 'textarea', value: '维护过一个小工具' })}${control('标题', { value: '开源贡献' })}</form>`));
+  try {
+    for (const [page, section, api, pairs] of [
+      [skills, '职业技能与特长', 'ResumeGthSimpleSection', [['职业技能与特长', 'Python']]],
+      [other, '其他信息', 'ResumeGthOtherSection', [['描述', '维护过一个小工具'], ['标题', '开源贡献']]],
+    ]) {
+      const events = [];
+      for (const type of ['input', 'change']) page.dom.window.document.addEventListener(type, () => events.push(type));
+      const result = await page.context[api].fill({ sectionName: section, profileBinding: binding, profile: confirmedProfile(section, pairs) });
+      assert.equal(result.ok, true);
+      assert.equal(result.fields.every(row => row.status === 'verified' && row.reason === 'preexisting_same_value'), true);
+      assert.equal(result.writeStarted, false);
+      assert.equal(result.liveSupportClaimed, false);
+      assert.deepEqual(events, []);
+      assert.deepEqual(page.clicks, []);
+    }
+  } finally {
+    skills.dom.window.close();
+    other.dom.window.close();
+  }
+});
+
+test('legacy same-value paths recheck after the binding await before reporting verification', async () => {
+  for (const kind of ['own value', 'outside section', 'target identity']) {
+    for (const fixture of [
+      {
+        section: '职业技能与特长', file: 'src/content/gth-simple-section.js', api: 'ResumeGthSimpleSection',
+        pairs: [['职业技能与特长', 'Python']],
+        body: control('职业技能与特长', { tag: 'textarea', value: 'Python' }),
+      },
+      {
+        section: '其他信息', file: 'src/content/gth-other-section.js', api: 'ResumeGthOtherSection',
+        pairs: [['描述', '维护过一个小工具'], ['标题', '开源贡献']],
+        body: control('描述', { tag: 'textarea', value: '维护过一个小工具' }) + control('标题', { value: '开源贡献' }),
+      },
+    ]) {
+      const page = boot(fixture.file, pageHtml(fixture.section, `<form>${fixture.body}</form>`));
+      try {
+        const document = page.dom.window.document;
+        let checks = 0;
+        page.chrome.runtime.sendMessage = async message => {
+          assert.equal(message.type, 'RESUME_PROFILE_BINDING_CHECK');
+          checks += 1;
+          if (checks === 2) {
+            const target = document.getElementById(`field-${fixture.pairs[0][0]}`);
+            if (kind === 'own value') target.value = 'Edited during binding check';
+            if (kind === 'outside section') document.querySelector('.r-section').append('External section changed');
+            if (kind === 'target identity') target.replaceWith(target.cloneNode(true));
+          }
+          return { allowed: true };
+        };
+        const result = await page.context[fixture.api].fill({
+          sectionName: fixture.section, profileBinding: binding,
+          profile: confirmedProfile(fixture.section, fixture.pairs),
+        });
+        assert.equal(checks, 2);
+        assert.equal(result.ok, false, `${fixture.section}: ${kind}`);
+        assert.equal(result.reason, 'original_value_changed');
+        assert.equal(result.fields.some(row => row.status === 'verified'), false);
+        assert.equal(result.writeStarted, false);
+        assert.equal(result.liveSupportClaimed, false);
+        assert.deepEqual(page.clicks, []);
+      } finally {
+        page.dom.window.close();
+      }
+    }
+  }
+});
+
+test('legacy write-success paths recheck the final binding await before reporting verification', async () => {
+  for (const kind of ['own value', 'outside section', 'target identity', 'validation']) {
+    for (const fixture of [
+      {
+        section: '职业技能与特长', file: 'src/content/gth-simple-section.js', api: 'ResumeGthSimpleSection',
+        pairs: [['职业技能与特长', 'Python']],
+        body: control('职业技能与特长', { tag: 'textarea' }),
+        driftReason: kind === 'own value' ? 'readback_mismatch' : 'other_values_changed',
+      },
+      {
+        section: '其他信息', file: 'src/content/gth-other-section.js', api: 'ResumeGthOtherSection',
+        pairs: [['描述', '维护过一个小工具'], ['标题', '开源贡献']],
+        body: control('描述', { tag: 'textarea' }) + control('标题'),
+        driftReason: 'readback_mismatch',
+      },
+    ]) {
+      const page = boot(fixture.file, pageHtml(fixture.section, `<form>${fixture.body}</form>`));
+      try {
+        const document = page.dom.window.document;
+        const finalCheck = 2 + fixture.pairs.length * 3;
+        let checks = 0;
+        page.chrome.runtime.sendMessage = async message => {
+          assert.equal(message.type, 'RESUME_PROFILE_BINDING_CHECK');
+          checks += 1;
+          if (checks === finalCheck) {
+            // Every requested value has passed the writer's readback already.
+            for (const [question, answer] of fixture.pairs) {
+              assert.equal(document.getElementById(`field-${question}`).value, answer);
+            }
+            const target = document.getElementById(`field-${fixture.pairs[0][0]}`);
+            if (kind === 'own value') target.value = 'Edited during final binding check';
+            if (kind === 'outside section') document.querySelector('.r-section').append('External section changed');
+            if (kind === 'target identity') target.replaceWith(target.cloneNode(true));
+            if (kind === 'validation') target.setAttribute('aria-invalid', 'true');
+          }
+          return { allowed: true };
+        };
+        const result = await page.context[fixture.api].fill({
+          sectionName: fixture.section, profileBinding: binding,
+          profile: confirmedProfile(fixture.section, fixture.pairs),
+        });
+        assert.equal(checks, finalCheck);
+        assert.equal(result.ok, false, `${fixture.section}: ${kind}`);
+        assert.equal(result.reason, kind === 'validation' ? 'site_validation_failed' : fixture.driftReason);
+        assert.equal(result.fields.every(row => row.status === 'failed'), true);
+        assert.equal(result.writeStarted, true);
+        assert.equal(result.liveSupportClaimed, false);
+        assert.equal(result.softwareClickedSave, false);
+        assert.equal(result.softwareClickedSubmit, false);
+        assert.equal(result.softwareClickedDelete, false);
+        assert.deepEqual(page.clicks, []);
+      } finally {
+        page.dom.window.close();
+      }
+    }
+  }
 });

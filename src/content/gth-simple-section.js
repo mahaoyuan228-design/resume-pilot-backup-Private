@@ -5,7 +5,7 @@
 // This file does not claim the site is supported. Never clicks 保存 / 提交 /
 // 投递 / 删除. The editor is left open.
 (() => {
-  if (globalThis.ResumeGthSimpleSection && globalThis.ResumeGthSimpleSectionRevision===3) return;
+  if (globalThis.ResumeGthSimpleSection && globalThis.ResumeGthSimpleSectionRevision===4) return;
 
   const PAGE = 'https://hr.gtht.com/resume/edit/';
   const TITLES = ['基本信息', '教育经历', '求职意向', '工作经验',
@@ -149,15 +149,23 @@
       const first = targetOf(form);
       const { item, control } = first;
       const existing = control.value;
+      const otherBefore = otherFormValues(form, control);
       if (existing !== '') {
-        await checkBinding();result.ok = true;
+        await checkBinding();
+        sections = requirePage(timeOrigin);
+        const latest = targetOf(form);
+        if (formsOf(sections).length !== 1 || formsOf(sections)[0] !== form || !form.isConnected
+          || latest.item !== item || latest.control !== control || latest.control.value !== existing
+          || otherFormValues(form, control) !== otherBefore || otherSections(sections) !== outsideBefore)
+          stop('original_value_changed');
+        if (existing === answer && !validationClear(latest.item, latest.control)) stop('site_validation_failed');
+        result.ok = true;
         result.fields = [fieldRow(existing === answer ? 'verified' : 'skipped',
           existing === answer ? 'preexisting_same_value' : 'existing_value')];
         return result;
       }
       if (control.maxLength >= 0 && answer.length > control.maxLength)
         stop('value_too_long');
-      const otherBefore = otherFormValues(form, control);
       await pause(80);
       sections = requirePage(timeOrigin);
       if (formsOf(sections).length !== 1 || formsOf(sections)[0] !== form
@@ -174,26 +182,31 @@
       requirePage(timeOrigin);
       await boundAction(()=>{if(!(control)?.isConnected)stop('profile_action_target_changed');return control.dispatchEvent(new Event('change', { bubbles: true }));});
       await pause(250);
-      sections = requirePage(timeOrigin);
-      if (formsOf(sections).length !== 1 || formsOf(sections)[0] !== form
-        || !form.isConnected || !sections[4].contains(form)) stop('editor_changed_after_fill');
-      const latest = targetOf(form);
-      if (latest.control !== control || otherFormValues(form, control) !== otherBefore
-        || otherSections(sections) !== outsideBefore) stop('other_values_changed');
-      if (control.value !== answer) stop('readback_mismatch');
-      if (!validationClear(latest.item, control)) stop('site_validation_failed');
-      await checkBinding();result.ok = true;
+      const verifyReadback = () => {
+        const currentSections = requirePage(timeOrigin);
+        if (formsOf(currentSections).length !== 1 || formsOf(currentSections)[0] !== form
+          || !form.isConnected || !currentSections[4].contains(form)) stop('editor_changed_after_fill');
+        const latest = targetOf(form);
+        if (latest.item !== item || latest.control !== control || otherFormValues(form, control) !== otherBefore
+          || otherSections(currentSections) !== outsideBefore) stop('other_values_changed');
+        if (latest.control.value !== answer) stop('readback_mismatch');
+        if (!validationClear(latest.item, latest.control)) stop('site_validation_failed');
+      };
+      verifyReadback();
+      await checkBinding();
+      verifyReadback();
+      result.ok = true;
       result.fields = [fieldRow('verified', 'readback_matched')];
       return result;
     } catch (error) {
       result.reason = error instanceof Stop ? error.code : 'fill_failed';
-      result.fields = [fieldRow(result.writeStarted ? 'failed' : 'skipped', result.reason)];
+      result.fields = [fieldRow(result.writeStarted || result.reason === 'site_validation_failed' ? 'failed' : 'skipped', result.reason)];
       return result;
     } finally {
       busy = false;activeBinding=null;
     }
   }
 
-  globalThis.ResumeGthSimpleSectionRevision=3;
+  globalThis.ResumeGthSimpleSectionRevision=4;
   globalThis.ResumeGthSimpleSection = Object.freeze({ fill });
 })();

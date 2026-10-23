@@ -5,7 +5,7 @@
 // stays false. This file does not claim the site is supported. Never clicks
 // 保存 / 提交 / 投递 / 删除. The editor is left open.
 (() => {
-  if (globalThis.ResumeGthOtherSection && globalThis.ResumeGthOtherSectionRevision===3) return;
+  if (globalThis.ResumeGthOtherSection && globalThis.ResumeGthOtherSectionRevision===4) return;
 
   const PAGE = 'https://hr.gtht.com/resume/edit/';
   const TITLES = ['基本信息', '教育经历', '求职意向', '工作经验',
@@ -159,8 +159,19 @@
       result.editorLeftOpen = true;
       let targets = controlsOf(form);
       const originals = targets.map(target => target.node.value);
+      const otherBefore = otherControls(form, targets);
       if (originals.some(value => value !== '')) {
-        await checkBinding();result.ok = true;
+        await checkBinding();
+        sections = sectionsAt(timeOrigin);
+        const latest = controlsOf(form);
+        if (formsOf(sections).length !== 1 || formsOf(sections)[0] !== form || !form.isConnected
+          || latest.some((target, index) => target.item !== targets[index].item || target.node !== targets[index].node
+            || target.node.value !== originals[index])
+          || otherControls(form, latest) !== otherBefore || outsideState(sections) !== outsideBefore)
+          stop('original_value_changed');
+        const matching = latest.filter((target, index) => originals[index] === values[index]);
+        if (!noValidationErrors(matching)) stop('site_validation_failed');
+        result.ok = true;
         result.fields = targets.map((target, index) => fieldRow(target.question,
           originals[index] === values[index] ? 'verified' : 'skipped',
           originals[index] === values[index] ? 'preexisting_same_value' : 'existing_value'));
@@ -169,7 +180,6 @@
       if (targets.some((target, index) =>
         target.node.maxLength >= 0 && values[index].length > target.node.maxLength))
         stop('value_too_long');
-      const otherBefore = otherControls(form, targets);
       await pause(80);
       sections = sectionsAt(timeOrigin);
       const stable = controlsOf(form);
@@ -194,28 +204,34 @@
         await boundAction(()=>{if(!(target.node)?.isConnected)stop('profile_action_target_changed');return target.node.dispatchEvent(new Event('change', { bubbles: true }));});
       }
       await pause(250);
-      sections = sectionsAt(timeOrigin);
-      if (formsOf(sections).length !== 1 || formsOf(sections)[0] !== form
-        || !form.isConnected || !sections[6].contains(form)) stop('editor_changed_after_fill');
-      const latest = controlsOf(form);
-      if (latest.some((target, index) => target.node !== targets[index].node
-        || target.node.value !== values[index])
-        || otherControls(form, latest) !== otherBefore
-        || outsideState(sections) !== outsideBefore) stop('readback_mismatch');
-      if (!noValidationErrors(latest)) stop('site_validation_failed');
-      await checkBinding();result.ok = true;
+      const verifyReadback = () => {
+        const currentSections = sectionsAt(timeOrigin);
+        if (formsOf(currentSections).length !== 1 || formsOf(currentSections)[0] !== form
+          || !form.isConnected || !currentSections[6].contains(form)) stop('editor_changed_after_fill');
+        const latest = controlsOf(form);
+        if (latest.some((target, index) => target.item !== targets[index].item || target.node !== targets[index].node
+          || target.node.value !== values[index])
+          || otherControls(form, latest) !== otherBefore
+          || outsideState(currentSections) !== outsideBefore) stop('readback_mismatch');
+        if (!noValidationErrors(latest)) stop('site_validation_failed');
+        return latest;
+      };
+      verifyReadback();
+      await checkBinding();
+      const latest = verifyReadback();
+      result.ok = true;
       result.fields = latest.map(target => fieldRow(target.question, 'verified', 'readback_matched'));
       return result;
     } catch (error) {
       result.reason = error instanceof Stop ? error.code : 'fill_failed';
       result.fields = FIELDS.map(spec => fieldRow(spec.question,
-        result.writeStarted ? 'failed' : 'skipped', result.reason));
+        result.writeStarted || result.reason === 'site_validation_failed' ? 'failed' : 'skipped', result.reason));
       return result;
     } finally {
       busy = false;activeBinding=null;
     }
   }
 
-  globalThis.ResumeGthOtherSectionRevision=3;
+  globalThis.ResumeGthOtherSectionRevision=4;
   globalThis.ResumeGthOtherSection = Object.freeze({ fill });
 })();

@@ -253,6 +253,99 @@ test('skills same-value does not write, and an over-long value fails closed', as
   assertNeverForbidden(long.clicks);
 });
 
+// Keep the observed plain editors and use only validation states the shipped
+// writer already checks after a write. Matching text alone is not acceptance.
+const invalidPlainStates = [
+  ['aria-invalid', node => node.setAttribute('aria-invalid', 'true')],
+  ['is-error', node => node.closest('.el-form-item').classList.add('is-error')],
+  ['is-validating', node => node.closest('.el-form-item').classList.add('is-validating')],
+  ['visible error', node => node.insertAdjacentHTML('afterend', '<div class="el-form-item__error">字段有误</div>')],
+  ['native validity', node => node.setCustomValidity('字段有误')],
+];
+
+for (const [state, invalidate] of invalidPlainStates) {
+  test(`skills matching text fails validation without writing: ${state}`, async () => {
+    const page = boot(shell('职业技能与特长', formWrap(textItem('职业技能与特长', {
+      tag: 'textarea', value: 'Python', max: '4000', id: 'skills',
+    }))));
+    try {
+      const input = page.dom.window.document.getElementById('skills');
+      invalidate(input);
+      const result = await page.context.ResumeGthSkills.trial(request(customProfile('职业技能与特长', {
+        职业技能与特长: 'Python',
+      })));
+      assert.equal(result.ok, false);
+      assert.equal(result.reason, 'site_validation_failed');
+      assert.equal(result.fields[0].status, 'failed');
+      assert.equal(result.fields[0].reason, 'site_validation_failed');
+      assert.equal(result.writeStarted, false);
+      assert.equal(result.liveSupportClaimed, false);
+      assert.equal(result.supportedComplete, false);
+      assert.equal(assessGthSkillsFill(result).ok, false);
+      assert.equal(input.value, 'Python');
+      assert.deepEqual(page.clicks, []);
+    } finally {
+      page.dom.window.close();
+    }
+  });
+}
+
+test('other matching title cannot verify through an invalid field or a blocked peer', async () => {
+  for (const blockedPeer of [false, true]) {
+    const page = boot(shell('其他信息', formWrap(
+      textItem('标题', { id: 'title', value: '开源贡献' })
+        + textItem('描述', { tag: 'textarea', id: 'desc', value: blockedPeer ? '旧描述' : '维护过一个小工具' }),
+    )));
+    try {
+      const input = page.dom.window.document.getElementById('title');
+      input.setAttribute('aria-invalid', 'true');
+      const result = await page.context.ResumeGthOther.trial(request(customProfile('其他信息', {
+        标题: '开源贡献', 描述: '维护过一个小工具',
+      })));
+      assert.equal(result.ok, false);
+      const title = result.fields.find(row => row.question === '标题');
+      assert.equal(title.status, 'failed');
+      assert.equal(title.reason, 'site_validation_failed');
+      assert.equal(result.writeStarted, false);
+      assert.equal(result.liveSupportClaimed, false);
+      assert.equal(assessGthOtherFill(result).ok, false);
+      assert.equal(input.value, '开源贡献');
+      assert.equal(page.dom.window.document.getElementById('desc').value, blockedPeer ? '旧描述' : '维护过一个小工具');
+      assert.deepEqual(page.clicks, []);
+    } finally {
+      page.dom.window.close();
+    }
+  }
+});
+
+test('other info rechecks a previously verified title when description validation changes it', async () => {
+  const page = boot(shell('其他信息', formWrap(
+    textItem('标题', { id: 'title' }) + textItem('描述', { tag: 'textarea', id: 'desc' }),
+  )));
+  try {
+    const document = page.dom.window.document;
+    document.getElementById('desc').addEventListener('change', () => {
+      document.getElementById('title').setAttribute('aria-invalid', 'true');
+    });
+    const result = await page.context.ResumeGthOther.trial(request(customProfile('其他信息', {
+      标题: '开源贡献', 描述: '维护过一个小工具',
+    })));
+    assert.equal(result.ok, false);
+    const title = result.fields.find(row => row.question === '标题');
+    assert.equal(title.status, 'failed');
+    assert.equal(title.reason, 'site_validation_failed');
+    assert.equal(result.fields.find(row => row.question === '描述').status, 'verified');
+    assert.equal(result.writeStarted, true);
+    assert.equal(result.liveSupportClaimed, false);
+    assert.equal(assessGthOtherFill(result).ok, false);
+    assert.equal(document.getElementById('title').value, '开源贡献');
+    assert.equal(document.getElementById('desc').value, '维护过一个小工具');
+    assert.deepEqual(page.clicks, []);
+  } finally {
+    page.dom.window.close();
+  }
+});
+
 test('skills missing label, duplicate label, and two open forms fail closed before write', async () => {
   const missing = boot(shell('职业技能与特长', formWrap('<div class="el-form-item"><textarea id="skills"></textarea></div>')));
   const missingResult = await missing.context.ResumeGthSkills.trial(request(customProfile('职业技能与特长', { 职业技能与特长: 'Python' })));

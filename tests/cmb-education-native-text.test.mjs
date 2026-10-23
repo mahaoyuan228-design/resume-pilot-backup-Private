@@ -60,6 +60,42 @@ test('education: fixture metadata comes verbatim from the live census', () => {
     && (field.tag === 'textarea' || field.type === 'text')));
 });
 
+test('education: production allowlist matches only the census-backed native text metadata', () => {
+  const p = boot();
+  try {
+    const observed = census.fields.filter(field => field.id?.startsWith('resume_educationHistoryList_')
+      && (field.tag === 'textarea' || field.tag === 'input' && field.type === 'text'));
+    assert.deepEqual(probe.fields, observed);
+    assert.deepEqual(JSON.parse(JSON.stringify(p.api.fields)), observed);
+    assert.equal(Object.isFrozen(p.api.fields), true);
+    assert.ok(p.api.fields.every(Object.isFrozen));
+  } finally { p.dom.window.close(); }
+});
+
+test('education: observed selects, date controls, and hidden fields cannot enter the text plan', async () => {
+  const p = boot();
+  try {
+    const excluded = census.fields.filter(field => field.id?.startsWith('resume_educationHistoryList_')
+      && !probe.fields.some(allowed => allowed.id === field.id));
+    assert.deepEqual(excluded.map(field => field.id), [
+      'resume_educationHistoryList_0_educationLevelCode',
+      'resume_educationHistoryList_0_startDate',
+      'resume_educationHistoryList_0_endDate',
+      'resume_educationHistoryList_0_fullEducation'
+    ]);
+    for (const field of excluded) {
+      const requested = { values: { ...values(), [field.id]: 'Confirmed excluded control' },
+        confirmedFields: [...profile().confirmedFields, field.id] };
+      const result = await p.api.fillProfile(requested);
+      assert.equal(result.reason, 'field_not_allowed', field.id);
+      assert.equal(result.writeAttempted, false);
+      assert.ok(probe.fields.every(target => p.node(target.id).value === ''));
+      safe(result, p);
+    }
+    assert.deepEqual(p.events, []);
+  } finally { p.dom.window.close(); }
+});
+
 test('education: fills every observed empty control, preserves text, and emits native events without clicks', async () => {
   const p = boot();
   try {
@@ -106,7 +142,6 @@ test('education: navigation and page hiding during site events stop later action
       assert.equal(result.reason, mode === 'navigation' ? 'wrong_page' : 'page_hidden');
       assert.equal(result.fields[0].status, 'failed');
       assert.deepEqual(p.events.map(([, name]) => name), ['input']);
-      for (const field of probe.fields.slice(1)) assert.equal(p.node(field.id).value, '');
       safe(result, p);
     } finally { p.dom.window.close(); }
   }
@@ -140,23 +175,25 @@ test('education: preexisting matches are read back without rewriting', async () 
   } finally { p.dom.window.close(); }
 });
 
-test('education: a kept first field never blocks independent empty fields or causes overwrite', async () => {
-  const p = boot();
-  try {
-    const first = probe.fields[0];
-    p.node(first.id).value = 'keep existing';
-    const result = await p.api.fillProfile(profile());
-    assert.equal(p.node(first.id).value, 'keep existing');
-    assert.equal(result.fields[0].reason, 'existing_value');
-    for (const field of probe.fields.slice(1)) {
-      assert.equal(p.node(field.id).value, values()[field.id]);
-      assert.equal(result.fields.find(row => row.id === field.id).reason, 'readback_matched');
-    }
-    safe(result, p);
-  } finally { p.dom.window.close(); }
+test('education: whitespace is occupied user text and is never overwritten', async () => {
+  for (const existing of [' ', '\t', '\u00a0']) {
+    const p = boot();
+    try {
+      const id = probe.fields[0].id;
+      p.node(id).value = existing;
+      const result = await p.api.fillProfile(profile());
+      assert.equal(result.ok, false);
+      assert.equal(result.writeAttempted, false);
+      assert.equal(result.fields[0].status, 'skipped');
+      assert.equal(result.fields[0].reason, 'existing_value');
+      assert.equal(p.node(id).value, existing);
+      assert.deepEqual(p.events, []);
+      safe(result, p);
+    } finally { p.dom.window.close(); }
+  }
 });
 
-test('education: single-field API requires explicit confirmation and never infers another row', async () => {
+test('education: single-field API requires explicit confirmation before writing', async () => {
   const p = boot();
   try {
     const id = probe.fields[0].id;
@@ -166,7 +203,6 @@ test('education: single-field API requires explicit confirmation and never infer
     const result = await p.api.fillField(id, 'Confirmed single', { confirmed: true });
     assert.equal(result.field.id, id);
     assert.equal(result.field.status, 'verified');
-    for (const field of probe.fields.slice(1)) assert.equal(p.node(field.id).value, '');
     safe(result, p);
   } finally { p.dom.window.close(); }
 });
@@ -197,16 +233,69 @@ test('education: invalid plans and unsupported IDs fail before all writes', asyn
   } finally { p.dom.window.close(); }
 });
 
-test('education: unknown later target fails preflight before an earlier valid target is written', async () => {
+test('education: missing observed school input fails preflight without writing', async () => {
   const p = boot();
   try {
     p.node(probe.fields.at(-1).id).remove();
     const result = await p.api.fillProfile(profile());
     assert.equal(result.reason, 'target_missing');
     assert.equal(result.writeAttempted, false);
-    for (const field of probe.fields.slice(0, -1)) assert.equal(p.node(field.id).value, '');
+    assert.equal(result.fields[0].reason, 'not_run');
+    assert.deepEqual(p.events, []);
     safe(result, p);
   } finally { p.dom.window.close(); }
+});
+
+test('education: changed native metadata fails before writing or emitting events', async () => {
+  // Synthetic guard mutations of the observed input, not extra live DOM evidence.
+  const mutations = [
+    node => { node.setAttribute('type', 'search'); },
+    node => { node.setAttribute('name', 'different-field'); },
+    node => { node.setAttribute('aria-controls', 'different-list'); },
+    node => { node.setAttribute('aria-label', 'different-label'); },
+    node => {
+      const changed = node.ownerDocument.createElement('textarea');
+      for (const attribute of node.attributes) changed.setAttribute(attribute.name, attribute.value);
+      node.replaceWith(changed);
+    }
+  ];
+  for (const mutate of mutations) {
+    const p = boot();
+    try {
+      const id = probe.fields[0].id;
+      mutate(p.node(id));
+      const result = await p.api.fillProfile(profile());
+      assert.equal(result.reason, 'control_structure_changed');
+      assert.equal(result.writeAttempted, false);
+      assert.equal(p.node(id).value, '');
+      assert.deepEqual(p.events, []);
+      safe(result, p);
+    } finally { p.dom.window.close(); }
+  }
+});
+
+test('education: delayed metadata, editability, and validation drift cannot verify retained text', async () => {
+  const mutations = [
+    ['control_structure_changed', node => { node.setAttribute('placeholder', 'changed'); }],
+    ['target_not_editable', node => { node.disabled = true; }],
+    ['target_not_editable', node => { node.readOnly = true; }],
+    ['target_hidden', node => { node.hidden = true; }],
+    ['site_validation_failed', node => { node.setAttribute('aria-invalid', 'true'); }]
+  ];
+  for (const [reason, mutate] of mutations) {
+    const p = boot();
+    try {
+      const id = probe.fields[0].id, node = p.node(id), value = 'Confirmed school';
+      node.addEventListener('input', () => p.window.setTimeout(() => mutate(node), 0));
+      const result = await p.api.fillField(id, value, { confirmed: true });
+      assert.equal(result.ok, false);
+      assert.equal(result.reason, reason);
+      assert.equal(result.field.status, 'failed');
+      assert.equal(result.writeAttempted, true);
+      assert.equal(node.value, value);
+      safe(result, p);
+    } finally { p.dom.window.close(); }
+  }
 });
 
 test('education: ambiguity, disabled state, readonly, hidden state, and DOM drift fail closed', async () => {
@@ -269,7 +358,7 @@ test('education: asynchronous site readback rejection is failed, never verified'
   } finally { p.dom.window.close(); }
 });
 
-test('education: a neighboring control change stops the remaining plan', async () => {
+test('education: a neighboring control change blocks success and further native events', async () => {
   const p = boot();
   try {
     const id = probe.fields[0].id;
@@ -277,7 +366,8 @@ test('education: a neighboring control change stops the remaining plan', async (
     const result = await p.api.fillProfile(profile());
     assert.equal(result.reason, 'neighbor_changed');
     assert.equal(result.fields[0].status, 'failed');
-    for (const field of probe.fields.slice(1)) assert.equal(p.node(field.id).value, '');
+    assert.equal(result.ok, false);
+    assert.deepEqual(p.events.map(([, name]) => name), ['input']);
     assert.deepEqual(p.counts, { clicks: 0, requests: 0, submits: 0 });
     assert.equal(result.liveSupportClaimed, false);
     assert.equal(result.softwareClickedSave, false);

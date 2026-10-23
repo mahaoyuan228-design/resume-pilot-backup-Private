@@ -356,12 +356,15 @@ function classifyLiveSnap(harvest) {
     });
   }
   const unique = first.labels.length === 1 ? first.labels[0] : null;
-  const extraIds = unique && (first.ids.length > 1 || first.ids.some((id) => id !== unique.inputId));
+  // hasInput alone does not establish which recorded control belongs to the label.
+  const identity = unique ? bareToken(unique.inputId) : null;
+  const uniqueAssociation = identity?.ok === true && identity.value != null
+    && first.ids.length === 1 && first.ids[0] === identity.value;
   const extraLabels = unique && first.rankingish.some((text) => text !== unique.labelText);
   const nameConflict = unique && first.names.length > 0
-    && (typeof harvest.snap1.labelHits[0].inputName !== 'string'
+    && (first.names.length > 1 || typeof harvest.snap1.labelHits[0].inputName !== 'string'
       || first.names.some((name) => name !== norm(harvest.snap1.labelHits[0].inputName)));
-  if (unique?.hasInput === true && !extraIds && !extraLabels && !nameConflict && second.names.length === 0) {
+  if (unique?.hasInput === true && uniqueAssociation && !extraLabels && !nameConflict && second.names.length === 0) {
     return closed({
       harvestLanded: true,
       verdict: DOM_CONTROL_PRESENT,

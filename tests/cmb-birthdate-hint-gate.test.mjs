@@ -129,6 +129,7 @@ test('harvest packets map onto the five hint codes and never a selector', () => 
   const missingFacts = birthDateObservedFacts(missing);
   assert.equal(missingFacts.selector, null);
   assert.equal(missingFacts.saveAllowed, false);
+  assert.equal(missingFacts.liveSupportClaimed, false);
   assert.equal(String(missingFacts.observedId).includes('#'), false);
   assertCannotSave(missing);
 

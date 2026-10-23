@@ -299,6 +299,27 @@ for (const [method, label, value] of [
     p.verify(result);
   });
 
+  test(`${method} rejects options with different native form owners before clicking`, async (t) => {
+    const p = page(t);
+    const item = p.document.querySelector(`[data-field="${label}"]`);
+    const inputs = [...item.querySelectorAll('input[type="radio"]')];
+    // Change only an existing option's native association. A matching name
+    // cannot guarantee mutual exclusion when the controls have different owners.
+    inputs[1].setAttribute('form', 'missing-form');
+    inputs[1].checked = true;
+    assert.notEqual(inputs[0].form, inputs[1].form);
+    let clicks = 0;
+    item.addEventListener('click', () => { clicks += 1; });
+    const result = await p.api[method](value, synthetic);
+    assert.equal(result.ok, false);
+    assert.equal(result.reason, 'radio_structure_changed');
+    assert.equal(result.writeAttempted, false);
+    assert.equal(clicks, 0);
+    assert.equal(inputs[0].checked, false);
+    assert.equal(inputs[1].checked, true);
+    p.verify(result);
+  });
+
   test(`${method} refuses ambiguous preexisting radio state without any input events`, async (t) => {
     const p = page(t);
     const item = p.document.querySelector(`[data-field="${label}"]`);

@@ -109,6 +109,30 @@ test('unassociated recorded hints remain ambiguous rather than missing', () => {
   assertClosed(duplicateIds, DOM_CONTROL_AMBIGUOUS);
 });
 
+test('agreeing input hints require one matching recorded control identity', () => {
+  for (const inputId of [null, '', '   ', label.inputId]) {
+    const packet = presentPacket();
+    for (const snap of [packet.snap1, packet.snap2]) {
+      snap.labelHits[0].inputId = inputId;
+      snap.idHits = [];
+    }
+    assertClosed(packet, DOM_CONTROL_AMBIGUOUS);
+  }
+
+  const unmatched = presentPacket();
+  for (const snap of [unmatched.snap1, unmatched.snap2]) {
+    snap.labelHits[0].inputId = null;
+  }
+  assertClosed(unmatched, DOM_CONTROL_AMBIGUOUS);
+
+  const duplicateNames = presentPacket();
+  duplicateNames.snap1.nameHits = [label.inputId, label.inputId];
+  duplicateNames.snap1.labelHits[0].inputName = label.inputId;
+  assertClosed(duplicateNames, DOM_CONTROL_AMBIGUOUS);
+
+  assertClosed(presentPacket(), DOM_CONTROL_PRESENT, 'presence_is_not_support');
+});
+
 test('failed, incomplete, and malformed snapshots are inconclusive', () => {
   for (const mutate of [
     (packet) => { packet.ok = false; },

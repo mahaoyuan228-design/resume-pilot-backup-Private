@@ -4,6 +4,8 @@ Scope: ResumeQuickFill on `career.cmbchina.com/center/resume`, using existing CM
 
 The native text fills covered by PRs #114–#123 are outside this change. Their fill implementations are not reopened or rewritten. Changes in the shared `src/content/cmb-basic.js` file concern existing control routines and its embedded birthdate picker. No CMS tenant or shared core routing is added.
 
+The follow-up on PR #132 rejects mixed date separators in both profile parsing and picker readback, requires the recorded birthday target to remain a text input, scopes interaction to one visible picker panel/mode, and refuses ambiguous navigation controls. RankingMajor presence now needs one nonempty input identity corroborated by one ID hit in both snapshots. Radio options must share a native form owner as well as a group name. These checks use mutations of the existing synthetic fixtures and recorded packet metadata; they supply no new live DOM contract.
+
 ## Changes
 
 | Cluster | Result | Implementation and coverage |
@@ -28,6 +30,8 @@ The select coverage exercises 11 existing targets: marital status, politics, eth
 - Birthdate: the popup HTML, screenshot, interaction record, and verified display/value-format pack are still pending. The existing readonly input and placeholder are insufficient to upgrade the recorded hint-only status.
 - RankingMajor: an actual page control, a unique label/control association, and independent interaction evidence are missing. Dictionary rows do not establish a control.
 - Selects: full live dropdown option/portal DOM is absent or truncated despite the recorded IDs, dictionaries, and coded click evidence. The synthetic list/option structure and fixture event handler do not close this gap.
+- Radios: native option markup, values, shared group/form association, and interaction/readback evidence remain missing for the live gender and formal-work fields.
+- Other dates: education start/end, internship start, club start, and award date have recorded IDs/placeholders only. No associated popup panels, range behavior, interaction transitions, or display/value formats are evidenced. No additional date fill is implemented.
 
 ## Validation
 
@@ -51,9 +55,9 @@ node --test tests/live-harvest-fixtures.test.mjs tests/live-harvest-readonly.tes
 
 Final verification on Windows/Node 24 with the installed Chrome binary:
 
-- `node --test tests/cmb*.test.mjs tests/auto-cmb-extension-cdp.test.mjs`: **193 passed, 0 failed, 0 skipped**. Includes 46 control regressions, picker mirror parity, headless synthetic harnesses, popup/auto reports, transport timeouts, and both evidence gates.
+- `node --test tests/cmb*.test.mjs tests/auto-cmb-extension-cdp.test.mjs`: **200 passed, 0 failed, 0 skipped**. Includes 48 control regressions, picker mirror parity, headless synthetic harnesses, popup/auto reports, transport timeouts, and both evidence gates. Set `CHROME_PATH` to the installed Chrome binary on Windows and `CDP_PORT=0` so legacy `--live` refusal checks cannot attach to the live trial browser. Synthetic harnesses and mock-CDP tests allocate their own loopback ports.
 - `node --test tests/build-paid-rebuild.test.mjs tests/guard-worker-auto-runners.test.mjs tests/product-paths-whitelist.test.mjs tests/pack-side-effect-import.test.mjs tests/paid-qa-runner.test.mjs`: **60 passed, 0 failed, 0 skipped**.
 - `node --test tests/live-harvest-fixtures.test.mjs tests/live-harvest-readonly.test.mjs tests/live-harvest-timeout.test.mjs`: **9 passed, 0 failed, 0 skipped**.
-- `git diff --check`: clean. Only the four changed product hashes and their inventory sum are refreshed in `SOURCE_INVENTORY.json`.
+- `git diff --check`: clean. The four changed product hashes and their inventory sum are refreshed in `SOURCE_INVENTORY.json`; the follow-up refreshes only the two additional picker/control hashes.
 
 No live form interaction is performed by this offline validation. Existing fixture behavior that changes a confirmed select or radio value is retained; this change does not add a fill-empty-only policy. Other unobserved date controls still lack picker-panel contracts, and live radio value/grouping contracts remain unharvested.

@@ -1,6 +1,6 @@
 {
   "version": "0.1.4.9",
-  "sumsSha256": "5e607f74c0d65601707a9264c7782775189b69f6f62cadc135403f6275abb9f3",
+  "sumsSha256": "5439276b97ddbc654bd98fac14058f16fde4bf7abab5bc4416c84e07662f4f8f",
   "inventory": [
     {
       "path": "manifest.json",
@@ -778,14 +778,14 @@
     },
     {
       "path": "src/content/cmb-basic.js",
-      "sha256": "11644555e23fc462747de47ea9142a912cbf24a75cb61cd0b397d731cff097cd",
-      "sourceSha256": "11644555e23fc462747de47ea9142a912cbf24a75cb61cd0b397d731cff097cd",
+      "sha256": "1d43aea1ec62217872f8db72ceaebda381fb49712e8a23f5f08023f16c0198c9",
+      "sourceSha256": "1d43aea1ec62217872f8db72ceaebda381fb49712e8a23f5f08023f16c0198c9",
       "kind": "frozen-product"
     },
     {
       "path": "src/content/cmb-birthdate-picker.mjs",
-      "sha256": "3a720a03c7326c9b72c57d913870a2fb62f12cec4a2560fe23539dc6a9cf8080",
-      "sourceSha256": "3a720a03c7326c9b72c57d913870a2fb62f12cec4a2560fe23539dc6a9cf8080",
+      "sha256": "d2e3169e81823f6e2904c112861d7042056e8b78891fe29fb7ac6ee76696f710",
+      "sourceSha256": "d2e3169e81823f6e2904c112861d7042056e8b78891fe29fb7ac6ee76696f710",
       "kind": "frozen-product"
     },
     {

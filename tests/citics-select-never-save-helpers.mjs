@@ -131,6 +131,9 @@ export function registerSelectTests(label) {
       (window) => { const select = window.document.getElementById('active'); select.after(select.cloneNode(true)); },
       (window) => { window.document.querySelector('#menu [role=option]').addEventListener('mousedown', () => {
         window.document.querySelector('#active .ant-select-selection-selected-value').textContent = 'SYN_RACE';
+      }); },
+      (window) => { const options = window.document.querySelectorAll('#menu [role=option]'); options[0].addEventListener('mousedown', () => {
+        options[0].textContent = 'SYN_OTHER'; options[1].textContent = 'SYN_TARGET';
       }); }
     ]) {
       const h = bootSelect(label, { onOpen });

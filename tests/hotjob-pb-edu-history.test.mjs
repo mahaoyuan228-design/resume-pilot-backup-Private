@@ -51,10 +51,11 @@ function row(key, label, inner, state, extra = {}) {
   const star = extra.noStar ? '' : '*';
   const extraLabel = extra.extraLabel ? `<label>${esc(extra.extraLabel)}${star}</label>` : '';
   const hidden = extra.hidden ? ' hidden' : '';
+  const style = extra.itemStyle ? ` style="${esc(extra.itemStyle)}"` : '';
   if (extra.wrapControl) {
-    return `<div class="${esc(itemClass)}" data-field="${esc(key)}"${hidden}><label>${esc(label)}${star}${inner}</label>${extraLabel}</div>`;
+    return `<div class="${esc(itemClass)}" data-field="${esc(key)}"${hidden}${style}><label>${esc(label)}${star}${inner}</label>${extraLabel}</div>`;
   }
-  return `<div class="${esc(itemClass)}" data-field="${esc(key)}"${hidden}><label>${esc(label)}${star}</label>${extraLabel}<span class="${esc(probe.page.childrenClass)}">${inner}</span></div>`;
+  return `<div class="${esc(itemClass)}" data-field="${esc(key)}"${hidden}${style}><label>${esc(label)}${star}</label>${extraLabel}<span class="${esc(probe.page.childrenClass)}">${inner}</span></div>`;
 }
 
 function tokenRow(key, label, token, extra = {}) {
@@ -112,6 +113,7 @@ function schoolMenu(state) {
 }
 
 function schoolField(value, state) {
+  if (state.onlyHiddenSchoolText) return '';
   const stray = [
     state.straySchoolText ? `<input class="${esc(probe.text.controlClass)}" type="text" value="">` : '',
     state.straySchoolRadio ? '<input class="ant-radio-input" type="radio">' : '',
@@ -121,8 +123,46 @@ function schoolField(value, state) {
   ].join('');
   return row('school', SCHOOL, `${stray}${schoolControl(value, state)}`, state, {
     extraLabel: state.sameSchool ? SCHOOL : (state.disagreeSchool ? OUT.graduation.label : ''),
-    wrapControl: state.wrapSchool
+    wrapControl: state.wrapSchool,
+    itemStyle: state.schoolItemStyle || ''
   }) + schoolMenu(state);
+}
+
+function partnerInput(id, state) {
+  const partner = probe.school.hiddenTextPartner;
+  const readonly = state.hiddenSchoolTextReadonly ? ' readonly' : '';
+  const disabled = state.hiddenSchoolTextDisabled ? ' disabled' : '';
+  return `<input id="${esc(id)}" class="${esc(partner.controlClass)}" type="${esc(partner.inputType)}" placeholder="${esc(partner.placeholder)}"${readonly}${disabled} value="">`;
+}
+
+function schoolPartner(state) {
+  const partner = probe.school.hiddenTextPartner;
+  if (state.hiddenDuplicateSchool) {
+    return row('school-copy', SCHOOL, `<div class="${esc(probe.school.controlClass)}" id="school-select-copy"><span id="school-copy-value">${esc(SCHOOL_VALUE)}</span><input class="${esc(probe.school.triggerClass)}" type="text" value=""></div>`, state, {
+      itemStyle: partner.itemStyle
+    });
+  }
+  const rows = [];
+  const textRowWanted = state.hiddenSchoolText || state.onlyHiddenSchoolText || state.visibleSchoolText
+    || state.hiddenSchoolTextReadonly || state.hiddenSchoolTextDisabled || state.hiddenSchoolTextAttr;
+  if (textRowWanted) {
+    const extra = state.hiddenSchoolTextAttr
+      ? { hidden: true }
+      : (state.visibleSchoolText ? {} : { itemStyle: partner.itemStyle });
+    rows.push(row('school-text', partner.label, partnerInput('school-text-input', state), state, extra));
+  }
+  if (state.secondHiddenSchoolText) {
+    rows.push(row('school-text-2', partner.label, partnerInput('school-text-input-2', state), state, {
+      itemStyle: partner.itemStyle
+    }));
+  }
+  return rows.join('');
+}
+
+function schoolBlock(state) {
+  const field = schoolField(state.school ?? '', state);
+  const partner = schoolPartner(state);
+  return state.hiddenSchoolTextFirst ? `${partner}${field}` : `${field}${partner}`;
 }
 
 function cityBody(value, state) {
@@ -226,7 +266,7 @@ function html(state) {
   }${tokenRow('basic-level', OUT.basicLevel.label, OUT.basicLevel.token)
   }${textRow('basic-major', OUT.basicMajor.label, 'basic-major-input', OUT.basicMajor.token, OUT.basicMajor.placeholder)
   }${row('start', OUT.start.label, `<input id="start-input" class="${esc(OUT.start.controlClass)}" type="text" readonly value="${esc(OUT.start.token)}">`, {})
-  }${schoolField(state.school ?? '', state)
+  }${schoolBlock(state)
   }${cityField(state.city ?? '', state)
   }${duplicateSchool(state)
   }${duplicateCity(state)
@@ -367,6 +407,10 @@ function unchanged(document, stats) {
   assert.equal(document.getElementById('history-major-input').value, OUT.historyMajor.token);
   assert.equal(document.getElementById('description-input').value, '');
   assert.equal(textOf(document, 'rank-token'), OUT.rank.token);
+  const schoolText = document.getElementById('school-text-input');
+  if (schoolText) assert.equal(schoolText.value, '');
+  const schoolText2 = document.getElementById('school-text-input-2');
+  if (schoolText2) assert.equal(schoolText2.value, '');
   assert.equal(document.getElementById('photo').files.length, 0);
   assert.equal(stats.forbidden, 0);
   assert.equal(stats.file, 0);
@@ -443,6 +487,12 @@ test('fixture html uses the probe class list, labels, and display tokens', () =>
   assert.match(built, new RegExp(`>${probe.page.addEducation}<`));
   assert.match(built, new RegExp(FILL_PREFIX.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&')));
   assert.equal(FILL_PREFIX + SCHOOL_VALUE, probe.school.childrenTextSample);
+  assert.equal(probe.school.hiddenTextPartner.placeholder, FILL_PREFIX);
+  assert.equal(probe.school.hiddenTextPartner.label, SCHOOL);
+  assert.equal(probe.school.hiddenTextPartner.hasSelect, false);
+  assert.equal(probe.school.hiddenTextPartner.itemStyle, 'display: none');
+  assert.equal(probe.school.hiddenTextPartner.controlClass, probe.text.controlClass);
+  assert.equal(probe.school.hiddenTextPartner.inputType, probe.text.inputType);
   assert.equal(probe.city.pageTextPair, `${CITY_VALUE} ${CITY_VALUE}`);
   assert.equal(probe.city.livePair.selectCount, 2);
   assert.doesNotMatch(built, /ant-cascader-menus|ant-select-selection--single|ant-select-dropdown-menu-item|form-cell/);
@@ -732,6 +782,19 @@ test('structure drift and the wrong page fail closed without painting', async ()
     [{ ambiguousSchool: true, school: SCHOOL_VALUE }, SCHOOL, SCHOOL_VALUE],
     [{ disagreeSchool: true, school: SCHOOL_VALUE }, SCHOOL, SCHOOL_VALUE],
     [{ duplicateSchool: true, school: SCHOOL_VALUE }, SCHOOL, SCHOOL_VALUE],
+    [{ duplicateSchool: true }, SCHOOL, SCHOOL_VALUE],
+    [{ hiddenSchoolText: true }, SCHOOL, SCHOOL_VALUE],
+    [{ hiddenSchoolText: true, dropAllowClear: true, school: SCHOOL_VALUE }, SCHOOL, SCHOOL_VALUE],
+    [{ hiddenSchoolText: true, schoolDisabled: true, school: SCHOOL_VALUE }, SCHOOL, SCHOOL_VALUE],
+    [{ hiddenSchoolText: true, straySchoolText: true, school: SCHOOL_VALUE }, SCHOOL, SCHOOL_VALUE],
+    [{ hiddenSchoolText: true, duplicateSchool: true, school: SCHOOL_VALUE }, SCHOOL, SCHOOL_VALUE],
+    [{ visibleSchoolText: true, school: SCHOOL_VALUE }, SCHOOL, SCHOOL_VALUE],
+    [{ hiddenSchoolTextReadonly: true, school: SCHOOL_VALUE }, SCHOOL, SCHOOL_VALUE],
+    [{ hiddenSchoolTextDisabled: true, school: SCHOOL_VALUE }, SCHOOL, SCHOOL_VALUE],
+    [{ hiddenDuplicateSchool: true, school: SCHOOL_VALUE }, SCHOOL, SCHOOL_VALUE],
+    [{ onlyHiddenSchoolText: true }, SCHOOL, SCHOOL_VALUE],
+    [{ onlyHiddenSchoolText: true, secondHiddenSchoolText: true }, SCHOOL, SCHOOL_VALUE],
+    [{ schoolItemStyle: probe.school.hiddenTextPartner.itemStyle, school: SCHOOL_VALUE }, SCHOOL, SCHOOL_VALUE],
     [{ dropAntRow: 'school' }, SCHOOL, SCHOOL_VALUE],
     [{ badDropdown: true }, SCHOOL, SCHOOL_VALUE],
     [{ emptySchoolMenu: true }, SCHOOL, SCHOOL_VALUE],
@@ -783,6 +846,147 @@ test('structure drift and the wrong page fail closed without painting', async ()
       }
     } finally { h.dom.window.close(); }
   }
+});
+
+function schoolItems(document) {
+  return [...document.querySelectorAll('.ant-row.ant-form-item')].filter((item) => {
+    const labels = [...item.querySelectorAll('label')].filter((node) => node.closest('.ant-row.ant-form-item') === item);
+    const captions = [...new Set(labels.map((node) => node.textContent.replace(/[＊*？?\s\u00a0]/gu, '')))];
+    return captions.length === 1 && captions[0] === SCHOOL;
+  });
+}
+
+test('a visible 学校 select is used when a hidden text row repeats the label', async () => {
+  const partner = probe.school.hiddenTextPartner;
+  const filled = await boot({
+    hiddenSchoolText: true,
+    fillPlaceholder: true,
+    school: SCHOOL_VALUE,
+    city: CITY_VALUE,
+    twinSelect: true
+  });
+  try {
+    const rowNode = filled.document.querySelector('[data-field="school-text"]');
+    const input = filled.document.getElementById('school-text-input');
+    assert.equal(schoolItems(filled.document).length, 2);
+    assert.equal(rowNode.hasAttribute('hidden'), false);
+    assert.equal(rowNode.style.display, 'none');
+    assert.equal(filled.window.getComputedStyle(rowNode).display, 'none');
+    assert.equal(rowNode.querySelector('.ant-select'), null);
+    assert.equal(input.placeholder, partner.placeholder);
+    assert.equal(input.value, '');
+    const view = filled.api.inspect();
+    assert.equal(view.ok, true, JSON.stringify(view.fields));
+    assert.equal(view.liveSupportClaimed, false);
+    assert.equal(view.supportClaimed, false);
+    assert.equal(view.fields[0].supported, false);
+    assert.equal(view.fields[0].reason, 'structure_matched');
+    assert.equal(view.fields[0].value, SCHOOL_VALUE);
+    assert.notEqual(view.fields[0].value, partner.placeholder);
+    assert.notEqual(view.fields[0].value, probe.school.childrenTextSample);
+    assert.equal(view.fields[1].reason, 'structure_matched');
+    assert.equal(view.fields[1].value, CITY_VALUE);
+    const result = await filled.api.fillFields({ [SCHOOL]: ` ${SCHOOL_VALUE} `, [CITY]: CITY_VALUE });
+    assert.equal(result.ok, true, JSON.stringify(result.fields));
+    assert.equal(result.fields.every((field) => field.reason === 'preexisting_same_value'), true);
+    assert.equal(result.fields.every((field) => field.opened === false), true);
+    assert.equal(result.fields[0].before, SCHOOL_VALUE);
+    assert.equal(result.fields[0].after, SCHOOL_VALUE);
+    assertNeverSaved(result);
+    assert.equal(filled.api.liveSupportClaimed, false);
+    assert.equal(filled.api.supportClaimed, false);
+    const kept = await filled.api.fillField(SCHOOL, OTHER);
+    assert.equal(kept.reason, 'existing_value');
+    assert.equal(kept.opened, false);
+    const missing = await filled.api.fillField(SCHOOL, '  ');
+    assert.equal(missing.reason, 'missing_profile_value');
+    assert.equal(missing.opened, false);
+    assert.equal(filled.stats.open, 0);
+    assert.equal(filled.stats.option, 0);
+    const canceled = await filled.api.cancelField(SCHOOL);
+    assert.equal(canceled.ok, true, JSON.stringify(canceled));
+    assert.equal(canceled.reason, 'menu_closed');
+    assert.equal(canceled.canceled, true);
+    assert.equal(canceled.stillOpen, 0);
+    assert.equal(canceled.before, SCHOOL_VALUE);
+    assert.equal(canceled.after, SCHOOL_VALUE);
+    assertNeverSaved(canceled);
+    assert.ok(filled.stats.escape >= 1);
+    assert.equal(filled.stats.option, 0);
+    assert.deepEqual(filled.stats.openedIds, ['school-select']);
+    assert.equal(filled.document.getElementById('school-menu').hidden, true);
+    assert.equal(filled.document.querySelectorAll('.ant-select-open').length, 0);
+    assert.equal(filled.document.querySelector('[data-field="city"] .cascader-plugins-wrap ul').hidden, true);
+    assert.equal(input.value, '');
+    assert.equal(textOf(filled.document, 'school-value'), SCHOOL_VALUE);
+    assert.equal(textOf(filled.document, 'city-value'), CITY_VALUE);
+    assert.equal(textOf(filled.document, 'city-twin'), CITY_VALUE);
+    unchanged(filled.document, filled.stats);
+  } finally { filled.dom.window.close(); }
+
+  const reversed = await boot({
+    hiddenSchoolText: true,
+    hiddenSchoolTextFirst: true,
+    school: SCHOOL_VALUE,
+    city: CITY_VALUE,
+    twinSelect: true
+  });
+  try {
+    assert.equal(schoolItems(reversed.document).length, 2);
+    assert.ok(reversed.document.querySelector('[data-field="school-text"]').compareDocumentPosition(reversed.document.querySelector('[data-field="school"]')) & reversed.window.Node.DOCUMENT_POSITION_FOLLOWING);
+    const school = await reversed.api.fillField(SCHOOL, SCHOOL_VALUE);
+    assert.equal(school.reason, 'preexisting_same_value', JSON.stringify(school));
+    assert.equal(school.before, SCHOOL_VALUE);
+    assert.equal(reversed.stats.open, 0);
+    assert.equal(reversed.document.getElementById('school-text-input').value, '');
+    unchanged(reversed.document, reversed.stats);
+  } finally { reversed.dom.window.close(); }
+
+  const attribute = await boot({
+    hiddenSchoolTextAttr: true,
+    school: SCHOOL_VALUE,
+    city: CITY_VALUE
+  });
+  try {
+    const rowNode = attribute.document.querySelector('[data-field="school-text"]');
+    assert.equal(rowNode.hidden, true);
+    assert.equal(rowNode.style.display, '');
+    const school = await attribute.api.fillField(SCHOOL, SCHOOL_VALUE);
+    assert.equal(school.reason, 'preexisting_same_value', JSON.stringify(school));
+    assert.equal(attribute.stats.open, 0);
+    assert.equal(attribute.document.getElementById('school-text-input').value, '');
+    unchanged(attribute.document, attribute.stats);
+  } finally { attribute.dom.window.close(); }
+
+  const empty = await boot({
+    hiddenSchoolText: true,
+    fillPlaceholder: true,
+    city: CITY_VALUE,
+    twinSelect: true
+  });
+  try {
+    const view = empty.api.inspect();
+    assert.equal(view.ok, false);
+    assert.equal(view.liveSupportClaimed, false);
+    assert.equal(view.supportClaimed, false);
+    assert.equal(view.fields[0].reason, 'control_not_supported');
+    assert.equal(view.fields[0].value, '');
+    assert.equal(view.fields[0].supported, false);
+    assert.equal(view.fields[1].reason, 'structure_matched');
+    assert.equal(view.fields[1].value, CITY_VALUE);
+    const school = await empty.api.fillField(SCHOOL, SCHOOL_VALUE);
+    const canceled = await empty.api.cancelField(SCHOOL);
+    assert.equal(school.reason, 'control_not_supported', JSON.stringify(school));
+    assert.equal(school.ok, false);
+    assertNeverSaved(school);
+    assert.equal(canceled.reason, 'control_not_supported');
+    assert.equal(empty.stats.open, 0);
+    assert.equal(empty.stats.option, 0);
+    assert.equal(empty.document.getElementById('school-text-input').value, '');
+    assert.equal(textOf(empty.document, 'school-value'), '');
+    assert.equal(textOf(empty.document, 'city-value'), CITY_VALUE);
+    unchanged(empty.document, empty.stats);
+  } finally { empty.dom.window.close(); }
 });
 
 test('dual-face city, placeholder readback, and a closed search field stay fail-closed or verify', async () => {

@@ -40,6 +40,7 @@
     sectionIndex: 3,
     scope: 'gth_work_open',
     fact: 'experience',
+    revalidatePreexistingText: true,
     fields: [
       { question: '职位名称', key: 'position', kind: 'text', required: true, max: 200 },
       { question: '职位类别', key: 'jobCategory', kind: 'cascader', required: true, max: 200 },

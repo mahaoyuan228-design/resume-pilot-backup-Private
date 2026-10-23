@@ -1,6 +1,6 @@
 {
   "version": "0.1.4.9",
-  "sumsSha256": "f42216bfbeed9e10293f2d9963744c26066106f91bb8ab95b33c5a3743749784",
+  "sumsSha256": "03058a27a7a3d3faf24f4a0d2fcef660f998bb98091b8ebd271355bb93568943",
   "inventory": [
     {
       "path": "manifest.json",
@@ -304,8 +304,8 @@
     },
     {
       "path": "src/content/gth-open-fill.js",
-      "sha256": "f90610d30557aaa2fc20a3b9dbf3d5d6b50c037326bbfe4bad5c4d87f99d6fe1",
-      "sourceSha256": "f90610d30557aaa2fc20a3b9dbf3d5d6b50c037326bbfe4bad5c4d87f99d6fe1",
+      "sha256": "a89cbef8d032f9e6a01e9518326c33e811a40ee31bffdf77bc6f5b9c1be6945c",
+      "sourceSha256": "a89cbef8d032f9e6a01e9518326c33e811a40ee31bffdf77bc6f5b9c1be6945c",
       "kind": "frozen-product"
     },
     {
@@ -328,8 +328,8 @@
     },
     {
       "path": "src/content/gth-work-fill.js",
-      "sha256": "aabec43382c99bf4ea31153b9906c3a506ae6bed9b38ff7e2b051d3a19705bda",
-      "sourceSha256": "aabec43382c99bf4ea31153b9906c3a506ae6bed9b38ff7e2b051d3a19705bda",
+      "sha256": "6f21c3774d180868f22bc6a40afb7c97dd7c83e8dd2e35397ae42ebe8b502c94",
+      "sourceSha256": "6f21c3774d180868f22bc6a40afb7c97dd7c83e8dd2e35397ae42ebe8b502c94",
       "kind": "frozen-product"
     },
     {

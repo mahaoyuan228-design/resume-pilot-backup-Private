@@ -12,6 +12,10 @@
 // class, so locate requires the field to exist and the select box to be visible.
 // Display read uses visible leaves and drops a 请选择{label} placeholder so a
 // filled 实习 can match preexisting_same_value.
+// 工作描述 preserves authored whitespace and Unicode; only browser newline
+// normalization (CRLF/CR to LF) is applied. A nonempty textarea is kept.
+// Text and prose belong to the single resume wrapper. Focus and event handlers
+// cannot move or replace the original control and still receive a write or verify.
 // Pending live Never-Save. This does not claim the site is supported.
 // liveSupportClaimed stays false. Never clicks 保存/提交/投递/删除/下一步/返回/确定.
 // Does not target hotjob-mc, CMS core, uploads, readonly dates, education,
@@ -72,13 +76,18 @@
     return node.getClientRects().length > 0;
   }
 
+  function pageRoot() {
+    const roots = document.querySelectorAll('.resume-operation-wrap');
+    return roots.length === 1 ? roots[0] : null;
+  }
+
   function onPage() {
     let url;
     try { url = new URL(location.href); } catch { return false; }
     if (url.protocol !== 'https:' || url.hostname !== 'wecruit.hotjob.cn') return false;
     if (!PATH.test(url.pathname)) return false;
     if (document.querySelector('.el-form, .el-form-item, .my-list-item')) return false;
-    return !!document.querySelector('.resume-operation-wrap');
+    return !!pageRoot();
   }
 
   function ownedLabels(item) {
@@ -87,9 +96,12 @@
 
   function itemsFor(label) {
     const want = cleanLabel(label);
-    return [...document.querySelectorAll('.ant-row.ant-form-item')].filter((item) => {
+    const root = pageRoot();
+    if (!root) return [];
+    return [...root.querySelectorAll('.ant-row.ant-form-item')].filter((item) => {
       const labels = ownedLabels(item);
-      return labels.length === 1 && cleanLabel(labels[0].textContent) === want;
+      return item.closest('.resume-operation-wrap') === root
+        && labels.length === 1 && cleanLabel(labels[0].textContent) === want;
     });
   }
 
@@ -149,13 +161,31 @@
     const items = itemsFor(label);
     if (items.length !== 1) return { ok: false, reason: 'control_not_supported' };
     const kind = KINDS[label];
-    if (kind === 'text') return locateText(items[0]);
-    if (kind === 'textarea') return locateTextarea(items[0]);
-    return locateSelect(items[0]);
+    const found = kind === 'text' ? locateText(items[0])
+      : (kind === 'textarea' ? locateTextarea(items[0]) : locateSelect(items[0]));
+    if (found.ok) {
+      found.label = label;
+      found.root = pageRoot();
+    }
+    return found;
+  }
+
+  function invalidTextFound(found) {
+    if (document.visibilityState === 'hidden') return 'fill_interrupted_page_hidden';
+    if (!onPage()) return 'wrong_page';
+    if (pageRoot() !== found.root) return 'control_not_supported';
+    const current = locate(found.label);
+    if (!current.ok || current.item !== found.item || current.input !== found.input
+      || found.input.closest('.resume-operation-wrap') !== found.root) return 'control_not_supported';
+    return '';
   }
 
   function readControl(found) {
-    return exact(found.input.value);
+    return found.kind === 'textarea' ? prose(found.input.value) : exact(found.input.value);
+  }
+
+  function prose(value) {
+    return String(value ?? '').replace(/\r\n?/gu, '\n');
   }
 
   function leaves(container, excludeSelect) {
@@ -244,17 +274,25 @@
     node.click();
   }
 
-  function writeControl(node, value) {
+  function writeControl(found, value) {
+    const node = found.input;
+    const invalid = () => invalidTextFound(found) || (anyOpen() ? 'control_busy' : '');
+    let reason = invalid();
+    if (reason) return reason;
     const owner = node instanceof HTMLTextAreaElement ? HTMLTextAreaElement : HTMLInputElement;
     const proto = Object.getPrototypeOf(node);
     const desc = Object.getOwnPropertyDescriptor(proto, 'value')
       || Object.getOwnPropertyDescriptor(owner.prototype, 'value');
-    if (!desc || typeof desc.set !== 'function') return false;
+    if (!desc || typeof desc.set !== 'function') return 'control_not_supported';
+    if (String(node.value ?? '') !== '') return 'existing_value';
     desc.set.call(node, value);
-    node.dispatchEvent(new Event('input', { bubbles: true }));
-    node.dispatchEvent(new Event('change', { bubbles: true }));
-    node.dispatchEvent(new Event('blur', { bubbles: true }));
-    return true;
+    for (const type of ['input', 'change', 'blur']) {
+      reason = invalid();
+      if (reason) return reason;
+      if (String(node.value ?? '') !== value) return 'readback_mismatch';
+      node.dispatchEvent(new Event(type, { bubbles: true }));
+    }
+    return invalid();
   }
 
   function result(extra) {
@@ -291,21 +329,30 @@
   }
 
   async function fillText(found, label, raw, want) {
+    const beforeRaw = String(found.input.value ?? '');
     const before = readControl(found);
-    if (!want) return refused(label, 'missing_profile_value', { before, after: before, expected: '' });
+    if (!want || (found.kind === 'textarea' && !want.trim())) {
+      return refused(label, 'missing_profile_value', { before, after: before, expected: '' });
+    }
     if (before === want) return kept(label, 'preexisting_same_value', before, want, 'verified', true);
-    if (before) return kept(label, 'existing_value', before, want, 'skipped', false);
+    if (beforeRaw !== '') return kept(label, 'existing_value', beforeRaw, want, 'skipped', false);
     if (anyOpen()) return refused(label, 'control_busy', { before, after: before, expected: want });
-    const paintedValue = writable(raw);
-    if (exact(paintedValue) !== want) {
+    const paintedValue = found.kind === 'textarea' ? prose(raw) : writable(raw);
+    if ((found.kind === 'textarea' ? paintedValue : exact(paintedValue)) !== want) {
       return refused(label, 'control_not_supported', { before, after: before, expected: want });
     }
     found.input.focus();
-    if (!writeControl(found.input, paintedValue)) {
-      return refused(label, 'control_not_supported', { before, after: readControl(found), expected: want });
+    const writeReason = writeControl(found, paintedValue);
+    if (writeReason) {
+      return refused(label, writeReason, { before, after: readControl(found), expected: want });
     }
-    const painted = await waitFor(() => readControl(found) === want);
+    const painted = await waitFor(() => {
+      const reason = invalidTextFound(found);
+      return reason ? { reason } : (readControl(found) === want ? { matched: true } : null);
+    });
     const after = readControl(found);
+    const reason = painted?.reason || invalidTextFound(found);
+    if (reason) return refused(label, reason, { before, after, expected: want });
     if (!painted || after !== want) {
       return refused(label, 'readback_mismatch', { before, after, expected: want, opened: false, canceled: false });
     }
@@ -383,7 +430,7 @@
       const found = locate(label);
       if (!found.ok) return refused(label, found.reason);
       const raw = typeof value === 'string' ? value : '';
-      const want = exact(raw);
+      const want = found.kind === 'textarea' ? prose(raw) : exact(raw);
       if (found.kind === 'text' || found.kind === 'textarea') return await fillText(found, label, raw, want);
       return await fillSelect(found, label, want);
     } catch (error) {

@@ -354,7 +354,7 @@ test('empty 联系地址 paints the probed sample once and empty 评价内容 pa
   const h = await boot({});
   try {
     const address = await h.api.fillField(`  ${ADDRESS}*  `, `  ${SAMPLE}  `);
-    const note = await h.api.fillField(NOTE, `  ${NOTE_KEEP_NEWLINE}  `);
+    const note = await h.api.fillField(NOTE, NOTE_KEEP_NEWLINE);
     assert.equal(address.ok, true, JSON.stringify(address));
     assert.equal(address.reason, 'readback_matched');
     assert.equal(address.status, 'verified');
@@ -397,14 +397,15 @@ test('a query string still fills and fillFields covers only these two labels', a
   } finally { h.dom.window.close(); }
 });
 
-test('preexisting same values are verified and not rewritten', async () => {
+test('existing address comparison ignores spacing while prose comparison keeps every character', async () => {
   const spaced = `${SAMPLE.slice(0, 3)} ${SAMPLE.slice(3)}`;
   const shown = `合成\n评价 内容`;
   const h = await boot({ address: spaced, note: shown });
   try {
     const address = await h.api.fillField(ADDRESS, SAMPLE);
     const note = await h.api.fillField(NOTE, '合成评价内容');
-    const same = await h.api.fillField(NOTE, `  ${shown}  `);
+    const same = await h.api.fillField(NOTE, shown);
+    const padded = await h.api.fillField(NOTE, `  ${shown}  `);
     assert.equal(address.reason, 'preexisting_same_value');
     assert.equal(address.status, 'verified');
     assert.equal(address.ok, true);
@@ -412,13 +413,15 @@ test('preexisting same values are verified and not rewritten', async () => {
     assert.equal(address.after, SAMPLE);
     assert.equal(address.opened, false);
     assertNeverSaved(address);
-    assert.equal(note.reason, 'preexisting_same_value');
-    assert.equal(note.ok, true);
-    assert.equal(note.status, 'verified');
+    assert.equal(note.reason, 'existing_value');
+    assert.equal(note.ok, false);
+    assert.equal(note.status, 'skipped');
     assert.equal(note.after, shown);
     assert.equal(exact(note.after), exact(note.expected));
     assert.equal(same.reason, 'preexisting_same_value');
     assert.equal(same.after, shown);
+    assert.equal(padded.reason, 'existing_value');
+    assert.equal(padded.after, shown);
     assert.equal(valueOf(h.document, 'address-input'), spaced);
     assert.equal(valueOf(h.document, 'note-input'), shown);
     assert.equal(h.stats.focus, 0);
@@ -724,4 +727,162 @@ test('wrong page and a drifted row do not cancel into a write', async () => {
     assert.equal(drifted.stats.textInput, 0);
     unchanged(drifted.document, drifted.stats);
   } finally { drifted.dom.window.close(); }
+});
+
+test('only a literally empty contact control is writable', async () => {
+  for (const [label, id, wanted] of [[ADDRESS, 'address-input', SAMPLE], [NOTE, 'note-input', NOTE_PROFILE]]) {
+    for (const raw of [' ', '\t', ' \t\n ', '\u200b']) {
+      const h = await boot({});
+      try {
+        const control = h.document.getElementById(id);
+        control.value = raw;
+        const before = control.value;
+        assert.notEqual(before, '');
+        const filled = await h.api.fillField(label, wanted);
+        assert.equal(filled.reason, 'existing_value', JSON.stringify({ label, raw, filled }));
+        assert.equal(filled.ok, false);
+        assert.equal(filled.status, 'skipped');
+        assert.equal(filled.before, before);
+        assert.equal(filled.after, before);
+        assert.equal(control.value, before);
+        assert.equal(h.stats.focus, 0);
+        assert.equal(h.stats.textInput, 0);
+        assertNeverSaved(filled);
+        unchanged(h.document, h.stats);
+      } finally { h.dom.window.close(); }
+    }
+  }
+});
+
+test('authored prose keeps Unicode and spacing with only native textarea newline normalization', async () => {
+  const raw = '  Ａ\u200b\t第一行\r\n第二行  保留\r第三行  ';
+  const expected = raw.replace(/\r\n?/gu, '\n');
+  const h = await boot({});
+  try {
+    const filled = await h.api.fillField(NOTE, raw);
+    assert.equal(filled.reason, 'readback_matched', JSON.stringify(filled));
+    assert.equal(filled.after, expected);
+    assert.equal(filled.expected, expected);
+    assert.equal(valueOf(h.document, 'note-input'), expected);
+    const same = await h.api.fillField(NOTE, raw);
+    assert.equal(same.reason, 'preexisting_same_value');
+    const flattened = await h.api.fillField(NOTE, expected.replace(/\n/gu, ''));
+    assert.equal(flattened.reason, 'existing_value');
+    assert.equal(flattened.ok, false);
+    const normalized = await h.api.fillField(NOTE, expected.normalize('NFKC'));
+    assert.equal(normalized.reason, 'existing_value');
+    assert.equal(valueOf(h.document, 'note-input'), expected);
+    assert.equal(h.stats.textInput, 1);
+    assertNeverSaved(filled);
+    unchanged(h.document, h.stats);
+  } finally { h.dom.window.close(); }
+});
+
+// The mutations below are negative trials of the captured controls and wrapper.
+// They do not assert that the live page has any additional DOM topology.
+test('contact rows must belong to the unique PB wrapper before locate, fill, or cancel', async () => {
+  for (const [label, id, wanted] of [[ADDRESS, 'address-input', SAMPLE], [NOTE, 'note-input', NOTE_PROFILE]]) {
+    const h = await boot({});
+    try {
+      const control = h.document.getElementById(id);
+      h.document.body.append(control.closest('.ant-row.ant-form-item'));
+      const view = h.api.inspect();
+      assert.equal(view.fields.find((field) => field.label === label).reason, 'control_not_supported');
+      const filled = await h.api.fillField(label, wanted);
+      const canceled = await h.api.cancelField(label);
+      assert.equal(filled.reason, 'control_not_supported');
+      assert.equal(canceled.reason, 'control_not_supported');
+      assert.equal(control.value, '');
+      assert.equal(h.stats.focus, 0);
+      assert.equal(h.stats.textInput, 0);
+      assert.equal(h.stats.escape, 0);
+      assertNeverSaved(filled);
+      unchanged(h.document, h.stats);
+    } finally { h.dom.window.close(); }
+  }
+  const h = await boot({});
+  try {
+    const duplicate = h.document.createElement('div');
+    duplicate.className = probe.page.rootClass;
+    h.document.body.append(duplicate);
+    assert.equal(h.api.inspect().reason, 'wrong_page');
+    const filled = await h.api.fillField(ADDRESS, SAMPLE);
+    const canceled = await h.api.cancelField(NOTE);
+    assert.equal(filled.reason, 'wrong_page');
+    assert.equal(canceled.reason, 'wrong_page');
+    assert.equal(h.stats.focus, 0);
+    assert.equal(h.stats.textInput, 0);
+    assert.equal(h.stats.escape, 0);
+    unchanged(h.document, h.stats);
+  } finally { h.dom.window.close(); }
+});
+
+test('focus-time ownership, enabled-state, and existing-value drift prevent a write', async () => {
+  const mutations = [
+    ['row outside wrapper', (h, control) => h.document.body.append(control.closest('.ant-row.ant-form-item')), 'control_not_supported', ''],
+    ['control outside row', (h, control) => h.document.querySelector(`.${probe.page.rootClass}`).append(control), 'control_not_supported', ''],
+    ['disabled', (_h, control) => { control.disabled = true; }, 'control_not_supported', ''],
+    ['readonly', (_h, control) => { control.readOnly = true; }, 'control_not_supported', ''],
+    ['authored whitespace', (_h, control) => { control.value = ' '; }, 'existing_value', ' ']
+  ];
+  for (const [label, id, wanted] of [[ADDRESS, 'address-input', SAMPLE], [NOTE, 'note-input', NOTE_PROFILE]]) {
+    for (const [name, mutate, reason, after] of mutations) {
+      const h = await boot({});
+      try {
+        const control = h.document.getElementById(id);
+        const events = [];
+        for (const type of ['input', 'change', 'blur']) control.addEventListener(type, () => events.push(type));
+        control.addEventListener('focus', () => mutate(h, control), { once: true });
+        const filled = await h.api.fillField(label, wanted);
+        assert.equal(filled.reason, reason, JSON.stringify({ label, name, filled }));
+        assert.equal(filled.ok, false);
+        assert.equal(control.value, after);
+        assert.deepEqual(events, []);
+        assert.equal(h.stats.textInput, 0);
+        assertNeverSaved(filled);
+        unchanged(h.document, h.stats);
+      } finally { h.dom.window.close(); }
+    }
+  }
+});
+
+test('ownership drift after the setter or an event stops later events and fails readback', async () => {
+  const phases = ['setter', 'input', 'change', 'blur', 'readback'];
+  for (const [label, id, wanted] of [[ADDRESS, 'address-input', SAMPLE], [NOTE, 'note-input', NOTE_PROFILE]]) {
+    for (const phase of phases) {
+      const h = await boot({});
+      try {
+        const control = h.document.getElementById(id);
+        const item = control.closest('.ant-row.ant-form-item');
+        const events = [];
+        const move = () => h.document.body.append(item);
+        for (const type of ['input', 'change', 'blur']) control.addEventListener(type, () => events.push(type));
+        if (phase === 'setter') {
+          const proto = Object.getPrototypeOf(control);
+          const descriptor = Object.getOwnPropertyDescriptor(proto, 'value');
+          Object.defineProperty(proto, 'value', {
+            ...descriptor,
+            set(value) {
+              descriptor.set.call(this, value);
+              if (this === control) move();
+            }
+          });
+        } else if (phase === 'readback') {
+          control.addEventListener('blur', () => h.window.queueMicrotask(move), { once: true });
+        } else {
+          control.addEventListener(phase, move, { once: true });
+        }
+        const filled = await h.api.fillField(label, wanted);
+        const expectedEvents = phase === 'setter' ? []
+          : (phase === 'input' ? ['input'] : (phase === 'change' ? ['input', 'change'] : ['input', 'change', 'blur']));
+        assert.equal(filled.reason, 'control_not_supported', JSON.stringify({ label, phase, filled }));
+        assert.equal(filled.ok, false);
+        assert.equal(control.value, wanted);
+        assert.equal(control.closest(`.${probe.page.rootClass}`), null);
+        assert.deepEqual(events, expectedEvents, JSON.stringify({ label, phase }));
+        assertNeverSaved(filled);
+        unchanged(h.document, h.stats);
+      } finally { h.dom.window.close(); }
+    }
+  }
 });

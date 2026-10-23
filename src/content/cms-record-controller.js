@@ -3,7 +3,7 @@ globalThis.installResumeCmsRecordController=function(recordKind){
   const internship=recordKind==='internship',controllerName=internship?'ResumeCmsInternshipMulti':'ResumeCmsEducationMulti';
   const setId=internship?'49170501':'14',sectionName=internship?'实习经历':'教育经历必填',rowIdPattern=internship?/^49170501_\d+_\d+$/u:/^14_\d+_\d+$/u;
   'use strict';
-  if(globalThis[controllerName]?.version===3&&globalThis[controllerName].implementationRevision===20)return;
+  if(globalThis[controllerName]?.version===3&&globalThis[controllerName].implementationRevision===21)return;
   if(globalThis.ResumeProfileWriteContext)throw Error('profile_write_context_busy');
   async function checkProfileWrite(){const context=globalThis.ResumeProfileWriteContext;if(context)await context.check();}
   const PAGE='https://wecruit.hotjob.cn/SU629dbc0c0dcad452299bc0f7/pb/resumeOperation.html';
@@ -177,6 +177,16 @@ globalThis.installResumeCmsRecordController=function(recordKind){
         }
       }
       phase='verify_react_serialization';for(const record of plan.records)await checkSource(record);
+      // Later fields/source checks can await after a text field verified. Props
+      // option matching folds whitespace, so recheck exact native text first.
+      for(const record of plan.records){const identity=bindings.find(row=>row.profileIndex===record.profileIndex)?.identity;
+        for(const [key,question,kind] of FIELDS){if(kind!=='text')continue;
+          const outcome=publicFields.find(field=>field.profileIndex===record.profileIndex&&field.key===key);if(outcome?.status!=='verified')continue;
+          const live=locateField(form,identity,question),input=live?.input,value=record.facts[key].value;
+          const expected=input?.tagName==='TEXTAREA'?value.replace(/\r\n?/gu,'\n'):value;
+          if(live?.kind!=='text'||!input||!['INPUT','TEXTAREA'].includes(input.tagName)||input.value!==expected){outcome.status='failed';outcome.reason='text_value_changed_after_verification';}
+        }
+      }
       // Recheck live fields after each bridge await to reject stale captured props.
       const verificationRecords=stable(guard().records);
       const guardVerification=()=>{if(stable(guard().records)!==verificationRecords)fail('education_records_changed_during_verification');};
@@ -196,5 +206,5 @@ globalThis.installResumeCmsRecordController=function(recordKind){
       return {ok:true,complete,reason,writeStarted,addClicks,bindings,fields:publicFields,serialization:rows,serializedRecordCount:verification.serializedRecordCount,provisionalNewRecords:addClicks,saveClicks:0,deleteClicks:0,finalSubmitClicks:0};
     }catch(error){if(registered){if(writeStarted&&executions.has(plan?.fingerprint))executions.get(plan.fingerprint).state='unknown';else executions.delete(plan.fingerprint);}return {ok:false,complete:false,reason:/^[a-z0-9_]+$/u.test(error?.message||'')?error.message:'education_candidate_failed',phase,writeStarted,addClicks,bindings,fields:publicFields,provisionalNewRecords:addClicks,saveClicks:0,deleteClicks:0,finalSubmitClicks:0};}finally{if(profileContext&&globalThis.ResumeProfileWriteContext===profileContext)delete globalThis.ResumeProfileWriteContext;}
   }
-  globalThis[controllerName]=Object.freeze({version:3,implementationRevision:20,inspect,locateRow,locateField,rowIdentity,run});
+  globalThis[controllerName]=Object.freeze({version:3,implementationRevision:21,inspect,locateRow,locateField,rowIdentity,run});
 };

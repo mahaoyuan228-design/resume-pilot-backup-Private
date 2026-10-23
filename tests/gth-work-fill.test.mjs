@@ -427,6 +427,42 @@ test('empty work editor fills exact labels and leaves 薪资 untouched', async (
   assert.equal(clicks.filter((node) => node.id === 'editor-save' || node.id === 'editor-delete').length, 0);
 });
 
+test('explicit month-model refusals stop tenure even when the existing cell fixture keeps its painted value', async () => {
+  // Reuse the established month control and bridgeStop hook. No new live DOM
+  // shape is implied by a bridge refusal arriving after the cell paints.
+  for (const code of ['bad-answer', 'rejected', 'threw']) {
+    for (const endpoint of ['startDate', 'endDate']) {
+      const answer = ROW[endpoint];
+      const { dom, clicks, context, bridge } = boot(shell(formWrap(workFields())), {
+        bridgeStop: { [answer]: code },
+      });
+      try {
+        const doc = dom.window.document;
+        const stats = wire(doc);
+        const result = await context.ResumeGthWorkOpen.trial(request(workProfile(ROW)));
+        const label = `${code}: ${endpoint}`;
+        assert.equal(result.ok, false, label);
+        assert.equal(result.reason, 'readback_mismatch', label);
+        assert.equal(result.selectorStep, 'month_option', label);
+        assert.equal(result.fields.find(field => field.question === '任职时间').reason, 'readback_mismatch', label);
+        assert.equal(result.fields.find(field => field.question === '公司名称').reason, 'not_run', label);
+        assert.equal(result.fields.find(field => field.question === '公司所属行业').reason, 'not_run', label);
+        assert.equal(doc.getElementById('start-date').value, ROW.startDate, label);
+        assert.equal(doc.getElementById('end-date').value, endpoint === 'endDate' ? ROW.endDate : '', label);
+        assert.equal(stats.months.open, endpoint === 'endDate' ? 2 : 1, label);
+        assert.equal(stats.industry.open, 0, label);
+        assert.equal(doc.getElementById('organization').value, '', label);
+        assert.equal(doc.getElementById('description').value, '', label);
+        assert.equal(doc.getElementById('salary').value, '', label);
+        assert.deepEqual(bridge.answers, endpoint === 'endDate' ? [ROW.startDate, ROW.endDate] : [ROW.startDate], label);
+        assert.equal(doc.querySelector('[data-gth-month-role]'), null, label);
+        flags(result);
+        assert.equal(forbidden(clicks).length, 0, label);
+      } finally { dom.window.close(); }
+    }
+  }
+});
+
 test('matching values stay put and do not open the month panel or cascader', async () => {
   const html = shell(formWrap(workFields({
     position: '分析师', organization: '示例证券', description: '负责研究',

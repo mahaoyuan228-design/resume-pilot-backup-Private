@@ -559,6 +559,11 @@
     // A skipped target is outside owned rollback and the neighbor snapshots.
     // Verify its accepted receipt again after all cleanup events have settled.
     const skippedPreserved = readSkipped();
+    // Unvisited fields have neither a skip receipt nor a neighbor snapshot.
+    // Read them after cleanup without changing ownership or their skip reasons.
+    const unvisited = readTextNeighbors(snapshots.filter((snapshot) =>
+      results.find((row) => row.label === snapshot.label)?.reason === 'skipped_previous_failure')
+      .map((snapshot) => ({ ...snapshot, beforeRaw: snapshot.before })));
     return withNeighborReadback({
       ok,
       reason: neighborChanged ? 'neighbor_changed' : ok ? 'readback_matched' : 'readback_mismatch',
@@ -568,7 +573,9 @@
       saved: false,
       skippedSave: true,
       writeAttempted: attempted.length > 0,
-      restored: restore.length > 0 && restore.every((row) => row.ok) && skippedPreserved,
+      restored: restore.length > 0 && restore.every((row) => row.ok) && skippedPreserved && unvisited.neighborsPreserved,
+      unvisitedPreserved: unvisited.neighborsPreserved,
+      unvisited: unvisited.neighbors,
       restore,
       profileSource: allowExplicit ? 'explicit' : 'resumeProfile',
       planSummary: plan

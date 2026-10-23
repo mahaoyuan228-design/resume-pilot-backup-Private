@@ -460,7 +460,10 @@
       ['手机号码', values.mobile],
       ['邮箱', values.email]
     ];
-    const classified = textPlan.map(([label, value]) => ({ ...classifyField(label), expected: norm(value) }));
+    const classified = textPlan.map(([label, value]) => {
+      const row = classifyField(label);
+      return { ...row, expected: norm(value), beforeRaw: row.control?.value };
+    });
     if (classified.some((row) => !row.ready)) {
       return {
         ok: false,
@@ -549,6 +552,11 @@
     // Cleanup can change an unowned skip after its first readback. Retain the
     // accepted receipt even if that readback already changed its result reason.
     const skippedPreserved = readSkipped();
+    // Fields never reached after an earlier failure have no accepted skip receipt
+    // and are excluded from neighbors. Observe their original state after cleanup;
+    // they never become rollback writes or replace the original failure reason.
+    const unvisited = readTextNeighbors(classified.filter((snapshot) =>
+      results.find((row) => row.label === snapshot.label)?.reason === 'skipped_after_failure'));
     return withNeighborReadback({
       ok,
       siteId: SITE_ID,
@@ -559,7 +567,9 @@
       liveSupportClaimed: false,
       writeAttempted: written.length > 0,
       reason: neighborChanged ? 'neighbor_changed' : ok ? (written.length ? 'readback_matched' : 'existing_values_skipped') : 'readback_mismatch',
-      restored: !ok && written.length > 0 && restore.every((row) => row.restored) && skippedPreserved,
+      restored: !ok && written.length > 0 && restore.every((row) => row.restored) && skippedPreserved && unvisited.neighborsPreserved,
+      unvisitedPreserved: unvisited.neighborsPreserved,
+      unvisited: unvisited.neighbors,
       restore,
       profileSource: allowExplicit ? 'explicit' : 'resumeProfile',
       planSummary: plan

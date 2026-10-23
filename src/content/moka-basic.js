@@ -565,6 +565,10 @@
       const row = snapshots.find((entry) => entry.label === result.label);
       result.final = norm(row.control.value);
     }
+    // An early failure leaves the remaining planned fields outside results,
+    // accepted skips, and neighbors. Observe them without entering owned rollback.
+    const unvisited = readTextNeighbors(snapshots.slice(results.length)
+      .map((row) => ({ ...row, beforeRaw: row.original })));
     const ok = !failure;
     return withNeighborReadback({
       ok,
@@ -574,9 +578,11 @@
       ...NEVER_SAVE,
       reason: failure || (writes.length ? 'readback_matched' : 'skipped_existing'),
       writeAttempted: writes.length > 0,
-      restored: rollback.length > 0 && rollback.every((row) => row.restored) && skippedPreserved,
+      restored: rollback.length > 0 && rollback.every((row) => row.restored) && skippedPreserved && unvisited.neighborsPreserved,
       restoredCount: rollback.filter((row) => row.restored).length,
-      restoreComplete: rollback.length > 0 && rollback.every((row) => row.restored) && skippedPreserved,
+      restoreComplete: rollback.length > 0 && rollback.every((row) => row.restored) && skippedPreserved && unvisited.neighborsPreserved,
+      unvisitedPreserved: unvisited.neighborsPreserved,
+      unvisited: unvisited.neighbors,
       rollback,
       profileSource: allowExplicit ? 'explicit' : 'resumeProfile',
       planSummary: plan

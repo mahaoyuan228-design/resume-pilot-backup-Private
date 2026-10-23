@@ -146,7 +146,10 @@ for (const [value, wanted, reason, ok] of [
   ['KEEP_EXISTING', CALLER, 'existing_value', false],
   [' \n ', CALLER, 'existing_value', false],
   ['\u200b', CALLER, 'existing_value', false],
-  ['  Explicit caller fact\nSecond line keeps spaces  ', CALLER, 'preexisting_same_value', true]
+  [CALLER, CALLER, 'preexisting_same_value', true],
+  ['First line Second line', 'First line\nSecond line', 'existing_value', false],
+  ['Passed A B', 'Passed AB', 'existing_value', false],
+  [`  ${CALLER}  `, CALLER, 'existing_value', false]
 ]) test(`${SLUG}: ${reason} preserves the original raw value`, async () => {
   const h = boot({ value });
   try {
@@ -156,6 +159,51 @@ for (const [value, wanted, reason, ok] of [
     assert.equal(result.after, value);
     assert.equal(h.document.getElementById('target').value, value);
     assert.deepEqual(h.stats.events, []);
+    safe(h, result);
+  } finally { h.dom.window.close(); }
+});
+
+for (const phase of ['before fill', 'focus', 'input']) test(`${SLUG}: a row outside the PB wrapper during ${phase} cannot verify`, async () => {
+  const h = boot();
+  try {
+    const target = h.document.getElementById('target');
+    const moveOutside = () => h.document.body.append(target.closest('.ant-row.ant-form-item'));
+    if (phase === 'before fill') moveOutside();
+    else target.addEventListener(phase, moveOutside, { once: true });
+    const result = await h.api.fillField(LABEL, CALLER);
+    assert.equal(result.ok, false);
+    assert.equal(result.reason, 'control_not_supported');
+    assert.equal(target.closest(`.${probe.page.rootClass}`), null);
+    assert.equal(target.value, phase === 'input' ? CALLER : '');
+    if (phase !== 'input') assert.deepEqual(h.stats.events, []);
+    assert.equal(h.api.inspect().ok, false);
+    safe(h, result);
+  } finally { h.dom.window.close(); }
+});
+
+test(`${SLUG}: multiple PB wrappers refuse an otherwise matching target`, async () => {
+  const h = boot();
+  try {
+    const second = h.document.createElement('div');
+    second.className = probe.page.rootClass;
+    h.document.body.append(second);
+    const result = await h.api.fillField(LABEL, CALLER);
+    assert.equal(result.reason, 'control_not_supported');
+    assert.equal(h.document.getElementById('target').value, '');
+    assert.deepEqual(h.stats.events, []);
+    safe(h, result);
+  } finally { h.dom.window.close(); }
+});
+
+test(`${SLUG}: caller CRLF and CR follow native textarea LF readback`, async () => {
+  const h = boot();
+  try {
+    const result = await h.api.fillField(LABEL, 'First line\r\nSecond line\rThird line');
+    assert.equal(result.ok, true);
+    assert.equal(result.reason, 'readback_matched');
+    assert.equal(result.after, 'First line\nSecond line\nThird line');
+    assert.equal(result.after, result.expected);
+    assert.equal(h.document.getElementById('target').value, result.expected);
     safe(h, result);
   } finally { h.dom.window.close(); }
 });
@@ -321,4 +369,3 @@ test('major description: missing/unconfirmed descriptions and invalid indices ar
     safe(h, unconfirmed);
   } finally { h.dom.window.close(); }
 });
-

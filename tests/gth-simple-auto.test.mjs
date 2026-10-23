@@ -30,7 +30,7 @@ const fixture = () => ({
   }],
 });
 
-async function harness({ fillResponse } = {}) {
+async function harness({ fillResponse, onFill, onInject, timeoutMs = 5000, locks } = {}) {
   const data = {
     resumeProfile: fixture(),
     resumeProfileLifecycle: { version: 1, epoch, state: 'ready' },
@@ -107,6 +107,7 @@ async function harness({ fillResponse } = {}) {
         if (message?.type === 'GTH_SKILLS_FILL') {
           stats.fill += 1;
           sent.push(message);
+          if (onFill) return onFill({ data, response: defaultFill });
           return defaultFill;
         }
         throw Error('unexpected_sendMessage');
@@ -117,6 +118,7 @@ async function harness({ fillResponse } = {}) {
         if (request.files) {
           stats.inject += 1;
           stats.files = request.files;
+          if (onInject) await onInject();
           return [];
         }
         if (typeof request.func === 'function' && (request.world === 'MAIN' || request.world === 'ISOLATED')) {
@@ -149,8 +151,8 @@ async function harness({ fillResponse } = {}) {
   };
   runner = createGthSimpleAutoRunner({
     api,
-    timeoutMs: 5000,
-    lifecycleOptions: { locks: { request: async (_n, _o, work) => work() }, cryptoImpl: globalThis.crypto },
+    timeoutMs,
+    lifecycleOptions: { locks: locks || { request: async (_n, _o, work) => work() }, cryptoImpl: globalThis.crypto },
   });
   return { invoke, stats, sent, data, autoSender, badSender };
 }
@@ -424,4 +426,116 @@ test('GTH_SIMPLE_AUTO keeps a submit claim and does not report ok', async () => 
   assert.equal(response.job?.softwareClickedSubmit, true);
   assert.equal(response.saveAttempted, false);
   assert.equal(h.data.resumeGthSimpleAutoRun?.ok, false);
+});
+
+
+test('GTH_SIMPLE_AUTO retains received write evidence when post-fill binding changes', async () => {
+  for (const wrote of [false, true]) {
+    const h = await harness({ onFill: ({ data, response }) => {
+      data.resumeProfileLifecycle.epoch = '00000000-0000-4000-8000-000000000002';
+      return { ...response, writeStarted: wrote, fields: response.fields.map(row => ({
+        ...row, reason: wrote ? 'readback_matched' : 'preexisting_same_value'
+      })) };
+    } });
+    const result = await h.invoke({ type: 'GTH_SIMPLE_AUTO', mode: 'fill', originConfirmed: true });
+    assert.equal(h.stats.fill, 1);
+    assert.equal(result.ok, false);
+    assert.equal(result.reason, 'profile_binding_changed');
+    assert.equal(result.job?.state, 'unknown');
+    assert.equal(result.job?.outcome, 'unknown');
+    assert.equal(result.writeAttempted, wrote);
+    assert.equal(result.writeMayHaveStarted, wrote);
+    assert.equal(result.job?.writeStarted, wrote);
+    assert.deepEqual(result.job?.fields, [], 'stale-profile field results must not be retained');
+    assert.equal(result.saveAttempted, false);
+    assert.equal(result.saveAllowedByPolicy, false);
+    assert.equal(result.liveSupportClaimed, false);
+    assert.equal(result.complete, false);
+    assert.deepEqual(h.data.resumeGthSimpleAutoRun, result);
+  }
+});
+
+test('GTH_SIMPLE_AUTO preserves received policy claims through profile invalidation', async () => {
+  const claims = { softwareClickedSave: true, softwareClickedSubmit: true,
+    softwareClickedDelete: true, savedOnSite: true, submitted: true };
+  const h = await harness({ onFill: ({ data, response }) => {
+    data.resumeProfileLifecycle.epoch = '00000000-0000-4000-8000-000000000002';
+    return { ...response, writeStarted: true, data: claims };
+  } });
+  const result = await h.invoke({ type: 'GTH_SIMPLE_AUTO', mode: 'fill', originConfirmed: true });
+  assert.equal(result.ok, false);
+  assert.equal(result.reason, 'gth_simple_save_policy_violated');
+  assert.equal(result.job?.failureReason, 'profile_binding_changed');
+  assert.equal(result.job?.state, 'unknown');
+  assert.equal(result.writeAttempted, true);
+  for (const flag of Object.keys(claims)) {
+    assert.equal(result[flag], true, flag);
+    assert.equal(result.job?.[flag], true, flag);
+    assert.equal(h.data.resumeGthSimpleAutoRun?.[flag], true, flag);
+  }
+  assert.equal(result.saveAttempted, false, 'the worker never attempts Save');
+  assert.equal(result.saveAllowedByPolicy, false);
+  assert.equal(result.liveSupportClaimed, false);
+  assert.equal(result.complete, false);
+});
+
+test('GTH_SIMPLE_AUTO reports rejected or timed-out dispatched fills as uncertain writes', async () => {
+  for (const mode of ['reject', 'timeout', 'late']) {
+    const h = await harness({ timeoutMs: 20, onFill: async ({ response }) => {
+      if (mode === 'reject') throw Error('synthetic_transport_failed');
+      if (mode === 'timeout') return new Promise(() => {});
+      await new Promise(done => setTimeout(done, 70));
+      return { ...response, writeStarted: true };
+    } });
+    const result = await h.invoke({ type: 'GTH_SIMPLE_AUTO', mode: 'fill', originConfirmed: true });
+    assert.equal(h.stats.fill, 1);
+    assert.equal(result.ok, false);
+    assert.equal(result.reason, mode === 'reject' ? 'synthetic_transport_failed' : 'gth_simple_auto_timeout');
+    assert.equal(result.job?.state, 'unknown');
+    assert.equal(result.writeAttempted, null, 'no reply proves whether a write started');
+    assert.equal(result.writeMayHaveStarted, true);
+    assert.equal(result.job?.writeMayHaveStarted, true);
+    assert.equal(result.saveAttempted, false);
+    assert.equal(result.liveSupportClaimed, false);
+    assert.equal(result.complete, false);
+    await new Promise(done => setTimeout(done, mode === 'late' ? 90 : 0));
+    assert.deepEqual(h.data.resumeGthSimpleAutoRun, result, 'a late reply must not upgrade the failed run');
+  }
+});
+
+test('GTH_SIMPLE_AUTO cannot start a queued dispatch after its timeout', async () => {
+  let release, calls = 0;
+  const locks = { request: async (_n, _o, work) => {
+    calls += 1;
+    if (calls === 2) await new Promise(done => { release = done; });
+    return work();
+  } };
+  const h = await harness({ timeoutMs: 20, locks });
+  const result = await h.invoke({ type: 'GTH_SIMPLE_AUTO', mode: 'fill', originConfirmed: true });
+  assert.equal(result.ok, false);
+  assert.equal(result.reason, 'gth_simple_auto_timeout');
+  assert.equal(h.stats.fill, 0);
+  assert.equal(result.writeAttempted, false);
+  assert.equal(result.writeMayHaveStarted, false);
+  release();
+  await new Promise(done => setTimeout(done, 40));
+  assert.equal(h.stats.inject, 0);
+  assert.equal(h.stats.fill, 0);
+  assert.deepEqual(h.data.resumeGthSimpleAutoRun, result);
+});
+test('GTH_SIMPLE_AUTO cannot send a fill after timed-out script injection finishes', async () => {
+  let release;
+  const h = await harness({ timeoutMs: 20,
+    onInject: () => new Promise(done => { release = done; }) });
+  const result = await h.invoke({ type: 'GTH_SIMPLE_AUTO', mode: 'fill', originConfirmed: true });
+  assert.equal(result.ok, false);
+  assert.equal(result.reason, 'gth_simple_auto_timeout');
+  assert.equal(h.stats.inject, 1);
+  assert.equal(h.stats.fill, 0);
+  assert.equal(result.writeAttempted, false);
+  assert.equal(result.writeMayHaveStarted, false);
+  release();
+  await new Promise(done => setTimeout(done, 40));
+  assert.equal(h.stats.fill, 0);
+  assert.deepEqual(h.data.resumeGthSimpleAutoRun, result);
 });

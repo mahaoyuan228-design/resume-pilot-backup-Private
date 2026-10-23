@@ -190,24 +190,42 @@ export function createGthSimpleAutoRunner({api=globalThis.chrome,verifyBeforeFil
       if(message.originConfirmed!==true)fail('simple_job_origin_unconfirmed');
       await withProfileBinding(api.storage.local,binding,()=>api.storage.local.set({resumeTrustedOrigins:[...(Array.isArray(trusted)?trusted:[]),ORIGIN].slice(-100)}),lifecycleOptions);
     }
-    const response=await bounded(()=>dispatchBoundSource(api.storage.local,binding,()=>shippedGthSkillsFill({
-      api,tab,requestId:newRequestId(),binding,profile,replaceExisting:false
-    }),lifecycleOptions));
-    await assertProfileBinding(api.storage.local,binding,lifecycleOptions);
-    if(!response||typeof response!=='object')fail('gth_simple_fill_no_response');
+    let response=null,failureReason=null,dispatched=false,dispatchClosed=false;
+    try{
+      response=await bounded(()=>dispatchBoundSource(api.storage.local,binding,()=>{
+        // A timed-out lock wait must not dispatch a fill later.
+        if(dispatchClosed)fail('gth_simple_auto_timeout');
+        return shippedGthSkillsFill({api,tab,requestId:newRequestId(),binding,profile,replaceExisting:false,
+          beforeSend:()=>{
+            if(dispatchClosed)fail('gth_simple_auto_timeout');
+            dispatched=true;
+          }});
+      },lifecycleOptions));
+      await assertProfileBinding(api.storage.local,binding,lifecycleOptions);
+      if(!response||typeof response!=='object')fail('gth_simple_fill_no_response');
+    }catch(error){
+      dispatchClosed=true;
+      if(!dispatched)throw error;
+      // Binding invalidation cannot erase an already received write/policy claim.
+      // A missing reply after dispatch proves neither a write nor a no-write.
+      failureReason=safe(error);
+    }
     const claims=gthAutoSiteClaims(response);
     const claimed=gthAutoSiteClaimed(claims);
     const assessed=assessGthSkillsFill(response);
-    const ok=!claimed&&assessed.ok===true;
-    const field=Array.isArray(response.fields)&&response.fields.length===1?response.fields[0]:null;
+    const ok=!failureReason&&!claimed&&assessed.ok===true;
+    const fields=!failureReason&&Array.isArray(response?.fields)?response.fields:[];
+    const field=fields.length===1?fields[0]:null;
     const job={
       state:ok?'completed':'unknown',
-      reason:claimed?'gth_simple_save_policy_violated':(ok?null:safe(assessed.reason||response.reason||'gth_simple_fill_invalid')),
+      reason:claimed?'gth_simple_save_policy_violated':(failureReason||(ok?null:safe(assessed.reason||response?.reason||'gth_simple_fill_invalid'))),
+      ...(failureReason?{failureReason}:{}),
       outcome:ok?assessed.outcome:'unknown',
       section:SECTION,
-      fields:response.fields||[],
-      writeStarted:response.writeStarted===true,
-      editorLeftOpen:response.editorLeftOpen===true,
+      fields,
+      writeStarted:response?.writeStarted===true,
+      writeMayHaveStarted:response?.writeStarted===true||(dispatched&&response?.writeStarted!==false),
+      editorLeftOpen:response?.editorLeftOpen===true,
       liveSupportClaimed:false,
       complete:false,
       ...claims
@@ -260,7 +278,8 @@ export function createGthSimpleAutoRunner({api=globalThis.chrome,verifyBeforeFil
     }
 
     const filled=await runFill(found.tab,message,readiness);
-    report.writeAttempted=filled.job?.writeStarted===true;
+    report.writeMayHaveStarted=filled.job?.writeMayHaveStarted===true;
+    report.writeAttempted=filled.job?.writeStarted===true?true:(report.writeMayHaveStarted?null:false);
     report.steps.push({fill:filled.job?.state,outcome:filled.outcome});
     report.job=filled.job;
     report.fill=filled.responseSummary;
@@ -286,7 +305,7 @@ export function createGthSimpleAutoRunner({api=globalThis.chrome,verifyBeforeFil
       const helpUrl=error?.helpUrl||PAGE;
       const help=reason==='gth_simple_login_or_wrong_page'||reason==='gth_simple_tab_missing'||/\/login\b/i.test(String(helpUrl));
       const payload={ok:false,reason,helpNeeded:help,helpUrl,helpReason:error?.helpReason||(help?'我需要帮助！请打开已登录的国泰海通简历编辑页 https://hr.gtht.com/resume/edit/':''),
-        mode:message?.mode||'readiness',saveAttempted:false,writeAttempted:false,liveSupportClaimed:false,complete:false,at:Date.now(),version:1,kind:'gth_simple_auto'};
+        mode:message?.mode||'readiness',saveAttempted:false,saveAllowedByPolicy:false,writeAttempted:false,writeMayHaveStarted:false,liveSupportClaimed:false,complete:false,at:Date.now(),version:1,kind:'gth_simple_auto'};
       api.storage.local.set({resumeGthSimpleAutoRun:payload}).catch(()=>{});
       sendResponse(payload);
     });

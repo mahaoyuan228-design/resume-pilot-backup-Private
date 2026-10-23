@@ -59,12 +59,12 @@ function rowOk(row,question,path){
   return row?.question===question&&row.path===path&&Array.isArray(row.labels)
     &&row.labels.length===1&&row.labels[0]===question;
 }
-function assessFixed(response,{scope,questions,path,invalidReason,policyReason}){
+function assessFixed(response,{scope,section,questions,path,invalidReason,policyReason}){
   const claims=gthAutoSiteClaims(response);
   const claimed=gthAutoSiteClaimed(claims);
   const fields=Array.isArray(response?.fields)?response.fields:[];
   const aligned=fields.length===questions.length&&questions.every((question,index)=>rowOk(fields[index],question,path(question)));
-  const verified=row=>row?.status==='verified'&&VERIFIED.includes(row.reason);
+  const verified=row=>row?.status==='verified'&&VERIFIED.includes(row.reason)&&row.supported!==false;
   const allVerified=aligned&&fields.every(verified);
   const wrote=fields.some(row=>row?.reason==='readback_matched'||row?.reason==='readback_reapplied');
   const writeStarted=response?.writeStarted===true;
@@ -76,7 +76,7 @@ function assessFixed(response,{scope,questions,path,invalidReason,policyReason})
   const writeAgrees=writeStarted===wrote;
   let reason=null;
   if(claimed)reason=policyReason;
-  else if(!aligned||!writeAgrees||response?.ok!==allVerified||!flags&&allVerified)reason=safe(response?.reason||response?.error||invalidReason);
+  else if(response?.section!==section||response?.reason||response?.error||!aligned||!writeAgrees||response?.ok!==allVerified||!flags&&allVerified)reason=safe(response?.reason||response?.error||invalidReason);
   else if(!allVerified||!supportedComplete||!operableComplete)reason=safe(failed?.reason||response?.reason||response?.error||invalidReason);
   const ok=reason==null&&allVerified&&supportedComplete&&operableComplete&&response?.ok===true;
   return {ok,reason,fields,writeStarted,supportedComplete:ok&&supportedComplete,operableComplete:ok&&operableComplete,
@@ -84,14 +84,14 @@ function assessFixed(response,{scope,questions,path,invalidReason,policyReason})
 }
 export function assessGthSkillsFill(response){
   return assessFixed(response,{
-    scope:'gth_skills_one',questions:SKILLS,
+    scope:'gth_skills_one',section:'职业技能与特长',questions:SKILLS,
     path:question=>`customAnswers.${question}`,
     invalidReason:'gth_skills_fill_invalid',policyReason:'gth_skills_save_policy_violated'
   });
 }
 export function assessGthOtherFill(response){
   return assessFixed(response,{
-    scope:'gth_other_two',questions:OTHER,
+    scope:'gth_other_two',section:'其他信息',questions:OTHER,
     path:question=>`customAnswers.${question}`,
     invalidReason:'gth_other_fill_invalid',policyReason:'gth_other_save_policy_violated'
   });
@@ -141,18 +141,21 @@ export function assessGthWorkOpenFill(response){
     invalidReason:'gth_work_open_fill_invalid',policyReason:'gth_work_open_save_policy_violated'
   });
 }
-function ship(api,tab,files,message){
-  return api.scripting.executeScript({target:{tabId:tab.id},files}).then(()=>api.tabs.sendMessage(tab.id,message));
+function ship(api,tab,files,message,beforeSend){
+  return api.scripting.executeScript({target:{tabId:tab.id},files}).then(()=>{
+    if(beforeSend)beforeSend();
+    return api.tabs.sendMessage(tab.id,message);
+  });
 }
-export function shippedGthSkillsFill({api,tab,requestId,binding,profile,replaceExisting}){
+export function shippedGthSkillsFill({api,tab,requestId,binding,profile,replaceExisting,beforeSend}){
   return ship(api,tab,GTH_OPEN_FILL_FILES.skills,{
     type:GTH_SKILLS_FILL_TYPE,requestId,profileBinding:binding,profile,replaceExisting:replaceExisting===true
-  });
+  },beforeSend);
 }
-export function shippedGthOtherFill({api,tab,requestId,binding,profile,replaceExisting}){
+export function shippedGthOtherFill({api,tab,requestId,binding,profile,replaceExisting,beforeSend}){
   return ship(api,tab,GTH_OPEN_FILL_FILES.other,{
     type:GTH_OTHER_FILL_TYPE,requestId,profileBinding:binding,profile,replaceExisting:replaceExisting===true
-  });
+  },beforeSend);
 }
 export function shippedGthEducationOpenFill({api,tab,requestId,binding,profile,profileIndex,replaceExisting}){
   return ship(api,tab,GTH_OPEN_FILL_FILES.education,{

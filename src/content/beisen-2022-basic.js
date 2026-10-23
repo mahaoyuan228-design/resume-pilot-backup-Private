@@ -27,6 +27,7 @@
     .replace(/[\s\u00a0]+/gu, ' ')
     .trim();
   const cleanLabel = (value) => norm(value).replace(/^\*\s*/u, '').replace(/\s*\*$/u, '').replace(/[：:]\s*$/u, '').trim();
+  const emptyText = (value) => String(value ?? '').trim() === '';
   const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
   function isBeisen2022Host(hostname = location.hostname) {
@@ -80,12 +81,22 @@
     return hits.length === 1 ? hits[0] : null;
   }
 
+  function isVisible(node) {
+    if (!node?.isConnected) return false;
+    for (let ancestor = node; ancestor; ancestor = ancestor.parentElement) {
+      if (ancestor.hidden || ancestor.hasAttribute('inert') || ancestor.getAttribute('aria-hidden') === 'true') return false;
+      const style = getComputedStyle(ancestor);
+      if (style.display === 'none' || style.visibility === 'hidden' || style.visibility === 'collapse'
+        || style.opacity === '0' || style.contentVisibility === 'hidden') return false;
+    }
+    return true;
+  }
+
   function visibleTextInputs(item) {
     return [...item.querySelectorAll(INPUT_SEL)].filter((node) => {
-      if (node.type === 'hidden' || node.type === 'radio' || node.type === 'checkbox') return false;
-      if (node.disabled) return false;
-      const style = getComputedStyle(node);
-      return style.display !== 'none' && style.visibility !== 'hidden';
+      if (!['text', 'tel', 'email'].includes(node.type)) return false;
+      if (node.disabled || node.readOnly || node.matches(':disabled')) return false;
+      return isVisible(node);
     });
   }
 
@@ -141,34 +152,68 @@
     return control ? norm(control.value) : '';
   }
 
-  async function fillText(label, value) {
+  async function restoreOwnedText(snapshot) {
+    const { label, control, beforeRaw, writtenValue } = snapshot;
+    if (!control?.isConnected) return { label, restored: false, reason: 'control_detached' };
+    if (control.value === beforeRaw) return { label, restored: true, reason: 'already_restored' };
+    // A reactive or user value wins. Cleanup must not overwrite a competing value.
+    if (control.value !== writtenValue) return { label, restored: false, reason: 'competing_value_preserved' };
+    setNativeValue(control, beforeRaw);
+    await pause(80);
+    const restored = control.isConnected && control.value === beforeRaw;
+    return { label, restored, reason: restored ? 'restored' : 'restore_readback_mismatch' };
+  }
+
+  async function fillText(label, value, options = {}) {
+    const expected = norm(value);
+    const blocked = (reason, extra = {}) => ({
+      label, ok: false, reason, before: '', after: '', expected,
+      writeAttempted: false, saved: false, skippedSave: true, liveSupportClaimed: false, ...extra
+    });
+    if (!pageAllowed(options)) return blocked('wrong_page');
+    if (!TEXT_LABELS.includes(label)) return blocked('label_not_allowed');
+    if (!expected) return blocked('empty_value');
     const row = classifyField(label);
     if (!row.ready) {
-      return {
-        label,
-        ok: false,
-        reason: row.reason,
+      return blocked(row.reason, {
         matchCount: row.matchCount,
-        controlCount: row.controlCount ?? null,
-        before: '',
-        after: '',
-        expected: norm(value)
-      };
+        controlCount: row.controlCount ?? null
+      });
     }
-    const item = row.item;
     const control = row.control;
     const before = norm(control.value);
+    const skipExisting = () => ({
+      label, ok: true, reason: 'skipped_existing', before: norm(control.value), after: norm(control.value), expected,
+      writeAttempted: false, saved: false, skippedSave: true, liveSupportClaimed: false
+    });
+    // The fixture has no value-placeholder contract. Every nonempty value is occupied,
+    // including prompt-looking text; an input's placeholder attribute is never its value.
+    if (!emptyText(control.value)) return skipExisting();
     control.focus();
-    setNativeValue(control, String(value ?? ''));
+    const focused = classifyField(label);
+    if (!focused.ready || focused.control !== control) return blocked('control_changed_before_write');
+    if (!emptyText(control.value)) return skipExisting();
+    const snapshot = { label, control, beforeRaw: control.value, writtenValue: String(value ?? '') };
+    setNativeValue(control, snapshot.writtenValue);
     await pause(80);
-    const after = readText(item);
+    const current = classifyField(label);
+    const after = current.ready ? norm(current.control.value) : '';
+    const ok = current.ready && current.control === control && after === expected;
+    const restore = ok ? null : await restoreOwnedText(snapshot);
     return {
       label,
-      ok: after === norm(value),
-      reason: after === norm(value) ? 'matched' : 'readback_mismatch',
+      ok,
+      reason: ok ? 'matched' : 'readback_mismatch',
       before,
+      beforeRaw: snapshot.beforeRaw,
       after,
-      expected: norm(value)
+      expected,
+      writeAttempted: true,
+      restored: restore?.restored ?? false,
+      restore,
+      saved: false,
+      skippedSave: true,
+      liveSupportClaimed: false
     };
   }
 
@@ -266,7 +311,8 @@
               ? 'beisen2022_shell_no_form_dom'
               : 'labels_missing',
       saved: false,
-      skippedSave: true
+      skippedSave: true,
+      liveSupportClaimed: false
     };
   }
 
@@ -279,7 +325,9 @@
         href: location.href,
         results: [],
         saved: false,
-        skippedSave: true
+        skippedSave: true,
+        liveSupportClaimed: false,
+        writeAttempted: false
       };
     }
 
@@ -302,7 +350,9 @@
           href: location.href,
           results: [],
           saved: false,
-          skippedSave: true
+          skippedSave: true,
+          liveSupportClaimed: false,
+          writeAttempted: false
         };
       }
     } else {
@@ -326,6 +376,7 @@
           blockers: plan.blockers,
           saved: false,
           skippedSave: true,
+          liveSupportClaimed: false,
           writeAttempted: false
         };
       }
@@ -347,6 +398,7 @@
         reason: 'form_not_ready',
         saved: false,
         skippedSave: true,
+        liveSupportClaimed: false,
         writeAttempted: false,
         profileSource: allowExplicit ? 'explicit' : 'resumeProfile',
         results: classified.map((row) => ({
@@ -362,10 +414,46 @@
       };
     }
     const results = [];
+    const written = [];
     for (const [label, value] of textPlan) {
-      results.push(await fillText(label, value));
+      if (results.some((row) => !row.ok)) {
+        results.push({ label, ok: false, reason: 'skipped_after_failure', before: '', after: '', expected: norm(value), writeAttempted: false });
+        continue;
+      }
+      const row = classifyField(label);
+      const planned = classified.find((entry) => entry.label === label);
+      if (!row.ready || row.control !== planned.control || row.item !== planned.item) {
+        results.push({ label, ok: false, reason: 'control_changed_before_write', before: '', after: '', expected: norm(value), writeAttempted: false });
+        continue;
+      }
+      const snapshot = row.ready ? { label, control: row.control, beforeRaw: row.control.value, writtenValue: String(value) } : null;
+      const result = await fillText(label, value, options);
+      results.push(result);
+      if (result.writeAttempted && snapshot) written.push({ ...snapshot, beforeRaw: result.beforeRaw });
+    }
+    // Later field events may reactively replace an earlier value after its first readback.
+    for (const snapshot of written) {
+      const result = results.find((row) => row.label === snapshot.label);
+      const row = classifyField(snapshot.label);
+      if (result.ok && (!row.ready || row.control !== snapshot.control || norm(row.control.value) !== result.expected)) {
+        result.ok = false;
+        result.reason = 'readback_mismatch';
+        result.after = row.ready ? norm(row.control.value) : '';
+      }
     }
     const ok = results.every((row) => row.ok);
+    const restore = [];
+    if (!ok) {
+      for (const snapshot of [...written].reverse()) restore.push(await restoreOwnedText(snapshot));
+      // A later cleanup event can repopulate a field restored earlier in this loop.
+      for (const snapshot of written) {
+        const row = restore.find((entry) => entry.label === snapshot.label);
+        if (row.restored && (!snapshot.control.isConnected || snapshot.control.value !== snapshot.beforeRaw)) {
+          row.restored = false;
+          row.reason = 'restore_readback_mismatch';
+        }
+      }
+    }
     return {
       ok,
       siteId: SITE_ID,
@@ -373,7 +461,11 @@
       title: document.title,
       saved: false,
       skippedSave: true,
-      writeAttempted: true,
+      liveSupportClaimed: false,
+      writeAttempted: written.length > 0,
+      reason: ok ? (written.length ? 'readback_matched' : 'existing_values_skipped') : 'readback_mismatch',
+      restored: !ok && written.length > 0 && restore.every((row) => row.restored),
+      restore,
       profileSource: allowExplicit ? 'explicit' : 'resumeProfile',
       planSummary: plan
         ? { reason: plan.reason, readyCount: plan.fields.filter((f) => f.ready).length, blockerCount: plan.blockers.length }
@@ -384,6 +476,7 @@
 
   const api = {
     siteId: SITE_ID,
+    liveSupportClaimed: false,
     TEXT_LABELS,
     ITEM_SEL,
     isBeisen2022Host,

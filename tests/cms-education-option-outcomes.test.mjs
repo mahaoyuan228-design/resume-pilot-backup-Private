@@ -30,7 +30,7 @@ test('rank/select soft-skips education_option_missing; ambiguous still fails', (
   assert.match(selectSrc, /optionMatch/);
   assert.match(selectSrc, /DEGREE_LEVELS/);
   assert.match(selectSrc, /硕士.*硕士研究生|硕士研究生.*硕士/);
-  assert.match(selectSrc, /implementationRevision:5/);
+  assert.match(selectSrc, /implementationRevision:6/);
 });
 
 test('degree-level closed synonyms cover short↔catalog CMS 学历 forms', () => {

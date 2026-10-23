@@ -47,9 +47,13 @@
     let result;
     try{let live=guard();const initial=live.value[0],same=optionMatch(initial,desired);if(same&&binding.replaceExisting!==true)return {status:'verified',reason:'preexisting_same_value'};
       if(initial&&binding.replaceExisting!==true)return {status:'skipped',reason:'existing_value'};
-      if(menus().length||opened().length||[...document.querySelectorAll('.ant-calendar-picker-container,.ant-modal,.ant-cascader-menus')].some(visible))return {status:'skipped',reason:'control_busy'};
-      await checkProfileWrite(); live.selection.click();await checkProfileWrite();let signature='',stable=0,candidate=null,softMissing=false;const started=Date.now();
-      while(Date.now()-started<3200){await pause(60);const own=linked();if(!own)continue;if(!ownedMenu)ownedMenu=own.menu;if(ownedMenu!==own.menu)fail('education_select_menu_changed');
+      // replaceExisting covers the captured display, never a later native choice.
+      const unchanged=()=>{const current=guard();if(current.value[0]!==initial)fail('education_select_value_changed');return current;};
+      const busy=()=>menus().length||opened().length||[...document.querySelectorAll('.ant-calendar-picker-container,.ant-modal,.ant-cascader-menus')].some(visible);
+      if(busy())return {status:'skipped',reason:'control_busy'};
+      await checkProfileWrite();live=unchanged();if(busy())return {status:'skipped',reason:'control_busy'};
+      live.selection.click();await checkProfileWrite();const openedOwner=linked();if(openedOwner)ownedMenu=openedOwner.menu;unchanged();let signature='',stable=0,candidate=null,softMissing=false;const started=Date.now();
+      while(Date.now()-started<3200){await pause(60);unchanged();const own=linked();if(!own)continue;if(!ownedMenu)ownedMenu=own.menu;if(ownedMenu!==own.menu)fail('education_select_menu_changed');
         const options=enabledOptions(own.menu),next=JSON.stringify(options.map(n=>[n.textContent,n.className,n.getAttribute('aria-disabled')])),busy=!!own.menu.querySelector('.ant-spin-spinning,[aria-busy=true]');
         stable=next===signature&&!busy?stable+1:0;signature=next;
         if(Date.now()-started<300||stable<3)continue;
@@ -59,8 +63,10 @@
         softMissing=true;break;}
       if(softMissing){const samples=ownedMenu?enabledOptions(ownedMenu).map(n=>exact(n.textContent)).filter(Boolean).slice(0,8):[];result={status:'skipped',reason:'education_option_missing',desiredOptionText:desired,sampleOptions:samples};}
       else{
-        if(!candidate)fail('education_select_menu_not_stable');const own=linked(),matches=own?matchingOptions(own.menu):[];
-        if(!own||matches.length!==1||matches[0]!==candidate||candidate.tagName!=='LI')fail('education_select_candidate_changed');await checkProfileWrite(); candidate.click();await checkProfileWrite();changed=true;
+        if(!candidate)fail('education_select_menu_not_stable');
+        const currentCandidate=()=>{unchanged();const own=linked(),matches=own?matchingOptions(own.menu):[];
+          if(!own||own.menu!==ownedMenu||matches.length!==1||matches[0]!==candidate||candidate.tagName!=='LI')fail('education_select_candidate_changed');return matches[0];};
+        currentCandidate();await checkProfileWrite();currentCandidate().click();changed=true;await checkProfileWrite();
         const deadline=Date.now()+2000;while(Date.now()<deadline){await pause(40);live=guard();if(optionMatch(live.value[0],desired)&&!menus().length&&!opened().length)break;}
         live=guard();result=optionMatch(live.value[0],desired)?{status:'verified',reason:same?'reapplied':'readback_matched'}:{status:'failed',reason:'education_select_readback_mismatch'};
       }
@@ -68,6 +74,6 @@
     if(ownedMenu&&document.visibilityState==='visible'&&!await close())return {status:'failed',reason:'menu_cleanup_failed',primaryReason:result?.reason,partial:changed};
     return result||{status:'failed',reason:'education_select_outcome_unknown'};
   }
-  globalThis.ResumeCmsMultiSelect=Object.freeze({implementationRevision:5,fillSelect:(field,fact,binding,context)=>fillSelect(field,fact,{...binding,collection:'education'},context)});
-  globalThis.ResumeCmsInternshipSelect=Object.freeze({implementationRevision:1,fillSelect:(field,fact,binding,context)=>fillSelect(field,fact,{...binding,collection:'experience'},context)});
+  globalThis.ResumeCmsMultiSelect=Object.freeze({implementationRevision:6,fillSelect:(field,fact,binding,context)=>fillSelect(field,fact,{...binding,collection:'education'},context)});
+  globalThis.ResumeCmsInternshipSelect=Object.freeze({implementationRevision:2,fillSelect:(field,fact,binding,context)=>fillSelect(field,fact,{...binding,collection:'experience'},context)});
 })();

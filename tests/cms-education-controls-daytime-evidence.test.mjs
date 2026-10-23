@@ -11,6 +11,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 import * as runner from '../scripts/live/cms-education-live.mjs';
+import { CMS_BASELINE_PAGE } from '../scripts/lib/cms-page-target.mjs';
 import {
   EVIDENCE_SCHEMA_VERSION, REVIEWED_FILES, HOOK_NAMES,
   validateControlsDaytimeEvidence
@@ -66,6 +67,23 @@ function assertIncomplete(artifact, key, label) {
   assert.equal(result.liveSupportClaimed, false, label);
   assert.equal(result.checks.find(check => check.key === key)?.ok, false, `${label}: ${key}`);
   return result;
+}
+
+function suppressionWitnesses() {
+  const baseline = new URL(CMS_BASELINE_PAGE);
+  const autosave = new URL(`/wecruit/resume/info/edit/${baseline.pathname.split('/')[1]}`, baseline).href;
+  const lookup = new URL('/wecruit/dic/fuzzyMatchDic', baseline).href;
+  const common = { method: 'POST', via: 'xhr', blockedBeforeSend: true, phase: 'trial' };
+  return [
+    ['suppressedAutosave', 'queryless autosave', { ...common, url: autosave }],
+    ...['school', 'degree'].map(controlKey => ['suppressedAutosave', `${controlKey} control autosave`, {
+      ...common, url: `${autosave}?iSaJAx=isAjax&request_locale=zh_CN`, controlKey
+    }]),
+    ['suppressedLookup', 'queryless lookup', { ...common, url: lookup }],
+    ['suppressedLookup', 'housekeeping lookup', {
+      ...common, url: `${lookup}?iSaJAx=isAjax&request_locale=zh_CN&t=1700000000000`
+    }]
+  ];
 }
 
 test('daytime validator accepts a complete schema witness without making a live support claim', () => {
@@ -131,6 +149,25 @@ test('timer counters require safe nonnegative integers while observed non-functi
   assert.equal(validateControlsDaytimeEvidence(artifact).complete, true);
 });
 
+test('timer proof rejects JSON coercion values and overflowing numeric exponents', () => {
+  for (const key of ['pendingTimers', 'unobservableTimers', 'observedNonFunctionTimeouts']) {
+    for (const value of [false, true, [], [0], [[0]], '', ' ', '\t\n']) {
+      const artifact = schemaWitness();
+      artifact.report.finalDetails.timerSettle[key] = value;
+      assertIncomplete(JSON.parse(JSON.stringify(artifact)), 'timers', `${key}=${JSON.stringify(value)}`);
+    }
+    // JSON accepts this exponent even though JavaScript cannot represent its
+    // value as a finite number. Keep the parsed value; stringify would make null.
+    const overflow = JSON.parse(JSON.stringify(schemaWitness()).replace(`"${key}":0`, `"${key}":1e309`));
+    assert.equal(overflow.report.finalDetails.timerSettle[key], Infinity);
+    assertIncomplete(overflow, 'timers', `${key}=1e309`);
+  }
+  const artifact = schemaWitness();
+  artifact.report.finalDetails.timerSettle.observedNonFunctionTimeouts = Number.MAX_SAFE_INTEGER;
+  assert.equal(validateControlsDaytimeEvidence(JSON.parse(JSON.stringify(artifact))).complete, true,
+    'observed completed non-function timeouts may have any safe nonnegative count');
+});
+
 test('runner report requires controls scope, the full wait, and explicit Never-Save click boundaries', () => {
   for (const [key, value] of [['controls', false], ['controls', undefined],
     ['waitedMs', undefined], ['waitedMs', null], ['waitedMs', '500'], ['waitedMs', Infinity],
@@ -162,6 +199,80 @@ test('existing probe, traffic, suppression, readback, and restoration failures r
     const artifact = schemaWitness(); mutate(artifact);
     assertIncomplete(artifact, 'runner_report', label);
   }
+});
+
+test('completed activation helpers and school success cannot replace degree opening or observed click evidence', () => {
+  // Synthetic summaries of the harvest's distinct school/degree observations:
+  // helper completion, down/up observation, and a visible owned menu are separate.
+  for (const [label, mutateDegree] of [
+    ['helper complete but degree never opened', degree => { degree.opened = false; }],
+    ['degree opened but click was not observed', degree => { degree.activation.observedEvents = ['mousedown', 'mouseup']; }],
+    ['school succeeded while degree only observed down/up', degree => {
+      degree.opened = false;
+      degree.activation.observedEvents = ['mousedown', 'mouseup'];
+    }]
+  ]) {
+    const artifact = schemaWitness();
+    const school = artifact.report.finalDetails.widgetProbes.find(probe => probe.key === 'school');
+    const degree = artifact.report.finalDetails.widgetProbes.find(probe => probe.key === 'degree');
+    mutateDegree(degree);
+    assert.equal(school.opened, true);
+    assert.equal(school.closed, true);
+    assert.equal(degree.activation.stage, 'complete');
+    assert.equal(degree.closed, true, 'cleanup is still represented as successful');
+    const result = assertIncomplete(artifact, 'runner_report', label);
+    assert.equal(result.checks.find(check => check.key === 'page_boundaries').ok, true,
+      'zero final overlays do not establish that the degree menu opened');
+    assert.equal(result.checks.find(check => check.key === 'restoration').ok, true,
+      'matching restoration hashes cannot rescue incomplete probe evidence');
+  }
+});
+
+test('suppression rows require string methods for every supported ledger and query shape', () => {
+  for (const [ledger, label, row] of suppressionWitnesses()) {
+    for (const phase of ['trial', 'restore']) {
+      const artifact = schemaWitness();
+      artifact.report[ledger] = [{ ...row, phase }];
+      const saved = JSON.parse(JSON.stringify(artifact));
+      assert.equal(validateControlsDaytimeEvidence(saved).complete, true, `${label}, ${phase}: string POST`);
+      for (const method of [['POST'], [['POST']], [[['post']]]]) {
+        const malformed = structuredClone(saved);
+        malformed.report[ledger][0].method = method;
+        assert.equal(String(method).toUpperCase(), 'POST', 'array input reaches the legacy POST classifier');
+        assert.equal(runner.evidenceExitCode(malformed.report), 0,
+          'the legacy verdict accepts this distinct malformed retained row');
+        assertIncomplete(JSON.parse(JSON.stringify(malformed)), 'runner_report',
+          `${label}, ${phase}: method=${JSON.stringify(method)}`);
+      }
+    }
+  }
+});
+
+test('valid suppression never excuses malformed or nonempty generic traffic ledgers', () => {
+  for (const ledger of ['nonGet', 'saveLikePost']) {
+    const artifact = schemaWitness();
+    for (const [suppressionLedger, , row] of suppressionWitnesses()) artifact.report[suppressionLedger].push(row);
+    assert.equal(validateControlsDaytimeEvidence(artifact).complete, true, `${ledger}: explicit empty array`);
+    for (const value of [undefined, null, { length: 0 }, [{ method: 'POST', url: 'https://example.invalid/blocked', via: 'cdp' }]]) {
+      const malformed = structuredClone(artifact);
+      if (value === undefined) delete malformed.report[ledger]; else malformed.report[ledger] = value;
+      assertIncomplete(JSON.parse(JSON.stringify(malformed)), 'runner_report', `${ledger}=${JSON.stringify(value)}`);
+    }
+  }
+});
+
+test('empty suppression ledgers are complete evidence without a suppression-exercised claim', () => {
+  const empty = schemaWitness(), before = structuredClone(empty);
+  const emptyResult = validateControlsDaytimeEvidence(empty);
+  assert.equal(emptyResult.complete, true);
+  assert.equal(emptyResult.liveSupportClaimed, false);
+  assert.deepEqual(empty.report.suppressedAutosave, []);
+  assert.deepEqual(empty.report.suppressedLookup, []);
+  assert.deepEqual(empty, before, 'validation does not synthesize suppressed requests');
+  const populated = schemaWitness();
+  for (const [ledger, , row] of suppressionWitnesses()) populated.report[ledger].push(row);
+  assert.deepEqual(validateControlsDaytimeEvidence(populated), emptyResult,
+    'the returned completeness verdict does not claim which suppression paths were exercised');
 });
 
 test('malformed JSON-safe report containers fail closed even when the legacy validator throws', () => {
@@ -290,4 +401,29 @@ test('CLI validates saved artifacts offline and reports incomplete or invalid in
   const invalid = spawnSync(process.execPath, [cli, artifactPath], { cwd: root, encoding: 'utf8' });
   assert.equal(invalid.status, 2);
   assert.equal(`${invalid.stdout}${invalid.stderr}`.includes(marker), false);
+});
+
+test('CLI rejects nested valid-JSON malformed methods without exposing evidence content', t => {
+  const outDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cms-edu-evidence-private-'));
+  t.after(() => {
+    assert.ok(path.resolve(outDir).startsWith(path.resolve(os.tmpdir()) + path.sep));
+    fs.rmSync(outDir, { recursive: true, force: true });
+  });
+  const marker = 'PRIVATE_NESTED_EVIDENCE_MUST_NOT_BE_ECHOED';
+  const artifact = schemaWitness();
+  artifact.report.suppressedLookup = [{
+    ...suppressionWitnesses().find(([, label]) => label === 'housekeeping lookup')[2],
+    method: [['POST']], privateEvidence: { nested: [marker] }
+  }];
+  const artifactPath = path.join(outDir, 'nested-artifact.json');
+  fs.writeFileSync(artifactPath, JSON.stringify(artifact), 'utf8');
+  const result = spawnSync(process.execPath, [cli, artifactPath], { cwd: root, encoding: 'utf8' });
+  assert.equal(result.status, 2, result.stderr);
+  const verdict = JSON.parse(result.stdout);
+  assert.equal(verdict.complete, false);
+  assert.equal(verdict.reportExitCode, 0, 'the new shape check rejects a legacy-success report');
+  assert.equal(verdict.liveSupportClaimed, false);
+  assert.equal(verdict.checks.find(check => check.key === 'runner_report').ok, false);
+  assert.equal(`${result.stdout}${result.stderr}`.includes(marker), false);
+  assert.equal(`${result.stdout}${result.stderr}`.includes(artifactPath), false);
 });

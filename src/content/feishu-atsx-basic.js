@@ -536,19 +536,29 @@
     }
     // Occupied skips retain their raw value at acceptance, even if populated on
     // focus. Recheck them too, without adding them to owned-write rollback.
-    for (const result of results.filter((row) => row.reason === 'skipped_existing')) {
-      const snap = snapshots.find((row) => row.label === result.label);
-      const current = classifyField(result.label);
-      if (!current.ready || current.item !== snap.item || current.control !== snap.control || current.control.value !== result.afterRaw) {
-        result.ok = false;
-        result.reason = 'readback_mismatch';
-        result.after = current.ready ? norm(current.control.value) : norm(snap.control.value);
+    const skipped = results.filter((row) => row.reason === 'skipped_existing');
+    const readSkipped = () => {
+      let preserved = true;
+      for (const result of skipped) {
+        const snap = snapshots.find((row) => row.label === result.label);
+        const current = classifyField(result.label);
+        if (!current.ready || current.item !== snap.item || current.control !== snap.control || current.control.value !== result.afterRaw) {
+          preserved = false;
+          result.ok = false;
+          result.reason = 'readback_mismatch';
+          result.after = current.ready ? norm(current.control.value) : norm(snap.control.value);
+        }
       }
-    }
+      return preserved;
+    };
+    readSkipped();
     const neighborChanged = results.some((row) => row.reason === 'neighbor_changed') || !readTextNeighbors(neighbors).neighborsPreserved;
     const ok = results.every((row) => row.ok) && !neighborChanged;
     const attempted = snapshots.filter((snap) => results.find((row) => row.label === snap.label)?.writeAttempted);
     const restore = ok ? [] : await rollbackText(attempted);
+    // A skipped target is outside owned rollback and the neighbor snapshots.
+    // Verify its accepted receipt again after all cleanup events have settled.
+    const skippedPreserved = readSkipped();
     return withNeighborReadback({
       ok,
       reason: neighborChanged ? 'neighbor_changed' : ok ? 'readback_matched' : 'readback_mismatch',
@@ -558,7 +568,7 @@
       saved: false,
       skippedSave: true,
       writeAttempted: attempted.length > 0,
-      restored: restore.length > 0 && restore.every((row) => row.ok),
+      restored: restore.length > 0 && restore.every((row) => row.ok) && skippedPreserved,
       restore,
       profileSource: allowExplicit ? 'explicit' : 'resumeProfile',
       planSummary: plan

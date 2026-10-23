@@ -5,6 +5,8 @@
 // liveSupportClaimed stays false: a writer is not a claim the live site is supported.
 // Work 薪资 uses the plain text setter only for the probed el-input.select-l
 // shape. Pending live Never-Save. This does not claim the site is supported.
+// Fill-empty skips occupied requested fields and fills settled empty peers.
+// A skipped field is preserved and is never counted as verified or complete.
 (() => {
   const previous = globalThis.ResumeGthOpenFill;
   const priorApis = previous?.registry instanceof Map
@@ -1193,7 +1195,7 @@
       if (chips === null) return { action: 'fail', reason: 'control_not_supported', step: 'cascader_structure_unknown' };
       const texts = chips.map(entry => entry.text);
       if (texts.length === 1 && texts[0] === fact.leaf && existing === fact.leaf) return { action: 'same', existing };
-      if ((texts.length > 0 || existing !== '') && replaceExisting !== true) return { action: 'fail', reason: 'existing_value', existing };
+      if ((texts.length > 0 || existing !== '') && replaceExisting !== true) return { action: 'occupied', reason: 'existing_value', existing };
       return { action: 'fill', existing };
     }
     async function fillCascader(target, fact, replaceExisting, markWrite, guard) {
@@ -1364,37 +1366,60 @@
             plans.push({ field, target, decision: { action: 'skip' } });
             continue;
           }
-          plans.push({
-            field, target,
-            decision: field.kind === 'cascader'
-              ? cascaderDecision(target, answer, request.replaceExisting)
-              : decide(target, field, answer, request.replaceExisting)
-          });
+          let decision = field.kind === 'cascader'
+            ? cascaderDecision(target, answer, request.replaceExisting)
+            : decide(target, field, answer, request.replaceExisting);
+          if (decision.action === 'occupied' && target.controls.some(control => !siteValid(target.item, control))) {
+            decision = { action: 'fail', reason: 'site_validation_failed', existing: decision.existing };
+          }
+          plans.push({ field, target, decision });
         }
         const blocked = plans.find(plan => plan.decision.action === 'fail');
         if (blocked) {
           for (const plan of plans) {
             if (plan.decision.action === 'skip') continue;
-            if (plan.decision.action === 'fail') record(plan.field, 'failed', plan.decision.reason);
+            if (plan.decision.action === 'occupied') record(plan.field, 'skipped', 'existing_value');
+            else if (plan.decision.action === 'fail') record(plan.field, 'failed', plan.decision.reason);
             else if (plan.decision.action === 'same') record(plan.field, 'verified', 'preexisting_same_value');
             else record(plan.field, 'failed', 'blocked_by_unsettled_field');
           }
         } else {
+          const preserved = plans.filter(plan => plan.decision.action === 'occupied').map(plan => ({
+            ...plan, before: snapshot(plan.target.item), controls: [...plan.target.controls]
+          }));
+          const guard = () => {
+            if (performance.timeOrigin !== origin || outside(page(spec), spec) !== otherBefore) stop('other_values_changed');
+            const live = page(spec);
+            if (openForm(live, spec) !== form || otherForms(live, spec).length) stop('other_values_changed');
+            for (const plan of preserved) {
+              const current = targetOf(form, plan.field);
+              if (current.controls.some(control => !siteValid(current.item, control))) {
+                record(plan.field, 'failed', 'site_validation_failed');
+                stop('site_validation_failed');
+              }
+              if (current.item !== plan.target.item || current.controls.length !== plan.controls.length
+                || current.controls.some((node, index) => node !== plan.controls[index])
+                || snapshot(current.item) !== plan.before) {
+                record(plan.field, 'failed', 'other_values_changed');
+                stop('other_values_changed');
+              }
+            }
+          };
           const rank = kind => (kind === 'monthRange' || kind === 'picker' || kind === 'cascader' ? 0 : (kind === 'select' || kind === 'radio' ? 1 : 2));
           const ordered = [...plans].sort((left, right) => rank(left.field.kind) - rank(right.field.kind));
           for (const plan of ordered) {
             if (plan.decision.action === 'skip') continue;
             state.progress.activeField = plan.field.question;
+            guard();
+            if (plan.decision.action === 'occupied') {
+              record(plan.field, 'skipped', 'existing_value');
+              continue;
+            }
             const answer = answers[plan.field.question];
             if (plan.decision.action === 'same') {
               record(plan.field, 'verified', 'preexisting_same_value');
               continue;
             }
-            const guard = () => {
-              if (performance.timeOrigin !== origin || outside(page(spec), spec) !== otherBefore) stop('other_values_changed');
-              const live = page(spec);
-              if (openForm(live, spec) !== form || otherForms(live, spec).length) stop('other_values_changed');
-            };
             if (plan.field.kind === 'monthRange') {
               const outcome = await fillMonthRange(plan.target, answer, markWrite, guard);
               record(plan.field, outcome.status, outcome.reason);
@@ -1452,6 +1477,7 @@
             if (!siteValid(selected.item, selected.input)) stop('site_validation_failed');
             record(plan.field, 'verified', existing === '' ? 'readback_matched' : 'readback_reapplied');
           }
+          guard();
         }
         const primary = result.fields.find(row => row.status !== 'verified' && row.reason !== 'blocked_by_unsettled_field')
           || result.fields.find(row => row.status !== 'verified');
@@ -1512,30 +1538,30 @@
       const end = norm(target.inputs[1].value);
       const existing = `${start} | ${end}`;
       if (start === fact.start && end === fact.end) return { action: 'same', existing };
-      if ((start !== '' || end !== '') && replaceExisting !== true) return { action: 'fail', reason: 'existing_value', existing };
+      if ((start !== '' || end !== '') && replaceExisting !== true) return { action: 'occupied', reason: 'existing_value', existing };
       return { action: 'fill', existing };
     }
     if (field.kind === 'picker') {
       const existing = norm(target.input.value);
       if (existing === fact.leaf) return { action: 'same', existing };
-      if (existing !== '' && replaceExisting !== true) return { action: 'fail', reason: 'existing_value', existing };
+      if (existing !== '' && replaceExisting !== true) return { action: 'occupied', reason: 'existing_value', existing };
       return { action: 'fill', existing };
     }
     if (field.kind === 'radio') {
       const existing = target.read();
       if (existing === answer) return { action: 'same', existing };
-      if (existing && replaceExisting !== true) return { action: 'fail', reason: 'existing_value', existing };
+      if (existing && replaceExisting !== true) return { action: 'occupied', reason: 'existing_value', existing };
       return { action: 'fill', existing };
     }
     if (field.kind === 'select') {
       const existing = target.input.value;
       if (norm(existing) === answer) return { action: 'same', existing };
-      if (existing !== '' && replaceExisting !== true) return { action: 'fail', reason: 'existing_value', existing };
+      if (existing !== '' && replaceExisting !== true) return { action: 'occupied', reason: 'existing_value', existing };
       return { action: 'fill', existing };
     }
     const existing = target.input.value;
     if (existing !== '' && existing === answer) return { action: 'same', existing };
-    if (existing !== '' && replaceExisting !== true) return { action: 'fail', reason: 'existing_value', existing };
+    if (existing !== '' && replaceExisting !== true) return { action: 'occupied', reason: 'existing_value', existing };
     if (answer.length > field.max || (target.input.maxLength >= 0 && answer.length > target.input.maxLength))
       return { action: 'fail', reason: 'value_too_long', existing };
     return { action: 'fill', existing };

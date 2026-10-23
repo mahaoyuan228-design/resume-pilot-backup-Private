@@ -187,6 +187,19 @@ function assertNeverForbidden(clicks) {
   assert.equal(forbiddenClicks(clicks).length, 0);
 }
 
+function assertIncompleteNeverSave(result) {
+  assert.equal(result.ok, false);
+  assert.equal(result.supportedComplete, false);
+  assert.equal(result.operableComplete, false);
+  assert.equal(result.complete, false);
+  assert.equal(result.liveSupportClaimed, false);
+  assert.equal(result.softwareClickedSave, false);
+  assert.equal(result.softwareClickedSubmit, false);
+  assert.equal(result.softwareClickedDelete, false);
+  assert.equal(result.savedOnSite, null);
+  assert.equal(result.submitted, null);
+}
+
 test('reinjecting the open-fill scripts replaces the previous listener', async () => {
   const html = shell('职业技能与特长', formWrap(textItem('职业技能与特长', { tag: 'textarea', max: '4000', id: 'skills' })));
   const { clicks, context, listeners } = boot(html);
@@ -292,11 +305,138 @@ test('other info writes 标题 and 描述 and leaves a different existing value 
   const kept = boot(shell('其他信息', formWrap(`${textItem('标题', { id: 'title', value: '旧标题' })}${textItem('描述', { tag: 'textarea', id: 'desc' })}`)));
   const blocked = await kept.context.ResumeGthOther.trial(request(profile));
   assert.equal(kept.dom.window.document.getElementById('title').value, '旧标题');
-  assert.equal(kept.dom.window.document.getElementById('desc').value, '');
-  assert.equal(blocked.writeStarted, false);
+  assert.equal(kept.dom.window.document.getElementById('desc').value, '维护过一个小工具');
+  assert.equal(blocked.writeStarted, true);
+  assert.equal(blocked.fields.find((row) => row.question === '标题').status, 'skipped');
   assert.equal(blocked.fields.find((row) => row.question === '标题').reason, 'existing_value');
-  assert.equal(blocked.fields.find((row) => row.question === '描述').reason, 'blocked_by_unsettled_field');
+  assert.equal(blocked.fields.find((row) => row.question === '描述').reason, 'readback_matched');
+  assert.equal(assessGthOtherFill(blocked).ok, false);
+  assert.equal(assessGthOtherFill(blocked).reason, 'existing_value');
+  assertIncompleteNeverSave(blocked);
   assertNeverForbidden(kept.clicks);
+});
+
+test('fill-empty preserves an occupied other description and verifies the empty title', async () => {
+  const { dom, clicks, context } = boot(shell('其他信息', formWrap(`${textItem('标题', { id: 'title' })}${textItem('描述', { tag: 'textarea', id: 'desc', value: '原有描述' })}`)));
+  const doc = dom.window.document;
+  const untouched = doc.getElementById('desc');
+  const events = [];
+  untouched.addEventListener('input', () => events.push('input'));
+  untouched.addEventListener('change', () => events.push('change'));
+  const result = await context.ResumeGthOther.trial(request(customProfile('其他信息', { 标题: '开源贡献', 描述: '维护过一个小工具' })));
+  assert.equal(doc.getElementById('title').value, '开源贡献');
+  assert.equal(untouched.value, '原有描述');
+  assert.deepEqual(events, []);
+  assert.equal(result.fields[0].reason, 'readback_matched');
+  assert.equal(result.fields[1].status, 'skipped');
+  assert.equal(result.fields[1].reason, 'existing_value');
+  assertIncompleteNeverSave(result);
+  assertNeverForbidden(clicks);
+});
+
+test('fill-empty occupied skills stay skipped and never become a verified success', async () => {
+  const { dom, clicks, context } = boot(shell('职业技能与特长', formWrap(textItem('职业技能与特长', { tag: 'textarea', max: '4000', id: 'skills', value: '原有技能' }))));
+  const result = await context.ResumeGthSkills.trial(request(customProfile('职业技能与特长', { 职业技能与特长: 'Python' })));
+  assert.equal(dom.window.document.getElementById('skills').value, '原有技能');
+  assert.equal(result.writeStarted, false);
+  assert.equal(result.fields[0].status, 'skipped');
+  assert.equal(result.fields[0].reason, 'existing_value');
+  assert.equal(assessGthSkillsFill(result).ok, false);
+  assertIncompleteNeverSave(result);
+  assertNeverForbidden(clicks);
+});
+
+test('fill-empty still rejects unconfirmed other facts before writing any empty peer', async () => {
+  const { dom, clicks, context } = boot(shell('其他信息', formWrap(`${textItem('标题', { id: 'title', value: '原有标题' })}${textItem('描述', { tag: 'textarea', id: 'desc' })}`)));
+  const profile = customProfile('其他信息', { 标题: '开源贡献', 描述: '维护过一个小工具' });
+  profile.confirmedFields = ['customAnswers.标题'];
+  const result = await context.ResumeGthOther.trial(request(profile));
+  assert.equal(dom.window.document.getElementById('title').value, '原有标题');
+  assert.equal(dom.window.document.getElementById('desc').value, '');
+  assert.equal(result.writeStarted, false);
+  assert.equal(result.reason, 'profile_fact_unconfirmed');
+  assertIncompleteNeverSave(result);
+  assertNeverForbidden(clicks);
+});
+
+test('fill-empty fails when an empty peer rejects readback or site validation', async () => {
+  for (const mode of ['readback', 'validation']) {
+    const { dom, clicks, context } = boot(shell('其他信息', formWrap(`${textItem('标题', { id: 'title', value: '原有标题' })}${textItem('描述', { tag: 'textarea', id: 'desc' })}`)));
+    const doc = dom.window.document;
+    const description = doc.getElementById('desc');
+    description.addEventListener('change', () => {
+      if (mode === 'readback') description.value = '';
+      else description.setAttribute('aria-invalid', 'true');
+    });
+    const result = await context.ResumeGthOther.trial(request(customProfile('其他信息', { 标题: '开源贡献', 描述: '维护过一个小工具' })));
+    assert.equal(doc.getElementById('title').value, '原有标题');
+    assert.equal(result.fields.find((row) => row.question === '描述').status, 'failed');
+    assert.equal(result.reason, mode === 'readback' ? 'other_values_changed' : 'site_validation_failed');
+    assert.equal(result.writeStarted, true);
+    assertIncompleteNeverSave(result);
+    assertNeverForbidden(clicks);
+  }
+});
+
+test('fill-empty occupied validation errors and unknown controls still block empty peers before writes', async () => {
+  for (const mode of ['validation', 'structure']) {
+    const { dom, clicks, context } = boot(shell('其他信息', formWrap(`${textItem('标题', { id: 'title', value: '原有标题' })}${textItem('描述', { tag: 'textarea', id: 'desc' })}`)));
+    const doc = dom.window.document;
+    if (mode === 'validation') doc.getElementById('title').setAttribute('aria-invalid', 'true');
+    else doc.getElementById('title').readOnly = true;
+    const result = await context.ResumeGthOther.trial(request(customProfile('其他信息', { 标题: '开源贡献', 描述: '维护过一个小工具' })));
+    assert.equal(doc.getElementById('title').value, '原有标题');
+    assert.equal(doc.getElementById('desc').value, '');
+    assert.equal(result.writeStarted, false);
+    assert.equal(result.reason, mode === 'validation' ? 'site_validation_failed' : 'target_not_plain_text');
+    assertIncompleteNeverSave(result);
+    assertNeverForbidden(clicks);
+  }
+});
+
+test('fill-empty detects an occupied peer drifting during a later empty field write', async () => {
+  const { dom, clicks, context } = boot(shell('其他信息', formWrap(`${textItem('标题', { id: 'title', value: '原有标题' })}${textItem('描述', { tag: 'textarea', id: 'desc' })}`)));
+  const doc = dom.window.document;
+  doc.getElementById('desc').addEventListener('change', () => { doc.getElementById('title').value = '页面改动'; });
+  const result = await context.ResumeGthOther.trial(request(customProfile('其他信息', { 标题: '开源贡献', 描述: '维护过一个小工具' })));
+  assert.equal(doc.getElementById('title').value, '页面改动');
+  assert.equal(result.reason, 'other_values_changed');
+  assert.equal(result.fields.find((row) => row.question === '标题').status, 'failed');
+  assert.equal(result.fields.find((row) => row.question === '标题').reason, 'other_values_changed');
+  assert.equal(result.fields.find((row) => row.question === '描述').status, 'failed');
+  assertIncompleteNeverSave(result);
+  assertNeverForbidden(clicks);
+});
+
+test('education fill-empty skips occupied select, radio, picker and range while verifying empty text peers', async () => {
+  const row = { school: '示例大学', major: '计算机', degree: '本科', unifiedAdmissions: '是',
+    majorCategory: '经济学||金融学', startDate: '2025-03', endDate: '2026-07' };
+  const { dom, clicks, context } = boot(shell('教育经历', formWrap(educationFields({ degree: '硕士', radio: '否',
+    category: categoryItem({ value: '法学' }), dates: monthRangeItem('2025-03', '') }))));
+  const doc = dom.window.document;
+  wireDegree(doc);
+  wireRadio(doc);
+  const picker = wireCategory(doc);
+  const months = wireMonthRange(doc);
+  const result = await context.ResumeGthEducationOpen.trial(request(educationProfile(row), { profileIndex: 0 }));
+  assert.equal(doc.getElementById('school').value, row.school);
+  assert.equal(doc.getElementById('major').value, row.major);
+  assert.equal(doc.getElementById('degree').value, '硕士');
+  assert.equal(doc.querySelector('input[type=radio]:checked').value, '否');
+  assert.equal(doc.getElementById('major-trigger').value, '法学');
+  assert.equal(doc.getElementById('start-date').value, '2025-03');
+  assert.equal(doc.getElementById('end-date').value, '');
+  assert.equal(picker.open, 0);
+  assert.equal(months.open, 0);
+  for (const question of ['学历', '是否统招', '专业类别', '在校时间']) {
+    assert.equal(result.fields.find((field) => field.question === question).status, 'skipped');
+    assert.equal(result.fields.find((field) => field.question === question).reason, 'existing_value');
+  }
+  assert.equal(assessGthEducationOpenFill(result).ok, false);
+  assert.equal(assessGthEducationOpenFill(result).reason, 'existing_value');
+  assert.equal(result.writeStarted, true);
+  assertIncompleteNeverSave(result);
+  assert.equal(clicks.length, 0);
 });
 
 test('education open editor writes plain fields, radio, and el-select, including a body dropdown', async () => {

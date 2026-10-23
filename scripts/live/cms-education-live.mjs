@@ -69,6 +69,9 @@ offline-only. Exact autosave and active-school lookup XHRs are aborted before na
 send in separate logs. Every other non-GET attempt fails.
 Close menus first and leave the tab alone during the trial. Originals are
 restored and verified. liveSupportClaimed remains false; no live-site claim.
+CONTROLS=1 refuses orphaned prior trial hooks before installing new guards.
+If stale_live_guard_reload_required is reported, reload the resume tab, then
+rerun. Deleting __cmsEducationLive does not clear its document/prototype hooks.
 
   PORT              Loopback CDP port. Default 9239
   OUTDIR            Evidence directory. Default current directory
@@ -199,6 +202,27 @@ export async function createLivePlan(identityOrIdentities, rowIndex = 0, control
   return createPlan(profile, requests, supplements, binding);
 }
 
+export function inspectControlsTrialGuards(view) {
+  // CMS_EDU_WIDGET_OVERLAY_HARVEST_d22734a9_2026-10-23.md and
+  // overlay-harvest-d22734a9/residual-hooks.json show these legacy wrappers
+  // surviving after __cmsEducationLive disappears. Never capture them as a
+  // new trial's clean baseline or try to remove an unknown capture listener.
+  try {
+    const source = (fn) => typeof fn === 'function' ? view.Function.prototype.toString.call(fn) : '';
+    const click = source(view.HTMLElement?.prototype.click), fetch = source(view.fetch);
+    const xhrOpen = source(view.XMLHttpRequest?.prototype.open), xhrSend = source(view.XMLHttpRequest?.prototype.send);
+    const residualGuards = {
+      click: click.includes('allowedWidgetClick') && click.includes('clickNote'),
+      fetch: fetch.includes('cms_education_live_blocked_non_get'),
+      xhrOpen: xhrOpen.includes('openedDuringTrial') && xhrOpen.includes('metadata.set'),
+      xhrSend: xhrSend.includes('isEducationAutosave') && xhrSend.includes('suppressedAutosave')
+    };
+    return Object.values(residualGuards).some(Boolean)
+      ? { ok: false, reason: 'stale_live_guard_reload_required', reloadRequired: true, residualGuards }
+      : { ok: true };
+  } catch { return { ok: false, reason: 'controls_guard_state_unavailable', reloadRequired: true }; }
+}
+
 // Copy the shipped read-only serialization module into this evaluation's
 // closure. No selectors, React handlers, or write adapters are invented here.
 export function buildPageExpression(root = repoRoot, rowIndex = 0, controls = false) {
@@ -215,6 +239,7 @@ export function buildPageExpression(root = repoRoot, rowIndex = 0, controls = fa
     const isEducationAutosave = ${isEducationAutosave.toString()};
     const isSchoolLookup = ${isSchoolLookup.toString()};
     const redactUrl = ${redactUrl.toString()};
+    ${controls ? `const inspectControlsTrialGuards = ${inspectControlsTrialGuards.toString()};` : ''}
     return (${installEducationTrial.toString()})(globalThis, ${JSON.stringify(CMS_BASELINE_PAGE)},
       readCmsEducationSerialization, verifyEducationSerialization);
   })()`;
@@ -223,6 +248,10 @@ export function buildPageExpression(root = repoRoot, rowIndex = 0, controls = fa
 function installEducationTrial(view, page, readSerialization, verifySerialization) {
   const doc = view.document;
   if (view.__cmsEducationLive || view.ResumeProfileWriteContext) return { ok: false, reason: 'profile_write_context_busy' };
+  if (CONTROLS) {
+    const guards = inspectControlsTrialGuards(view);
+    if (!guards.ok) return guards;
+  }
   const previous = ['ResumeCmsSession', 'installResumeCmsRecordController', 'ResumeCmsEducationMulti',
     ...(CONTROLS ? ['ResumeCmsMultiSchoolSearch', 'ResumeCmsMultiEducationDates', 'ResumeCmsInternshipDates', 'ResumeCmsMultiSelect',
       'ResumeCmsInternshipSelect', 'ResumeCmsMultiRegion', 'ResumeCmsEducationMultiAdapters', 'ResumeCmsEducationMultiWidgetControls'] : [])].map((key) => ({
@@ -1251,6 +1280,7 @@ export async function runCmsEducationLive(options = {}) {
         'ROW_INDEX selects one existing row by the shipped controller identity; all other rows are bound with no ready facts and must stay unchanged. Zero Add, Save, Submit, Next, Deliver, or Delete clicks.',
         controls ? 'CONTROLS=1 opens/closes seven captured widget surfaces and uses shipped adapters with replaceExisting:false to verify exact preexisting fixture values. Every widget original must equal its fixture before any writes. City probes the first province menu only; its second menu was not harvested. Changed-widget writes remain offline-only.'
           : `Only education.${rowIndex}.major and education.${rowIndex}.majorDescription are confirmed. No widget adapters are injected.`,
+        ...(controls ? ['CONTROLS preflight refuses evidenced residual trial click/fetch/XHR hooks before installation with stale_live_guard_reload_required. Reload the resume page before rerunning; deleting its API does not remove capture guards. No automatic reload discards unsaved values, and no orphan listener is bypassed.'] : []),
         'Trial writes use ResumeCmsEducationMulti.run and its native text writer; DOM and shipped React serialization proof must match.',
         'Cleanup restores text with native setters/events and re-verifies unchanged widget values without option/day replacement. Exact DOM, raw public props, DTO proof, and closed overlays must match before guards are removed. Original values and proof stay in the page.',
         'All form submissions and forbidden clicks are blocked. Controls mode permits only the active bound opener and evidenced outside-click cleanup; options, days, navigation, clear icons, and confirmations cannot be clicked. An opened select needs one linked owned menu; a date needs one owned calendar portal. Only exact education autosave and active-school fuzzyMatchDic XHRs opened after arming are aborted before native send, in separate suppression logs. No HTTP success response or catalog option is synthesized.',

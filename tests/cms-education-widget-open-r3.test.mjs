@@ -282,3 +282,93 @@ test('expanded ARIA and a hidden linked harvested menu remain a failed open with
   assertNeverSave(h);
   assert.equal((await h.api.cleanup()).ok, true);
 });
+
+test('orphaned Never-Save hooks require reload before a second controls trial; known-owner cleanup restores the same opener', async t => {
+  // CMS_EDU_WIDGET_OVERLAY_HARVEST_d22734a9_2026-10-23.md and
+  // overlay-harvest-d22734a9/residual-hooks.json establish an absent live API
+  // with the old click/fetch/XHR wrappers and document capture stop remaining.
+  // after-reload-open.json supplies the clean-page contrast. This fixture
+  // retains a genuine trial's hooks after removing only its public API; no new
+  // DOM, guessed site handler, navigation, reload, or saved value is needed.
+  let cleanMethods;
+  const methods = window => ({ click: window.HTMLElement.prototype.click, fetch: window.fetch,
+    xhrOpen: window.XMLHttpRequest.prototype.open, xhrSend: window.XMLHttpRequest.prototype.send });
+  const h = await setup(t, { beforeInstall: ({ window }) => { cleanMethods = methods(window); } });
+  const firstApi = h.api;
+  assert.equal(delete h.window.__cmsEducationLive, true);
+  assert.equal(h.window.__cmsEducationLive, undefined);
+  const residualMethods = methods(h.window);
+  for (const key of Object.keys(cleanMethods)) assert.notEqual(residualMethods[key], cleanMethods[key]);
+  assert.match(String(residualMethods.click), /allowedWidgetClick/u);
+  assert.match(String(residualMethods.fetch), /isNonGetMethod/u);
+  assert.match(String(residualMethods.xhrOpen), /openedDuringTrial/u);
+  assert.match(String(residualMethods.xhrSend), /suppressedAutosave/u);
+
+  let targetClicks = 0;
+  h.school.addEventListener('click', () => targetClicks++);
+  h.school.click();
+  assert.equal(targetClicks, 0, 'the measured orphan prototype click wrapper is inert outside its trial');
+  const blockedReports = [];
+  const activated = h.window.ResumeCmsEducationMultiWidgetControls.activateSurface(h.school, () => h.school,
+    report => blockedReports.push(plain(report)));
+  assert.equal(activated, false, 'native EventTarget dispatch cannot bypass the older document capture stop');
+  assert.equal(blockedReports.at(-1).reason, 'event_not_observed');
+  assert.deepEqual(blockedReports.at(-1).events, ['mousedown', 'mouseup', 'click']);
+  assert.deepEqual(blockedReports.at(-1).observedEvents, ['mousedown', 'mouseup']);
+  assert.equal(targetClicks, 0); assert.equal(h.selects.counts.opens, 0);
+  assert.equal(firstApi.widgetClickCount(), 0);
+  const refusalCount = firstApi.clicks().length;
+  assert.equal(refusalCount, 2, 'the stale guard refused .click() and the dispatched opener click');
+  const controllerBefore = h.window.ResumeCmsEducationMulti;
+  const helperBefore = h.window.ResumeCmsEducationMultiWidgetControls;
+  const second = plain(h.window.eval(runner.buildPageExpression(root, 0, true)));
+  assert.deepEqual(second, { ok: false, reason: 'stale_live_guard_reload_required', reloadRequired: true,
+    residualGuards: { click: true, fetch: true, xhrOpen: true, xhrSend: true } });
+  assert.equal(h.window.__cmsEducationLive, undefined, 'the refused install must not add a second trial API');
+  assert.deepEqual(methods(h.window), residualMethods, 'preflight must not stack or replace stale hooks');
+  assert.equal(h.window.ResumeCmsEducationMulti, controllerBefore);
+  assert.equal(h.window.ResumeCmsEducationMultiWidgetControls, helperBefore);
+  assert.equal(firstApi.clicks().length, refusalCount, 'preflight must not try another activation');
+  assert.equal(targetClicks, 0); assert.equal(h.selects.counts.opens, 0);
+  assert.deepEqual(h.readProof(), h.before, 'preflight must preserve the current unsaved values');
+
+  // Only the retained first API owns the removers. A second installer cannot
+  // safely infer which capture listeners to remove from a missing API.
+  assert.equal((await firstApi.cleanup()).ok, true);
+  assert.deepEqual(methods(h.window), cleanMethods);
+  assert.equal(h.window.__cmsEducationLive, undefined);
+  h.window.eval(fs.readFileSync(path.join(root, 'src/content/cms-education-multi-adapters.js'), 'utf8'));
+  const cleanReports = [];
+  assert.equal(h.window.ResumeCmsEducationMultiWidgetControls.activateSurface(h.school, () => h.school,
+    report => cleanReports.push(plain(report))), true);
+  assert.equal(cleanReports.at(-1).stage, 'complete');
+  assert.deepEqual(cleanReports.at(-1).observedEvents, ['mousedown', 'mouseup', 'click']);
+  assert.equal(targetClicks, 1); assert.equal(h.selects.counts.opens, 1);
+  const linked = h.document.getElementById(h.school.getAttribute('aria-controls'));
+  const ownedMenu = linked?.closest('.ant-select-dropdown');
+  assert.ok(ownedMenu && ownedMenu.contains(linked));
+  assert.ok(ownedMenu.getClientRects().length > 0);
+  assert.equal(ownedMenu.classList.contains('ant-select-dropdown-hidden'), false);
+  assert.notEqual(h.window.getComputedStyle(ownedMenu).display, 'none');
+  h.window.EventTarget.prototype.dispatchEvent.call(h.school,
+    new h.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+  assert.equal(h.document.querySelectorAll('.ant-select-dropdown:not(.ant-select-dropdown-hidden),.ant-select-open,.ant-calendar-picker-container').length, 0);
+  assert.deepEqual(h.readProof(), h.before);
+  assert.equal(h.native.sends, 0); assert.equal(h.native.forbidden, 0);
+  assert.equal(h.window.fixtureCounts.saves, 0); assert.equal(h.window.fixtureCounts.submits, 0);
+  assert.equal(h.selects.counts.selections, 0); assert.equal(h.dates.snapshot().selections, 0);
+  assert.deepEqual(plain(firstApi.posts()), []);
+});
+
+test('an existing controls API remains busy before stale-hook preflight and does not replace its own guards', async t => {
+  const h = await setup(t);
+  const before = { click: h.window.HTMLElement.prototype.click, fetch: h.window.fetch,
+    xhrOpen: h.window.XMLHttpRequest.prototype.open, xhrSend: h.window.XMLHttpRequest.prototype.send };
+  assert.deepEqual(plain(h.window.eval(runner.buildPageExpression(root, 0, true))),
+    { ok: false, reason: 'profile_write_context_busy' });
+  assert.equal(h.window.__cmsEducationLive, h.api);
+  assert.deepEqual({ click: h.window.HTMLElement.prototype.click, fetch: h.window.fetch,
+    xhrOpen: h.window.XMLHttpRequest.prototype.open, xhrSend: h.window.XMLHttpRequest.prototype.send }, before);
+  assertNeverSave(h);
+  assert.equal((await h.api.cleanup()).ok, true);
+});

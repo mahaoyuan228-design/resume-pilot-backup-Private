@@ -453,6 +453,42 @@ for (const openerMode of ['delayed-school', 'delayed-calendar']) test(`${openerM
   assert.equal((await h.api.cleanup()).ok, true);
 });
 
+test('fake CDP refuses orphaned prior guards before injection or activation and reports reload required', async t => {
+  // residual-hooks.json records these exact wrappers with no live API. Do not
+  // wrap that contaminated baseline and misreport another widget_open_failed.
+  const h = await setup(t), before = h.readProof(), oldApi = h.api;
+  const methods = () => [h.window.HTMLElement.prototype.click, h.window.fetch,
+    h.window.XMLHttpRequest.prototype.open, h.window.XMLHttpRequest.prototype.send];
+  const guarded = methods();
+  delete h.window.__cmsEducationLive;
+  const outDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cms-education-residual-'));
+  t.after(() => {
+    const resolved = path.resolve(outDir), parent = path.resolve(os.tmpdir()) + path.sep;
+    assert.ok(resolved.startsWith(parent)); fs.rmSync(resolved, { recursive: true, force: true });
+  });
+  const evidence = await runner.runCmsEducationLive({ controls: true, repoRoot: root, outDir, tipSha: '7e2318f',
+    getJson: async () => [{ id: 'residual-offline', type: 'page', url: PAGE,
+      webSocketDebuggerUrl: 'ws://127.0.0.1:9239/devtools/page/residual-offline' }],
+    connectCdp: async () => ({ close() {}, async send(method, params) {
+      if (method !== 'Runtime.evaluate') return {};
+      return { result: { value: plain(await h.window.eval(params.expression)) } };
+    } })
+  });
+  assert.equal(evidence.finalDetails.reason, 'stale_live_guard_reload_required');
+  assert.equal(evidence.finalDetails.exitCode, 2); assert.equal(evidence.liveSupportClaimed, false);
+  assert.equal(evidence.finalDetails.cleanupOk, false, 'the host cannot claim it removed orphaned prior guards');
+  assert.equal(evidence.finalDetails.pageLeftAsFound, false);
+  assert.ok(evidence.fields.every(field => field.reason === 'stale_live_guard_reload_required'));
+  assert.ok(!evidence.finalDetails.steps.some(step => /^inject_|^education_|^cleanup$/u.test(step)));
+  assert.deepEqual(evidence.finalDetails.widgetProbes, []); assert.equal(evidence.finalDetails.widgetClickCount, 0);
+  assert.deepEqual(evidence.nonGet, []); assert.deepEqual(evidence.saveLikePost, []);
+  assert.deepEqual(methods(), guarded); assert.equal(h.window.__cmsEducationLive, undefined);
+  assert.deepEqual(h.readProof(), before); assert.equal(h.selects.counts.opens, 0);
+  assert.equal(h.native.sends, 0); assert.equal(h.native.forbidden, 0);
+  assert.equal((await oldApi.cleanup()).ok, true, 'only the retained original owner can release its known hooks');
+  assert.deepEqual(runner.inspectControlsTrialGuards(h.window), { ok: true });
+});
+
 test('fake CDP controls host reports exact restored proof and validates separate lookup suppression', async t => {
   const h = await setup(t, { install: false }), before = h.readProof();
   const outDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cms-education-controls-'));

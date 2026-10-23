@@ -436,7 +436,16 @@
         }else if(field.kind==='radio'){
           const option=selected.options.find(option=>option.text===answer.value);
           if(!option||!enabled(option.control)||!enabled(option.label))stop('basic_gender_option_disabled');
-          step('gender_option_click');markWrite();await boundAction(()=>{if(!(option.label)?.isConnected)stop('profile_action_target_changed');return option.label.click();});
+          step('gender_option_click');await boundAction(()=>{
+            // Radio selection is atomic: no intermediate own value is ours
+            // before this click. Preserve any edit made during the binding await.
+            guard(field,allBefore);
+            const current=target(form,field).options.find(candidate=>candidate.text===answer.value);
+            if(!current||current.control!==option.control||current.label!==option.label)
+              stop('profile_action_target_changed');
+            if(!enabled(current.control)||!enabled(current.label))stop('basic_gender_option_disabled');
+            markWrite();return current.label.click();
+          });
         }else if(field.kind==='month'){
           let popup,chosen=false;step('month_open');await boundAction(()=>{if(!(selected.trigger)?.isConnected)stop('profile_action_target_changed');return selected.trigger.click();});
           try{

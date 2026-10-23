@@ -124,14 +124,22 @@ function validSuppressedAutosave(row) {
     && (row.abortFailed === undefined || typeof row.abortFailed === 'boolean');
 }
 
-// School opening/searching has this one separately evidenced lookup POST.
+// harvest/harvest-summary.json networkPassive captures this lookup with the
+// three housekeeping parameters below. note()/redactUrl strips queries, so the
+// CLEAN d22734a9 nonGet URL does not establish a queryless request. Do not
+// generalize this bounded lookup exception to autosave or arbitrary queries.
 // Aborting it cannot manufacture catalog matches; missing options still skip.
 export function isSchoolLookup(request, page = CMS_BASELINE_PAGE) {
   if (String(request?.method ?? '').toUpperCase() !== 'POST' || typeof request?.url !== 'string') return false;
   try {
     const baseline = new URL(page), url = new URL(request.url, baseline);
-    return url.origin === baseline.origin && !url.username && !url.password && !url.search && !url.hash
-      && url.pathname === '/wecruit/dic/fuzzyMatchDic';
+    if (url.origin !== baseline.origin || url.username || url.password || url.hash
+      || url.pathname !== '/wecruit/dic/fuzzyMatchDic') return false;
+    if (!url.search) return true;
+    const params = url.searchParams;
+    return [...params].length === 3 && new Set(params.keys()).size === 3
+      && params.get('iSaJAx') === 'isAjax' && params.get('request_locale') === 'zh_CN'
+      && /^\d{13}$/u.test(params.get('t') || '');
   } catch { return false; }
 }
 
@@ -481,7 +489,7 @@ function installEducationTrial(view, page, readSerialization, verifySerializatio
             return undefined;
           }
           if (autosavePhase && request?.openedDuringTrial && request.openedForSchool && activeControl?.kind === 'school' && isSchoolLookup(request, page)) {
-            try { this.abort(); }
+            try { abort.call(this); }
             catch (error) { note(request.method, request.url, 'xhr'); throw error; }
             if (suppressedLookup.length < 80) suppressedLookup.push({ method: 'POST', url: new URL(request.url, page).href,
               via: 'xhr', blockedBeforeSend: true, phase: autosavePhase });

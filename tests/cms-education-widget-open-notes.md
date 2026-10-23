@@ -1,10 +1,58 @@
 # CMS education widget open/close regression
 
-## R3: residual trial guards and complete mouse attempts at #177
+## R3: clean lookup suppression and owned control probes
 
 Base `d22734a92b130ca58fbd7c44b4ec7d1d45c41caa` was fetched, hard-reset, and
 reverified before creating `codex/cms-edu-widget-open-r3`. #177's offline results
 below did **not** fix the supplied live retest.
+
+### Authoritative clean verdict: lookup classification, not failed opening
+
+`REAL_USE_CMS_EDU_CONTROLS1_d22734a9_CLEAN_2026-10-23.md` and
+`live-clean-nonget-d22734a9/cms-education-live.controls1.json`,
+`cms-edu-retest-summary.json`, `pre-trial-hooks.json`, and `RESULT_NOTE.txt`
+supersede the polluted failure as the current live verdict: **CLEAN CONTROLS=1
+at d22734a9 exits 3 with `non_get_request`, not `widget_open_failed`**. Hooks
+were native, body click reached its listener, and the API was absent before the
+trial. The school probe completed mouse events with one opener click,
+`opened=true`, and `closed=true`; only then the trial failed with the exact
+fuzzyMatchDic pathname in generic XHR traffic and empty suppression logs. All
+nine fields failed; values/restoration/cleanup remained intact. No live support
+or B+7 follows from a successful single-control probe.
+
+There is a concrete classifier gap in the supplied original harvest:
+`harvest/harvest-summary.json` `networkPassive` captures
+`/wecruit/dic/fuzzyMatchDic?iSaJAx=isAjax&request_locale=zh_CN&t=1792759070926`.
+The previous lookup classifier rejected every query string. Generic traffic
+uses `note`/`redactUrl`, which removes the query before evidence is written;
+the clean JSON's queryless-looking URL cannot distinguish that request shape.
+The clean run does not establish the raw query or exact request timing, but the
+harvest proves a real lookup shape that the offline queryless fixture omitted.
+
+R3 now classifies either the existing queryless lookup or exactly the three
+unique harvested housekeeping parameters: `iSaJAx=isAjax`,
+`request_locale=zh_CN`, and a 13-digit numeric `t`. Ordering may vary; unknown,
+duplicate, missing, or invalid parameters, fragments, credentials, other
+origins/paths/methods remain rejected. The existing school-owned armed-phase
+XHR metadata and active-control gates remain mandatory. Suppression calls the
+captured prototype `abort` and never native `send`; an abort exception retains
+the existing fatal generic-traffic path. No success response or catalog option
+is synthesized. The same classifier validates host `suppressedLookup` evidence.
+
+The original #174 autosave classifier/suppression branch, text writer, timer
+handling, and restoration stay intact. Clean-page opener, owned visible-menu,
+close, residual-guard, and exact click-accounting regressions are retained.
+The remaining work follows the clean lookup failure rather than assuming the
+product cannot open school. Tests model the recorded query after a successful
+probe without claiming its precise live scheduling.
+
+Clean-lookup offline validation: **188/188** CMS education tests passed with
+zero failures/skips using `node --test --test-concurrency=3` across every
+`tests/cms-education*.test.mjs`. This includes **38/38** controls tests,
+**8/8** new lookup regressions, and **10/10** retained R3 probe regressions
+(counts overlap). Syntax/whitespace checks pass. Protected #174 classifiers,
+autosave branch, timers, XHR-open metadata, text/restore/cleanup, and autosave
+files match both `d22734a9` and `c7451f3` after newline normalization.
 
 ### Follow-up overlay harvest: stale harness baseline
 

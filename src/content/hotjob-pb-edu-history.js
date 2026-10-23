@@ -14,6 +14,10 @@
 // match and are non-empty. Disagreeing, empty, hidden, disabled, allow-clear,
 // or any other count fails closed. A control outside the single wrap fails closed.
 // Identical captions on one row still name it. Disagreeing captions stay fail-closed.
+// Two 学校 rows: use the visible allow-clear ant-select when it already shows a
+// value and the other row is a display:none text input with no ant-select.
+// Do not write that text input. An empty select, a second select, a visible
+// text row, or any other count stays fail-closed. City still requires one form-item.
 // Basic-block 毕业院校 and the other education-history rows stay on their own labels.
 // Pending live Never-Save. This does not claim the site is supported.
 // liveSupportClaimed and supportClaimed stay false.
@@ -39,6 +43,7 @@
   const PATH = /^\/SU[0-9A-Za-z]{8,64}\/pb\/resumeOperation\.html$/u;
   const SELECT_STRAY = 'input.ant-radio-input, input.ant-checkbox-input, input[type="checkbox"], input.ant-input, input[type="file"], textarea, .ant-calendar-picker-input';
   const CASCADER_STRAY = SELECT_STRAY;
+  const TEXT_STRAY = '.ant-select, .cascader-plugins-wrap, input.ant-radio-input, input.ant-checkbox-input, input[type="checkbox"], input[type="file"], textarea, .ant-calendar-picker-input';
 
   const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
   const exact = (value) => String(value ?? '')
@@ -196,11 +201,47 @@
     };
   }
 
+  function schoolTextInput(item) {
+    if (stray(item, TEXT_STRAY).length) return null;
+    const inputs = stray(item, 'input.ant-input');
+    if (inputs.length !== 1) return null;
+    const control = inputs[0];
+    const attr = control.getAttribute('type');
+    const type = String(control.type || '').toLowerCase();
+    if (type !== 'text' || (attr && attr.toLowerCase() !== 'text')) return null;
+    if (control.readOnly || control.disabled || control.classList.contains('ant-calendar-picker-input')) return null;
+    return control;
+  }
+
+  // A display:none 学校 row can hold the harvested text input. It is not written.
+  function hiddenTextSchool(item) {
+    const control = schoolTextInput(item);
+    if (!control || visible(item) || visible(control)) return false;
+    return true;
+  }
+
+  // One 学校 row stays the flat allow-clear select, including an empty one.
+  // Two rows: keep that select only when it already shows a value and the other
+  // row is a hidden text input with no ant-select. Anything else fails closed.
+  function locateSchool(items) {
+    if (items.length === 1) return locateSelect(items[0], SCHOOL);
+    if (items.length !== 2) return { ok: false, reason: 'control_not_supported' };
+    const hidden = items.filter((item) => hiddenTextSchool(item));
+    const rest = items.filter((item) => !hidden.includes(item));
+    if (hidden.length !== 1 || rest.length !== 1) return { ok: false, reason: 'control_not_supported' };
+    const found = locateSelect(rest[0], SCHOOL);
+    if (!found.ok) return found;
+    const read = readSelectText(found.select, SCHOOL);
+    if (!read.ok || !read.value) return { ok: false, reason: 'control_not_supported' };
+    return found;
+  }
+
   function locate(label) {
     if (!Object.hasOwn(KINDS, label)) return { ok: false, reason: 'label_not_allowed' };
     const items = itemsFor(label);
-    if (items.length !== 1) return { ok: false, reason: 'control_not_supported' };
-    const found = KINDS[label] === 'cascader' ? locateCascader(items[0], label) : locateSelect(items[0], label);
+    const found = label === SCHOOL
+      ? locateSchool(items)
+      : (items.length === 1 ? locateCascader(items[0], label) : { ok: false, reason: 'control_not_supported' });
     if (found.ok) found.label = label;
     return found;
   }

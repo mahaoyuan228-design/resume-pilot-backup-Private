@@ -37,6 +37,15 @@
       "placeholderPrefix": "请选择",
       "faceClass": "ant-select-selection",
       "faceRole": "combobox"
+    },
+    "hiddenTextPartner": {
+      "note": "Live 2026-10-23 education-history 学校 is two ant-form-item rows. One is the visible allow-clear ant-select. The other has style display:none, one ant-input type=text, placeholder 请填写学校, and no ant-select. The hidden row is not a value source and is not written. Live ant-col wrappers are not part of locate. Not a support claim.",
+      "itemStyle": "display: none",
+      "label": "学校",
+      "placeholder": "请填写学校",
+      "controlClass": "ant-input",
+      "inputType": "text",
+      "hasSelect": false
     }
   },
   "city": {

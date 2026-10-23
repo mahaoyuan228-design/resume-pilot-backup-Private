@@ -17,6 +17,13 @@
   }
 
   const SITE_ID = 'moka';
+  const NEVER_SAVE = Object.freeze({
+    saved: false,
+    skippedSave: true,
+    neverSave: true,
+    liveSupportClaimed: false,
+    supportClaimed: false
+  });
   const TEXT_LABELS = ['姓名', '手机号码', '邮箱'];
   /** Provisional fixture / first-slice root; live may differ — fail-closed if missing. */
   const ITEM_SEL = '.moka-form-item';
@@ -30,6 +37,8 @@
     .trim();
   const cleanLabel = (value) => norm(value).replace(/^\*\s*/u, '').replace(/\s*\*$/u, '').replace(/[：:]\s*$/u, '').trim();
   const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+  // No fixture-backed value sentinel exists. Prompt-looking values are occupied too.
+  const emptyText = (value) => String(value ?? '').trim() === '';
 
   function isMokaHost(hostname = location.hostname) {
     const host = String(hostname || '').toLowerCase();
@@ -84,10 +93,15 @@
 
   function visibleTextInputs(item) {
     return [...item.querySelectorAll(INPUT_SEL)].filter((node) => {
-      if (node.type === 'hidden' || node.type === 'radio' || node.type === 'checkbox') return false;
-      if (node.disabled) return false;
-      const style = getComputedStyle(node);
-      return style.display !== 'none' && style.visibility !== 'hidden';
+      if (!['text', 'tel', 'email'].includes(node.type)) return false;
+      if (node.disabled || node.readOnly || node.matches(':disabled')) return false;
+      for (let ancestor = node; ancestor; ancestor = ancestor.parentElement) {
+        if (ancestor.hidden || ancestor.hasAttribute('inert') || ancestor.getAttribute('aria-hidden') === 'true') return false;
+        const style = getComputedStyle(ancestor);
+        if (style.display === 'none' || style.visibility === 'hidden' || style.visibility === 'collapse') return false;
+        if (style.opacity === '0' || style.contentVisibility === 'hidden') return false;
+      }
+      return node.isConnected;
     });
   }
 
@@ -127,14 +141,24 @@
     };
   }
 
-  function setNativeValue(input, value) {
+  // Cleanup may restore a hidden owned input, but never a node rebound to a
+  // different field/item. Connectivity and value equality alone are not ownership.
+  function hasTextBinding({ label, item, control }) {
+    const hits = matchingItems(label);
+    return control?.isConnected && item?.isConnected
+      && hits.length === 1 && hits[0] === item && control.closest(ITEM_SEL) === item;
+  }
+
+  function setNativeValue(input, value, binding) {
     const proto = Object.getPrototypeOf(input);
     const desc = Object.getOwnPropertyDescriptor(proto, 'value')
       || Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value');
     if (desc?.set) desc.set.call(input, value);
     else input.value = value;
     input.dispatchEvent(new Event('input', { bubbles: true }));
+    if (!hasTextBinding(binding)) return;
     input.dispatchEvent(new Event('change', { bubbles: true }));
+    if (!hasTextBinding(binding)) return;
     input.dispatchEvent(new Event('blur', { bubbles: true }));
   }
 
@@ -143,10 +167,24 @@
     return control ? norm(control.value) : '';
   }
 
-  async function fillText(label, value) {
+  async function fillTextAttempt(label, value) {
+    const expected = norm(value);
+    if (!TEXT_LABELS.includes(label) || !expected) {
+      return {
+        ...NEVER_SAVE,
+        label,
+        ok: false,
+        reason: !TEXT_LABELS.includes(label) ? 'label_not_allowed' : 'empty_value',
+        before: '',
+        after: '',
+        expected,
+        writeAttempted: false
+      };
+    }
     const row = classifyField(label);
     if (!row.ready) {
       return {
+        ...NEVER_SAVE,
         label,
         ok: false,
         reason: row.reason,
@@ -154,23 +192,77 @@
         controlCount: row.controlCount ?? null,
         before: '',
         after: '',
-        expected: norm(value)
+        expected,
+        writeAttempted: false
       };
     }
-    const item = row.item;
     const control = row.control;
     const before = norm(control.value);
+    if (!emptyText(control.value)) {
+      return { ...NEVER_SAVE, label, ok: true, reason: 'skipped_existing', before, after: before, expected, skipped: true, writeAttempted: false };
+    }
     control.focus();
-    setNativeValue(control, String(value ?? ''));
+    const focused = classifyField(label);
+    if (!focused.ready || focused.item !== row.item || focused.control !== control || !emptyText(control.value)) {
+      return { ...NEVER_SAVE, label, ok: false, reason: 'control_changed_before_write', before, after: norm(control.value), expected, writeAttempted: false };
+    }
+    setNativeValue(control, expected, row);
     await pause(80);
-    const after = readText(item);
+    const current = classifyField(label);
+    const after = norm(control.value);
+    const ok = current.ready && current.item === row.item && current.control === control && after === expected;
     return {
+      ...NEVER_SAVE,
       label,
-      ok: after === norm(value),
-      reason: after === norm(value) ? 'matched' : 'readback_mismatch',
+      ok,
+      reason: ok ? 'matched' : 'readback_mismatch',
       before,
       after,
-      expected: norm(value)
+      expected,
+      writeAttempted: true
+    };
+  }
+
+  async function rollbackOwned(writes) {
+    const rollback = [];
+    for (const row of [...writes].reverse()) {
+      if (!hasTextBinding(row)) {
+        rollback.push({ label: row.label, restored: false, reason: 'control_rebound' });
+        continue;
+      }
+      // A reactive/user winner belongs to the page. Only undo our still-owned value.
+      if (row.control.value !== row.expected) {
+        rollback.push({ label: row.label, restored: false, reason: 'competing_value_preserved' });
+        continue;
+      }
+      setNativeValue(row.control, row.original, row);
+      await pause(80);
+      rollback.push({ label: row.label, restored: row.control.value === row.original, reason: 'restore_attempted' });
+    }
+    for (const result of rollback) {
+      if (result.reason === 'restore_attempted') {
+        const row = writes.find((entry) => entry.label === result.label);
+        result.restored = hasTextBinding(row) && row.control.value === row.original;
+        result.reason = result.restored ? 'restored' : 'restore_mismatch';
+      }
+    }
+    return rollback;
+  }
+
+  async function fillText(label, value) {
+    const row = classifyField(label);
+    const original = row.control?.value;
+    const result = await fillTextAttempt(label, value);
+    const rollback = !result.ok && result.writeAttempted
+      ? await rollbackOwned([{ label, item: row.item, control: row.control, original, expected: norm(value) }])
+      : [];
+    return {
+      ...result,
+      restored: rollback.length > 0 && rollback.every((entry) => entry.restored),
+      restoredCount: rollback.filter((entry) => entry.restored).length,
+      restoreComplete: rollback.length > 0 && rollback.every((entry) => entry.restored),
+      rollback,
+      final: row.control ? norm(row.control.value) : ''
     };
   }
 
@@ -267,8 +359,7 @@
             : fp.looksMoka
               ? 'moka_shell_no_form_dom'
               : 'labels_missing',
-      saved: false,
-      skippedSave: true
+      ...NEVER_SAVE
     };
   }
 
@@ -280,8 +371,8 @@
         reason: 'wrong_page',
         href: location.href,
         results: [],
-        saved: false,
-        skippedSave: true
+        ...NEVER_SAVE,
+        writeAttempted: false
       };
     }
 
@@ -303,8 +394,8 @@
           reason: 'explicit_values_incomplete',
           href: location.href,
           results: [],
-          saved: false,
-          skippedSave: true
+          ...NEVER_SAVE,
+          writeAttempted: false
         };
       }
     } else {
@@ -326,8 +417,7 @@
             path: row.path
           })),
           blockers: plan.blockers,
-          saved: false,
-          skippedSave: true,
+          ...NEVER_SAVE,
           writeAttempted: false
         };
       }
@@ -347,8 +437,7 @@
         href: location.href,
         title: document.title,
         reason: 'form_not_ready',
-        saved: false,
-        skippedSave: true,
+        ...NEVER_SAVE,
         writeAttempted: false,
         profileSource: allowExplicit ? 'explicit' : 'resumeProfile',
         results: classified.map((row) => ({
@@ -363,19 +452,56 @@
         }))
       };
     }
+    const snapshots = classified.map((row) => ({ ...row, original: row.control.value }));
     const results = [];
-    for (const [label, value] of textPlan) {
-      results.push(await fillText(label, value));
+    const writes = [];
+    let failure = null;
+    for (const row of snapshots) {
+      const current = classifyField(row.label);
+      if (!current.ready || current.item !== row.item || current.control !== row.control || row.control.value !== row.original) {
+        failure = 'control_changed_before_write';
+        results.push({ ...NEVER_SAVE, label: row.label, ok: false, reason: failure, before: norm(row.original), after: norm(row.control.value), expected: row.expected, writeAttempted: false });
+        break;
+      }
+      const result = await fillTextAttempt(row.label, row.expected);
+      results.push(result);
+      if (result.writeAttempted) writes.push(row);
+      if (!result.ok) {
+        failure = result.reason;
+        break;
+      }
     }
-    const ok = results.every((row) => row.ok);
+    // Later reactive events can replace an earlier value after its first readback.
+    if (!failure) {
+      for (const row of snapshots) {
+        const current = classifyField(row.label);
+        const expected = writes.includes(row) ? row.expected : row.original;
+        if (!current.ready || current.item !== row.item || current.control !== row.control || row.control.value !== expected) {
+          failure = 'readback_mismatch';
+          const result = results.find((entry) => entry.label === row.label);
+          Object.assign(result, { ok: false, reason: failure, after: norm(row.control.value) });
+          break;
+        }
+      }
+    }
+    const rollback = failure ? await rollbackOwned(writes) : [];
+    for (const result of results) {
+      const row = snapshots.find((entry) => entry.label === result.label);
+      result.final = norm(row.control.value);
+    }
+    const ok = !failure;
     return {
       ok,
       siteId: SITE_ID,
       href: location.href,
       title: document.title,
-      saved: false,
-      skippedSave: true,
-      writeAttempted: true,
+      ...NEVER_SAVE,
+      reason: failure || (writes.length ? 'readback_matched' : 'skipped_existing'),
+      writeAttempted: writes.length > 0,
+      restored: rollback.length > 0 && rollback.every((row) => row.restored),
+      restoredCount: rollback.filter((row) => row.restored).length,
+      restoreComplete: rollback.length > 0 && rollback.every((row) => row.restored),
+      rollback,
       profileSource: allowExplicit ? 'explicit' : 'resumeProfile',
       planSummary: plan
         ? { reason: plan.reason, readyCount: plan.fields.filter((f) => f.ready).length, blockerCount: plan.blockers.length }

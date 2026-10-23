@@ -1,8 +1,8 @@
 // GTH basic candidates. Account-owned contacts may be site-read-only.
 // Preparation and writing belong to the worker. The content trial can attempt
-// 现居住地 through its eo-cascader path. This planner still fail-closes
-// completion for 现居住地 / 照片 and for a region fact that is not a unique
-// confirmed pair. It does not look up DOM, invent selectors, fill, Save, or
+// 现居住地 through its evidenced province-branch eo-cascader path. The planner
+// permits that trial only for a unique confirmed plain label; city/district
+// pairs and 照片 remain unsupported. It does not look up DOM, fill, Save, or
 // submit, and it does not claim site support.
 import {normalizeProfile} from '../profile/store.js';
 import {assertProfileBinding,canonicalProfileHash,commitBoundJob,reserveBoundJob,dispatchBoundSource,withProfileBinding,invalidateBoundJob} from '../profile/profile-lifecycle.js';
@@ -36,8 +36,12 @@ export function basicCandidate(input,educationIndex) {
   const confirmed=new Set(profile.confirmedFields),degreePath=`education.${educationIndex}.degree`;
   if(!row.degree||!confirmed.has(degreePath))fail('basic_education_source_unconfirmed');
   const facts={fullName:'',gender:'',phone:'',birthDate:'',email:'',workStart:'',currentCity:'',education:Array.from({length:educationIndex+1},()=>({})),confirmedFields:[]};
-  for(const key of ['fullName','gender','phone','birthDate','email','workStart','currentCity'])if(profile[key]&&confirmed.has(key)){
+  for(const key of ['fullName','gender','phone','birthDate','email','workStart'])if(profile[key]&&confirmed.has(key)){
     facts[key]=profile[key];facts.confirmedFields.push(key);
+  }
+  const residence=planGthResidence(profile,BASIC_PAGE);
+  if(residence.fillAllowed===true){
+    facts.currentCity=residence.fact.province;facts.confirmedFields.push('currentCity');
   }
   facts.education[educationIndex].degree=row.degree;facts.confirmedFields.push(degreePath);
   if([facts.fullName,facts.gender,facts.phone,facts.birthDate,facts.email,facts.workStart,facts.currentCity,row.degree].some(value=>/[\u0000-\u001f]/u.test(value)))fail('basic_source_invalid');
@@ -51,8 +55,8 @@ export function basicCoverage(response,educationIndex) {
     const row=response?.coverage?.find(row=>row?.question===question&&row.key===key)
       ||response?.fields?.find(row=>row?.question===question&&row.path===pathFor(key,educationIndex))
       ||response?.completedFields?.find(row=>row?.key===key);
-    // A residence attempt may be echoed for the trial contract. The completion
-    // plan still seals it fail-closed until a live Never-Save acceptance.
+    // A settled province trial may retain its readback without a live support
+    // claim. Unsupported photo coverage still prevents whole-basic completion.
     if(key==='currentCity'){
       const accepted=residenceAccepted(row);
       return {key,question,path:pathFor(key,educationIndex),supported:accepted,
@@ -76,6 +80,10 @@ export const GTH_COVERAGE_FAIL_CLOSED_REASONS=Object.freeze([
 ]);
 const GTH_BASIC_SECTION='基本信息';
 const regionClean=value=>String(value??'').normalize('NFKC').replace(/[＊*：:\s]/gu,'');
+// The evidenced writer selects one exact first-column province label. Do not
+// collapse a JSON province/city pair or a path into an invented leaf selection.
+const residenceProvince=value=>typeof value==='string'&&value.trim()&&value.length<=200
+  &&!/[\u0000-\u001f{}\[\]"/\\|>]/u.test(value)?value.trim():null;
 function explicitRegionPair(answer){
   let pair;
   try{pair=JSON.parse(answer);}catch{return null;}
@@ -94,18 +102,28 @@ const coverageClosed=(extra)=>({
 function planUnsupportedControl(key,question,path){
   return coverageClosed({key,question,path,reason:'control_not_supported',factSettled:false,matchCount:0});
 }
+function residenceReady(value,sourcePath){
+  return {...coverageClosed({key:'currentCity',question:'现居住地',path:'currentCity'}),
+    supported:true,ok:true,status:'ready',reason:'residence_trial_ready',fillAllowed:true,
+    factSettled:true,matchCount:1,sourcePath,fact:{province:value,confirmed:true}};
+}
+function unsupportedResidence(closed,value){
+  const pair=explicitRegionPair(value);
+  return {...closed,reason:'control_not_supported',factSettled:!!pair,matchCount:1,
+    ...(pair?{fact:{province:pair.province,city:pair.city,confirmed:true}}:{})};
+}
 function planCurrentCityFact(profile){
   const closed=coverageClosed({key:'currentCity',question:'现居住地',path:'currentCity'});
   const value=typeof profile?.currentCity==='string'?profile.currentCity.trim():'';
   if(!value)return {...closed,reason:'control_not_supported',factSettled:false,matchCount:0};
   if(!(profile?.confirmedFields||[]).includes('currentCity'))
     return {...closed,reason:'region_fact_unconfirmed',factSettled:false,matchCount:1};
-  const pair=explicitRegionPair(value);
-  if(!pair)return {...closed,reason:'explicit_region_pair_required',factSettled:false,matchCount:1};
-  return {...closed,reason:'control_not_supported',factSettled:true,matchCount:1,
-    fact:{province:pair.province,city:pair.city,confirmed:true}};
+  const province=residenceProvince(value);
+  return province?residenceReady(province,'currentCity'):unsupportedResidence(closed,value);
 }
 function planGthResidence(profile,sitePageUrl){
+  if(sitePageUrl!==BASIC_PAGE)return coverageClosed({key:'currentCity',question:'现居住地',path:'currentCity',
+    reason:'region_fact_scope_mismatch',factSettled:false,matchCount:0});
   const matches=(profile?.customFacts||[]).filter(row=>regionClean(row?.question)==='现居住地');
   if(matches.length>1)return coverageClosed({key:'currentCity',question:'现居住地',path:'currentCity',
     reason:'region_fact_not_unique',factSettled:false,matchCount:matches.length});
@@ -115,24 +133,25 @@ function planGthResidence(profile,sitePageUrl){
   const closed=coverageClosed({key:'currentCity',question:'现居住地',path,matchCount:1,factSettled:false});
   if(!(profile?.confirmedFields||[]).includes(path)||saved.answer!==profile?.customAnswers?.[saved.question])
     return {...closed,reason:'region_fact_unconfirmed'};
-  const pair=explicitRegionPair(saved.answer);
-  if(!pair)return {...closed,reason:'explicit_region_pair_required'};
   const page=typeof sitePageUrl==='string'&&sitePageUrl?sitePageUrl:BASIC_PAGE;
   const settled=saved.sitePageUrl===page
     &&regionClean(saved.sectionName)===GTH_BASIC_SECTION
     &&regionClean(saved.question)==='现居住地'
     &&(saved.rowContext==='single'||saved.rowContext==='none');
   if(!settled)return {...closed,reason:'region_fact_scope_mismatch'};
-  // A settled pair still has no GTH control adapter. Do not invent a selector.
-  return {...closed,reason:'control_not_supported',factSettled:true,
-    fact:{province:pair.province,city:pair.city,confirmed:true}};
+  const province=residenceProvince(saved.answer);
+  if(!province)return unsupportedResidence(closed,saved.answer);
+  const current=typeof profile?.currentCity==='string'?profile.currentCity.trim():'';
+  if(current&&(profile?.confirmedFields||[]).includes('currentCity')&&current!==province)
+    return {...closed,reason:'region_fact_not_unique'};
+  return residenceReady(province,path);
 }
 export function planGthBasicCoverage(profile,{sitePageUrl=BASIC_PAGE,fillRequested=false}={}){
   const fields=[
     planGthResidence(profile,sitePageUrl),
     planUnsupportedControl('photo','照片',null)
   ];
-  const region=fields.find(field=>field.reason!=='control_not_supported');
+  const region=fields.find(field=>field.status==='failed'&&field.reason!=='control_not_supported');
   const blocked=fields.some(field=>field.status==='failed'&&GTH_COVERAGE_FAIL_CLOSED_REASONS.includes(field.reason));
   return {
     ok:false,complete:false,blocked,fillRequested:fillRequested===true,
@@ -169,7 +188,8 @@ export function validResponse(response,index) {
   return response?.ok===true&&response.scope==='gth_basic_six'&&response.complete===false
     &&response.editorLeftOpen===true&&response.savedOnSite===null&&response.submitted===null
     &&response.softwareClickedSave===false&&response.softwareClickedSubmit===false&&response.softwareClickedDelete===false
-    &&city.length<=1&&(city.length===0||residenceAccepted(city[0]))
+    &&response.liveSupportClaimed!==true
+    &&city.length<=1&&(city.length===0||city[0].question==='现居住地'&&city[0].path==='currentCity'&&residenceAccepted(city[0]))
     &&core.length===BASIC_FIELDS.length&&BASIC_FIELDS.every(([question,key])=>{
       const matches=core.filter(row=>row?.question===question&&row.path===pathFor(key,index));
       return matches.length===1&&validRow(matches[0],key);

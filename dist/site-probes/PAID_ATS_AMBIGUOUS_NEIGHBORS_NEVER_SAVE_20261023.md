@@ -51,7 +51,7 @@ zero click/submit/programmatic submit/requestSubmit, and Never-Save flags.
 
 ## Local validation
 
-Windows; Node `v24.20.0`; `CHROME_PATH=C:Program FilesGoogleChromeApplicationchrome.exe`.
+Windows; Node `v24.20.0`; `CHROME_PATH=C:/Program Files/Google/Chrome/Application/chrome.exe`.
 
 - New duplicate-neighbor suite: **39/39 passed**, no failures/skips.
 - Trio basic/Never-Save suites plus skipped-readback, #157 neighbor

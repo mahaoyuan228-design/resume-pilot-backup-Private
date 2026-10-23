@@ -773,7 +773,9 @@
         } catch { /* keep the month reason */ }
       }
       if (result === 'picked' || result === 'emitted') return 'ok';
-      if (result === 'dual' || result === 'bad-year' || result === 'mismatch') return 'stop';
+      // A rejected request, changed marker, or thrown model call is an explicit
+      // refusal. A surviving DOM paint cannot turn that verdict into acceptance.
+      if (['dual', 'bad-year', 'mismatch', 'bad-answer', 'rejected', 'threw'].includes(result)) return 'stop';
       return 'no';
     }
     // input+change paints the DOM. Element-UI keeps it only when the picker

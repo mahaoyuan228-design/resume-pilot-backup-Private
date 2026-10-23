@@ -359,6 +359,46 @@ test('title_add empty work card fills blank no-layout cascaders with the shipped
   } finally { f.close(); }
 });
 
+test('full work discards safely after an explicit month-model refusal keeps the painted month', async () => {
+  for (const code of ['bad-answer', 'rejected', 'threw']) {
+    for (const answer of ['2020-03', '2024-08']) {
+      const f = await boot();
+      try {
+        const sendMessage = f.window.chrome.runtime.sendMessage;
+        const refused = [];
+        f.window.chrome.runtime.sendMessage = async message => {
+          if (message?.type === 'GTH_MONTH_MODEL_ACCEPT' && message.answer === answer) {
+            refused.push(message.answer);
+            return { ok: false, result: code };
+          }
+          return sendMessage(message);
+        };
+        const fill = await f.window.ResumeGthWorkOpen.trial(request);
+        const label = `${code}: ${answer}`;
+        assert.equal(fill.ok, false, label);
+        assert.equal(fill.reason, 'readback_mismatch', label);
+        assert.equal(fill.fields.find(row => row.question === '任职时间').reason, 'readback_mismatch', label);
+        assert.equal(fill.fields.find(row => row.question === '公司所属行业').reason, 'not_run', label);
+        assert.equal(f.doc.getElementById('start-date').value, '2020-03', label);
+        assert.equal(f.doc.getElementById('end-date').value, answer === '2024-08' ? answer : '', label);
+        assert.equal(f.doc.getElementById('organization').value, '', label);
+        assert.equal(f.doc.getElementById('description').value, '', label);
+        assert.equal(f.stats.months.open, answer === '2024-08' ? 2 : 1, label);
+        assert.deepEqual(refused, [answer], label);
+        assert.equal(fill.liveSupportClaimed, false, label);
+        assert.equal(fill.softwareClickedSave, false, label);
+        assert.equal(fill.softwareClickedSubmit, false, label);
+        assert.equal(fill.softwareClickedDelete, false, label);
+        assert.equal((await f.api.cancel(3)).closed, true, label);
+        assert.equal(f.api.state().editorFormCount, 0, label);
+        assert.equal(f.api.clicks().every(row => row.allowed), true, JSON.stringify(f.api.clicks()));
+        assert.deepEqual(f.stats.dangerous, [], label);
+        assert.deepEqual(Array.from(f.api.requests()), [], label);
+      } finally { f.close(); }
+    }
+  }
+});
+
 test('full work readback uses the writer-owned month inputs while unrelated item controls remain visible', async () => {
   // These are offline variants of the existing month fixture, not assertions
   // about live GTH DOM. The shipped range resolver deliberately excludes

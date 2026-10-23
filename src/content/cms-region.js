@@ -142,7 +142,9 @@
       const delegated=focused!==selection&&focused instanceof HTMLInputElement
         &&focused.type==='text'&&ownedSelect.contains(focused)&&visible(focused);
       if(focused!==selection&&!delegated)return false;
-      const surfaces=[...ownedSelect.querySelectorAll('input[type="text"]'),selection];
+      const surfaces=[...ownedSelect.querySelectorAll('input')]
+        .filter(node=>node instanceof HTMLInputElement&&node.type==='text'&&visible(node));
+      surfaces.push(selection);
       for(const surface of surfaces) {
         const event=new KeyboardEvent('keydown',{key:'Escape',code:'Escape',bubbles:true,cancelable:true});
         Object.defineProperties(event,{keyCode:{get:()=>27},which:{get:()=>27}});surface.dispatchEvent(event);
@@ -157,7 +159,10 @@
       for(let i=0;i<35&&live.selects[index].classList.contains('ant-select-disabled');i++){await pause(40);live=guard();}
       if(live.selects[index].classList.contains('ant-select-disabled'))fail(index?'city_not_ready':'province_disabled');
       if(selected(live.selections[index]))fail('existing_value_changed');
-      await checkProfileWrite(); live.selections[index].click();ownedMenu=true;
+      await checkProfileWrite();live=guard();
+      if(selected(live.selections[index]))fail('existing_value_changed');
+      if(live.selects[index].classList.contains('ant-select-disabled'))fail(index?'city_not_ready':'province_disabled');
+      live.selections[index].click();ownedMenu=true;
       let menu;
       for(let i=0;i<35;i++){live=guard();menu=linkedMenu(live,index);if(menu)break;await pause(40);}
       if(!menu)fail('menu_link_missing_or_ambiguous');
@@ -184,7 +189,12 @@
           &&!node.classList.contains('ant-select-dropdown-menu-item-disabled')&&exact(node.textContent)===exact(desired[index])):[];
       if(current.length!==1||current[0]!==candidate||candidate.tagName!=='LI'||selected(live.selections[index]))
         fail('candidate_changed');
-      await checkProfileWrite(); candidate.click();selections++;
+      await checkProfileWrite();live=guard();menu=linkedMenu(live,index);
+      const fresh=menu?[...menu.list.querySelectorAll('.ant-select-dropdown-menu-item[role="option"]')]
+        .filter(node=>visible(node)&&node.getAttribute('aria-disabled')!=='true'
+          &&!node.classList.contains('ant-select-dropdown-menu-item-disabled')&&exact(node.textContent)===exact(desired[index])):[];
+      if(fresh.length!==1||fresh[0]!==candidate||selected(live.selections[index]))fail('candidate_changed');
+      candidate.click();selections++;
       for(let i=0;i<35;i++) {
         live=guard();if(exact(selected(live.selections[index]))===exact(desired[index])&&!menus().length&&!opened().length)return;
         await pause(40);
@@ -211,5 +221,5 @@
       sectionName:baseline.sectionName,question:baseline.question,partial:result.partial,selectedLevels:selections};
     return result;
   }
-  globalThis.ResumeCmsRegion=Object.freeze({implementationRevision:3,fillRegion,resolveFact,inspectControl,diagnostics:()=>lastDiagnostic?{...lastDiagnostic}:null});
+  globalThis.ResumeCmsRegion=Object.freeze({implementationRevision:4,fillRegion,resolveFact,inspectControl,diagnostics:()=>lastDiagnostic?{...lastDiagnostic}:null});
 })();

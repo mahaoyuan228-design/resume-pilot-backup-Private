@@ -288,8 +288,8 @@ function runHarness(env) {
   });
 }
 
-test('harness tenant run (stub Edge): passes cmsPage, records tenantSu, writes tenant-tagged copy, keeps baseline latest', { timeout: 30000 }, async () => {
-  if (process.platform === 'win32') return; // stub relies on shebang exec
+test('harness tenant run (stub Edge): passes cmsPage, records tenantSu, writes tenant-tagged copy, keeps baseline latest', { timeout: 30000 }, async (t) => {
+  if (process.platform === 'win32') return t.skip('stub Edge fixture requires POSIX shebang execution');
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cms-target-'));
   const log = path.join(dir, 'edge.log');
   const r = await runHarness({ CMS_PAGE: ZL_PAGE, CMS_SU: ZL, OPEN_CMS_PAGE: '0', MODE: 'readiness', AUTO_RUNS_DIR: dir,
@@ -312,8 +312,8 @@ test('harness tenant run (stub Edge): passes cmsPage, records tenantSu, writes t
   assert.equal(ev.saveAttempted, false);
 });
 
-test('harness baseline run (stub Edge, OPEN_CMS_PAGE=1): opens 招商 page, no cmsPage qs, baseline pointers', { timeout: 30000 }, async () => {
-  if (process.platform === 'win32') return;
+test('harness baseline run (stub Edge, OPEN_CMS_PAGE=1): opens 招商 page, no cmsPage qs, baseline pointers', { timeout: 30000 }, async (t) => {
+  if (process.platform === 'win32') return t.skip('stub Edge fixture requires POSIX shebang execution');
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cms-target-'));
   const log = path.join(dir, 'edge.log');
   const r = await runHarness({ CMS_PAGE: '', CMS_SU: '', MODE: 'readiness', AUTO_RUNS_DIR: dir,

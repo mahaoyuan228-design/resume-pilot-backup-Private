@@ -248,6 +248,42 @@ test('suppression rows require string methods for every supported ledger and que
   }
 });
 
+test('lookup suppression rejects contradictory or malformed abort-failure flags despite clean evidence elsewhere', () => {
+  const lookupRows = suppressionWitnesses().filter(([ledger]) => ledger === 'suppressedLookup');
+  const invalidFlags = [true, 'false', 'true', 0, 1, null, [], [false], [true], {}, { failed: true }];
+  for (const [, label, row] of lookupRows) {
+    for (const phase of ['trial', 'restore']) {
+      for (const abortFailed of [undefined, false]) {
+        const artifact = schemaWitness();
+        artifact.report.suppressedLookup = [{ ...row, phase,
+          ...(abortFailed === undefined ? {} : { abortFailed }) }];
+        const saved = JSON.parse(JSON.stringify(artifact));
+        assert.equal(runner.evidenceExitCode(saved.report), 0);
+        assert.equal(validateControlsDaytimeEvidence(saved).complete, true,
+          `${label}, ${phase}: omitted or false abort-failure flag is consistent with success`);
+      }
+      for (const abortFailed of invalidFlags) {
+        const artifact = schemaWitness();
+        artifact.report.suppressedLookup = [{ ...row, phase, abortFailed }];
+        const saved = JSON.parse(JSON.stringify(artifact));
+        const context = `${label}, ${phase}: abortFailed=${JSON.stringify(abortFailed)}`;
+        assert.equal(runner.evidenceExitCode(saved.report), 0,
+          `${context}: the legacy lookup check ignores this retained failure flag`);
+        assert.deepEqual(saved.report.nonGet, []);
+        assert.deepEqual(saved.report.saveLikePost, []);
+        assert.deepEqual(saved.report.finalDetails.timerSettle,
+          { pendingTimers: 0, unobservableTimers: 0, observedNonFunctionTimeouts: 0 });
+        const result = assertIncomplete(saved, 'runner_report', context);
+        assert.equal(result.reportExitCode, 0);
+        for (const key of ['timers', 'page_boundaries', 'restoration']) {
+          assert.equal(result.checks.find(check => check.key === key).ok, true,
+            `${context}: clean ${key} evidence cannot rescue a contradictory suppression row`);
+        }
+      }
+    }
+  }
+});
+
 test('valid suppression never excuses malformed or nonempty generic traffic ledgers', () => {
   for (const ledger of ['nonGet', 'saveLikePost']) {
     const artifact = schemaWitness();
@@ -424,6 +460,39 @@ test('CLI rejects nested valid-JSON malformed methods without exposing evidence 
   assert.equal(verdict.reportExitCode, 0, 'the new shape check rejects a legacy-success report');
   assert.equal(verdict.liveSupportClaimed, false);
   assert.equal(verdict.checks.find(check => check.key === 'runner_report').ok, false);
+  assert.equal(`${result.stdout}${result.stderr}`.includes(marker), false);
+  assert.equal(`${result.stdout}${result.stderr}`.includes(artifactPath), false);
+});
+
+test('CLI keeps contradictory lookup failure evidence and nested attachment content private', t => {
+  const outDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cms-edu-evidence-lookup-private-'));
+  t.after(() => {
+    assert.ok(path.resolve(outDir).startsWith(path.resolve(os.tmpdir()) + path.sep));
+    fs.rmSync(outDir, { recursive: true, force: true });
+  });
+  const marker = 'PRIVATE_LOOKUP_FAILURE_ATTACHMENTS_MUST_NOT_BE_ECHOED';
+  const privateObservation = { nested: [{ rawObservation: [marker] }] };
+  const artifact = schemaWitness();
+  artifact.report.suppressedLookup = [{
+    ...suppressionWitnesses().find(([, label]) => label === 'housekeeping lookup')[2],
+    abortFailed: true, privateEvidence: structuredClone(privateObservation)
+  }];
+  artifact.report.privateDiagnostics = structuredClone(privateObservation);
+  artifact.reviewedBytes.files[0].privateReview = structuredClone(privateObservation);
+  artifact.boundaries.before.hooks.fetch.privateObservation = structuredClone(privateObservation);
+  artifact.restoration.privateSnapshots = structuredClone(privateObservation);
+  const artifactPath = path.join(outDir, 'contradictory-lookup-artifact.json');
+  fs.writeFileSync(artifactPath, JSON.stringify(artifact), 'utf8');
+  const result = spawnSync(process.execPath, [cli, artifactPath], { cwd: root, encoding: 'utf8' });
+  assert.equal(result.status, 2, result.stderr);
+  const verdict = JSON.parse(result.stdout);
+  assert.equal(verdict.complete, false);
+  assert.equal(verdict.reportExitCode, 0, 'the lookup failure contradiction is a distinct legacy-success gap');
+  assert.equal(verdict.liveSupportClaimed, false);
+  assert.equal(verdict.checks.find(check => check.key === 'runner_report').ok, false);
+  for (const key of ['timers', 'reviewed_bytes', 'page_boundaries', 'restoration']) {
+    assert.equal(verdict.checks.find(check => check.key === key).ok, true);
+  }
   assert.equal(`${result.stdout}${result.stderr}`.includes(marker), false);
   assert.equal(`${result.stdout}${result.stderr}`.includes(artifactPath), false);
 });

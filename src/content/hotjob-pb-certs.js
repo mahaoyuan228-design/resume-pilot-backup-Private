@@ -11,6 +11,14 @@
 // 请选择+label placeholder. 成绩's page text is the placeholder 请选择成绩,
 // so that placeholder reads empty. Option text is whatever the open menu
 // shows. Nothing is hardcoded.
+// 成绩 is the English-ability select beside 英语证书名称. Locate requires
+// that one certificate select. A displayed score is kept and the menu stays
+// closed. An empty control is filled only from a confirmed profile
+// ieltsScore. emptyProfile has no IELTS score key. normalizeProfile keeps
+// an explicit ieltsScore for Never-Save tests. The options form does not
+// edit it. Live needs a real confirmed score. The probe captured no 成绩
+// option text, so no band is hardcoded. The open menu must show that exact
+// string. 请选择成绩 and the inventory token 成绩 are not scores.
 // Pending live Never-Save. This does not claim the site is supported.
 // liveSupportClaimed stays false. Never clicks 保存/提交/投递/删除/下一步/返回/确定.
 // Close is Escape. Does not target hotjob-mc, CMS core, uploads, readonly
@@ -19,6 +27,9 @@
   const RANK = '专业排名';
   const ENGLISH = '英语证书名称';
   const SCORE = '成绩';
+  // Optional confirmed string. Not on emptyProfile. Never-Save tests only.
+  // Live must supply a real score whose text matches one open menu option.
+  const IELTS_SCORE_PATH = 'ieltsScore';
   const SECURITIES = '证券从业资格考试';
   const CPA = '注册会计师考试';
   const BAR = '国家司法考试';
@@ -154,11 +165,20 @@
     return { ok: true, kind: 'select', item, select, trigger, label };
   }
 
+  function englishCertificatePresent() {
+    const items = itemsFor(ENGLISH);
+    if (items.length !== 1) return false;
+    return locateSelect(items[0], ENGLISH).ok;
+  }
+
   function locate(label) {
     if (!Object.hasOwn(KINDS, label)) return { ok: false, reason: 'label_not_allowed' };
     const items = itemsFor(label);
     if (items.length !== 1) return { ok: false, reason: 'control_not_supported' };
-    return locateSelect(items[0], label);
+    const found = locateSelect(items[0], label);
+    if (!found.ok) return found;
+    if (label === SCORE && !englishCertificatePresent()) return { ok: false, reason: 'control_not_supported' };
+    return found;
   }
 
   function readDisplay(found) {
@@ -269,11 +289,35 @@
     return FORBIDDEN.test(exact(node.textContent || ''));
   }
 
-  async function fillSelect(found, label, want) {
+  function scoreFromProfile(profile) {
+    if (!profile || typeof profile !== 'object' || Array.isArray(profile)) {
+      return { ok: false, reason: 'missing_profile_value', value: '' };
+    }
+    const raw = profile[IELTS_SCORE_PATH];
+    const value = typeof raw === 'string' ? exact(raw) : '';
+    const placeholder = `${PLACEHOLDER_PREFIX}${SCORE}`;
+    if (!value || value === SCORE || value === placeholder) {
+      return { ok: false, reason: 'missing_profile_value', value: '' };
+    }
+    if (!Array.isArray(profile.confirmedFields) || !profile.confirmedFields.includes(IELTS_SCORE_PATH)) {
+      return { ok: false, reason: 'unconfirmed_profile_value', value: '' };
+    }
+    return { ok: true, reason: 'ready', value };
+  }
+
+  function withScorePath(label, row) {
+    if (label !== SCORE || !row || typeof row !== 'object') return row;
+    return { ...row, path: IELTS_SCORE_PATH };
+  }
+
+  async function fillSelect(found, label, want, missingReason = 'missing_profile_value') {
     const current = readDisplay(found);
     if (!current.ok) return refused(label, 'control_not_supported', { before: '', after: '', expected: want });
     const before = current.value;
-    if (!want) return refused(label, 'missing_profile_value', { before, after: before, expected: '' });
+    if (label === SCORE && before && (!want || before === want)) {
+      return kept(label, 'preexisting_same_value', before, want || before, 'verified', true);
+    }
+    if (!want) return refused(label, missingReason, { before, after: before, expected: '' });
     if (before === want) return kept(label, 'preexisting_same_value', before, want, 'verified', true);
     if (before) return kept(label, 'existing_value', before, want, 'skipped', false);
     if (anyOpen()) return refused(label, 'control_busy', { before, after: before, expected: want });
@@ -329,17 +373,23 @@
     });
   }
 
-  async function fillField(label, value) {
+  async function fillField(label, value, profile) {
     try {
-      if (document.visibilityState === 'hidden') return refused(label, 'fill_interrupted_page_hidden');
-      if (!onPage()) return refused(label, 'wrong_page');
+      if (document.visibilityState === 'hidden') return withScorePath(label, refused(label, 'fill_interrupted_page_hidden'));
+      if (!onPage()) return withScorePath(label, refused(label, 'wrong_page'));
       const found = locate(label);
-      if (!found.ok) return refused(label, found.reason);
-      const want = typeof value === 'string' ? exact(value) : '';
-      return await fillSelect(found, label, want);
+      if (!found.ok) return withScorePath(label, refused(label, found.reason));
+      let want = typeof value === 'string' ? exact(value) : '';
+      let missingReason = 'missing_profile_value';
+      if (label === SCORE && !want) {
+        const resolved = scoreFromProfile(profile);
+        if (resolved.ok) want = resolved.value;
+        else missingReason = resolved.reason;
+      }
+      return withScorePath(label, await fillSelect(found, label, want, missingReason));
     } catch (error) {
-      if (error?.message === 'never_save' || error?.code === 'never_save') return refused(label, 'never_save');
-      return refused(label, 'control_error');
+      if (error?.message === 'never_save' || error?.code === 'never_save') return withScorePath(label, refused(label, 'never_save'));
+      return withScorePath(label, refused(label, 'control_error'));
     }
   }
 
@@ -387,7 +437,8 @@
         kind: KINDS[label],
         supported: false,
         reason: found.ok && read.ok ? 'structure_matched' : (found.ok ? 'control_not_supported' : found.reason),
-        value: found.ok && read.ok ? read.value : ''
+        value: found.ok && read.ok ? read.value : '',
+        ...(label === SCORE ? { path: IELTS_SCORE_PATH } : {})
       };
     });
     return result({
@@ -397,9 +448,10 @@
     });
   }
 
-  async function fillFields(values) {
+  async function fillFields(values, profile) {
+    const source = profile ?? (values && typeof values === 'object' && !Array.isArray(values) && Object.hasOwn(values, IELTS_SCORE_PATH) ? values : null);
     const fields = [];
-    for (const label of ORDER) fields.push(await fillField(label, values?.[label]));
+    for (const label of ORDER) fields.push(await fillField(label, values?.[label], source));
     return result({
       ok: fields.every((field) => field.ok === true && field.status === 'verified'),
       fields
@@ -411,6 +463,7 @@
     fillFields,
     cancelField,
     inspect,
+    englishScorePath: IELTS_SCORE_PATH,
     liveSupportClaimed: false,
     supportClaimed: false,
     neverSave: true

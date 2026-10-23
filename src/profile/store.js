@@ -55,6 +55,11 @@ export function normalizeProfile(input) {
   // explicit data without deriving it from any education or experience dates.
   const workStart = text(source.workStart, 200);
   if (workStart) profile.workStart = workStart;
+  // Optional confirmed English-ability score for hotjob pb Never-Save tests.
+  // Not on emptyProfile and not edited by the options form. Live fill needs
+  // a real value; this does not invent one from education.gpa or gradeRank.
+  const ieltsScore = text(source.ieltsScore, 200);
+  if (ieltsScore) profile.ieltsScore = ieltsScore;
   profile.desiredRoles = strings(source.desiredRoles);
   profile.desiredCities = strings(source.desiredCities);
   profile.education = records(source.education, [
@@ -112,7 +117,7 @@ export function normalizeProfile(input) {
 // Dotted paths for nonempty facts; array members use their current index.
 export function listFilledPaths(profile) {
   const result = [];
-  for (const key of ['fullName', 'identityNumber', 'gender', 'height', 'selfEvaluation', 'birthDate', 'email', 'phone', 'currentCity', 'expectedSalary', 'availableDate', 'availabilityNote', 'workStart']) {
+  for (const key of ['fullName', 'identityNumber', 'gender', 'height', 'selfEvaluation', 'birthDate', 'email', 'phone', 'currentCity', 'expectedSalary', 'availableDate', 'availabilityNote', 'workStart', 'ieltsScore']) {
     if (profile[key]) result.push(key);
   }
   for (const key of ['desiredRoles', 'desiredCities']) {

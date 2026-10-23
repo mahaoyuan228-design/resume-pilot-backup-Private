@@ -5,6 +5,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { JSDOM } from 'jsdom';
+import { emptyProfile, listFilledPaths, normalizeProfile } from '../src/profile/store.js';
 
 const source = readFileSync(new URL('../src/content/hotjob-pb-certs.js', import.meta.url), 'utf8');
 const basicSource = readFileSync(new URL('../src/content/hotjob-pb-basic.js', import.meta.url), 'utf8');
@@ -14,6 +15,8 @@ const workSource = readFileSync(new URL('../src/content/hotjob-pb-work.js', impo
 const manifest = readFileSync(new URL('../manifest.json', import.meta.url), 'utf8');
 const engine = readFileSync(new URL('../src/content/engine.js', import.meta.url), 'utf8');
 const popup = readFileSync(new URL('../src/popup/popup.js', import.meta.url), 'utf8');
+const optionsPage = readFileSync(new URL('../src/profile/options.js', import.meta.url), 'utf8');
+const storeSource = readFileSync(new URL('../src/profile/store.js', import.meta.url), 'utf8');
 const cmsBasic = readFileSync(new URL('../src/background/cms-basic-auto.mjs', import.meta.url), 'utf8');
 const cmsEdu = readFileSync(new URL('../src/background/cms-education-task-runner.mjs', import.meta.url), 'utf8');
 const probe = JSON.parse(readFileSync(new URL('../tests/fixtures/hotjob-pb-certs-probe-dom.json', import.meta.url), 'utf8'));
@@ -23,6 +26,11 @@ const FORBIDDEN = probe.page.forbiddenButtons;
 const LIVE = probe.select.liveReadback;
 const CAPTURED = probe.select.fields.filter((field) => field.optionsSample.length === 1);
 const PROFILE = Object.fromEntries(CAPTURED.map((field) => [field.label, field.valueSample]));
+// The probe captured no 成绩 option text. These strings are profile values
+// painted into the open menu only to prove click and readback. They are not
+// harvested live options and must not appear in the content script.
+const SCORE_BANDS = ['6.5', '7.0', '7.5'];
+const SCORE_VALUE = '7.0';
 
 function esc(value) {
   return String(value).replace(/[&<>"]/gu, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));
@@ -79,6 +87,7 @@ function selectField(field, value, state, controlClass) {
 function optionsFor(field, state) {
   if (state.confirmOption && field?.key === 'securities') return ['确定'];
   if (state.emptyMenu && field?.key === 'securities') return [];
+  if (field?.key === 'score' && Array.isArray(state.scoreOptions)) return state.scoreOptions;
   const rows = [...(field?.optionsSample || [])];
   if (state.duplicateOption && field?.key === 'securities') rows.push(state.duplicateOption);
   return rows;
@@ -106,7 +115,9 @@ function html(state) {
     : probe.select.dropdownClass;
   const buttons = [...probe.page.buttonLabels, ...FORBIDDEN.filter((label) => !probe.page.buttonLabels.includes(label))]
     .map((label) => `<button type="button">${esc(label)}</button>`).join('');
-  const fields = probe.select.fields.map((field) => selectField(field, state[field.key] ?? '', state)).join('');
+  const fields = probe.select.fields
+    .filter((field) => !(state.omitEnglish && field.key === 'english'))
+    .map((field) => selectField(field, state[field.key] ?? '', state)).join('');
   const rankCopy = state.duplicateRank
     ? selectField(FIELD.rank, '', state).replaceAll('id="rank-', 'id="rank-copy-').replace('data-field="rank"', 'data-field="rank-copy"')
     : '';
@@ -298,6 +309,11 @@ test('source stays on the probed pb classes and does not claim support', () => {
     if (field.valueSample) assert.doesNotMatch(source, new RegExp(field.valueSample.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&')));
   }
   assert.doesNotMatch(source, /无排名|雅思|未通过/);
+  assert.doesNotMatch(source, /6\.5|7\.0|7\.5/);
+  assert.match(source, new RegExp(FIELD.score.profilePath));
+  assert.equal(optionsPage.includes(FIELD.score.profilePath), false);
+  assert.equal(popup.includes(FIELD.score.profilePath), false);
+  assert.match(storeSource, /profile\.ieltsScore = ieltsScore/);
   for (const token of [
     ...classes(probe.page.itemClass),
     ...classes(probe.select.controlClass),
@@ -370,6 +386,8 @@ test('inspect matches the eight probed selects and reads the score placeholder a
     }
     const score = view.fields.find((row) => row.label === FIELD.score.label);
     assert.equal(score.value, '');
+    assert.equal(score.path, FIELD.score.profilePath);
+    assert.equal(h.api.englishScorePath, FIELD.score.profilePath);
     assert.equal(view.fields.map((field) => field.label).includes(probe.neighbors.certNote.label), false);
     assert.equal(view.fields.map((field) => field.label).includes(probe.neighbors.nature.label), false);
     assert.equal(h.stats.open, 0);
@@ -730,9 +748,202 @@ test('a hidden page fails closed before a click', async () => {
     const score = await h.api.fillField(FIELD.score.label, FIELD.score.inventoryValueSample);
     assert.equal(row.reason, 'fill_interrupted_page_hidden');
     assert.equal(score.reason, 'fill_interrupted_page_hidden');
+    assert.equal(score.path, FIELD.score.profilePath);
     assert.equal(h.stats.open, 0);
     assert.equal(h.stats.option, 0);
     assert.equal(row.liveSupportClaimed, false);
+    unchanged(h.document, h.stats);
+  } finally { h.dom.window.close(); }
+});
+
+function scoreProfile(value, confirmed = true) {
+  const profile = { [FIELD.score.profilePath]: value };
+  if (confirmed) profile.confirmedFields = [FIELD.score.profilePath];
+  return profile;
+}
+
+test('ieltsScore stays off emptyProfile and is kept only when explicitly present', () => {
+  assert.equal(Object.hasOwn(emptyProfile(), FIELD.score.profilePath), false);
+  assert.equal(Object.hasOwn(normalizeProfile({}), FIELD.score.profilePath), false);
+  const kept = normalizeProfile({
+    ieltsScore: ` ${SCORE_VALUE} `,
+    confirmedFields: [FIELD.score.profilePath],
+    sources: { [FIELD.score.profilePath]: 'import' }
+  });
+  assert.equal(kept.ieltsScore, SCORE_VALUE);
+  assert.equal(listFilledPaths(kept).includes(FIELD.score.profilePath), true);
+  assert.equal(kept.confirmedFields.includes(FIELD.score.profilePath), true);
+  assert.equal(kept.sources.ieltsScore, 'import');
+  const blank = normalizeProfile({ ieltsScore: '   ', confirmedFields: [FIELD.score.profilePath] });
+  assert.equal(Object.hasOwn(blank, FIELD.score.profilePath), false);
+  assert.equal(blank.confirmedFields.includes(FIELD.score.profilePath), false);
+  const other = normalizeProfile({ education: [{ gpa: SCORE_VALUE, gradeRank: '前10%' }] });
+  assert.equal(Object.hasOwn(other, FIELD.score.profilePath), false);
+});
+
+test('empty 成绩 fills a confirmed ieltsScore and reads that menu text back', async () => {
+  const h = await boot({ scoreOptions: SCORE_BANDS });
+  try {
+    const row = await h.api.fillField(FIELD.score.label, '', scoreProfile(SCORE_VALUE));
+    assert.equal(row.ok, true, JSON.stringify(row));
+    assert.equal(row.reason, 'readback_matched');
+    assert.equal(row.status, 'verified');
+    assert.equal(row.before, '');
+    assert.equal(row.after, SCORE_VALUE);
+    assert.equal(row.expected, SCORE_VALUE);
+    assert.equal(row.path, FIELD.score.profilePath);
+    assert.equal(row.opened, true);
+    assert.equal(row.canceled, false);
+    assert.equal(row.stillOpen, 0);
+    assert.equal(row.liveSupportClaimed, false);
+    assert.equal(row.supportClaimed, false);
+    assert.equal(row.neverSave, true);
+    assert.equal(row.saved, false);
+    assert.equal(row.skippedSave, true);
+    assert.equal(row.complete, false);
+    assert.equal(row.softwareClickedSave, false);
+    assert.equal(row.softwareClickedSubmit, false);
+    assert.equal(row.softwareClickedDeliver, false);
+    assert.equal(row.softwareClickedNext, false);
+    assert.equal(h.document.getElementById('score-value').textContent, SCORE_VALUE);
+    assert.equal(h.document.querySelector('#score-select .ant-select-selection__placeholder').textContent, FIELD.score.placeholder);
+    assert.equal(h.document.getElementById('select-menu').hidden, true);
+    assert.equal(h.stats.option, 1);
+    assert.equal(h.stats.button, 0);
+    unchanged(h.document, h.stats);
+  } finally { h.dom.window.close(); }
+});
+
+test('fillFields uses a confirmed ieltsScore when 成绩 is blank', async () => {
+  const direct = await boot({ scoreOptions: SCORE_BANDS });
+  try {
+    const filled = await direct.api.fillFields(
+      { ...PROFILE, [FIELD.score.label]: '   ' },
+      scoreProfile(` ${SCORE_BANDS[2]} `)
+    );
+    assert.equal(filled.ok, true, JSON.stringify(filled));
+    assert.equal(filled.liveSupportClaimed, false);
+    assert.equal(filled.supportClaimed, false);
+    assert.equal(filled.saved, false);
+    assert.equal(filled.complete, false);
+    assert.equal(filled.neverSave, true);
+    const score = filled.fields.find((item) => item.label === FIELD.score.label);
+    assert.equal(score.reason, 'readback_matched');
+    assert.equal(score.after, SCORE_BANDS[2]);
+    assert.equal(score.path, FIELD.score.profilePath);
+    assert.equal(direct.document.getElementById('score-value').textContent, SCORE_BANDS[2]);
+    assert.equal(direct.stats.button, 0);
+    unchanged(direct.document, direct.stats);
+  } finally { direct.dom.window.close(); }
+
+  const shaped = await boot({ scoreOptions: SCORE_BANDS });
+  try {
+    const filled = await shaped.api.fillFields({
+      ...PROFILE,
+      ieltsScore: SCORE_BANDS[0],
+      confirmedFields: [FIELD.score.profilePath]
+    });
+    const score = filled.fields.find((item) => item.label === FIELD.score.label);
+    assert.equal(filled.ok, true, JSON.stringify(score));
+    assert.equal(score.reason, 'readback_matched');
+    assert.equal(score.after, SCORE_BANDS[0]);
+    assert.equal(shaped.document.getElementById('english-value').textContent, FIELD.english.valueSample);
+    unchanged(shaped.document, shaped.stats);
+  } finally { shaped.dom.window.close(); }
+});
+
+test('a displayed 成绩 is kept and a different profile score does not reopen', async () => {
+  const same = await boot({ score: SCORE_VALUE, scoreOptions: SCORE_BANDS });
+  try {
+    const row = await same.api.fillField(FIELD.score.label, '', scoreProfile(SCORE_VALUE));
+    assert.equal(row.reason, 'preexisting_same_value', JSON.stringify(row));
+    assert.equal(row.ok, true);
+    assert.equal(row.before, SCORE_VALUE);
+    assert.equal(row.after, SCORE_VALUE);
+    assert.equal(row.opened, false);
+    assert.equal(row.saved, false);
+    assert.equal(row.liveSupportClaimed, false);
+    assert.equal(same.stats.open, 0);
+    assert.equal(same.document.getElementById('score-value').textContent, SCORE_VALUE);
+    unchanged(same.document, same.stats);
+  } finally { same.dom.window.close(); }
+
+  const other = await boot({ score: SCORE_BANDS[2], scoreOptions: SCORE_BANDS });
+  try {
+    const row = await other.api.fillField(FIELD.score.label, '', scoreProfile(SCORE_VALUE));
+    assert.equal(row.reason, 'existing_value', JSON.stringify(row));
+    assert.equal(row.ok, false);
+    assert.equal(row.status, 'skipped');
+    assert.equal(row.before, SCORE_BANDS[2]);
+    assert.equal(row.after, SCORE_BANDS[2]);
+    assert.equal(row.expected, SCORE_VALUE);
+    assert.equal(row.opened, false);
+    assert.equal(other.stats.open, 0);
+    assert.equal(other.document.getElementById('score-value').textContent, SCORE_BANDS[2]);
+    unchanged(other.document, other.stats);
+  } finally { other.dom.window.close(); }
+
+  const pageOnly = await boot({ score: SCORE_BANDS[0] });
+  try {
+    const row = await pageOnly.api.fillField(FIELD.score.label, '');
+    assert.equal(row.reason, 'preexisting_same_value', JSON.stringify(row));
+    assert.equal(row.ok, true);
+    assert.equal(row.expected, SCORE_BANDS[0]);
+    assert.equal(row.opened, false);
+    assert.equal(row.path, FIELD.score.profilePath);
+    assert.equal(pageOnly.stats.open, 0);
+    unchanged(pageOnly.document, pageOnly.stats);
+  } finally { pageOnly.dom.window.close(); }
+});
+
+test('missing, unconfirmed, and placeholder ieltsScore values do not open 成绩', async () => {
+  const h = await boot({ scoreOptions: SCORE_BANDS });
+  try {
+    const absent = await h.api.fillField(FIELD.score.label, '', { confirmedFields: [] });
+    const unconfirmed = await h.api.fillField(FIELD.score.label, '  ', scoreProfile(SCORE_VALUE, false));
+    const placeholder = await h.api.fillField(FIELD.score.label, '', scoreProfile(FIELD.score.placeholder));
+    const token = await h.api.fillField(FIELD.score.label, '', scoreProfile(FIELD.score.inventoryValueSample));
+    const unknown = await h.api.fillField(FIELD.score.label, '', scoreProfile('NO_SUCH_BAND'));
+    assert.equal(absent.reason, 'missing_profile_value');
+    assert.equal(absent.opened, false);
+    assert.equal(absent.path, FIELD.score.profilePath);
+    assert.equal(unconfirmed.reason, 'unconfirmed_profile_value');
+    assert.equal(unconfirmed.opened, false);
+    assert.equal(unconfirmed.path, FIELD.score.profilePath);
+    assert.equal(placeholder.reason, 'missing_profile_value');
+    assert.equal(placeholder.opened, false);
+    assert.equal(token.reason, 'missing_profile_value');
+    assert.equal(token.opened, false);
+    assert.equal(unknown.reason, 'option_not_found', JSON.stringify(unknown));
+    assert.equal(unknown.opened, true);
+    assert.equal(unknown.canceled, true);
+    assert.equal(unknown.stillOpen, 0);
+    assert.equal(unknown.after, '');
+    assert.equal(h.document.getElementById('score-value').textContent, '');
+    assert.equal(h.document.getElementById('select-menu').hidden, true);
+    assert.equal(h.stats.option, 0);
+    assert.equal(h.stats.button, 0);
+    unchanged(h.document, h.stats);
+  } finally { h.dom.window.close(); }
+});
+
+test('成绩 without the English certificate select fails closed before a click', async () => {
+  const h = await boot({ omitEnglish: true, scoreOptions: SCORE_BANDS });
+  try {
+    const view = h.api.inspect();
+    assert.equal(view.ok, false);
+    assert.equal(view.fields.find((field) => field.label === FIELD.score.label).reason, 'control_not_supported');
+    assert.equal(view.fields.find((field) => field.label === FIELD.english.label).reason, 'control_not_supported');
+    const row = await h.api.fillField(FIELD.score.label, '', scoreProfile(SCORE_VALUE));
+    assert.equal(row.ok, false);
+    assert.equal(row.reason, 'control_not_supported');
+    assert.equal(row.opened, false);
+    assert.equal(row.path, FIELD.score.profilePath);
+    assert.equal(row.liveSupportClaimed, false);
+    assert.equal(row.saved, false);
+    assert.equal(h.stats.open, 0);
+    assert.equal(h.stats.option, 0);
+    assert.equal(h.stats.button, 0);
     unchanged(h.document, h.stats);
   } finally { h.dom.window.close(); }
 });

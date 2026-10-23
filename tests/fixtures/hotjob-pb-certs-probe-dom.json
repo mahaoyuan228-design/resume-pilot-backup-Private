@@ -50,7 +50,9 @@
         "inventoryValueSample": "成绩",
         "inventoryValueSampleNote": "Field inventory valueSample is 成绩. The same probe page text beside this control is 请选择成绩. That is the placeholder, not a selected score. Do not treat 成绩 as an option.",
         "optionsSample": [],
-        "optionsNote": "Interactive probe did not open 成绩. No option text was captured."
+        "optionsNote": "Interactive probe did not open 成绩. No option text was captured. Do not add band labels here.",
+        "profilePath": "ieltsScore",
+        "profilePathNote": "Shipped emptyProfile has no IELTS score key. normalizeProfile keeps an explicit confirmed ieltsScore for Never-Save tests only. The options form does not edit it. Live fill needs a real confirmed score whose text matches one open menu option. This path is not a harvested option label."
       },
       {
         "key": "securities",

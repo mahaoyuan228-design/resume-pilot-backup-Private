@@ -52,7 +52,7 @@ test('content sources ship the same closed DEGREE_LEVELS sets', async () => {
     assert.match(src, /\['博士','博士研究生'\]/);
   }
   assert.match(selectSrc, /implementationRevision:5/);
-  assert.match(controllerSrc, /implementationRevision:16/);
+  assert.match(controllerSrc, /implementationRevision:18/);
 });
 
 console.log(JSON.stringify({

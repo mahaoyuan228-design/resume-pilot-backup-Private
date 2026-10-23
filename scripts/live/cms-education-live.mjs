@@ -1076,7 +1076,11 @@ export function evidenceExitCode(evidence) {
   const fields = evidence?.fields || [];
   const ok = evidence?.neverSave === true && evidence.liveSupportClaimed === false
     && Array.isArray(evidence.suppressedAutosave) && evidence.suppressedAutosave.every((row) => validSuppressedAutosave(row, controls) && !row.abortFailed)
-    && (controls ? Array.isArray(evidence.suppressedLookup) && evidence.suppressedLookup.every(validSuppressedLookup)
+    // A missing/malformed ledger is not proof of zero forbidden activity.
+    && (controls ? Array.isArray(evidence.nonGet) && evidence.nonGet.length === 0
+      && Array.isArray(evidence.saveLikePost) && evidence.saveLikePost.length === 0
+      && Number.isSafeInteger(details.clickCount) && details.clickCount === 0
+      && Array.isArray(evidence.suppressedLookup) && evidence.suppressedLookup.every(validSuppressedLookup)
       && completeWidgetProbes(details.widgetProbes, details.widgetClickCount)
       : evidence.suppressedLookup === undefined || Array.isArray(evidence.suppressedLookup) && evidence.suppressedLookup.every(validSuppressedLookup))
     && details.liveSupportClaimed === false && details.moduleClaimedSupport === false

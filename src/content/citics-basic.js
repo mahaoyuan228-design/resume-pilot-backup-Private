@@ -4,6 +4,8 @@
 // fail-closed when core facts missing or unconfirmed — no TEST placeholders.
 //
 // Ant Select knives (Ant Design Vue 1): 婚姻状况 + 政治面貌 + 户口类型 + 证件类型 + 民族
+// Fill empty only. Existing selected-value selectors must be present; missing
+// empty-control DOM stays blocked. No alternate picking, force, or restoration.
 // (selectControl / readSelect / fillSelect). One label per call; allowlist only.
 // Flat-select guard: FLAT_SELECT_MAX_OPTIONS=24 + search-input detect → select_search_heavy.
 // Cascader/region/nation knives stay out of scope. Key for 民族 is ethnicity (not nation).
@@ -28,7 +30,7 @@
   /** Flat Ant Select allowlist only (marital + political + hukouType + idType + ethnicity). Cascader/region/nation out of scope. */
   const SELECT_SPECS = {
     [MARITAL]: { key: 'marital', alternates: ['未婚', '已婚', '离异', '丧偶'] },
-    [POLITICAL]: { key: 'political', alternates: ['群众', '共青团员', '中共党员', '中共预备党员'] },
+    [POLITICAL]: { key: 'political', profile: true, alternates: ['群众', '共青团员', '中共党员', '中共预备党员'] },
     [HUKOU_TYPE]: { key: 'hukouType', alternates: ['家庭户口', '集体户口'] },
     [ID_TYPE]: { key: 'idType', alternates: ['身份证', '中国护照', '港澳居民来往内地通行证', '台湾居民来往大陆通行证'] },
     [ETHNICITY]: { key: 'ethnicity', alternates: ['汉族', '回族', '满族', '蒙古族', '藏族', '维吾尔族'] }
@@ -311,6 +313,11 @@
       fields.push({ label: RADIO_LABEL, path: "gender", value: genderRaw, ready: reason === null, reason });
     }
 
+    for (const label of ALLOWED_SELECT_LABELS) {
+      if (!SELECT_SPECS[label].profile) continue;
+      const row = planSelectFromProfile(label, profile);
+      if (row.reason !== 'missing_profile_value') fields.push(row);
+    }
     const blockers = fields.filter((row) => !row.ready);
     if (core.some((row) => !row.ready)) {
       return { ok: false, reason: "profile_fields_unavailable", values: null, fields, blockers };
@@ -326,7 +333,9 @@
         mobile,
         email,
         confirmEmail: email,
-        gender: fields.find((row) => row.label === RADIO_LABEL && row.ready)?.value || ""
+        gender: fields.find((row) => row.label === RADIO_LABEL && row.ready)?.value || "",
+        ...Object.fromEntries(fields.filter((row) => row.ready && SELECT_SPECS[row.label]?.profile)
+          .map((row) => [SELECT_SPECS[row.label].key, row.value]))
       },
       fields,
       blockers: fields.filter((row) => !row.ready)
@@ -337,6 +346,56 @@
   function valuesFromProfile(profile = {}) {
     const plan = planFromProfile(profile);
     return plan.values || { lastName: "", firstName: "", idNumber: "", mobile: "", email: "", confirmEmail: "", gender: "" };
+  }
+
+  // Only exact, confirmed facts are planned. Alternate fixture captions are
+  // never a live dictionary. Scoped custom answers must belong to this page.
+  function planSelectFromProfile(label, profile) {
+    const activeLabel = cleanLabel(label);
+    const spec = Object.hasOwn(SELECT_SPECS, activeLabel) ? SELECT_SPECS[activeLabel] : null;
+    const fail = (reason, partial = {}) => ({ label: activeLabel, ready: false, ok: false,
+      value: '', path: null, reason, liveSupportClaimed: false, ...partial });
+    if (!spec?.profile) return fail('profile_field_not_enabled');
+    if (!profile || typeof profile !== 'object' || Array.isArray(profile)) return fail('profile_missing');
+    const path = `customAnswers.${activeLabel}`;
+    if ((Object.hasOwn(profile, spec.key) && typeof profile[spec.key] !== 'string')
+      || (profile.customAnswers && Object.hasOwn(profile.customAnswers, activeLabel)
+        && typeof profile.customAnswers[activeLabel] !== 'string')) return fail('invalid_profile_value');
+    const direct = Object.hasOwn(profile, spec.key) ? norm(profile[spec.key]) : '';
+    const answers = profile.customAnswers;
+    const custom = answers && Object.hasOwn(answers, activeLabel) && typeof answers[activeLabel] === 'string'
+      ? norm(answers[activeLabel]) : '';
+    const facts = Array.isArray(profile.customFacts)
+      ? profile.customFacts.filter((row) => cleanLabel(row?.question) === activeLabel) : [];
+    if (facts.length > 1) return fail('profile_value_ambiguous');
+    if (custom && facts.length === 1) {
+      const fact = facts[0];
+      if (norm(fact.answer) !== custom) return fail('profile_value_ambiguous');
+      if (fact.sitePageUrl || fact.sectionName || fact.rowContext) {
+        let scoped = false;
+        try {
+          const url = new URL(fact.sitePageUrl);
+          scoped = url.protocol === 'https:' && url.hostname === HOST && url.pathname === PATH
+            && !url.username && !url.password && !url.port
+            && norm(fact.sectionName) === '个人信息' && ['none', 'single'].includes(fact.rowContext);
+        } catch {}
+        if (!scoped) return fail('question_scope_mismatch');
+      }
+    }
+    if (direct && custom && direct !== custom) return fail('profile_value_ambiguous');
+    const confirmed = new Set(Array.isArray(profile.confirmedFields) ? profile.confirmedFields : []);
+    const value = direct || custom;
+    const selectedPath = direct && confirmed.has(spec.key) ? spec.key : custom ? path : spec.key;
+    if (!value) return fail('missing_profile_value');
+    if (!confirmed.has(selectedPath)) return fail('profile_fact_unconfirmed', { path: selectedPath });
+    return { label: activeLabel, path: selectedPath, value, ready: true, ok: true,
+      reason: 'profile_ready', liveSupportClaimed: false };
+  }
+
+  async function fillSelectFromProfile(label, profile, options = {}) {
+    const plan = planSelectFromProfile(label, profile);
+    if (!plan.ready) return envelope({ label: plan.label, reason: plan.reason, path: plan.path });
+    return { ...await fillSelect(plan.label, plan.value, options), path: plan.path };
   }
 
   function hitCount(root, selector, filter) {
@@ -350,6 +409,9 @@
       selector,
       hit: hitCount(select, selector, (node) => node.closest('.ant-select') === select && visible(node))
     }));
+    if (hits.reduce((count, row) => count + row.hit, 0) > 1) {
+      return { ok: false, reason: 'select_readback_ambiguous', hits };
+    }
     for (const row of hits) {
       if (row.hit !== 1) continue;
       const node = [...select.querySelectorAll(row.selector)]
@@ -459,16 +521,22 @@
       throw code('commit_or_yidun_target');
     }
     const text = norm(node.textContent);
-    if (text.length <= 8 && /保存|提交|暂存/u.test(text)) throw code('commit_or_yidun_target');
+    if (/保存|提交|暂存|下一步|投递|删除|\b(?:save|submit|next|deliver|delete)\b/iu.test(text)) throw code('commit_or_yidun_target');
   }
 
-  function pointerClick(node) {
+  function pointerClick(node, verify = () => {}, beforeClick = () => {}) {
     assertSafeTarget(node);
+    verify();
     node.scrollIntoView?.({ block: 'center', inline: 'nearest' });
+    verify();
     if (typeof node.focus === 'function') node.focus();
+    verify();
     const base = { bubbles: true, cancelable: true, view: window, button: 0 };
     node.dispatchEvent(new MouseEvent('mousedown', { ...base, buttons: 1 }));
+    verify();
     node.dispatchEvent(new MouseEvent('mouseup', { ...base, buttons: 0 }));
+    verify();
+    beforeClick();
     node.dispatchEvent(new MouseEvent('click', { ...base, buttons: 0 }));
   }
 
@@ -487,7 +555,10 @@
         label: parsed.ok ? parsed.text : null,
         selectCount: selects.length,
         readOk: !!read?.ok,
-        value: read?.ok ? read.value : null
+        value: read?.ok ? read.value : null,
+        controls: [...item.querySelectorAll('input, textarea, select')]
+          .filter((node) => node.closest('.ant-form-item') === item && !node.closest('.ant-select'))
+          .map((node) => ({ node, value: node.value, checked: node.checked, disabled: node.disabled }))
       };
     });
   }
@@ -500,9 +571,17 @@
       const left = before[index];
       const right = after[index];
       if (skip && left?.label === skip && right?.label === skip) continue;
+      const controlsChanged = left && right && (left.controls.length !== right.controls.length
+        || left.controls.some((control, i) => {
+          const other = right.controls[i];
+          return !other || control.node !== other.node || control.value !== other.value
+            || control.checked !== other.checked || control.disabled !== other.disabled;
+        }));
       if (!left || !right || left.label !== right.label || left.selectCount !== right.selectCount
-        || left.readOk !== right.readOk || (left.readOk && right.readOk && left.value !== right.value)) {
-        diffs.push({ index, before: left || null, after: right || null });
+        || left.readOk !== right.readOk || (left.readOk && right.readOk && left.value !== right.value) || controlsChanged) {
+        // DOM references are used only for identity checks, never returned.
+        const serial = (row) => row && ({ ...row, controls: row.controls.map(({ node, ...value }) => value) });
+        diffs.push({ index, before: serial(left) || null, after: serial(right) || null });
       }
     }
     return diffs;
@@ -534,13 +613,25 @@
       skippedSave: true,
       skippedYidun: true,
       clickedOption: false,
+      writeAttempted: false,
       liveEdge: false,
       surface: null,
       structure: null,
       selectors: [],
       neighborCount: 0,
       neighborsUnchanged: true,
-      ...partial
+      ...partial,
+      liveSupportClaimed: false,
+      supportClaimed: false,
+      neverSave: true,
+      saved: false,
+      skippedSave: true,
+      leftUnsaved: true,
+      softwareClickedSave: false,
+      softwareClickedSubmit: false,
+      softwareClickedNext: false,
+      softwareClickedDeliver: false,
+      softwareClickedDelete: false
     };
   }
 
@@ -577,12 +668,13 @@
     return { ok: false, reason: lastReason, openCount: visibleDropdowns().length };
   }
 
-  async function fillOnce(select, expected) {
+  async function fillOnce(select, expected, label) {
     const beforeRead = readSelect(select);
     const selectors = [...(beforeRead.hits || [])];
     const target = openTarget(select);
     selectors.push(...(target.hits || []));
     if (!beforeRead.ok) return { ok: false, reason: beforeRead.reason, selectors, clickedOption: false };
+    if (beforeRead.value) return { ok: false, reason: 'existing_value', selectors, clickedOption: false, after: beforeRead.value };
     if (!target.ok) return { ok: false, reason: target.reason, selectors, clickedOption: false, structureDetail: target.detail || null };
     if (visibleDropdowns().length) {
       await closeDropdown(select);
@@ -637,7 +729,30 @@
         sampleOptions
       };
     }
-    pointerClick(found.matches[0]);
+    const current = readSelect(select);
+    const currentItem = findSelectItem(label);
+    const currentControl = currentItem.ok ? selectControl(currentItem.item) : null;
+    if (!pageAllowed({ synthetic: location.hostname === '127.0.0.1' || location.hostname === 'localhost' })
+      || yidunCovering() || document.visibilityState === 'hidden' || !visible(select)
+      || select.classList.contains('ant-select-disabled') || select.getAttribute('aria-disabled') === 'true'
+      || !currentControl?.ok || currentControl.select !== select || !current.ok || current.value
+      || linkedDropdown(select, visibleDropdowns()) !== opened.dropdown) {
+      await closeDropdown(select);
+      return { ok: false, reason: 'control_changed', selectors, clickedOption: false, after: current.value ?? null };
+    }
+    assertSafeTarget(found.matches[0]);
+    selectWriteAttempted = true;
+    pointerClick(found.matches[0], () => {
+      const item = findSelectItem(label);
+      const control = item.ok ? selectControl(item.item) : null;
+      if (!control?.ok || control.select !== select || control.read.value
+        || !visible(found.matches[0]) || !enabledOption(found.matches[0])
+        || linkedDropdown(select, visibleDropdowns()) !== opened.dropdown
+        || matchingOptions(opened.dropdown, expected).matches.length !== 1
+        || yidunCovering() || document.visibilityState === 'hidden' || !pageAllowed({ synthetic: true })) {
+        throw code('control_changed');
+      }
+    }, () => { selectOptionClicked = true; });
     const started = Date.now();
     let after = readSelect(select);
     while (Date.now() - started < 2000) {
@@ -659,11 +774,36 @@
     };
   }
 
+  let selectBusy = false;
+  let selectWriteAttempted = false;
+  let selectOptionClicked = false;
   async function fillSelect(label, expected, options = {}) {
+    if (selectBusy) return envelope({ label, reason: 'control_busy' });
+    selectBusy = true;
+    selectWriteAttempted = false;
+    selectOptionClicked = false;
+    try {
+      return await fillSelectNow(label, expected, options);
+    } catch (error) {
+      try {
+        const found = findSelectItem(label);
+        if (found.ok) {
+          const select = selectNodes(found.item);
+          if (select.length === 1) await closeDropdown(select[0]);
+        }
+      } catch {}
+      return envelope({ label, reason: error?.code || 'select_interrupted',
+        writeAttempted: selectWriteAttempted, clickedOption: selectOptionClicked });
+    } finally {
+      selectBusy = false;
+    }
+  }
+
+  async function fillSelectNow(label, expected, options = {}) {
     const liveEdge = onCiticsPage();
     const surface = liveEdge ? 'careers.citics.com' : (options.synthetic === true ? 'synthetic' : null);
     const activeLabel = cleanLabel(label);
-    const spec = SELECT_SPECS[activeLabel];
+    const spec = Object.hasOwn(SELECT_SPECS, activeLabel) ? SELECT_SPECS[activeLabel] : null;
     const fail = (partial) => envelope({
       label: activeLabel || String(label ?? ''),
       liveEdge,
@@ -676,6 +816,7 @@
     }
     if (!(await assertPaidGate())) return fail({ reason: 'license_required' });
     if (!pageAllowed(options)) return fail({ reason: 'wrong_page', href: location.href });
+    if (document.visibilityState === 'hidden') return fail({ reason: 'page_hidden' });
     if (yidunCovering()) return fail({ reason: 'yidun_visible' });
 
     const found = findSelectItem(activeLabel);
@@ -692,94 +833,23 @@
     }
     const before = control.read.value;
     const neighborsBefore = snapshotSelects();
-    let target = expected == null ? '' : norm(expected);
-    if (!target && options.pickAlternate === true) {
-      const targetNode = openTarget(control.select);
-      if (!targetNode.ok) return fail({ before, reason: targetNode.reason, selectors: control.read.hits });
-      if (visibleDropdowns().length) {
-        await closeDropdown(control.select);
-        if (visibleDropdowns().length) return fail({ before, reason: 'select_dropdown_busy' });
-      }
-      pointerClick(targetNode.node);
-      const opened = await waitForDropdown(control.select);
-      if (opened.ok) {
-        const heavyPick = dropdownSearchHeavy(control.select, opened.dropdown);
-        if (heavyPick.heavy) {
-          const sampleOptions = [...opened.dropdown.querySelectorAll(OPTIONS[0])]
-            .filter(enabledOption)
-            .map((node) => norm(node.textContent))
-            .filter(Boolean)
-            .slice(0, 12);
-          await closeDropdown(control.select);
-          return fail({
-            before,
-            reason: 'select_search_heavy',
-            clickedOption: false,
-            selectors: control.read.hits,
-            structure: structureOf(found.item, control.select, {
-              sampleOptions,
-              optionCount: heavyPick.optionCount,
-              hasSearch: heavyPick.hasSearch
-            })
-          });
-        }
-      }
-      const hits = opened.ok ? optionHits(opened.dropdown) : [];
-      const selector = hits.find((row) => row.hit)?.selector || null;
-      const texts = selector
-        ? [...opened.dropdown.querySelectorAll(selector)].filter(enabledOption).map((node) => norm(node.textContent))
-        : [];
-      await closeDropdown(control.select);
-      target = (spec.alternates || []).find((option) => option !== before && texts.includes(option)) || '';
-      if (!target) {
-        return fail({
-          before,
-          reason: selector ? 'select_option_missing' : 'select_option_selector_missing',
-          clickedOption: false,
-          selectors: [...control.read.hits, ...hits],
-          structure: structureOf(found.item, control.select, { sampleOptions: texts.slice(0, 12) })
-        });
-      }
-    }
+    if (expected != null && typeof expected !== 'string') return fail({ before, reason: 'invalid_profile_value' });
+    const target = expected == null ? '' : norm(expected);
     if (!target || target.length > 32) return fail({ before, reason: 'expected_required' });
 
-    if (target === before && options.force !== true) {
-      const diffs = neighborDiffs(neighborsBefore, snapshotSelects(), activeLabel);
-      return envelope({
-        label: activeLabel,
-        ok: diffs.length === 0,
-        reason: diffs.length ? 'neighbor_changed' : 'preexisting_same_value',
-        before,
-        after: before,
-        expected: target,
-        final: before,
-        restored: false,
-        liveEdge,
-        surface,
-        clickedOption: false,
-        selectors: control.read.hits,
-        structure: structureOf(found.item, control.select, {}),
-        neighborCount: neighborsBefore.length,
-        neighborsUnchanged: diffs.length === 0
-      });
+    if (before) {
+      return fail({ ok: before === target, status: before === target ? 'verified' : 'skipped',
+        reason: before === target ? 'preexisting_same_value' : 'existing_value',
+        before, after: before, expected: target, final: before,
+        neighborCount: neighborsBefore.length });
     }
+    if (options.restore === true) return fail({ before, after: before, reason: 'restore_not_allowed' });
 
-    const written = await fillOnce(control.select, target);
-    let final = written.after ?? null;
-    let restored = false;
+    const written = await fillOnce(control.select, target, activeLabel);
+    const final = written.after ?? null;
+    const restored = false;
     let reason = written.reason;
     let ok = written.ok;
-    if (written.ok && options.restore === true && written.after !== before) {
-      const againItem = findSelectItem(activeLabel);
-      const again = againItem.ok ? selectControl(againItem.item) : { ok: false };
-      const back = again.ok ? await fillOnce(again.select, before) : { ok: false, after: null, reason: 'select_restore_target_missing' };
-      final = back.after ?? null;
-      restored = back.ok && final === before;
-      if (!restored) {
-        ok = false;
-        reason = 'select_restore_mismatch';
-      }
-    }
     const diffs = neighborDiffs(neighborsBefore, snapshotSelects(), activeLabel);
     if (diffs.length) {
       ok = false;
@@ -795,6 +865,7 @@
       final,
       restored,
       clickedOption: written.clickedOption === true,
+      writeAttempted: written.clickedOption === true,
       liveEdge,
       surface,
       selectors: written.selectors || [],
@@ -840,7 +911,7 @@
     }
 
     if (!isCiticsResumeEditPage() && options?.synthetic !== true) {
-      return { ok: false, siteId: "citics", reason: "wrong_page", href: location.href, results: [], saved: false, skippedSave: true };
+      return { ok: false, siteId: "citics", liveSupportClaimed: false, reason: "wrong_page", href: location.href, results: [], saved: false, skippedSave: true };
     }
 
     const profile = rawValues.profile;
@@ -858,12 +929,14 @@
         email: norm(rawValues.email || ""),
         confirmEmail: norm(rawValues.confirmEmail || rawValues.email || ""),
         gender: norm(rawValues.gender || ""),
-        marital: norm(rawValues.marital || rawValues[MARITAL] || "")
+        marital: norm(rawValues.marital || rawValues[MARITAL] || ""),
+        ...Object.fromEntries(ALLOWED_SELECT_LABELS.filter((label) => SELECT_SPECS[label].profile)
+          .map((label) => [SELECT_SPECS[label].key, norm(rawValues[SELECT_SPECS[label].key] || rawValues[label] || '')]))
       };
       if (!values.lastName || !values.firstName || !values.idNumber || !values.mobile || !values.email) {
         return {
           ok: false,
-          siteId: "citics",
+          siteId: "citics", liveSupportClaimed: false,
           reason: "explicit_values_incomplete",
           href: location.href,
           results: [],
@@ -877,7 +950,7 @@
       if (!plan.ok) {
         return {
           ok: false,
-          siteId: "citics",
+          siteId: "citics", liveSupportClaimed: false,
           reason: plan.reason,
           href: location.href,
           title: document.title,
@@ -897,7 +970,7 @@
           writeAttempted: false
         };
       }
-      values = { ...plan.values, marital: norm(rawValues.marital || rawValues[MARITAL] || "") };
+      values = { ...plan.values };
     }
 
     const textPlan = [
@@ -915,22 +988,17 @@
     if (norm(values.gender) && (values.gender === "男" || values.gender === "女")) {
       results.push(await fillGender(values.gender));
     }
-    if (norm(values.marital)) {
-      const selectResult = await fillSelect(MARITAL, values.marital, options);
-      results.push({
-        label: MARITAL,
-        ok: selectResult.ok === true,
-        reason: selectResult.reason,
-        before: selectResult.before || "",
-        after: selectResult.after || "",
-        expected: selectResult.expected || norm(values.marital),
-        select: selectResult
-      });
+    for (const label of ALLOWED_SELECT_LABELS) {
+      if (results.some((row) => ['neighbor_changed', 'wrong_page', 'yidun_visible'].includes(row.reason))) break;
+      const spec = SELECT_SPECS[label];
+      if (!spec.profile || !norm(values[spec.key])) continue;
+      const selectResult = await fillSelect(label, values[spec.key], options);
+      results.push({ ...selectResult, select: selectResult });
     }
     const ok = results.every((row) => row.ok);
     return {
       ok,
-      siteId: "citics",
+      siteId: "citics", liveSupportClaimed: false,
       href: location.href,
       title: document.title,
       saved: false,
@@ -953,6 +1021,7 @@
       selectProbe[label] = { item, control };
     }
     return {
+      liveSupportClaimed: false,
       ok: isCiticsResumeEditPage(),
       href: location.href,
       title: document.title,
@@ -972,7 +1041,7 @@
   }
 
   const api = {
-    siteId: "citics",
+    siteId: "citics", liveSupportClaimed: false,
     MARITAL,
     POLITICAL,
     HUKOU_TYPE,
@@ -992,6 +1061,8 @@
     probeLabels,
     valuesFromProfile,
     planFromProfile,
+    planSelectFromProfile,
+    fillSelectFromProfile,
     listener: null
   };
 
@@ -1007,7 +1078,9 @@
         return true;
       }
       if (message.type === "CITICS_SELECT_FILL") {
-        fillSelect(message.label || MARITAL, message.expected, message.options || {}).then(sendResponse);
+        (message.profile
+          ? fillSelectFromProfile(message.label || MARITAL, message.profile, message.options || {})
+          : fillSelect(message.label || MARITAL, message.expected, message.options || {})).then(sendResponse);
         return true;
       }
       return false;

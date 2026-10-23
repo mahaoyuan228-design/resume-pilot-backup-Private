@@ -1,6 +1,7 @@
 /**
- * Offline fail-closed planner for GTH 现居住地 / 照片.
- * Unsupported controls and unsettled region facts are failed, not a completed skip.
+ * Offline province-trial planner for GTH 现居住地 / 照片.
+ * A confirmed plain province can reach the evidenced writer. Unsupported photo
+ * and richer residence shapes stay incomplete without claiming live support.
  * No DOM selectors, no Save/submit, no site-support claim.
  */
 import test from 'node:test';
@@ -10,6 +11,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   BASIC_PAGE,
+  basicCandidate,
   GTH_COVERAGE_FAIL_CLOSED_REASONS,
   gthRequestedFillBlocksComplete,
   planGthBasicCoverage,
@@ -88,14 +90,6 @@ test('unsettled 现居住地 facts fail closed without a selector', () => {
   assertNeverFill(unconfirmed);
   assert.equal(unconfirmed.reason, 'region_fact_unconfirmed');
 
-  const plain = planGthBasicCoverage({
-    currentCity: '上海',
-    confirmedFields: ['currentCity'],
-    customFacts: [],
-  }, { fillRequested: true });
-  assertNeverFill(plain);
-  assert.equal(plain.reason, 'explicit_region_pair_required');
-
   const duplicated = planGthBasicCoverage({
     customFacts: [fact(pair), fact(JSON.stringify({ province: 'Synthetic Province', city: 'Synthetic City B' }))],
     customAnswers: { 现居住地: pair },
@@ -106,12 +100,12 @@ test('unsettled 现居住地 facts fail closed without a selector', () => {
   assert.equal(duplicated.fields[0].matchCount, 2);
 
   const malformed = planGthBasicCoverage({
-    customFacts: [fact('上海')],
-    customAnswers: { 现居住地: '上海' },
+    customFacts: [fact('北京/朝阳区')],
+    customAnswers: { 现居住地: '北京/朝阳区' },
     confirmedFields: ['customAnswers.现居住地'],
   }, { fillRequested: true });
   assertNeverFill(malformed);
-  assert.equal(malformed.reason, 'explicit_region_pair_required');
+  assert.equal(malformed.reason, 'control_not_supported');
 
   const mismatched = planGthBasicCoverage({
     customFacts: [fact(pair, { sitePageUrl: 'https://hr.gtht.com/other' })],
@@ -120,6 +114,71 @@ test('unsettled 现居住地 facts fail closed without a selector', () => {
   }, { fillRequested: true });
   assertNeverFill(mismatched);
   assert.equal(mismatched.reason, 'region_fact_scope_mismatch');
+});
+
+test('a confirmed province is trial-ready while photo keeps overall coverage incomplete', () => {
+  const plan = planGthBasicCoverage({ currentCity: '上海', confirmedFields: ['currentCity'] }, { fillRequested: true });
+  const residence = plan.fields.find(row => row.key === 'currentCity');
+  assert.equal(residence.status, 'ready');
+  assert.equal(residence.supported, true);
+  assert.equal(residence.fillAllowed, true);
+  assert.equal(residence.reason, 'residence_trial_ready');
+  assert.equal(residence.sourcePath, 'currentCity');
+  assert.deepEqual(residence.fact, { province: '上海', confirmed: true });
+  assert.equal(residence.liveSupportClaimed, false);
+  assert.equal(residence.saveAllowed, false);
+  assert.equal(residence.writeAttempted, false);
+  assert.equal(residence.softwareClickedSave, false);
+  assert.equal(residence.softwareClickedSubmit, false);
+  assert.equal(residence.softwareClickedDelete, false);
+  assert.equal(residence.selector, null);
+  assert.equal(residence.query, null);
+  assert.equal(plan.reason, 'control_not_supported');
+  assert.equal(plan.complete, false);
+  assert.equal(plan.fillAllowed, false);
+  assert.equal(plan.blocked, true);
+  assert.equal(gthRequestedFillBlocksComplete(plan), true);
+});
+
+test('candidate and planner use the same exact scoped province fact', () => {
+  const profile = {
+    education: [{ degree: '硕士' }],
+    customFacts: [fact('上海')], customAnswers: { 现居住地: '上海' },
+    confirmedFields: ['education.0.degree', 'customAnswers.现居住地'],
+  };
+  const plan = planGthBasicCoverage(profile);
+  assert.equal(plan.fields[0].sourcePath, 'customAnswers.现居住地');
+  assert.equal(plan.fields[0].fillAllowed, true);
+  const candidate = basicCandidate(profile, 0);
+  assert.equal(candidate.profile.currentCity, '上海');
+  assert.ok(candidate.profile.confirmedFields.includes('currentCity'));
+  assert.equal(candidate.profile.customFacts, undefined, 'candidate carries the selected label only');
+
+  for (const patch of [
+    { confirmedFields: ['education.0.degree'] },
+    { customFacts: [fact('上海', { sectionName: '求职意向' })] },
+    { customFacts: [fact('上海', { sitePageUrl: BASIC_PAGE + '?other' })] },
+    { customFacts: [fact('上海', { rowContext: 'row:1' })] },
+    { customFacts: [fact('上海'), fact('北京')] },
+    { currentCity: '北京', confirmedFields: [...profile.confirmedFields, 'currentCity'] },
+  ]) {
+    const blocked = { ...profile, ...patch };
+    assert.equal(planGthBasicCoverage(blocked).fields[0].fillAllowed, false);
+    const projected = basicCandidate(blocked, 0).profile;
+    assert.equal(projected.currentCity, '', JSON.stringify(patch));
+    assert.ok(!projected.confirmedFields.includes('currentCity'));
+  }
+});
+
+test('unsupported residence paths and JSON pairs never become a province candidate', () => {
+  for (const value of [pair, '北京/朝阳区', '北京||朝阳区', '北京\\朝阳区', '北京>朝阳区']) {
+    const profile = { currentCity: value, education: [{ degree: '本科' }], confirmedFields: ['currentCity', 'education.0.degree'] };
+    assert.equal(planGthBasicCoverage(profile).fields[0].fillAllowed, false, value);
+    assert.equal(basicCandidate(profile, 0).profile.currentCity, '', value);
+  }
+  const wrongPage = planGthBasicCoverage({ currentCity: '上海', confirmedFields: ['currentCity'] }, { sitePageUrl: 'https://hr.gtht.com/other' });
+  assert.equal(wrongPage.fields[0].reason, 'region_fact_scope_mismatch');
+  assert.equal(wrongPage.fields[0].fillAllowed, false);
 });
 
 test('a settled region pair still cannot fill or complete', () => {

@@ -1,5 +1,5 @@
 // Paid Edge Never-Save QA runner.
-// Drives the extension's own auto pages over CDP. Does not click 保存/提交/Save/Submit
+// Drives the extension's own auto pages over CDP. Does not click 保存/提交/投递/Save/Submit
 // and does not invent site DOM selectors.
 import http from 'node:http';
 import fs from 'node:fs';
@@ -37,7 +37,7 @@ export const SITE_HOSTS = {
 };
 
 export const BG_WAIT_RE = /正在请求后台\s+[A-Z0-9_]+_AUTO/;
-export const SAVE_TEXT_RE = /保存|提交|Save|Submit/;
+export const SAVE_TEXT_RE = /保存|提交|投递|Save|Submit/;
 
 export const BG_PROBE_HTML = '<!doctype html><html><head><meta charset="utf-8"><title>paid-qa-bg-probe</title></head><body><p id="status">bg-probe</p></body></html>';
 
@@ -270,10 +270,14 @@ export function extractFillCounts(body) {
 
 export function saveClickGuardSource() {
   return `(() => {
-    if (window.__rqfSaveGuardInstalled) return true;
-    window.__rqfSaveGuardInstalled = true;
+    const installed = window.__rqfSaveGuardInstalled === true;
+    if (window.__rqfSaveGuardInstalled && (!installed
+      || window.__rqfSaveGuardDeliveryCovered === true
+      || !Array.isArray(window.__rqfSaveClicks))) return true;
     if (!Array.isArray(window.__rqfSaveClicks)) window.__rqfSaveClicks = [];
-    const re = /保存|提交|Save|Submit/;
+    // Retained pages have an anonymous legacy listener. Add only its missing action.
+    const re = installed ? /投递/ : /保存|提交|投递|Save|Submit/;
+    const alreadyCovered = installed ? /保存|提交|Save|Submit/ : null;
     const own = (el) => {
       if (!el) return '';
       const aria = el.getAttribute ? (el.getAttribute('aria-label') || el.getAttribute('title') || '') : '';
@@ -285,11 +289,13 @@ export function saveClickGuardSource() {
       try {
         const el = event.target;
         const label = own(el) || own(el && el.parentElement);
-        if (re.test(label)) {
+        if (re.test(label) && (!alreadyCovered || !alreadyCovered.test(label))) {
           window.__rqfSaveClicks.push({ text: String(label).slice(0, 180), tag: (el && el.tagName) || '', at: Date.now() });
         }
       } catch { /* ignore */ }
     }, true);
+    window.__rqfSaveGuardInstalled = true;
+    window.__rqfSaveGuardDeliveryCovered = true;
     return true;
   })()`;
 }

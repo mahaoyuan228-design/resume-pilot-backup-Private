@@ -8,6 +8,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import vm from 'node:vm';
 import { JSDOM } from 'jsdom';
 import {
@@ -45,7 +46,7 @@ import {
   signalsMatch
 } from '../scripts/live/cms-basic-info-live.mjs';
 
-const repoRoot = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..');
+const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const source = fs.readFileSync(new URL('../scripts/live/cms-basic-info-live.mjs', import.meta.url), 'utf8');
 const LIVE_URL = 'https://wecruit.hotjob.cn/SU629dbc0c0dcad452299bc0f7/pb/resumeOperation.html?recruitType=1&resumeId=fixture&tid=fixture&lang=1';
 const ORIGINALS = Object.freeze({
@@ -412,7 +413,7 @@ test('evidence exit codes stay never-save and do not claim live support', () => 
   assert.throws(() => readPort({ PORT: '0' }), /bad port/);
 });
 
-test('jsdom guards swallow button clicks and block non-GET', async () => {
+test('jsdom installs a non-dispatching click guard and blocks non-GET without clicking', async () => {
   const dom = domFor(probeHtml());
   const { window } = dom;
   let saveClicks = 0;
@@ -423,12 +424,14 @@ test('jsdom guards swallow button clicks and block non-GET', async () => {
     return { ok: true, url: String(url), method: String(init.method || 'GET') };
   };
   window.navigator.sendBeacon = () => true;
+  const originalClick = window.HTMLElement.prototype.click;
   installLive(window);
   const api = window.__cmsBasicInfoLive;
-  window.document.getElementById('save').click();
-  window.document.getElementById('deliver').click();
+  assert.notEqual(window.HTMLElement.prototype.click, originalClick);
+  assert.match(String(window.HTMLElement.prototype.click), /clicks\.push/);
+  assert.doesNotMatch(String(window.HTMLElement.prototype.click), /originalClick|dispatchEvent/);
   assert.equal(saveClicks, 0);
-  assert.equal(decideClicks(api.clicks()).reason, 'refusing_forbidden_click');
+  assert.equal(api.clicks().length, 0);
   await assert.rejects(window.fetch('https://wecruit.hotjob.cn/wecruit/resume/save?token=secret', { method: 'POST' }));
   const xhr = new window.XMLHttpRequest();
   xhr.open('PUT', 'https://wecruit.hotjob.cn/wecruit/resume/save?resumeId=abc');
@@ -442,9 +445,10 @@ test('jsdom guards swallow button clicks and block non-GET', async () => {
   assert.equal(gets, 1);
   const stopped = await api.run();
   assert.equal(stopped.ok, false);
-  assert.equal(stopped.reason, 'refusing_forbidden_click');
+  assert.equal(stopped.reason, 'non_get_request');
   assert.equal(stopped.fillCalls.length, 0);
   api.restore();
+  assert.equal(window.HTMLElement.prototype.click, originalClick);
 });
 
 test('a non-GET before the trial fails closed and leaves the inputs unchanged', async () => {
@@ -823,7 +827,7 @@ test('a stale engine install is cleared before inject and a clear failure skips 
   assert.equal(failed.evidence.finalDetails.steps.includes('install_live'), false);
   assert.equal(failed.evidence.fields.every((field) => field.status === 'failed' && field.reason === 'inject_failed'), true);
 
-  const expression = source.match(/step: 'clear_engine_install' \}\);\n {10}steps\.push\('clear_engine_install'\)/);
+  const expression = source.match(/step: 'clear_engine_install' \}\);\r?\n {10}steps\.push\('clear_engine_install'\)/);
   const body = source.slice(source.indexOf('const cleared = await evaluate'), source.indexOf("step: 'clear_engine_install'"));
   const iife = body.match(/\(\(\) => \{[\s\S]*\}\)\(\)/u);
   assert.ok(expression);

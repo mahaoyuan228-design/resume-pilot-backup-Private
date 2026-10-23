@@ -8,6 +8,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import { JSDOM } from 'jsdom';
 import {
   BASE_TIP,
@@ -43,7 +44,7 @@ import {
   signalsMatch
 } from '../scripts/live/cms-self-eval-live.mjs';
 
-const repoRoot = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..');
+const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const source = fs.readFileSync(new URL('../scripts/live/cms-self-eval-live.mjs', import.meta.url), 'utf8');
 const LIVE_URL = 'https://wecruit.hotjob.cn/SU629dbc0c0dcad452299bc0f7/pb/resumeOperation.html?recruitType=1&resumeId=fixture&tid=fixture&lang=1';
 const ORIGINAL = '甲'.repeat(159);
@@ -296,7 +297,7 @@ test('evidence exit codes stay never-save and do not claim live support', () => 
   assert.throws(() => readPort({ PORT: '0' }), /bad port/);
 });
 
-test('jsdom guards swallow button clicks and block non-GET', async () => {
+test('jsdom installs a non-dispatching click guard and blocks non-GET without clicking', async () => {
   const dom = domFor(probeHtml());
   const { window } = dom;
   let saveClicks = 0;
@@ -307,14 +308,16 @@ test('jsdom guards swallow button clicks and block non-GET', async () => {
     return { ok: true, url: String(url), method: String(init.method || 'GET') };
   };
   window.navigator.sendBeacon = () => true;
+  const originalClick = window.HTMLElement.prototype.click;
   const script = window.document.createElement('script');
   script.textContent = buildPageExpression();
   window.document.body.append(script);
   const api = window.__cmsSelfEvalLive;
-  window.document.getElementById('save').click();
-  window.document.getElementById('deliver').click();
+  assert.notEqual(window.HTMLElement.prototype.click, originalClick);
+  assert.match(String(window.HTMLElement.prototype.click), /clicks\.push/);
+  assert.doesNotMatch(String(window.HTMLElement.prototype.click), /originalClick|dispatchEvent/);
   assert.equal(saveClicks, 0);
-  assert.equal(decideClicks(api.clicks()).reason, 'refusing_forbidden_click');
+  assert.equal(api.clicks().length, 0);
   await assert.rejects(window.fetch('https://wecruit.hotjob.cn/wecruit/resume/save?token=secret', { method: 'POST' }));
   const xhr = new window.XMLHttpRequest();
   xhr.open('PUT', 'https://wecruit.hotjob.cn/wecruit/resume/save?resumeId=abc');
@@ -328,8 +331,10 @@ test('jsdom guards swallow button clicks and block non-GET', async () => {
   assert.equal(gets, 1);
   const stopped = await api.run();
   assert.equal(stopped.ok, false);
-  assert.equal(stopped.reason, 'refusing_forbidden_click');
+  assert.equal(stopped.reason, 'engine_listener_missing');
+  assert.equal(stopped.fillCalls.length, 0);
   api.restore();
+  assert.equal(window.HTMLElement.prototype.click, originalClick);
 });
 
 test('a changed section stops before any product write', async () => {

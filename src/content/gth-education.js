@@ -679,7 +679,7 @@
 
   async function trial(request, full = false) {
     const FIELDS = full ? [...FULL_FIELDS, ...COMPLEX_FIELDS] : TEXT_FIELDS;
-    const result = { fields: [], editorLeftOpen: false, writeStarted: false,
+    const result = { fields: [], editorLeftOpen: false, writeStarted: false, liveSupportClaimed: false,
       savedOnSite: null, submitted: null, softwareClickedSave: false,
       softwareClickedSubmit: false, softwareClickedDelete: false };
     if (state.busy) return { ok: false, reason: 'fill_in_progress', ...result };
@@ -981,10 +981,35 @@
             ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
           const setter = Object.getOwnPropertyDescriptor(prototype, 'value')?.set;
           if (!setter) stop('native_setter_missing');
-          result.writeStarted = true;
-          await boundAction(()=>{if(!(control)?.isConnected)stop('profile_action_target_changed');return setter.call(control, answer);});
-          await boundAction(()=>{if(!(control)?.isConnected)stop('profile_action_target_changed');return control.dispatchEvent(new Event('input', {bubbles:true}));});
-          await boundAction(()=>{if(!(control)?.isConnected)stop('profile_action_target_changed');return control.dispatchEvent(new Event('change', {bubbles:true}));});
+          // Binding verification yields to the page before every action. Keep
+          // the guard inside that await boundary so a connected old control or
+          // a newly typed value cannot be overwritten or receive stale events.
+          const guardTextAction = expected => {
+            if (!control?.isConnected) stop('profile_action_target_changed');
+            const live = page();
+            if (performance.timeOrigin !== timeOrigin || forms(live).length !== 1
+              || forms(live)[0] !== form || outside(live) !== outsideBefore
+              || !sameTarget(selectedTarget, target(form, field))
+              || selectedTarget.read() !== expected
+              || valuesExcept(form, selectedTarget.controls) !== untouchedBefore
+              || JSON.stringify(records(live[1]).map(snapshot)) !== otherRecordsBefore)
+              stop('original_value_changed');
+            if (control.maxLength >= 0 && answer.length > control.maxLength)
+              stop('value_too_long');
+          };
+          await boundAction(() => {
+            guardTextAction(existing);
+            result.writeStarted = true;
+            return setter.call(control, answer);
+          });
+          await boundAction(() => {
+            guardTextAction(answer);
+            return control.dispatchEvent(new Event('input', {bubbles:true}));
+          });
+          await boundAction(() => {
+            guardTextAction(answer);
+            return control.dispatchEvent(new Event('change', {bubbles:true}));
+          });
         }
         selectorStep('field_readback');await pause(250);
         sections = page();

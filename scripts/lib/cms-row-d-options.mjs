@@ -390,3 +390,45 @@ export function inspectCmsRowDOptions(doc, requests = {}) {
     return finish(false, 'document_read_failed');
   }
 }
+
+/**
+ * Build the same inert inspector for an explicitly invoked browser probe.
+ * Validate own data without invoking accessors or caller array methods, then
+ * serialize only canonical harvested labels selected by resolver indexes.
+ * Invalid caller objects and thrown proxy traps share one sanitized error.
+ */
+export function buildCmsRowDOptionsProbeExpression(requests = {}) {
+  const canonical = Object.create(null);
+  try {
+    if (!requests || (Object.getPrototypeOf(requests) !== Object.prototype
+      && Object.getPrototypeOf(requests) !== null)) throw new TypeError();
+    for (const key of Reflect.ownKeys(requests)) {
+      if (typeof key !== 'string') throw new TypeError();
+      const field = fieldFor(key);
+      const descriptor = Object.getOwnPropertyDescriptor(requests, key);
+      if (!field || field.controlKind === 'ant-calendar-picker' || !descriptor
+        || !Object.hasOwn(descriptor, 'value')) throw new TypeError();
+      const resolved = resolveCmsRowDOption(key, descriptor.value);
+      if (!resolved.ok) throw new TypeError();
+      canonical[key] = field.controlKind === 'checkbox'
+        ? resolved.optionIndexes.map(index => field.options[index])
+        : field.options[resolved.optionIndex];
+    }
+  } catch {
+    throw new TypeError('cms_row_d_probe_requests_invalid');
+  }
+  return [
+    '(() => {',
+    `const ROW_D_PAGE = ${JSON.stringify(ROW_D_PAGE)};`,
+    `const ROW_D_FIELDS = ${JSON.stringify(ROW_D_FIELDS)};`,
+    `const SAFETY = ${JSON.stringify(SAFETY)};`,
+    `const fieldFor = ${fieldFor.toString()};`,
+    `const identity = ${identity.toString()};`,
+    `const normalizeText = ${normalizeText.toString()};`,
+    `const listTokens = ${listTokens.toString()};`,
+    `const resolveCmsRowDOption = ${resolveCmsRowDOption.toString()};`,
+    `const inspectCmsRowDOptions = ${inspectCmsRowDOptions.toString()};`,
+    `return inspectCmsRowDOptions(globalThis.document, ${JSON.stringify(canonical)});`,
+    '})()'
+  ].join('\n');
+}

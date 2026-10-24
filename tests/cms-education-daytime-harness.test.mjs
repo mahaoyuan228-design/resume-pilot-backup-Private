@@ -398,6 +398,166 @@ test('collector retains fictional unit observations separately from the runner r
   assert.deepEqual(status.diagnostics, [], 'false, zero, and empty traffic/suppression ledgers are present observations');
 });
 
+function fictionalSuppressionRow(kind, overrides = {}) {
+  const tenant = new URL(CMS_BASELINE_PAGE).pathname.split('/')[1];
+  return { method: 'POST', url: kind === 'suppressedAutosave'
+    ? `/wecruit/resume/info/edit/${tenant}` : '/wecruit/dic/fuzzyMatchDic',
+  via: 'xhr', blockedBeforeSend: true, phase: 'trial', ...overrides };
+}
+
+function assertActualSupplementFailure(collected, key, field, reason) {
+  assert.equal(collected.result.schemaComplete, true, 'the independent returned report remains valid');
+  assert.equal(collected.result.actualTrialMatches, false);
+  assert.equal(collected.result.complete, false);
+  assert.equal(collected.result.exitCode, 2);
+  assert.deepEqual(collected.result.retainedArtifactsMatch,
+    { before: true, after: true, prepare: true, run: true, cleanup: true, report: true },
+  'each original still agrees with its own actual reply');
+  assertDiagnostic(collected.result, { key, file: 'observations.json', path: field, reason });
+  assertSafeDiagnostics(collected.result);
+  const retained = JSON.parse(fs.readFileSync(path.join(collected.outDir, 'cleanup.json'), 'utf8'));
+  assert.deepEqual(retained, JSON.parse(JSON.stringify(collected.replies.cleanup)), 'actual cleanup is never repaired');
+  assert.equal(collected.result.neverSave, true);
+  assert.equal(collected.result.liveSupportClaimed, false);
+}
+
+test('actual cleanup probes and counted openings cannot borrow a different successful report', async t => {
+  const privateMarker = 'fictional-private-cleanup-probe-marker';
+  for (const [name, field, reason, mutate] of [
+    ['missing probes', 'widgetProbes', 'cleanup_probes_mismatch', replies => { delete replies.cleanup.widgetProbes; }],
+    ['failed probe', 'widgetProbes', 'cleanup_probes_mismatch', replies => {
+      replies.cleanup.widgetProbes = structuredClone(replies.cleanup.widgetProbes);
+      replies.cleanup.widgetProbes[0].opened = false;
+      replies.cleanup.widgetProbes[0].reason = privateMarker;
+    }],
+    ['missing count', 'widgetClickCount', 'cleanup_widget_clicks_mismatch', replies => { delete replies.cleanup.widgetClickCount; }],
+    ['different count', 'widgetClickCount', 'cleanup_widget_clicks_mismatch', replies => { replies.cleanup.widgetClickCount = 0; }]
+  ]) await t.test(name, async t => {
+    const collected = await collectFictional(t, mutate);
+    assertActualSupplementFailure(collected, 'seven_visible_probes', `cleanup.${field}`, reason);
+    assert.equal(JSON.stringify(collected.result.diagnostics).includes(privateMarker), false);
+  });
+});
+
+test('actual cleanup suppression requires bounded valid originals despite a successful report', async t => {
+  const privateMarker = 'fictional-private-cleanup-ledger-marker';
+  for (const kind of ['suppressedAutosave', 'suppressedLookup']) {
+    const reason = kind === 'suppressedAutosave' ? 'cleanup_autosave_mismatch' : 'cleanup_lookup_mismatch';
+    const valid = fictionalSuppressionRow(kind);
+    for (const [name, rows] of [
+      ['missing ledger', undefined], ['null ledger', null], ['wrong ledger type', privateMarker],
+      ['missing required field', [{ ...valid, phase: undefined }]],
+      ['coerced method', [{ ...valid, method: ['POST'] }]],
+      ['wrong transport', [{ ...valid, via: 'fetch' }]],
+      ['not blocked before send', [{ ...valid, blockedBeforeSend: false }]],
+      ['unowned endpoint', [{ ...valid, url: `https://fictional.invalid/${privateMarker}` }]],
+      ['failed abort', [{ ...valid, abortFailed: true }]],
+      ['malformed falsey abort', [{ ...valid, abortFailed: 0 }]],
+      ['malformed private abort', [{ ...valid, abortFailed: privateMarker }]],
+      ['over ledger cap', Array.from({ length: 81 }, () => ({ ...valid }))]
+    ]) await t.test(`${kind}: ${name}`, async t => {
+      const collected = await collectFictional(t, replies => {
+        if (rows === undefined) delete replies.cleanup[kind];
+        else replies.cleanup[kind] = structuredClone(rows);
+        replies.report[kind] = [structuredClone(valid)];
+      });
+      assertActualSupplementFailure(collected, 'suppression_traffic_clicks', `cleanup.${kind}`, reason);
+      assert.equal(JSON.stringify(collected.result.diagnostics).includes(privateMarker), false);
+    });
+  }
+});
+
+test('actual cleanup suppression preserves normalized row multiplicities and ownership', async t => {
+  for (const kind of ['suppressedAutosave', 'suppressedLookup']) {
+    const reason = kind === 'suppressedAutosave' ? 'cleanup_autosave_mismatch' : 'cleanup_lookup_mismatch';
+    const valid = fictionalSuppressionRow(kind);
+    for (const [name, rows, reportRows] of [
+      ['missing reported row', [valid], []],
+      ['missing duplicate', [valid, valid], [valid]],
+      ['different phase', [{ ...valid, phase: 'restore' }], [valid]]
+    ]) await t.test(`${kind}: ${name}`, async t => {
+      const collected = await collectFictional(t, replies => {
+        replies.cleanup[kind] = structuredClone(rows);
+        replies.report[kind] = structuredClone(reportRows);
+      });
+      assertActualSupplementFailure(collected, 'suppression_traffic_clicks', `cleanup.${kind}`, reason);
+    });
+  }
+  const autosave = fictionalSuppressionRow('suppressedAutosave');
+  const queried = { ...autosave, url: `${autosave.url}?iSaJAx=isAjax&request_locale=zh_CN`, controlKey: 'degree' };
+  for (const [name, controlKey] of [['missing control owner', undefined], ['wrong control owner', 'region'],
+    ['different reported owner', 'degree']]) await t.test(name, async t => {
+    const collected = await collectFictional(t, replies => {
+      replies.cleanup.suppressedAutosave = [{ ...queried, controlKey }];
+      replies.report.suppressedAutosave = [{ ...queried, controlKey: 'school' }];
+    });
+    assertActualSupplementFailure(collected, 'suppression_traffic_clicks',
+      'cleanup.suppressedAutosave', 'cleanup_autosave_mismatch');
+  });
+});
+
+test('actual cleanup agrees after host projection while report extras and repeated rows remain valid', async t => {
+  const autosave = fictionalSuppressionRow('suppressedAutosave');
+  const lookup = fictionalSuppressionRow('suppressedLookup');
+  const queriedAutosave = { ...autosave, url: `${autosave.url}?iSaJAx=isAjax&request_locale=zh_CN`, controlKey: 'degree' };
+  const queriedLookup = { ...lookup, url: `${lookup.url}?iSaJAx=isAjax&request_locale=zh_CN&t=1700000000000` };
+  const absolute = row => ({ ...row, url: new URL(row.url, CMS_BASELINE_PAGE).href });
+  const reverseKeys = value => value && typeof value === 'object' && !Array.isArray(value)
+    ? Object.fromEntries(Object.entries(value).reverse()) : value;
+  const collected = await collectFictional(t, replies => {
+    replies.cleanup.widgetProbes = JSON.parse(JSON.stringify(replies.cleanup.widgetProbes,
+      (_key, value) => reverseKeys(value)));
+    const observedAutosave = { ...autosave, method: 'post', controlKey: 'ignored-for-unqueried-autosave',
+      abortFailed: false, fictionalMetadata: 'preserved-in-original-only' };
+    replies.cleanup.suppressedAutosave = [observedAutosave, reverseKeys(observedAutosave),
+      { ...queriedAutosave, method: 'post', abortFailed: undefined }];
+    replies.report.suppressedAutosave = [absolute(autosave), absolute(autosave),
+      { ...queriedAutosave, method: 'post', abortFailed: false }, { ...absolute(autosave), phase: 'restore' }];
+    const observedLookup = { ...queriedLookup, method: 'post', abortFailed: false,
+      controlKey: 'ignored-for-lookup', fictionalMetadata: 'preserved-in-original-only' };
+    replies.cleanup.suppressedLookup = [observedLookup, reverseKeys(observedLookup)];
+    replies.report.suppressedLookup = [absolute(queriedLookup), absolute(queriedLookup),
+      { ...lookup, method: 'post', phase: 'restore', abortFailed: false }];
+    replies.run.waitedMs = replies.report.finalDetails.waitedMs = READBACK_WAIT_MS + 1;
+  });
+  assert.equal(collected.result.complete, true, 'fictional normalization control is not live evidence');
+  assert.equal(collected.result.actualTrialMatches, true);
+  assert.equal(collected.result.exitCode, 0);
+  assert.deepEqual(collected.result.diagnostics, []);
+  assert.deepEqual(JSON.parse(fs.readFileSync(path.join(collected.outDir, 'cleanup.json'), 'utf8')),
+    JSON.parse(JSON.stringify(collected.replies.cleanup)), 'normalization never rewrites the raw reply');
+  assert.deepEqual(collected.result.retainedArtifactsMatch,
+    { before: true, after: true, prepare: true, run: true, cleanup: true, report: true });
+});
+
+test('actual cleanup suppression accepts the complete eighty-row boundary', async t => {
+  const collected = await collectFictional(t, replies => {
+    for (const kind of ['suppressedAutosave', 'suppressedLookup']) {
+      replies.cleanup[kind] = Array.from({ length: 80 }, () => fictionalSuppressionRow(kind, { method: 'post', abortFailed: false }));
+      replies.report[kind] = Array.from({ length: 80 }, () => fictionalSuppressionRow(kind));
+    }
+  });
+  assert.equal(collected.result.complete, true, 'the actual cap remains inclusive');
+  assert.equal(collected.result.actualTrialMatches, true);
+  assert.deepEqual(collected.result.diagnostics, []);
+});
+
+test('actual trial binding and waited duration must agree with the independent report', async t => {
+  for (const [name, field, reason, mutate] of [
+    ['different report row', 'prepare', 'prepare_mismatch', replies => {
+      replies.prepare.recordCount = replies.run.recordCount = replies.report.finalDetails.recordCount = 2;
+      replies.prepare.identities.push('fictional-neighbor');
+      replies.report.finalDetails.rowIndex = 1;
+      replies.report.fields = fieldSpecsForRow(1, true).map(spec => ({ q: spec.q, path: spec.path,
+        status: 'verified', reason: 'readback_matched', value: structuredClone(spec.fixture) }));
+    }],
+    ['different reported wait', 'run', 'run_mismatch', replies => { replies.report.finalDetails.waitedMs = READBACK_WAIT_MS + 1; }]
+  ]) await t.test(name, async t => {
+    const collected = await collectFictional(t, mutate);
+    assertActualSupplementFailure(collected, 'nine_readbacks', field, reason);
+  });
+});
+
 test('missing observed steps cannot be filled from a successful-looking runner report', async t => {
   const collected = await collectFictional(t, () => {}, {}, false);
   assert.equal(collected.result.complete, false);

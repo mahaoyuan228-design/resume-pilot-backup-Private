@@ -7,7 +7,9 @@ import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { isDeepStrictEqual } from 'node:util';
 import { connectCdp, getJson } from '../tools/live-harvest/cdp-client.mjs';
-import { runCmsEducationLive, readPort, readRowIndex, readStepTimeout, fieldSpecsForRow, READBACK_WAIT_MS } from './live/cms-education-live.mjs';
+import { runCmsEducationLive, readPort, readRowIndex, readStepTimeout, fieldSpecsForRow, READBACK_WAIT_MS,
+  isEducationAutosave, isEducationControlAutosave, isSchoolLookup } from './live/cms-education-live.mjs';
+import { CMS_BASELINE_PAGE } from './lib/cms-page-target.mjs';
 import { EVIDENCE_SCHEMA_VERSION, REVIEWED_FILES, validateControlsDaytimeEvidence } from './validate-cms-education-controls-evidence.mjs';
 import { buildDaytimeCaptureExpression } from './lib/cms-education-daytime-capture.mjs';
 
@@ -219,20 +221,56 @@ function snapshotHashes(capture) {
   return hashes;
 }
 
+function cleanupSuppressionMatches(rows, reportRows, lookup = false) {
+  if (![rows, reportRows].every(log => Array.isArray(log) && log.length <= 80)) return false;
+  const normalize = row => {
+    if (!object(row) || typeof row.method !== 'string' || row.via !== 'xhr'
+      || row.blockedBeforeSend !== true || !['trial', 'restore'].includes(row.phase)
+      || row.abortFailed !== undefined && row.abortFailed !== false) return null;
+    const queriedAutosave = !lookup && isEducationControlAutosave(row);
+    if (lookup ? !isSchoolLookup(row) : !(isEducationAutosave(row)
+      || queriedAutosave && ['school', 'degree'].includes(row.controlKey))) return null;
+    // Use the unchanged host's projection, without rewriting either original.
+    return { method: row.method.toUpperCase(), url: new URL(row.url, CMS_BASELINE_PAGE).href,
+      via: row.via, blockedBeforeSend: row.blockedBeforeSend, phase: row.phase,
+      ...(queriedAutosave ? { controlKey: row.controlKey } : {}) };
+  };
+  try {
+    const remaining = new Map();
+    for (const row of reportRows) {
+      const normalized = normalize(row);
+      if (!normalized) return false;
+      const key = JSON.stringify(normalized);
+      remaining.set(key, (remaining.get(key) || 0) + 1);
+    }
+    // Earlier host reads may contribute extra rows. Preserve cleanup's full
+    // multiplicities, matching the host's maximum-multiplicity merge.
+    return rows.every(row => {
+      const normalized = normalize(row);
+      if (!normalized) return false;
+      const key = JSON.stringify(normalized), count = remaining.get(key) || 0;
+      if (!count) return false;
+      remaining.set(key, count - 1);
+      return true;
+    });
+  } catch { return false; }
+}
+
 function observedTrialChecks(state, report, rowIndex) {
   const { prepare, run, cleanup } = state;
   const specs = fieldSpecsForRow(rowIndex, true);
-  // Keep the existing completion predicates, but retain which actual reply failed.
+  // Bind actual originals to the validated report; never replace either source.
   return [
     { key: 'nine_readbacks', path: 'prepare', reason: 'prepare_mismatch',
-      ok: prepare?.ok === true && prepare.rowIndex === rowIndex
+      ok: prepare?.ok === true && prepare.rowIndex === rowIndex && report?.finalDetails?.rowIndex === rowIndex
         && prepare.recordCount === report?.finalDetails?.recordCount
         && Array.isArray(prepare.identities) && prepare.identities.length === prepare.recordCount
         && prepare.identity === prepare.identities[rowIndex] },
     { key: 'nine_readbacks', path: 'run', reason: 'run_mismatch',
       ok: run?.ok === true && run.rowIndex === rowIndex && run.recordCount === prepare?.recordCount
         && run.liveSupportClaimed === false && run.restored === true && run.pageLeftAsFound === true
-        && run.otherChanged === false && Number.isFinite(run.waitedMs) && run.waitedMs >= READBACK_WAIT_MS },
+        && run.otherChanged === false && Number.isFinite(run.waitedMs) && run.waitedMs >= READBACK_WAIT_MS
+        && run.waitedMs === report?.finalDetails?.waitedMs },
     { key: 'nine_readbacks', path: 'run.readbacks', reason: 'readbacks_mismatch',
       ok: Array.isArray(run?.readbacks) && run.readbacks.length === specs.length
         && specs.every(spec => {
@@ -245,6 +283,14 @@ function observedTrialChecks(state, report, rowIndex) {
       ok: Array.isArray(cleanup?.posts) && cleanup.posts.length === 0 },
     { key: 'suppression_traffic_clicks', path: 'cleanup.clicks', reason: 'cleanup_clicks_mismatch',
       ok: Array.isArray(cleanup?.clicks) && cleanup.clicks.length === 0 },
+    { key: 'seven_visible_probes', path: 'cleanup.widgetProbes', reason: 'cleanup_probes_mismatch',
+      ok: Array.isArray(cleanup?.widgetProbes) && isDeepStrictEqual(cleanup.widgetProbes, report?.finalDetails?.widgetProbes) },
+    { key: 'seven_visible_probes', path: 'cleanup.widgetClickCount', reason: 'cleanup_widget_clicks_mismatch',
+      ok: Number.isSafeInteger(cleanup?.widgetClickCount) && cleanup.widgetClickCount === report?.finalDetails?.widgetClickCount },
+    { key: 'suppression_traffic_clicks', path: 'cleanup.suppressedAutosave', reason: 'cleanup_autosave_mismatch',
+      ok: cleanupSuppressionMatches(cleanup?.suppressedAutosave, report?.suppressedAutosave) },
+    { key: 'suppression_traffic_clicks', path: 'cleanup.suppressedLookup', reason: 'cleanup_lookup_mismatch',
+      ok: cleanupSuppressionMatches(cleanup?.suppressedLookup, report?.suppressedLookup, true) },
     { key: 'settled_callbacks', path: 'cleanup.timerSettle', reason: 'timer_settle_mismatch',
       ok: ['pendingTimers', 'unobservableTimers', 'observedNonFunctionTimeouts'].every(key =>
         Number.isSafeInteger(cleanup?.timerSettle?.[key]) && cleanup.timerSettle[key] >= 0

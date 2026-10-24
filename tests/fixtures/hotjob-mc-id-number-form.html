@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <title>基本信息</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 420px; margin: 1rem auto; }
+    .header-title { font-weight: 600; margin-bottom: 0.25rem; }
+    .icon-bitian::before { content: "*"; color: #f00; margin-right: 2px; }
+    .am-input-control input { width: 100%; padding: 0.4rem; border: 1px solid #ccc; }
+    .my-list-item { margin: 0.75rem 0; padding-bottom: 0.5rem; border-bottom: 1px solid #eee; }
+    .am-list-extra { color: #999; }
+    .am-list-extra.active { color: #333; }
+    .note { color: #666; font-size: 0.85rem; }
+    .am-modal-wrap-popup { position: fixed; inset: 0; background: rgba(0,0,0,.4); display: none; z-index: 1000; }
+    .am-modal-wrap-popup.open { display: block; }
+    .am-modal.mc-select-popup { position: absolute; left: 0; right: 0; bottom: 0; background: #fff; padding-bottom: 1rem; }
+    .am-picker-popup-header { display: flex; justify-content: space-between; padding: 0.75rem 1rem; border-bottom: 1px solid #eee; }
+    .am-picker-popup-header-left, .am-picker-popup-header-right { cursor: pointer; color: #108ee9; }
+    .mc-select-list .am-list-item { padding: 0.75rem 1rem; border-bottom: 1px solid #f0f0f0; cursor: pointer; display: flex; justify-content: space-between; }
+    .mc-select-list .am-list-item.selected { background: #f5f5f5; }
+  </style>
+</head>
+<body>
+  <div class="resume-info-title">基本信息</div>
+  <p class="note">Offline fixture mirroring live 中联 mc antd-mobile DOM
+    (<code>.my-list-item</code> / <code>.header-title</code> / <code>.am-input-control input</code> /
+    <code>.select-am-list-extra</code> + <code>.am-modal.mc-select-popup</code>).
+    siteId <code>hotjob-mc</code>. Selects: 性别 · 证件类型. Never click 下一步/保存/提交/投递/删除.
+    待真机 Never-Save，未宣称已支持.</p>
+  <div class="am-list">
+
+    <div class="my-list-item" id="2_ref">
+      <div class="header-title"><span class="iconfont icon-bitian"></span>姓名</div>
+      <div class="input-item">
+        <div class="am-list-item am-input-item am-list-item-middle">
+          <div class="am-list-line">
+            <div class="am-input-control"><input placeholder="请填写姓名" type="text" value=""></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="my-list-item" id="20_ref">
+      <div class="header-title"><span class="iconfont icon-bitian"></span>性别</div>
+      <div class="am-list-item am-list-item-middle">
+        <div class="am-list-line">
+          <div class="am-list-extra select-am-list-extra active" id="gender-extra" data-select-key="gender">男</div>
+          <div class="am-list-arrow am-list-arrow-vertical" aria-hidden="true"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="my-list-item" id="28_ref">
+      <div class="header-title"><span class="iconfont icon-bitian"></span>证件类型</div>
+      <div class="am-list-item am-list-item-middle">
+        <div class="am-list-line">
+          <div class="am-list-extra select-am-list-extra active" id="idtype-extra" data-select-key="idType">居民身份证</div>
+          <div class="am-list-arrow am-list-arrow-vertical" aria-hidden="true"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="my-list-item" id="29_ref">
+      <div class="header-title"><span class="iconfont icon-bitian"></span>证件号码</div>
+      <div class="input-item">
+        <div class="am-list-item am-input-item am-list-item-middle">
+          <div class="am-list-line">
+            <div class="am-input-control"><input placeholder="请填写证件号码" type="text" value="NEIGHBOR_KEEP"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="my-list-item" id="36_ref">
+      <div class="header-title"><span class="iconfont icon-bitian"></span>移动电话</div>
+      <div class="input-item">
+        <div class="am-list-item am-input-item am-list-item-middle">
+          <div class="am-list-line">
+            <div class="am-input-control"><input pattern="[0-9]*" maxlength="11" placeholder="请填写移动电话" type="text" value=""></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="my-list-item" id="37_ref">
+      <div class="header-title"><span class="iconfont icon-bitian"></span>电子邮箱</div>
+      <div class="input-item">
+        <div class="am-list-item am-input-item am-list-item-middle">
+          <div class="am-list-line">
+            <div class="am-input-control"><input placeholder="请填写电子邮箱" type="text" value=""></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+  <button type="button" class="my-button" id="next-btn">下一步</button>
+
+</body>
+</html>

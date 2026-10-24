@@ -8,7 +8,7 @@
   if(nativeMessages.hasListeners?.()===false)globalThis.__resumeNativeListenersResetObserved=true;
   if(globalThis.__resumeQuickFillInstalled){
     existingListenerAlive=!!ownedListener&&nativeMessages.hasListener?.(ownedListener)===true;
-    if(existingListenerAlive&&globalThis.__resumeQuickFillEngineRevision===6&&typeof globalThis.ResumeQuickFillGthInspect==='function')return;
+    if(existingListenerAlive&&globalThis.__resumeQuickFillEngineRevision===7&&typeof globalThis.ResumeQuickFillGthInspect==='function')return;
     if(existingListenerAlive){if(fillState.pending)throw Error('profile_write_context_busy');nativeMessages.removeListener(ownedListener);existingListenerAlive=false;}
     else if(!ownedListener&&nativeMessages.hasListeners?.()===true&&!globalThis.__resumeNativeListenersResetObserved)throw Error('extension_reload_required');
   }
@@ -364,6 +364,72 @@
     const controls=[...item.querySelectorAll("input")].filter(visible);
     return peers.length===1&&peers[0]===item&&controls.length===1&&controls[0]===control
       ?{...definition,question,sectionName:section.name,rowContext:"single"}:null;
+  }
+
+  // The row-C harvest confirms this wrapper and a plain text input, but no
+  // widget internals. Tighten the existing custom-answer route rather than
+  // infer an address from any general profile field or a changed control.
+  function cmsBasicAddressBinding(control) {
+    if (`${location.origin}${location.pathname}` !== CMS_PHOTO_PAGE) return null;
+    const item = control.closest(".ant-form-item"), wrapperId = "11_51414234_0";
+    const question = M.normalize(formItemQuestion(item)?.textContent);
+    const wrapper = control.closest(`[id="${wrapperId}"]`);
+    const addressLabel = labelTexts(control).some(label => M.normalize(label) === "联系地址")
+      || [...(item?.querySelectorAll('.ant-form-item-label > label') || [])]
+        .some(label => label.closest('.ant-form-item') === item && M.normalize(label.textContent) === "联系地址");
+    if (question !== "联系地址" && !wrapper && !addressLabel
+      && control.getAttribute("placeholder") !== "请填写联系地址") return null;
+    const fail = reason => ({ reason });
+    const section = cmsSection(control);
+    if (!section || section.name !== "个人基本信息必填" || section.element.id !== "11"
+      || document.querySelectorAll('[id="11"]').length !== 1)
+      return fail("question_scope_mismatch");
+    const rows = [...section.element.querySelectorAll(":scope > .form-cell-right > .form-cell-inner")];
+    const row = control.closest(".form-cell-inner");
+    if (rows.length !== 1 || rows[0] !== row) return fail("ambiguous_repeat_group");
+    const peers = [...section.element.querySelectorAll(".ant-form-item")]
+      .filter(candidate => M.normalize(formItemQuestion(candidate)?.textContent) === "联系地址");
+    const wrappers = document.querySelectorAll(`[id="${wrapperId}"]`);
+    if (peers.length > 1 || wrappers.length > 1) return fail("duplicate_target");
+    if (peers.length !== 1 || peers[0] !== item || wrappers.length !== 1) return fail("field_changed");
+    // The metadata records a wrapper ID, not whether that wrapper is the item,
+    // inside it, or its immediate container. Bind the same item and input in
+    // each case without manufacturing an unharvested markup relationship.
+    const wrapperItem = wrapper?.closest(".ant-form-item");
+    if (!wrapper || !wrapper.contains(control) || wrapper.closest(".form-cell-inner") !== row
+      || (wrapperItem ? wrapperItem !== item : !wrapper.contains(item)
+        || wrapper.querySelectorAll(".ant-form-item").length !== 1)
+      || item.closest(".form-cell-inner") !== row || question !== "联系地址")
+      return fail("field_changed");
+    const widgets = ".ant-select,.ant-calendar-picker,.ant-picker,.cascader-plugins-wrap,.el-select,.el-cascader,.el-date-editor";
+    const inputs = [...item.querySelectorAll("input,select,textarea")];
+    const displayed = node => {
+      if (!node || !visible(node)) return false;
+      for (let current = node; current; current = current.parentElement) {
+        const style = getComputedStyle(current);
+        if (current.hidden || current.getAttribute("aria-hidden") === "true" || current.hasAttribute("inert")
+          || style.display === "none" || ["hidden", "collapse"].includes(style.visibility)) return false;
+      }
+      return true;
+    };
+    if (!(control instanceof HTMLInputElement) || control.type !== "text"
+      || control.readOnly || control.matches(":disabled")
+      || control.closest("fieldset[disabled]") || !displayed(control) || !displayed(formItemQuestion(item))
+      || control.getAttribute("placeholder") !== "请填写联系地址"
+      || inputs.length !== 1 || inputs[0] !== control || item.querySelector(widgets)
+      || control.closest(widgets)) return fail("custom_control_not_supported");
+    return { question, sectionName: section.name, rowContext: "single" };
+  }
+
+  function cmsBasicAddressAnswer(profile, control, binding) {
+    if (binding.reason) return { reason: binding.reason };
+    const facts = (profile.customFacts || []).filter(fact => M.normalize(fact?.question) === binding.question);
+    if (facts.length !== 1) return { reason: facts.length ? "ambiguous_profile_fact" : "missing_profile_value" };
+    const fact = facts[0], path = `customAnswers.${fact.question}`;
+    const answer = String(profile.customAnswers?.[fact.question] ?? "").trim();
+    if (!answer) return { path, reason: "missing_profile_value" };
+    if (String(fact.answer ?? "").trim() !== answer) return { path, reason: "question_scope_mismatch" };
+    return confirmedCustomAnswer(profile, fact.question, control);
   }
 
   function cmsCustomSingleSelect(selection) {
@@ -838,10 +904,15 @@
       const cmsAcademic = cmsScopedAcademicSelectSpec(control);
       const cmsSimple = cmsScopedSimpleInputSpec(control);
       const cmsAssignment = cmsAssignmentRadioControl(control);
+      const cmsBasicAddress = cmsBasicAddressBinding(control);
       // Repeated unbound selects (e.g. education 学历 behind a row gate) must
       // not share a label-only ID. Confirmed paths still drive collision checks.
       const result = { id: cmsSimple ? `cms-scoped-input-${cmsSimple.alias}` : cmsCheckbox ? 'cms-checkbox-research-scoped' : cmsAcademic ? `cms-academic-${cmsAcademic.alias}` : cmsSelect ? (control.id || `cms-ant-v3-${M.normalize(labels[0])}-${position}`) : fieldId(control, position), labels, kind: cmsCheckbox?'cms_checkbox_group':cmsRegion?'cms_region':radio ? "radio" : degreeSelect ? "ant_degree_select" : cmbSelect ? "cmb_ant_v4_select" : cmsSchool ? "cms_school_search" : cmsSelect ? "cms_ant_v3_select" : cmsBirthDate ? "cms_birth_date" : cmsEducationDate ? "cms_education_date" : antSelectControl(control) ? "ant_select" : control.tagName.toLowerCase(), key, context, scope: customQuestionScope(control), control, radioOptions, antUnnamedRadio: !!group?.antUnnamed };
-      if (dedicatedRecordKind) {
+      if (cmsBasicAddress) {
+        result.cmsBasicAddress = true;
+        const value = cmsBasicAddressAnswer(profile, control, cmsBasicAddress);
+        result.path = value.path; result.answer = value.value; result.reason = value.reason || "ready";
+      } else if (dedicatedRecordKind) {
         result.dedicatedRecordKind = dedicatedRecordKind;
         const question = M.normalize(formItemQuestion(control.closest(".ant-form-item"))?.textContent);
         result.reason = CMS_DEDICATED_RECORD_QUESTIONS[dedicatedRecordKind].has(question)
@@ -937,7 +1008,7 @@
   }
 
   function publicEntry(entry) {
-    const { control, answer, radioOptions, antUnnamedRadio,regionFact,checkboxFact, ...plain } = entry;
+    const { control, answer, radioOptions, antUnnamedRadio,regionFact,checkboxFact,cmsBasicAddress, ...plain } = entry;
     plain.currentValue = meaningfulCurrent(control, radioOptions, antUnnamedRadio);
     if(entry.kind==='cms_checkbox_group') {
       const selected=globalThis.ResumeCmsCheckboxes.inspectControl(control)?.selected,
@@ -1592,10 +1663,10 @@
     try{await context.check(false);const result=await fillOwnedContent(profile,attachment,photoUploads);await context.check(false);return result;}
     finally{if(globalThis.ResumeProfileWriteContext===context)delete globalThis.ResumeProfileWriteContext;}
   }
-  async function setBoundNativeValue(control,value){
+  async function setBoundNativeValue(control,value,verifyTarget=null){
     const proto=control instanceof HTMLTextAreaElement?HTMLTextAreaElement.prototype:HTMLInputElement.prototype,setter=Object.getOwnPropertyDescriptor(proto,'value')?.set;
-    await checkProfileWrite();requireVisibleFillPage();if(setter)setter.call(control,value);else control.value=value;
-    for(const type of ['input','change','blur']){await checkProfileWrite();requireVisibleFillPage();control.dispatchEvent(new Event(type,{bubbles:true}));}
+    await checkProfileWrite();requireVisibleFillPage();verifyTarget?.(false);if(setter)setter.call(control,value);else control.value=value;
+    for(const type of ['input','change','blur']){await checkProfileWrite();requireVisibleFillPage();verifyTarget?.(true);control.dispatchEvent(new Event(type,{bubbles:true}));}
   }
 
   async function fillOwnedContent(profile, attachment, photoUploads = null) {
@@ -1849,7 +1920,16 @@
             const chosen = control.selectedOptions[0];
             result.status = chosen && M.selectOption([chosen], entry.answer).index === 0 ? "verified" : "failed";
           } else {
-            await setBoundNativeValue(control, String(answer));
+            const beforeValue = control.value, beforeHref = location.href;
+            const verifyAddress = entry.cmsBasicAddress ? written => {
+              const binding = cmsBasicAddressBinding(control);
+              if (!control.isConnected || !binding || binding.reason) throw Error(binding?.reason || "field_changed");
+              if (location.href !== beforeHref || entryScope(control) !== scope) throw Error("field_changed");
+              const fact = cmsBasicAddressAnswer(profile, control, binding);
+              if (fact.reason || fact.path !== entry.path || fact.value !== answer) throw Error(fact.reason || "field_changed");
+              if (control.value !== (written ? String(answer) : beforeValue)) throw Error("existing_value");
+            } : null;
+            await setBoundNativeValue(control, String(answer), verifyAddress);
             result.status = control.value === String(answer) ? "verified" : "failed";
           }
           result.reason = result.status === "verified" ? "readback_matched" : "readback_mismatch";
@@ -1857,7 +1937,10 @@
         } catch (error) { if(/^profile_[a-z_]+$/u.test(error?.message||''))throw error;
           if (error?.message === PAGE_HIDDEN_DURING_FILL) throw error;
           result.status = "failed";
-          result.reason = "control_error";
+          result.reason = entry.cmsBasicAddress && ["field_changed", "question_scope_mismatch", "ambiguous_repeat_group",
+            "duplicate_target", "custom_control_not_supported", "ambiguous_profile_fact", "missing_profile_value",
+            "unconfirmed_profile_value", "question_scope_unconfirmed", "existing_value"].includes(error?.message)
+            ? error.message : "control_error";
           result.detail = String(error?.message || error).slice(0, 150);
           if (["cms_ant_v3_select", "cms_school_search",'cms_region'].includes(entry.kind) && visibleCmsAntV3Dropdowns().length) {
             cmsMenuBlocked = true;
@@ -2176,7 +2259,7 @@
         sendResponse(reply);
       });
     return true;
-  };chrome.runtime.onMessage.addListener(engineListener);globalThis.__resumeQuickFillEngineListener=engineListener;globalThis.__resumeQuickFillEngineRevision=6;}
+  };chrome.runtime.onMessage.addListener(engineListener);globalThis.__resumeQuickFillEngineListener=engineListener;globalThis.__resumeQuickFillEngineRevision=7;}
   globalThis.ResumeQuickFillGthInspect = (profile) => {
     if (`${location.origin}${location.pathname}` !== "https://hr.gtht.com/resume/edit/")
       throw new Error("gth_inspect_wrong_page");

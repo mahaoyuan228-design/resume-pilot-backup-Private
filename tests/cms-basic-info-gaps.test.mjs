@@ -2,6 +2,8 @@
  * Offline synthetic scaffold. The 2026-10-24 row-C harvest supplies only the
  * section/wrapper IDs, label, text-input kind and placeholder used below; it
  * does not supply a full DOM capture, widget implementation or select options.
+ * The later dom-inner-rowc capture establishes wrapper > .ant-form-item as
+ * the default structural simulation; alternate layouts remain synthetic.
  * These tests harden an existing custom-answer route and claim no live support.
  */
 import test from 'node:test';
@@ -24,10 +26,10 @@ function profile() {
   };
 }
 
-function item({ wrapper = WRAPPER, label = `${QUESTION}*`, input = '<input class="ant-input" type="text" placeholder="请填写联系地址">', topology = 'inside' } = {}) {
+function item({ wrapper = WRAPPER, label = `${QUESTION}*`, input = '<input class="ant-input" type="text" placeholder="请填写联系地址">', topology = 'outside' } = {}) {
   const content = `<div class="ant-form-item-label"><label>${label}</label></div><div class="ant-form-item-control">${topology === 'inside' ? `<span id="${wrapper}">${input}</span>` : input}</div>`;
   const formItem = `<div class="ant-form-item"${topology === 'item' ? ` id="${wrapper}"` : ''}>${content}</div>`;
-  return topology === 'outside' ? `<div id="${wrapper}">${formItem}</div>` : formItem;
+  return topology === 'outside' ? `<div id="${wrapper}"><div style="position: static;">${formItem}</div></div>` : formItem;
 }
 
 function fixture(t, { field = item(), sectionId = '11', heading = SECTION, extraRow = '', extraSection = '', url = `${PAGE}?resumeId=offline-fictional` } = {}) {
@@ -81,6 +83,9 @@ const addressFields = result => result.data.fields.filter(field => field.labels.
 
 test('confirmed empty harvested address uses the existing guarded native write without clicks', async t => {
   const h = fixture(t);
+  const wrapper = h.document.getElementById(WRAPPER);
+  assert.equal(wrapper.closest('.ant-form-item'), null);
+  assert.equal(wrapper.querySelector('.ant-form-item').contains(h.target), true);
   const inspected = await h.message('RESUME_INSPECT');
   assert.equal(addressFields(inspected)[0].reason, 'ready');
   assert.equal(addressFields(inspected)[0].kind, 'input');
@@ -95,7 +100,7 @@ test('confirmed empty harvested address uses the existing guarded native write w
   h.safety();
 });
 
-for (const topology of ['item', 'outside']) test(`wrapper metadata does not invent ${topology} topology restrictions`, async t => {
+for (const topology of ['item', 'inside']) test(`wrapper metadata does not invent ${topology} topology restrictions`, async t => {
   const h = fixture(t, { field: item({ topology }) });
   const result = await h.message('RESUME_FILL');
   assert.equal(addressFields(result)[0].status, 'verified');

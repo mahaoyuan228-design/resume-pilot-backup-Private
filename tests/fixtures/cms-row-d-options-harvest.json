@@ -1,0 +1,361 @@
+{
+  "harvest": "cms-row-d-open-harvest-2026-10-24-1445",
+  "baseTip": "ef771fc02415a9249bfe86dd9d20afca7f6c130d",
+  "neverSave": true,
+  "liveSupportClaimed": false,
+  "enoughForOfflineAdapter": true,
+  "purpose": "Sanitized recorded option and field metadata; no personal values, volatile popup IDs or captured HTML.",
+  "limitations": [
+    "Location one: reported count 30, recorded labels 25; five labels unavailable.",
+    "Location two: no independent option list; dictionary reuse only, explicitly authorized for this offline adapter.",
+    "Checkbox list is a 25-label visible sample capped by the collector; no total count established.",
+    "Structural tests are synthetic contracts derived from collector selectors, not captured live DOM.",
+    "Historical location open caused POST /resume/info/edit with unchanged value. No interactions are authorized."
+  ],
+  "sources": [
+    {
+      "file": "enough-verdict.json",
+      "sha256": "f2f13f86467a7292abe5aef6f33152c37109d31d29a3f6c53036a8769588f86c"
+    },
+    {
+      "file": "options-merged.json",
+      "sha256": "7a04f849744d3ca8b009b714f297bdc0afdc9a94263ba1555d2df7a1a4ece6c5"
+    },
+    {
+      "file": "open-results.json",
+      "sha256": "5b627e0a37833944e8f1a1bb605546b53c1be14c143bc496c976f943c35775d4"
+    },
+    {
+      "file": "dormant-options.json",
+      "sha256": "872b624718bf10804bf19367091d02605fd70e5b28779222e0f3a53d354347b0"
+    },
+    {
+      "file": "radio-checkbox.json",
+      "sha256": "c31327863099507c6bc4bdcf0ee0d8824dc6a02ccad666105a417fc417581021"
+    },
+    {
+      "file": "gaps-row-D-index.json",
+      "sha256": "c062eb911ca9c6730196266f1c03ca2c6c2f53a97e4b22d6473f6282afb6cb01"
+    },
+    {
+      "file": "harvest-summary.json",
+      "sha256": "794d8e09166055ad1c478f0374ab20b6fcd447088dc31ce458435f03e962e442"
+    },
+    {
+      "file": "page-sections-raw.json",
+      "sha256": "29340fc856a995d4267996846cfb6f991180097d1fc0e385478326363722c48f"
+    },
+    {
+      "file": "harvest-row-d-open-v4.mjs",
+      "sha256": "74482a2171516ffdddbd8f9bbc18563d85e9e61d0d73b17a454885f22ce000f6"
+    },
+    {
+      "file": "CMS_ROW_D_OPEN_HARVEST_ef771fc0_2026-10-24.md",
+      "sha256": "031604c879ed9ffb68059d8942a03891eca24fc6bf0c2f8b20c76f45e56f82ec"
+    }
+  ],
+  "fields": [
+    {
+      "wrapperId": "13_43_0",
+      "label": "期望工作性质*",
+      "sectionId": "13",
+      "controlKind": "ant-select",
+      "options": [
+        "全职",
+        "实习"
+      ],
+      "harvestedOptionCount": 2,
+      "optionsComplete": true,
+      "evidenceSource": "dormant_no_click"
+    },
+    {
+      "wrapperId": "13_100701_0",
+      "label": "意向一：期望工作地点*",
+      "sectionId": "13",
+      "controlKind": "ant-select",
+      "options": [
+        "北京",
+        "上海",
+        "广东",
+        "广西",
+        "江苏",
+        "湖北",
+        "安徽",
+        "山东",
+        "陕西",
+        "宁夏",
+        "甘肃",
+        "新疆",
+        "福建",
+        "浙江",
+        "湖南",
+        "四川",
+        "重庆",
+        "云南",
+        "江西",
+        "河南",
+        "河北",
+        "天津",
+        "山西",
+        "辽宁",
+        "吉林"
+      ],
+      "harvestedOptionCount": 30,
+      "optionsComplete": false,
+      "evidenceSource": "dormant_no_click"
+    },
+    {
+      "wrapperId": "13_100702_0",
+      "label": "意向二：期望工作地点*",
+      "sectionId": "13",
+      "controlKind": "ant-select",
+      "options": [
+        "北京",
+        "上海",
+        "广东",
+        "广西",
+        "江苏",
+        "湖北",
+        "安徽",
+        "山东",
+        "陕西",
+        "宁夏",
+        "甘肃",
+        "新疆",
+        "福建",
+        "浙江",
+        "湖南",
+        "四川",
+        "重庆",
+        "云南",
+        "江西",
+        "河南",
+        "河北",
+        "天津",
+        "山西",
+        "辽宁",
+        "吉林"
+      ],
+      "harvestedOptionCount": 0,
+      "dictionaryOptionCount": 30,
+      "optionsComplete": false,
+      "evidenceSource": "reused_dictionary",
+      "reusedFrom": "13_100701_0",
+      "independentOptionsEvidence": false
+    },
+    {
+      "wrapperId": "13_47_0",
+      "label": "期望年薪*",
+      "sectionId": "13",
+      "controlKind": "ant-select",
+      "options": [
+        "10万以下",
+        "11-20万",
+        "21-30万",
+        "31-40万",
+        "41-50万",
+        "51-60万",
+        "61-70万",
+        "71-80万",
+        "81-90万",
+        "91-100万",
+        "101-150万",
+        "151万以上"
+      ],
+      "harvestedOptionCount": 12,
+      "optionsComplete": true,
+      "evidenceSource": "open"
+    },
+    {
+      "wrapperId": "13_195_0",
+      "label": "到岗时间*",
+      "sectionId": "13",
+      "controlKind": "ant-select",
+      "options": [
+        "一周",
+        "两周",
+        "三周",
+        "一个月",
+        "两个月",
+        "三个月",
+        "六个月",
+        "随时"
+      ],
+      "harvestedOptionCount": 8,
+      "optionsComplete": true,
+      "evidenceSource": "open"
+    },
+    {
+      "wrapperId": "49170501_49170517_0",
+      "label": "工作性质",
+      "sectionId": "49170501",
+      "controlKind": "ant-select",
+      "options": [
+        "全职",
+        "实习"
+      ],
+      "harvestedOptionCount": 2,
+      "optionsComplete": true,
+      "evidenceSource": "open"
+    },
+    {
+      "wrapperId": "16_63_0",
+      "label": "英语证书名称*",
+      "sectionId": "16",
+      "controlKind": "ant-select",
+      "options": [
+        "大学英语四级考试",
+        "大学英语六级考试",
+        "大学生英语专业四级考试",
+        "大学生英语专业八级考试",
+        "雅思",
+        "托福",
+        "其他"
+      ],
+      "harvestedOptionCount": 7,
+      "optionsComplete": true,
+      "evidenceSource": "open"
+    },
+    {
+      "wrapperId": "16_64_0",
+      "label": "成绩",
+      "sectionId": "16",
+      "controlKind": "ant-select",
+      "options": [
+        "未通过",
+        "通过",
+        "优秀"
+      ],
+      "harvestedOptionCount": 3,
+      "optionsComplete": true,
+      "evidenceSource": "open"
+    },
+    {
+      "wrapperId": "49170503_49170533_0",
+      "label": "证券从业资格考试*",
+      "sectionId": "49170503",
+      "controlKind": "ant-select",
+      "options": [
+        "通过",
+        "未通过"
+      ],
+      "harvestedOptionCount": 2,
+      "optionsComplete": true,
+      "evidenceSource": "open"
+    },
+    {
+      "wrapperId": "49170503_49170539_0",
+      "label": "注册会计师考试*",
+      "sectionId": "49170503",
+      "controlKind": "ant-select",
+      "options": [
+        "通过",
+        "未通过"
+      ],
+      "harvestedOptionCount": 2,
+      "optionsComplete": true,
+      "evidenceSource": "open"
+    },
+    {
+      "wrapperId": "49170503_49170543_0",
+      "label": "国家司法考试*",
+      "sectionId": "49170503",
+      "controlKind": "ant-select",
+      "options": [
+        "通过",
+        "未通过"
+      ],
+      "harvestedOptionCount": 2,
+      "optionsComplete": true,
+      "evidenceSource": "open"
+    },
+    {
+      "wrapperId": "49170503_899097553_0",
+      "label": "FRM*",
+      "sectionId": "49170503",
+      "controlKind": "ant-select",
+      "options": [
+        "通过",
+        "未通过"
+      ],
+      "harvestedOptionCount": 2,
+      "optionsComplete": true,
+      "evidenceSource": "open"
+    },
+    {
+      "wrapperId": "49170503_899059679_0",
+      "label": "CFA*",
+      "sectionId": "49170503",
+      "controlKind": "ant-select",
+      "options": [
+        "通过",
+        "未通过"
+      ],
+      "harvestedOptionCount": 2,
+      "optionsComplete": true,
+      "evidenceSource": "open"
+    },
+    {
+      "wrapperId": "13_102402_0",
+      "label": "期望工作地是否服从分配*",
+      "sectionId": "13",
+      "controlKind": "radio-group",
+      "options": [
+        "是",
+        "否"
+      ],
+      "harvestedOptionCount": 2,
+      "recordedLabelCount": 2,
+      "optionsComplete": true,
+      "evidenceSource": "visible"
+    },
+    {
+      "wrapperId": "13_102501_0",
+      "label": "如应聘研究发展中心行业研究类岗位请勾选（建议仅勾选3~5项）*",
+      "sectionId": "13",
+      "controlKind": "checkbox",
+      "options": [
+        "非研究类岗位，不涉及",
+        "宏观",
+        "策略",
+        "债券",
+        "银行",
+        "非银行金融",
+        "房地产",
+        "量化",
+        "基金评价",
+        "金属及材料（有色金属）",
+        "化工",
+        "交通运输",
+        "生物医药",
+        "汽车",
+        "机械",
+        "军工",
+        "电力设备及新能源",
+        "建材",
+        "食品饮料",
+        "轻工纺服",
+        "纺服化妆品",
+        "农林牧渔",
+        "家电",
+        "商业（零售+社会服务）",
+        "电子"
+      ],
+      "harvestedOptionCount": null,
+      "recordedLabelCount": 25,
+      "optionsComplete": false,
+      "evidenceSource": "visible",
+      "countKind": "visible_sample_capped_at_25"
+    },
+    {
+      "wrapperId": "16_65_0",
+      "label": "获得时间*",
+      "sectionId": "16",
+      "controlKind": "ant-calendar-picker",
+      "options": [],
+      "harvestedOptionCount": 0,
+      "optionsComplete": false,
+      "evidenceSource": "metadata_only"
+    }
+  ]
+}

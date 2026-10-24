@@ -2,7 +2,8 @@
  * Offline Never-Save tests only. The fixture is a sanitized harvest projection.
  * Every DOM here is an explicitly SYNTHETIC topology simulation, not captured
  * live HTML, a live control test, or evidence supporting live writes.
- * Dictionaries below were independently checked against options-merged.json and
+ * The research dictionary is independently bound to the R7 static-label capture.
+ * Earlier dictionaries were checked against options-merged.json and
  * radio-checkbox.json in cms-row-d-open-harvest-2026-10-24-1445. Location one's
  * recorded 30-item count includes only 25 recorded labels; the other five are
  * deliberately unknown. Location two has no independent dictionary evidence.
@@ -17,6 +18,7 @@ import {
 } from '../scripts/lib/cms-row-d-options.mjs';
 
 const harvest = JSON.parse(fs.readFileSync(new URL('./fixtures/cms-row-d-options-harvest.json', import.meta.url), 'utf8'));
+const researchHarvest = JSON.parse(fs.readFileSync(new URL('./fixtures/cms-row-d-research-dictionary-r7.json', import.meta.url), 'utf8'));
 const LOCATIONS = ['北京', '上海', '广东', '广西', '江苏', '湖北', '安徽', '山东', '陕西', '宁夏', '甘肃', '新疆', '福建', '浙江', '湖南', '四川', '重庆', '云南', '江西', '河南', '河北', '天津', '山西', '辽宁', '吉林'];
 const PASS = ['通过', '未通过'];
 const EXPECTED = [
@@ -34,7 +36,7 @@ const EXPECTED = [
   ['49170503_899097553_0', 'FRM*', '49170503', 'ant-select', PASS],
   ['49170503_899059679_0', 'CFA*', '49170503', 'ant-select', PASS],
   ['13_102402_0', '期望工作地是否服从分配*', '13', 'radio-group', ['是', '否']],
-  ['13_102501_0', '如应聘研究发展中心行业研究类岗位请勾选（建议仅勾选3~5项）*', '13', 'checkbox', ['非研究类岗位，不涉及', '宏观', '策略', '债券', '银行', '非银行金融', '房地产', '量化', '基金评价', '金属及材料（有色金属）', '化工', '交通运输', '生物医药', '汽车', '机械', '军工', '电力设备及新能源', '建材', '食品饮料', '轻工纺服', '纺服化妆品', '农林牧渔', '家电', '商业（零售+社会服务）', '电子']]
+  ['13_102501_0', '如应聘研究发展中心行业研究类岗位请勾选（建议仅勾选3~5项）*', '13', 'checkbox', ['非研究类岗位，不涉及', '宏观', '策略', '债券', '银行', '非银行金融', '房地产', '量化', '基金评价', '金属及材料（有色金属）', '化工', '交通运输', '生物医药', '汽车', '机械', '军工', '电力设备及新能源', '建材', '食品饮料', '轻工纺服', '纺服化妆品', '农林牧渔', '家电', '商业（零售+社会服务）', '电子', '传媒', '通信', '计算机', '中小盘', '环保及公用事业', '煤炭开采', '智库研究']]
 ].map(([wrapperId, label, sectionId, controlKind, options]) => ({ wrapperId, label, sectionId, controlKind, options }));
 const PRIVATE = 'SYNTHETIC_PRIVATE_SENTINEL_DO_NOT_READ';
 const SELECT = '13_195_0';
@@ -227,7 +229,8 @@ test('exact row-D namespace and frozen dictionaries match independently checked 
   assert.equal(Object.isFrozen(ROW_D_FIELDS), true);
   for (const expected of EXPECTED) {
     const spec = ROW_D_FIELDS.find(row => row.wrapperId === expected.wrapperId);
-    const recorded = harvest.fields.find(row => row.wrapperId === expected.wrapperId);
+    const recorded = expected.wrapperId === CHECKBOX ? researchHarvest.field
+      : harvest.fields.find(row => row.wrapperId === expected.wrapperId);
     for (const key of ['wrapperId', 'label', 'sectionId', 'controlKind', 'options']) {
       assert.deepEqual(spec[key], expected[key], `${expected.wrapperId} adapter ${key}`);
       assert.deepEqual(recorded[key], expected[key], `${expected.wrapperId} fixture ${key}`);
@@ -241,10 +244,36 @@ test('exact row-D namespace and frozen dictionaries match independently checked 
     assert.ok(spec.evidenceSource);
     assert.ok(['13', '16', '49170501', '49170503'].includes(spec.sectionId));
   }
-  assert.equal(EXPECTED.reduce((sum, row) => sum + row.options.length, 0), 121);
+  assert.equal(EXPECTED.reduce((sum, row) => sum + row.options.length, 0), 128);
   assert.equal(EXPECTED.filter(row => row.controlKind === 'ant-select').length, 13);
   assert.equal(harvest.sources.length, 10);
   for (const source of harvest.sources) assert.match(source.sha256, /^[a-f0-9]{64}$/);
+});
+
+
+test('research R7 provenance binds the 32 static owned labels without upgrading historical capture results', () => {
+  assert.equal(researchHarvest.tip, '8abbdc20dc1b79bfb52d4378f62a4f2023943ef0');
+  assert.equal(researchHarvest.sources.find(row => row.file === 'diagnostics.json').sha256,
+    '6fba18afae9b2b97a64c411a0b71d63bda33a6e0505f6e4d9b85c8e7a2b3ddf9');
+  assert.equal(researchHarvest.sources.find(row => row.file === 'collect-reviewed.mjs').sha256,
+    '9518bac6c4d99512504803ce27baac005bff7d5f992f66bcf2490c39acfcb43b');
+  for (const source of researchHarvest.sources) assert.match(source.sha256, /^[a-f0-9]{64}$/u);
+  assert.equal(researchHarvest.official.fieldsOk, 12);
+  assert.equal(researchHarvest.official.reason, 'row_d_preflight_incomplete');
+  assert.equal(researchHarvest.official.keeperAssessment, 'correlated_keeper_blocks');
+  assert.equal(researchHarvest.official.responseToNonGetCount, 0);
+  assert.equal(researchHarvest.ownedOptionCount, 32);
+  assert.equal(researchHarvest.ownedInputCount, 32);
+  for (const key of ['optionOwnershipVerified', 'staticTextSpanShapeVerified', 'knownPrefixMatched', 'labelsUnique']) assert.equal(researchHarvest[key], true);
+  for (const key of ['itemScoped', 'labelMatched', 'questionUnique', 'allControlsOwned']) assert.equal(researchHarvest.scope[key], true);
+  const historical = harvest.fields.find(row => row.wrapperId === CHECKBOX);
+  assert.equal(historical.options.length, 25);
+  assert.equal(historical.optionsComplete, false);
+  assert.deepEqual(researchHarvest.field.options.slice(0, 25), historical.options);
+  assert.deepEqual(researchHarvest.field.options.slice(25), ['传媒', '通信', '计算机', '中小盘', '环保及公用事业', '煤炭开采', '智库研究']);
+  assert.equal(researchHarvest.booked, 53);
+  assert.equal(researchHarvest.bookD, false);
+  assert.equal(researchHarvest.liveSupportClaimed, false);
 });
 
 test('location count and independent-evidence gaps are explicit; missing five labels are never fabricated', () => {
@@ -259,9 +288,9 @@ test('location count and independent-evidence gaps are explicit; missing five la
   assert.equal(second.harvestedOptionCount, 0);
   assert.equal(second.dictionaryOptionCount, 30);
   const checkbox = ROW_D_FIELDS.find(row => row.wrapperId === CHECKBOX);
-  assert.equal(checkbox.optionsComplete, false);
-  assert.equal(checkbox.harvestedOptionCount, null);
-  assert.equal(checkbox.options.length, 25);
+  assert.equal(checkbox.optionsComplete, true);
+  assert.equal(checkbox.harvestedOptionCount, 32);
+  assert.equal(checkbox.options.length, 32);
   for (const id of [first.wrapperId, second.wrapperId]) {
     const result = resolveCmsRowDOption(id, PRIVATE);
     safety(result);
@@ -279,7 +308,7 @@ for (const expected of EXPECTED) test(`all ${expected.options.length} recorded o
     assert.equal(result.ok, true);
     assert.equal(result.status, 'matched');
     assert.equal(result.wrapperId, expected.wrapperId);
-    assert.equal(result.reason, ['13_100701_0', CHECKBOX].includes(expected.wrapperId) ? 'dictionary_sample_matched' : expected.wrapperId === '13_100702_0' ? 'dictionary_reused_unverified' : 'option_matched');
+    assert.equal(result.reason, expected.wrapperId === '13_100701_0' ? 'dictionary_sample_matched' : expected.wrapperId === '13_100702_0' ? 'dictionary_reused_unverified' : 'option_matched');
     if (expected.controlKind === 'checkbox') assert.deepEqual(result.optionIndexes, [index]);
     else assert.equal(result.optionIndex, index);
   }
@@ -298,7 +327,7 @@ test('checkbox returns only indexes in requested order without enforcing recomme
 for (const [name, request] of [
   ['single sparse slot', new Array(1)],
   ['mixed sparse slots', Object.assign(new Array(3), { 0: '宏观', 2: '电子' })],
-  ['too many selections', Array(26).fill('宏观')]
+  ['too many selections', Array(33).fill('宏观')]
 ]) test(`checkbox rejects ${name} without a partial index result`, () => {
   const result = resolveCmsRowDOption(CHECKBOX, request);
   safety(result);
@@ -416,9 +445,9 @@ test('SYNTHETIC descendant-item structure and hidden dormant portal lists inspec
     assert.equal(result.fields.length, ROW_D_FIELDS.length);
     for (const expected of EXPECTED) {
       const row = result.fields.find(candidate => candidate.wrapperId === expected.wrapperId);
-      if (['13_100701_0', '13_100702_0', CHECKBOX].includes(expected.wrapperId)) {
+      if (['13_100701_0', '13_100702_0'].includes(expected.wrapperId)) {
         assert.equal(row.ok, false);
-        assert.equal(row.reason, expected.wrapperId === CHECKBOX ? 'option_dictionary_incomplete' : 'option_dictionary_mismatch');
+        assert.equal(row.reason, 'option_dictionary_mismatch');
       } else {
         assert.equal(row.ok, true, `${expected.wrapperId}: ${row.reason}`);
         assert.equal(row.reason, 'read_only_options_preflight');
@@ -541,42 +570,56 @@ for (const id of ['13_100701_0', '13_100702_0']) {
   });
 }
 
-test('SYNTHETIC research enumeration reports its observed sample while preserving incompleteness', () => {
+
+test('SYNTHETIC research upgrade keeps both evidenced peer-select locations and calendar skipped', () => {
+  withInspection({ mutate: doc => {
+    for (const id of ['13_100701_0', '13_100702_0']) {
+      const select = host(doc, id).querySelector('.ant-select');
+      host(doc, id).append(select.cloneNode(true));
+    }
+  } }, result => {
+    assert.equal(result.reason, 'row_d_preflight_incomplete');
+    assert.equal(result.ok, false);
+    assert.equal(result.fields.filter(row => row.ok).length, 13, 'synthetic hypothesis only');
+    assert.equal(result.fields.find(row => row.wrapperId === CHECKBOX).reason, 'read_only_options_preflight');
+    for (const id of ['13_100701_0', '13_100702_0']) {
+      const row = result.fields.find(row => row.wrapperId === id);
+      assert.equal(row.reason, 'control_kind_mismatch');
+      assert.equal(row.controlKindIssue, 'select_not_unique');
+      assert.equal(row.optionsComplete, false);
+    }
+    assert.equal(result.fields.find(row => row.wrapperId === CALENDAR).reason, 'calendar_live_evidence_missing');
+  });
+});
+
+test('SYNTHETIC complete recorded research dictionary passes read-only observation', () => {
   withInspection({}, result => {
     const row = result.fields.find(candidate => candidate.wrapperId === CHECKBOX);
-    assert.equal(row.ok, false);
-    assert.equal(row.reason, 'option_dictionary_incomplete');
-    assert.equal(row.optionsComplete, false);
-    assert.equal(row.observedOptionCount, 25);
-    assert.equal(row.samplePrefixMatched, true);
+    assert.equal(row.ok, true);
+    assert.equal(row.reason, 'read_only_options_preflight');
+    assert.equal(row.optionsComplete, true);
+    assert.equal(row.observedOptionCount, 32);
+    assert.equal(Object.hasOwn(row, 'samplePrefixMatched'), false);
   });
 });
 
-test('SYNTHETIC additional readable research options do not certify the dictionary complete', () => {
-  withInspection({ mutate: doc => {
-    const option = get(doc, CHECKBOX).querySelector('.ant-checkbox-wrapper').cloneNode(true);
-    option.querySelector('span:last-child').textContent = 'SYNTHETIC_UNRECORDED_OPTION';
-    get(doc, CHECKBOX).querySelector('.ant-checkbox-group').append(option);
-  } }, result => {
+for (const [name, mutate, reason, count] of [
+  ['unknown last label', doc => { get(doc, CHECKBOX).querySelectorAll('.ant-checkbox-wrapper > span:last-child')[31].textContent = PRIVATE; }, 'option_dictionary_mismatch', 32],
+  ['missing final label', doc => { get(doc, CHECKBOX).querySelectorAll('.ant-checkbox-wrapper')[31].remove(); }, 'option_dictionary_mismatch', 31],
+  ['old 25-label sample', doc => { const options = get(doc, CHECKBOX).querySelectorAll('.ant-checkbox-wrapper'); for (let index = 25; index < options.length; index += 1) options[index].remove(); }, 'option_dictionary_mismatch', 25],
+  ['reordered final labels', doc => { const options = get(doc, CHECKBOX).querySelectorAll('.ant-checkbox-wrapper'); options[30].parentElement.insertBefore(options[31], options[30]); }, 'option_dictionary_mismatch', 32],
+  ['duplicate final label', doc => { const labels = get(doc, CHECKBOX).querySelectorAll('.ant-checkbox-wrapper > span:last-child'); labels[31].textContent = labels[30].textContent; }, 'option_list_ambiguous', undefined],
+  ['additional unknown label', doc => { const option = get(doc, CHECKBOX).querySelector('.ant-checkbox-wrapper').cloneNode(true); option.querySelector('span:last-child').textContent = PRIVATE; get(doc, CHECKBOX).querySelector('.ant-checkbox-group').append(option); }, 'option_dictionary_mismatch', 33],
+  ['option outside owned group', doc => { host(doc, CHECKBOX).append(get(doc, CHECKBOX).querySelector('.ant-checkbox-wrapper')); }, 'control_ownership_mismatch', undefined],
+  ['foreign named wrapper', doc => { const foreign = doc.createElement('div'); foreign.id = '13_999999_0'; const group = get(doc, CHECKBOX).querySelector('.ant-checkbox-group'); group.parentElement.append(foreign); foreign.append(group); }, 'control_ownership_mismatch', undefined]
+]) test(`SYNTHETIC research rejects ${name} without echoing option text`, () => {
+  withInspection({ mutate }, result => {
     const row = result.fields.find(candidate => candidate.wrapperId === CHECKBOX);
     assert.equal(row.ok, false);
-    assert.equal(row.reason, 'option_dictionary_incomplete');
-    assert.equal(row.optionsComplete, false);
-    assert.equal(row.observedOptionCount, 26);
-    assert.equal(row.samplePrefixMatched, true);
-    assert.equal(JSON.stringify(row).includes('SYNTHETIC_UNRECORDED_OPTION'), false);
-  });
-});
-
-test('SYNTHETIC research prefix drift reports a mismatch without echoing the changed label', () => {
-  withInspection({ mutate: doc => {
-    get(doc, CHECKBOX).querySelector('.ant-checkbox-wrapper > span:last-child').textContent = PRIVATE;
-  } }, result => {
-    const row = result.fields.find(candidate => candidate.wrapperId === CHECKBOX);
-    assert.equal(row.ok, false);
-    assert.equal(row.reason, 'option_dictionary_mismatch');
-    assert.equal(row.observedOptionCount, 25);
-    assert.equal(row.samplePrefixMatched, false);
+    assert.equal(row.reason, reason);
+    assert.equal(row.optionsComplete, true);
+    assert.equal(row.observedOptionCount, count);
+    assert.equal(Object.hasOwn(row, 'samplePrefixMatched'), false);
   });
 });
 

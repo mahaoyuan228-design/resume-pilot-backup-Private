@@ -240,7 +240,8 @@ test('serialized row D probe reaches select, radio, checkbox and calendar branch
   const requests = {
     [SELECT]: ROW_D_FIELDS.find(field => field.wrapperId === SELECT).options[0],
     [RADIO]: ROW_D_FIELDS.find(field => field.wrapperId === RADIO).options[0],
-    [CHECKBOX]: [ROW_D_FIELDS.find(field => field.wrapperId === CHECKBOX).options[0]]
+    [CHECKBOX]: [ROW_D_FIELDS.find(field => field.wrapperId === CHECKBOX).options[0],
+      ROW_D_FIELDS.find(field => field.wrapperId === CHECKBOX).options[31]]
   };
   const result = valueFrom(await debugEvaluate(buildCmsRowDOptionsProbeExpression(requests)));
   safety(result);
@@ -250,12 +251,12 @@ test('serialized row D probe reaches select, radio, checkbox and calendar branch
   const field = id => result.fields.find(row => row.wrapperId === id);
   assert.equal(field(SELECT).reason, 'read_only_options_preflight');
   assert.equal(field(RADIO).reason, 'read_only_options_preflight');
-  assert.equal(field(CHECKBOX).reason, 'option_dictionary_incomplete');
+  assert.equal(field(CHECKBOX).reason, 'read_only_options_preflight');
   assert.equal(field('16_65_0').reason, 'calendar_live_evidence_missing');
   assert.equal(field('13_100701_0').reason, 'option_dictionary_mismatch');
   assert.equal(field('13_100702_0').reason, 'option_dictionary_mismatch');
   assert.equal(field(SELECT).resolution.optionIndex, 0);
-  assert.deepEqual(field(CHECKBOX).resolution.optionIndexes, [0]);
+  assert.deepEqual(field(CHECKBOX).resolution.optionIndexes, [0, 31]);
 });
 
 for (const [name, options, reason] of [
@@ -298,12 +299,12 @@ test('SYNTHETIC hidden Ant search helpers complete under the real V8 guard witho
   safety(result);
   const field = id => result.fields.find(row => row.wrapperId === id);
   assert.equal(result.reason, 'row_d_preflight_incomplete');
-  assert.equal(result.fields.filter(row => row.ok).length, 12);
+  assert.equal(result.fields.filter(row => row.ok).length, 13);
   assert.equal(field(SELECT).hiddenSearchInputCount, 1);
   assert.equal(field(SELECT).observedOptionCount, 8);
-  assert.equal(field(CHECKBOX).observedOptionCount, 25);
-  assert.equal(field(CHECKBOX).samplePrefixMatched, true);
-  assert.equal(field(CHECKBOX).optionsComplete, false);
+  assert.equal(field(CHECKBOX).observedOptionCount, 32);
+  assert.equal(Object.hasOwn(field(CHECKBOX), 'samplePrefixMatched'), false);
+  assert.equal(field(CHECKBOX).optionsComplete, true);
   assert.equal(field('16_65_0').calendarStructureObserved, true);
   assert.equal(field('16_65_0').ok, false);
 });
@@ -392,7 +393,7 @@ for (const flags of ['global', 'non-global']) {
       const field = id => result.fields.find(row => row.wrapperId === id);
       assert.equal(field(SELECT).reason, 'read_only_options_preflight');
       assert.equal(field(RADIO).reason, 'read_only_options_preflight');
-      assert.equal(field(CHECKBOX).reason, 'option_dictionary_incomplete');
+      assert.equal(field(CHECKBOX).reason, 'read_only_options_preflight');
       if (requested) {
         assert.equal(field(SELECT).resolution.optionIndex, 0, 'single-value resolver completed');
         assert.equal(field(RADIO).resolution.optionIndex, 0, 'radio resolver completed');

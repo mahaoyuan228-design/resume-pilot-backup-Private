@@ -393,11 +393,11 @@ test('redirect server evidence defeats an acknowledged block without attributing
   assert.equal(JSON.stringify(guard.traffic).includes(PRIVATE), false);
 });
 
-test('blocked keeper traffic preserves the actual 12/16 modeled field inspection across its retained lifetime', async () => {
+test('blocked keeper traffic preserves the 13/16 hypothetical field inspection across its retained lifetime', async () => {
   const dom = syntheticDom();
   try {
     const inspection = clone(dom.window.eval(buildCmsRowDOptionsProbeExpression()));
-    assert.equal(inspection.fields.filter(row => row.ok).length, 12);
+    assert.equal(inspection.fields.filter(row => row.ok).length, 13);
     for (const phase of ['activate', 'front', 'enable', 'inspection', 'settlement', 'reset', 'cleanup']) {
       let emitted = false;
       const emitBlock = emit => { emitted = true; keeperRequest(phase).forEach(emit); };
@@ -421,7 +421,7 @@ test('blocked keeper traffic preserves the actual 12/16 modeled field inspection
       assert.equal(evidence.ok, false, phase);
       assert.equal(evidence.reason, inspection.reason, phase);
       assert.equal(evidence.reason, 'row_d_preflight_incomplete');
-      assert.equal(evidence.fields.filter(row => row.ok).length, 12);
+      assert.equal(evidence.fields.filter(row => row.ok).length, 13);
       for (let index = 0; index < inspection.fields.length; index += 1) {
         assert.equal(evidence.fields[index].ok, inspection.fields[index].ok);
         assert.equal(evidence.fields[index].reason, inspection.fields[index].reason);
@@ -448,7 +448,7 @@ test('a response still hard fails after completed field inspection without dropp
     const evidence = await fake.run();
     assertSafety(evidence);
     assert.equal(evidence.probeCompleted, true);
-    assert.equal(evidence.fields.filter(row => row.ok).length, 12);
+    assert.equal(evidence.fields.filter(row => row.ok).length, 13);
     assert.equal(evidence.reason, 'non_get_or_guard_failure');
     assert.equal(evidence.traffic.responseToNonGetCount, 1);
   } finally { dom.window.close(); }
@@ -757,7 +757,7 @@ test('real serialized inspector preserves incomplete fields without current-valu
     assert.equal(field('13_195_0').reason, 'read_only_options_preflight');
     assert.equal(field('13_100701_0').reason, 'option_dictionary_mismatch');
     assert.equal(field('13_100702_0').ok, false);
-    assert.equal(field('13_102501_0').reason, 'option_dictionary_incomplete');
+    assert.equal(field('13_102501_0').reason, 'read_only_options_preflight');
     assert.equal(field('16_65_0').reason, 'calendar_live_evidence_missing');
     assert.equal(evidence.fields.some(row => row.sectionId === '14'), false);
     assert.equal(attempts, 0);
@@ -841,8 +841,7 @@ test('allowlisted structural diagnostics survive evidence redaction without prom
     '13_43_0': { reason: 'control_not_available', hiddenSearchInputCount: 1,
       availabilityIssue: 'hidden_non_search_input', observedOptionCount: 2 },
     '13_100701_0': { reason: 'control_kind_mismatch', controlKindIssue: 'conflicting_picker' },
-    '13_102501_0': { reason: 'option_dictionary_incomplete', observedOptionCount: 28,
-      samplePrefixMatched: true },
+    '13_102501_0': { reason: 'option_dictionary_mismatch', observedOptionCount: 31 },
     '16_65_0': { reason: 'calendar_live_evidence_missing', calendarStructureObserved: true }
   };
   for (const [id, metadata] of Object.entries(changes)) {
@@ -861,7 +860,7 @@ test('allowlisted structural diagnostics survive evidence redaction without prom
     assert.equal(Object.hasOwn(row, 'arbitraryDiagnostic'), false);
     for (const [name, expected] of Object.entries(metadata)) assert.equal(row[name], expected);
   }
-  assert.equal(evidence.fields.find(row => row.wrapperId === '13_102501_0').optionsComplete, false);
+  assert.equal(evidence.fields.find(row => row.wrapperId === '13_102501_0').optionsComplete, true);
   assert.equal(evidence.fields.find(row => row.wrapperId === '16_65_0').optionsComplete, false);
 });
 
@@ -891,7 +890,7 @@ test('malformed or misplaced structural diagnostics reject Runtime evidence', as
     ['13_43_0', { controlKindIssue: 'conflicting_picker' }],
     ['13_43_0', { reason: 'control_kind_mismatch', controlKindIssue: PRIVATE }],
     ['13_43_0', { optionsComplete: false }],
-    ['13_102501_0', { optionsComplete: true }],
+    ['13_102501_0', { optionsComplete: false }],
     ['13_43_0', { evidenceSource: PRIVATE }]
   ];
   for (const [id, changes] of invalid) {
@@ -906,7 +905,7 @@ test('malformed or misplaced structural diagnostics reject Runtime evidence', as
   }
 });
 
-for (const id of ['13_100701_0', '13_100702_0', '13_102501_0', '16_65_0']) {
+for (const id of ['13_100701_0', '13_100702_0', '16_65_0']) {
   test(`forged observed success cannot promote incomplete/reused/calendar field ${id}`, async () => {
     const inspection = noDocumentInspection();
     Object.assign(inspection.fields.find(row => row.wrapperId === id), {

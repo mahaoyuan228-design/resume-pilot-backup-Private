@@ -73,10 +73,12 @@ export const ROW_D_FIELDS = Object.freeze([
     options: ['非研究类岗位，不涉及', '宏观', '策略', '债券', '银行', '非银行金融', '房地产',
       '量化', '基金评价', '金属及材料（有色金属）', '化工', '交通运输', '生物医药', '汽车',
       '机械', '军工', '电力设备及新能源', '建材', '食品饮料', '轻工纺服', '纺服化妆品',
-      '农林牧渔', '家电', '商业（零售+社会服务）', '电子'],
-    // The extractor caps optionsVisible at 25 and does not record the total.
-    // Its property name does not establish computed visibility of each label.
-    harvestedOptionCount: null, optionsComplete: false, evidenceSource: 'visible'
+      '农林牧渔', '家电', '商业（零售+社会服务）', '电子', '传媒', '通信', '计算机',
+      '中小盘', '环保及公用事业', '煤炭开采', '智库研究'],
+    // R7: guarded read-only capture at 8abbdc20 enumerated all 32 owned static
+    // labels. Provenance: tests/fixtures/cms-row-d-research-dictionary-r7.json.
+    // Runtime still requires exact order/count and current ownership; no fill.
+    harvestedOptionCount: 32, optionsComplete: true, evidenceSource: 'visible'
   },
   {
     key: 'experienceWorkNature', label: '工作性质', wrapperId: '49170501_49170517_0', sectionId: '49170501',

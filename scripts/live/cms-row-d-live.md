@@ -44,6 +44,15 @@ mandatory. The supplied R5 report hides IDs and raw paths, so this identifies
 a classifier defect without proving every cause of that particular run.
 See [R6 validation notes](../../tests/cms-row-d-keeper-nongget-r6-notes.md).
 
+R7 starts at `8abbdc20dc1b79bfb52d4378f62a4f2023943ef0`. A separately
+reviewed guarded read-only capture enumerated 32 unique owned static research
+labels and matched the previous 25-label prefix. The research dictionary now
+uses exactly those 32 labels in order; current ownership, cardinality and order
+must still match. This is dictionary/preflight work only. The earlier 12/16
+live result remains historical; a hypothetical 13/16 offline result requires a
+new official probe before it can be described as live evidence.
+See [R7 validation notes](../../tests/cms-row-d-research-dictionary-r7-notes.md).
+
 `cms-row-d-live.mjs` attaches to an existing CMS resume tab and runs the merged offline options resolver and read-only ownership preflight. This is a probe, not a fill adapter. It never opens a popup, clicks an option or 保存/提交, emits input events, or reads current field values. No originals require restoration because the probe performs no form interactions or value mutations.
 
 Every result keeps `neverSave=true`, `liveSupportClaimed=false`, `livePassClaimed=false`, `writeStarted=false`, `mutationAllowed=false`, `valuesExposed=false`, and `probeOnly=true`. A successful preflight does not grant mutation permission or establish live fill support. Education is outside this probe's scope.
@@ -137,8 +146,9 @@ collapsed ancestors still fail. This is a synthetic regression of a plausible
 VIS failure mode, not a claim that descendant markup was captured on CMS.
 Location kind mismatches now identify conflicting pickers, extra interactive
 controls, or input kind/ownership issues without whitelisting an unevidenced
-hybrid. Research reports the current owned option count and sample-prefix
-agreement while retaining its incomplete dictionary. The calendar must pass
+hybrid. Research now requires all 32 captured labels in exact order and reports
+only the observed count. Sample-prefix metadata is reserved for dictionaries
+that remain partial. The calendar must pass
 section, wrapper, label, control and availability checks before reporting its
 structure; it remains `calendar_live_evidence_missing`.
 
@@ -165,7 +175,7 @@ prove that a control is visibly available for interaction.
 
 An earlier location-one open produced an `info/edit` POST while its displayed value stayed unchanged. The later harvest avoided location opens and observed no such POST. Its Escape/blur attempts did not establish popup closure. This probe therefore performs no popup opening or blur operation.
 
-Location-one has only 25 serialized labels from a 30-option list. Location-two has no independent options evidence. The industry list is also partial, and English calendar behavior is unevidenced. These controls remain skipped. Current dropdown ownership must come from a unique current `aria-controls` association; a global visible dropdown or a harvested UUID cannot substitute for ownership.
+Location-one has only 25 serialized labels from a 30-option list. Location-two has no independent options evidence. The industry dictionary now has a complete 32-label guarded capture; English calendar behavior remains unevidenced. Both locations and the calendar remain skipped. Current dropdown ownership must come from a unique current `aria-controls` association; a global visible dropdown or a harvested UUID cannot substitute for ownership.
 
 After the parent re-runs guarded CDP, the page may still return
 `row_d_preflight_incomplete`, including `control_not_available`,

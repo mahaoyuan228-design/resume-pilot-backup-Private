@@ -12,7 +12,14 @@ import { runCmsRowDLive } from '../scripts/live/cms-row-d-live.mjs';
 const PRIVATE = 'OFFLINE_PRIVATE_BODY_QUERY_ERROR_SENTINEL';
 const autosaveUrl = new URL(`/wecruit/resume/info/edit/${new URL(ROW_D_PAGE).pathname.split('/')[1]}`, ROW_D_PAGE).href;
 
-const liveShape = JSON.parse(fs.readFileSync(new URL('./fixtures/cms-row-d-keeper-nongget-r6.json', import.meta.url), 'utf8'));
+const historicalShape = JSON.parse(fs.readFileSync(new URL('./fixtures/cms-row-d-keeper-nongget-r6.json', import.meta.url), 'utf8'));
+
+// Explicit hypothetical projection of the dictionary change; historical fields
+// stay untouched in their fixture. This is not a new real-page observation.
+const liveShape = structuredClone(historicalShape);
+const researchProjection = liveShape.inspection.fields.find(row => row.key === 'researchInterests');
+Object.assign(researchProjection, { optionsComplete: true, ok: true, status: 'observed', reason: 'read_only_options_preflight' });
+delete researchProjection.samplePrefixMatched;
 
 async function cdpStub(t, {
   nonGet = false, blockFails = false, visibilityNonGetAt, networkCase, inspection
@@ -243,7 +250,7 @@ for (const blockFails of [false, true]) test(`actual CDP transport records info/
 });
 
 for (const networkCase of ['blocked_info_edit', 'mismatched_network_id', 'response', 'late_fetch_disable']) {
-  test(`loopback replays recorded 12/16 fields with tenant traffic: ${networkCase}`, async t => {
+  test(`loopback models hypothetical 13/16 dictionary result with recorded tenant traffic: ${networkCase}`, async t => {
     const stub = await cdpStub(t, { networkCase, inspection: liveShape.inspection });
     const result = await runCmsRowDLive({ port: stub.port, timeoutMs: 1000, wait: async () => {} });
     safe(result);
@@ -251,7 +258,7 @@ for (const networkCase of ['blocked_info_edit', 'mismatched_network_id', 'respon
     assert.equal(result.ok, false);
     assert.equal(result.reason, networkCase === 'blocked_info_edit' ? 'row_d_preflight_incomplete' : 'non_get_or_guard_failure');
     assert.deepEqual(result.fields, liveShape.inspection.fields);
-    assert.equal(result.fields.filter(row => row.ok).length, 12);
+    assert.equal(result.fields.filter(row => row.ok).length, 13);
     assert.equal(result.traffic.observedNonGetCount, 1);
     assert.equal(result.traffic.interceptedNonGetCount, 1);
     assert.equal(result.traffic.blockedNonGetCount, 1);
@@ -274,3 +281,14 @@ for (const networkCase of ['blocked_info_edit', 'mismatched_network_id', 'respon
     assert.equal(stub.calls.find(call => call.method === 'Runtime.evaluate').params.throwOnSideEffect, true);
   });
 }
+
+test('loopback rejects stale partial research metadata without rewriting historical evidence', async t => {
+  const stub = await cdpStub(t, { inspection: historicalShape.inspection });
+  const result = await runCmsRowDLive({ port: stub.port, timeoutMs: 1000, wait: async () => {} });
+  safe(result);
+  assert.equal(result.probeCompleted, false);
+  assert.equal(result.reason, 'inspection_failed');
+  assert.deepEqual(result.fields, []);
+  assert.equal(historicalShape.inspection.fields.filter(row => row.ok).length, 12);
+  assert.equal(historicalShape.inspection.fields.find(row => row.key === 'researchInterests').optionsComplete, false);
+});

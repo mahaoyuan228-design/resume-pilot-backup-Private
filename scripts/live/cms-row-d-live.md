@@ -28,6 +28,12 @@ session and focus override remain active through guarded evaluation and the
 settlement window. These commands activate the browser page; the inspector
 still performs no DOM focus call or form interaction.
 
+R5 starts at `7e8a9e9bb1ad3f54c135f6b00b64fbb51ceda7e9`. The supplied R2
+live report completed inspection with 12/16 observed fields, then R4's final
+traffic verdict replaced its reason after an acknowledged info/edit block.
+R5 preserves the inspection verdict for the narrowly correlated keeper blocks
+described below. It makes no new live observation or field-support claim.
+
 `cms-row-d-live.mjs` attaches to an existing CMS resume tab and runs the merged offline options resolver and read-only ownership preflight. This is a probe, not a fill adapter. It never opens a popup, clicks an option or 保存/提交, emits input events, or reads current field values. No originals require restoration because the probe performs no form interactions or value mutations.
 
 Every result keeps `neverSave=true`, `liveSupportClaimed=false`, `livePassClaimed=false`, `writeStarted=false`, `mutationAllowed=false`, `valuesExposed=false`, and `probeOnly=true`. A successful preflight does not grant mutation permission or establish live fill support. Education is outside this probe's scope.
@@ -58,16 +64,31 @@ Requests only exercise dictionary resolution and ownership checks; they never re
 
 ## Safety and evidence
 
-Both `Network.enable` and CDP `Fetch.enable` must succeed before the page probe runs. Requests paused by Fetch are continued only for GET; every other method is rejected. Any non-GET observation or interception failure fails the result. Evidence identifies the normalized `/resume/info/edit` endpoint and uses a safe category for other endpoints; it never reads request or response bodies or current field values. Any observed `info/edit` attempt remains visible even when blocked or when the displayed value was unchanged.
+Both `Network.enable` and CDP `Fetch.enable` must succeed before the page probe runs. Requests paused by Fetch are continued only for GET; every other method is rejected. Evidence identifies the normalized `/resume/info/edit` endpoint and uses a safe category for other endpoints; it never reads request or response bodies or current field values. Every observed attempt remains recorded even when blocked.
+
+Only an exact CMS-origin `/resume/info/edit` POST can preserve the inspection
+verdict: its Network observation and request-stage Fetch pause must both occur
+during the fully guarded keeper lifetime, match one-to-one by
+`Network.requestId` / `Fetch.networkId` and unique `Fetch.requestId`, and have
+an acknowledged `Fetch.failRequest`. Method and URL identity must agree; a
+URL hash stays internal and is never emitted. Timing describes observation
+during the keeper; it does not prove which command caused the request.
+Missing, duplicate or conflicting correlation, unblocked non-GET, other
+methods/origins/paths, response evidence, guard command failure or truncated
+tracking still hard-fails with `non_get_or_guard_failure`. Equal aggregate
+observed/blocked counts are insufficient.
 
 The guards also cover browser activation and focus emulation. The runner drains
 request decisions and checks for failure after each keeper command, before
-evaluation. A visibility/focus listener that starts a non-GET therefore stops
-inspection. The override is cleared in `finally` while the guards remain active,
+evaluation. An unmatched or ineligible non-GET stops inspection; a fully proven
+keeper block permits read-only inspection to continue. The keeper lifetime
+includes evaluation and settlement. The override is cleared in `finally` while the guards remain active,
 then a bounded 250 ms monitoring window covers delayed focus/blur handlers and
 pending request decisions are drained before disabling Fetch and Network and
 closing the session. This window also runs after an early stop or rejected
 reset; a failed monitoring wait still fails cleanup and permits guard teardown.
+The exception closes before guard teardown starts. A non-GET first appearing
+during either disable command fails even if subsequently blocked.
 It does not isolate arbitrary page activity after the session ends. Keeper setup or cleanup failures fail the
 result without exposing remote exception strings. `visibilityKeeper` records
 only boolean command acknowledgments; an enabled acknowledgment describes the
@@ -98,7 +119,7 @@ agreement while retaining its incomplete dictionary. The calendar must pass
 section, wrapper, label, control and availability checks before reporting its
 structure; it remains `calendar_live_evidence_missing`.
 
-`observedNonGetCount` counts Network observations, while `blockedNonGetCount` counts acknowledged Fetch block commands. These are event counts and can refer to the same request. `requestWillBeSent` alone does not prove that a request reached the server. Interception cannot retroactively cancel requests already in flight; a late block failure during teardown also fails the result. This is no server-write isolation claim. The probe induces no form interaction. It drains known request decisions before disabling its CDP domains and closing the session; no page hooks need removal.
+`observedNonGetCount` counts Network observations, while `blockedNonGetCount` counts acknowledged Fetch block commands. These can refer to the same request. `requestWillBeSent` alone does not prove that a request reached the server. Response evidence (including redirects, extra response metadata, received data and successful completion) is retained even if it precedes request correlation or follows `loadingFailed`. It records at most one response-evidence count per tracked non-GET; a later redirected GET response is not counted against the prior POST. Any `responseToNonGetCount>0` hard-fails. Interception cannot retroactively cancel requests already in flight; a late block failure during teardown also fails the result. This is no server-write isolation claim. The probe induces no form interaction. It drains known request decisions before disabling its CDP domains and closing the session; no page hooks need removal.
 
 Evaluation also requires CDP `throwOnSideEffect=true`. A rejected evaluation stops without a less restrictive retry. This guard's behavior on the real page remains for the parent's CDP verification.
 
@@ -147,7 +168,7 @@ node --test tests/cms-row-d-options.test.mjs tests/cms-row-d-probe-expression.te
 node --test tests/cms-basic-info-row-c-probe.test.mjs tests/cms-basic-info-gaps.test.mjs tests/cms-basic-info-live.test.mjs
 ```
 
-The first command covers resolver/serialization parity, zero current-value reads or form interactions, guard failures and teardown, target/output confinement, redaction, and an actual HTTP/WebSocket transport against a local fake CDP server. R4 additionally checks keeper lifetime, guard-before-activation ordering, activation/focus-triggered non-GET early stops, and guarded keeper cleanup. It also runs the serialized expression through `node:inspector` with V8's real `throwOnSideEffect=true`, using a synthetic tree with pure selector reads. The V8 test does not substitute for Blink's DOM API checks or a real-page re-run. All DOMs and CDP servers in these tests are synthetic; no live browser session is used. See [R2 validation notes](../../tests/cms-row-d-probe-side-effect-r2-notes.md) for the isolated Edge fixture check.
+The first command covers resolver/serialization parity, zero current-value reads or form interactions, guard failures and teardown, target/output confinement, redaction, and an actual HTTP/WebSocket transport against a local fake CDP server. R5 adds request-level keeper block correlation, event ordering, response and redirect rejection, and teardown boundaries while preserving the modeled incomplete 12/16 inspection. See [R5 notes](../../tests/cms-row-d-keeper-nongget-r5-notes.md). It also runs the serialized expression through `node:inspector` with V8's real `throwOnSideEffect=true`, using a synthetic tree with pure selector reads. The V8 test does not substitute for Blink's DOM API checks or a real-page re-run. All DOMs and CDP servers in these tests are synthetic; no live browser session is used. See [R2 validation notes](../../tests/cms-row-d-probe-side-effect-r2-notes.md) for the isolated Edge fixture check.
 
 R3 adds shared-RegExp trim shims, stateful NodeList/Array iterators and element
 IDL accessor regressions. Each hostile fixture first proves that V8 rejects the

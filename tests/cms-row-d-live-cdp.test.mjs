@@ -10,7 +10,9 @@ import { runCmsRowDLive } from '../scripts/live/cms-row-d-live.mjs';
 
 const PRIVATE = 'OFFLINE_PRIVATE_BODY_QUERY_ERROR_SENTINEL';
 
-async function cdpStub(t, { nonGet = false, blockFails = false, visibilityNonGetAt } = {}) {
+async function cdpStub(t, {
+  nonGet = false, blockFails = false, visibilityNonGetAt, networkCase
+} = {}) {
   const calls = [];
   const server = http.createServer((request, response) => {
     assert.equal(request.method, 'GET');
@@ -28,12 +30,14 @@ async function cdpStub(t, { nonGet = false, blockFails = false, visibilityNonGet
       calls.push(message);
       const reply = result => socket.send(JSON.stringify({ id: message.id, result }));
       const event = (method, params) => socket.send(JSON.stringify({ method, params }));
-      const requestEvents = method => {
+      const requestEvents = (method, { pause = true, networkId = `network-${method}` } = {}) => {
         const request = { method, url: `https://wecruit.hotjob.cn/resume/info/edit?resumeId=${PRIVATE}`,
           postData: PRIVATE, headers: { 'X-Private': PRIVATE } };
         event('Network.requestWillBeSent', { requestId: `network-${method}`, request });
-        event('Fetch.requestPaused', { requestId: `paused-${method}`, networkId: `network-${method}`, request });
+        if (pause) event('Fetch.requestPaused', { requestId: `paused-${method}`, networkId, request });
+        return request;
       };
+      if (message.method === 'Fetch.enable' && networkCase === 'guard_enable') requestEvents('POST');
       if (['Target.activateTarget', 'Page.bringToFront', 'Emulation.setFocusEmulationEnabled'].includes(message.method)) {
         const names = calls.map(call => call.method);
         assert.ok(names.includes('Network.enable'));
@@ -54,13 +58,33 @@ async function cdpStub(t, { nonGet = false, blockFails = false, visibilityNonGet
         assert.equal(message.params.awaitPromise, false);
         const methods = nonGet ? ['GET', 'POST', 'HEAD'] : ['GET'];
         for (const method of methods) requestEvents(method);
+        if (networkCase === 'early_response') event('Network.responseReceived', {
+          requestId: 'network-POST', response: { status: 200, body: PRIVATE }
+        });
+        if (['blocked_info_edit', 'response', 'early_response', 'redirect'].includes(networkCase)) requestEvents('POST');
+        if (networkCase === 'unmatched_observation') requestEvents('POST', { pause: false });
+        if (networkCase === 'mismatched_network_id') requestEvents('POST', { networkId: 'unmatched-network' });
+        if (networkCase === 'response') event('Network.responseReceived', {
+          requestId: 'network-POST', response: { status: 200, body: PRIVATE }
+        });
+        if (networkCase === 'redirect') {
+          event('Network.requestWillBeSent', {
+            requestId: 'network-POST',
+            request: { method: 'GET', url: `https://wecruit.hotjob.cn/finished?token=${PRIVATE}` },
+            redirectResponse: { status: 302, url: `https://wecruit.hotjob.cn/resume/info/edit?token=${PRIVATE}` }
+          });
+          event('Network.responseReceived', { requestId: 'network-POST', response: { status: 200, body: PRIVATE } });
+        }
         // Executes the real serialized inspector in an empty synthetic realm;
         // no_document is expected and must never become a live PASS.
         reply({ result: { value: vm.runInNewContext(message.params.expression) } });
       } else if (message.method === 'Fetch.failRequest' && blockFails) {
         socket.send(JSON.stringify({ id: message.id, error: { message: PRIVATE } }));
       } else {
-        if (message.method === 'Fetch.disable') assert.equal(focusEnabled, false);
+        if (message.method === 'Fetch.disable') {
+          assert.equal(focusEnabled, false);
+          if (networkCase === 'late_fetch_disable') requestEvents('POST');
+        }
         reply({});
       }
     });
@@ -112,21 +136,86 @@ test('actual loopback CDP transport continues GET and returns an honest incomple
     focusEmulationEnabled: true, focusEmulationCleared: true });
 });
 
-for (const visibilityNonGetAt of ['Target.activateTarget', 'Emulation.setFocusEmulationEnabled']) {
-  test(`actual CDP transport blocks visibility-triggered POST during ${visibilityNonGetAt} before inspection`, async t => {
+for (const visibilityNonGetAt of ['Target.activateTarget', 'Page.bringToFront', 'Emulation.setFocusEmulationEnabled']) {
+  test(`actual CDP transport blocks info/edit during ${visibilityNonGetAt} and preserves inspection`, async t => {
     const stub = await cdpStub(t, { visibilityNonGetAt });
     const result = await runCmsRowDLive({ port: stub.port, timeoutMs: 1000, wait: async () => {} });
     safe(result);
     assert.equal(result.ok, false);
-    assert.equal(result.probeCompleted, false);
-    assert.equal(result.reason, 'non_get_or_guard_failure');
+    assert.equal(result.probeCompleted, true);
+    assert.equal(result.reason, 'no_document');
+    assert.equal(result.fields.length, ROW_D_FIELDS.length);
     assert.equal(result.traffic.observedNonGetCount, 1);
     assert.equal(result.traffic.blockedNonGetCount, 1);
-    assert.equal(stub.calls.some(call => call.method === 'Runtime.evaluate'), false);
+    assert.equal(result.traffic.responseToNonGetCount, 0);
+    assert.equal(result.traffic.commandFailed, false);
     const names = stub.calls.map(call => call.method);
+    assert.ok(names.indexOf('Fetch.failRequest') < names.indexOf('Runtime.evaluate'));
     assert.ok(names.indexOf('Fetch.failRequest') < names.indexOf('Fetch.disable'));
   });
 }
+
+test('actual CDP transport preserves inspection for a correlated info/edit block during evaluation', async t => {
+  const stub = await cdpStub(t, { networkCase: 'blocked_info_edit' });
+  const result = await runCmsRowDLive({ port: stub.port, timeoutMs: 1000, wait: async () => {} });
+  safe(result);
+  assert.equal(result.ok, false);
+  assert.equal(result.probeCompleted, true);
+  assert.equal(result.reason, 'no_document');
+  assert.equal(result.fields.length, ROW_D_FIELDS.length);
+  assert.equal(result.traffic.observedNonGetCount, 1);
+  assert.equal(result.traffic.interceptedNonGetCount, 1);
+  assert.equal(result.traffic.blockedNonGetCount, 1);
+  assert.equal(result.traffic.responseToNonGetCount, 0);
+  assert.equal(result.traffic.commandFailed, false);
+});
+
+for (const networkCase of ['response', 'early_response', 'redirect']) {
+  test(`actual CDP transport rejects ${networkCase} evidence despite an info/edit block acknowledgement`, async t => {
+    const stub = await cdpStub(t, { networkCase });
+    const result = await runCmsRowDLive({ port: stub.port, timeoutMs: 1000, wait: async () => {} });
+    safe(result);
+    assert.equal(result.ok, false);
+    assert.equal(result.probeCompleted, true);
+    assert.equal(result.reason, 'non_get_or_guard_failure');
+    assert.equal(result.fields.length, ROW_D_FIELDS.length);
+    assert.equal(result.traffic.observedNonGetCount, 1);
+    assert.equal(result.traffic.blockedNonGetCount, 1);
+    assert.ok(result.traffic.responseToNonGetCount > 0);
+  });
+}
+
+for (const networkCase of ['unmatched_observation', 'mismatched_network_id', 'guard_enable', 'late_fetch_disable']) {
+  test(`actual CDP transport fails closed for ${networkCase}`, async t => {
+    const stub = await cdpStub(t, { networkCase });
+    const result = await runCmsRowDLive({ port: stub.port, timeoutMs: 1000, wait: async () => {} });
+    safe(result);
+    assert.equal(result.ok, false);
+    assert.equal(result.reason, 'non_get_or_guard_failure');
+    assert.equal(result.probeCompleted, networkCase !== 'guard_enable');
+    assert.equal(result.traffic.observedNonGetCount, 1);
+    assert.equal(result.traffic.blockedNonGetCount, networkCase === 'unmatched_observation' ? 0 : 1);
+    assert.equal(result.traffic.responseToNonGetCount, 0);
+    const names = stub.calls.map(call => call.method);
+    if (networkCase === 'guard_enable') assert.equal(names.includes('Runtime.evaluate'), false);
+    if (networkCase === 'late_fetch_disable') {
+      assert.ok(names.indexOf('Fetch.disable') < names.indexOf('Fetch.failRequest'));
+      assert.ok(names.indexOf('Fetch.failRequest') < names.indexOf('Network.disable'));
+    }
+  });
+}
+
+test('actual CDP transport block rejection during keeper setup prevents inspection', async t => {
+  const stub = await cdpStub(t, { visibilityNonGetAt: 'Target.activateTarget', blockFails: true });
+  const result = await runCmsRowDLive({ port: stub.port, timeoutMs: 1000, wait: async () => {} });
+  safe(result);
+  assert.equal(result.ok, false);
+  assert.equal(result.reason, 'non_get_or_guard_failure');
+  assert.equal(result.probeCompleted, false);
+  assert.equal(result.traffic.blockedNonGetCount, 0);
+  assert.equal(result.traffic.commandFailed, true);
+  assert.equal(stub.calls.some(call => call.method === 'Runtime.evaluate'), false);
+});
 
 for (const blockFails of [false, true]) test(`actual CDP transport records info/edit and rejects non-GET (block failure=${blockFails})`, async t => {
   const stub = await cdpStub(t, { nonGet: true, blockFails });

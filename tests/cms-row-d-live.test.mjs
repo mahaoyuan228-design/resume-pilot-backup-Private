@@ -140,7 +140,7 @@ const keeperRequest = (id = 'keeper', method = 'POST', url = keeperUrl) => {
 };
 
 test('baseline and initial evidence preserve Never-Save, no live PASS, and booked 53', () => {
-  assert.equal(ROW_D_LIVE_BASE_TIP, '723bee7b368ce8cfab07277aedec603301c24e4c');
+  assert.equal(ROW_D_LIVE_BASE_TIP, '3c5c9d08c78ce0ffc522e69398f815188bbdaaeb');
   const evidence = rowDProbeEvidence();
   assertSafety(evidence);
   assert.equal(evidence.ok, false);
@@ -1115,3 +1115,54 @@ test('--help and unknown CLI arguments cannot attach or write evidence', t => {
   }
   assert.equal(fs.existsSync(path.join(temporary, 'out', EVIDENCE_NAME)), false);
 });
+
+
+test('R8 settlement shares one deadline across checkpoints and remains stopped after later full correlation', async t => {
+  const guard = createRowDNetworkGuard(() => Promise.resolve({}));
+  guard.setKeeperActive(true);
+  const first = keeperRequest('settle-first');
+  const second = keeperRequest('settle-second');
+  const timers = [];
+  t.after(() => { for (const timer of timers) clearTimeout(timer); });
+  guard.onEvent(first[0]);
+  timers.push(setTimeout(() => guard.onEvent(first[1]), 70));
+  assert.equal((await guard.settleKeeper()).status, 'settled');
+  guard.onEvent(second[0]);
+  let lateDelivered = false;
+  timers.push(setTimeout(() => { lateDelivered = true; guard.onEvent(second[1]); }, 230));
+  const stop = await guard.settleKeeper();
+  assert.equal(stop.status, 'deadline_exceeded', 'a second checkpoint cannot renew the first deadline');
+  assert.equal(stop.ready, false);
+  assert.equal(lateDelivered, false);
+  for (const timer of timers) clearTimeout(timer);
+  guard.onEvent(second[1]);
+  await guard.drain();
+  assert.equal(guard.failed(), false, 'the strict terminal ledger may become complete during cleanup');
+  const retry = await guard.settleKeeper();
+  assert.equal(retry.ready, false, 'cleanup proof cannot revive an expired inspection authorization');
+  assert.equal(retry.status, 'deadline_exceeded');
+});
+
+for (const mode of ['invalid_network_id', 'invalid_fetch_id', 'duplicate', 'conflict', 'response', 'truncation', 'ineligible', 'outside_keeper']) {
+  test(`R8 permanent ${mode} failure never enters settlement waiting`, async () => {
+    const guard = createRowDNetworkGuard(() => Promise.resolve({}));
+    guard.setKeeperActive(mode !== 'outside_keeper');
+    const [network, fetch] = keeperRequest('fatal');
+    if (mode === 'invalid_network_id') delete fetch.params.networkId;
+    if (mode === 'invalid_fetch_id') delete fetch.params.requestId;
+    if (mode === 'conflict') fetch.params.request = { ...fetch.params.request, url: fetch.params.request.url + '&conflict=1' };
+    if (mode === 'ineligible') network.params.request = fetch.params.request = { method: 'POST', url: 'https://example.invalid/other' };
+    guard.onEvent(network);
+    guard.onEvent(fetch);
+    if (mode === 'duplicate') guard.onEvent(network);
+    if (mode === 'response') guard.onEvent({ method: 'Network.responseReceived', params: { requestId: network.params.requestId } });
+    if (mode === 'truncation') for (let index = 0; index < 210; index += 1) keeperRequest('over-limit-' + index).forEach(guard.onEvent);
+    await guard.drain();
+    let waits = 0;
+    const assessment = await guard.settleKeeper(async () => { waits += 1; });
+    assert.equal(assessment.ready, false);
+    assert.equal(assessment.status, mode === 'outside_keeper' ? 'inactive_keeper' : 'permanent_failure');
+    assert.equal(waits, 0);
+    assert.equal(JSON.stringify(assessment).includes(PRIVATE), false);
+  });
+}

@@ -53,6 +53,14 @@ live result remains historical; a hypothetical 13/16 offline result requires a
 new official probe before it can be described as live evidence.
 See [R7 validation notes](../../tests/cms-row-d-research-dictionary-r7-notes.md).
 
+R8 starts at `3c5c9d08c78ce0ffc522e69398f815188bbdaaeb`. A later
+parent-run location diagnostic stopped before inspection even though cleanup's
+final ledger contained a fully correlated keeper block. A partial Network/Fetch
+pair or pending block acknowledgment can temporarily fail a keeper checkpoint.
+R8 waits only for eligible pending proof while guards and the keeper remain
+active, then requires the unchanged complete correlation verdict before any
+inspection. See [R8 validation notes](../../tests/cms-row-d-keeper-settlement-r8-notes.md).
+
 `cms-row-d-live.mjs` attaches to an existing CMS resume tab and runs the merged offline options resolver and read-only ownership preflight. This is a probe, not a fill adapter. It never opens a popup, clicks an option or 保存/提交, emits input events, or reads current field values. No originals require restoration because the probe performs no form interactions or value mutations.
 
 Every result keeps `neverSave=true`, `liveSupportClaimed=false`, `livePassClaimed=false`, `writeStarted=false`, `mutationAllowed=false`, `valuesExposed=false`, and `probeOnly=true`. A successful preflight does not grant mutation permission or establish live fill support. Education is outside this probe's scope.
@@ -110,10 +118,24 @@ bodies or hashes. The assessment is descriptive and supplies no authority to
 bypass the ledger. A correlated block preserves an incomplete inspection; it
 cannot upgrade fields, prove server-write isolation or book D.
 
-The guards also cover browser activation and focus emulation. The runner drains
-request decisions and checks for failure after each keeper command, before
-evaluation. An unmatched or ineligible non-GET stops inspection; a fully proven
-keeper block permits read-only inspection to continue. The keeper lifetime
+The guards also cover browser activation and focus emulation. After each keeper command, and again immediately before inspection, the runner
+rejects permanent failures and may settle only valid, eligible missing pairs or
+pending guard decisions. One 250 ms authorization deadline is shared across all
+these checkpoints; events never renew it. At most ten timer ticks and 200 event
+wakeups are allowed. A Fetch pause is aborted immediately, without waiting for
+its Network counterpart. The original terminal `failed()` predicate must be
+false and all decision replies settled before inspection begins. Invalid IDs,
+duplicate/conflicting identities, other endpoints/methods/origins, outside-keeper
+traffic, responses/redirects, command failure and truncation cannot wait their
+way into eligibility. Unmatched or unacknowledged traffic at expiry stops.
+
+`inspectionGate` retains fixed checkpoint/status/pending enums, initial/final
+redacted assessments, and bounded wait/wakeup counts. Expiry is sticky; a later
+complete cleanup ledger cannot reopen inspection. The final keeper assessment
+can therefore be correlated while the early gate remains blocked. Timer
+scheduling delays do not extend the authorization deadline. This is a budget
+for pending-proof settlement, not a 250 ms bound on the whole probe: CDP command
+timeouts and existing cleanup/drain waits remain separate. The keeper lifetime
 includes evaluation and settlement. The override is cleared in `finally` while the guards remain active,
 then a bounded 250 ms monitoring window covers delayed focus/blur handlers and
 pending request decisions are drained before disabling Fetch and Network and

@@ -126,7 +126,7 @@ test('serialized row D probe matches the direct inspector without interaction or
   const result = auditedResults();
   assert.equal(result.reason, 'row_d_preflight_incomplete');
   assert.equal(result.fields.find(row => row.wrapperId === SELECT).reason, 'read_only_options_preflight');
-  assert.equal(result.fields.find(row => row.wrapperId === CHECKBOX).reason, 'option_dictionary_incomplete');
+  assert.equal(result.fields.find(row => row.wrapperId === CHECKBOX).reason, 'read_only_options_preflight');
   assert.equal(result.fields.find(row => row.wrapperId === '16_65_0').reason, 'calendar_live_evidence_missing');
 });
 
@@ -183,14 +183,14 @@ test('serialized SYNTHETIC location hybrid is diagnosed instead of being declare
   assert.equal(row.optionsComplete, false);
 });
 
-test('serialized SYNTHETIC research observation reports counts and prefix truth without promoting completeness', () => {
+test('serialized SYNTHETIC research observation requires all 32 captured labels', () => {
   const result = auditedResults();
   const row = result.fields.find(candidate => candidate.wrapperId === CHECKBOX);
-  assert.equal(row.ok, false);
-  assert.equal(row.reason, 'option_dictionary_incomplete');
-  assert.equal(row.optionsComplete, false);
-  assert.equal(row.observedOptionCount, 25);
-  assert.equal(row.samplePrefixMatched, true);
+  assert.equal(row.ok, true);
+  assert.equal(row.reason, 'read_only_options_preflight');
+  assert.equal(row.optionsComplete, true);
+  assert.equal(row.observedOptionCount, 32);
+  assert.equal(Object.hasOwn(row, 'samplePrefixMatched'), false);
 });
 
 test('serialized SYNTHETIC research prefix drift is counted without exposing the label', () => {
@@ -199,8 +199,23 @@ test('serialized SYNTHETIC research prefix drift is counted without exposing the
   });
   const row = result.fields.find(candidate => candidate.wrapperId === CHECKBOX);
   assert.equal(row.reason, 'option_dictionary_mismatch');
-  assert.equal(row.observedOptionCount, 25);
-  assert.equal(row.samplePrefixMatched, false);
+  assert.equal(row.observedOptionCount, 32);
+  assert.equal(Object.hasOwn(row, 'samplePrefixMatched'), false);
+});
+
+
+for (const [name, mutate, reason] of [
+  ['unknown final label', doc => { doc.getElementById(CHECKBOX).querySelectorAll('.ant-checkbox-wrapper > span:last-child')[31].textContent = PRIVATE; }, 'option_dictionary_mismatch'],
+  ['missing final label', doc => { doc.getElementById(CHECKBOX).querySelectorAll('.ant-checkbox-wrapper')[31].remove(); }, 'option_dictionary_mismatch'],
+  ['reordered final labels', doc => { const options = doc.getElementById(CHECKBOX).querySelectorAll('.ant-checkbox-wrapper'); options[30].parentElement.insertBefore(options[31], options[30]); }, 'option_dictionary_mismatch'],
+  ['duplicate final label', doc => { const labels = doc.getElementById(CHECKBOX).querySelectorAll('.ant-checkbox-wrapper > span:last-child'); labels[31].textContent = labels[30].textContent; }, 'option_list_ambiguous'],
+  ['option outside its group', doc => { const option = doc.getElementById(CHECKBOX).querySelector('.ant-checkbox-wrapper'); option.parentElement.parentElement.append(option); }, 'control_ownership_mismatch']
+]) test(`serialized SYNTHETIC complete research rejects ${name} under the no-read/no-interaction audit`, () => {
+  const result = auditedResults({}, undefined, mutate);
+  const row = result.fields.find(candidate => candidate.wrapperId === CHECKBOX);
+  assert.equal(row.ok, false);
+  assert.equal(row.reason, reason);
+  assert.equal(row.optionsComplete, true);
 });
 
 test('serialized SYNTHETIC owned calendar reports only structure and retains missing live evidence', () => {

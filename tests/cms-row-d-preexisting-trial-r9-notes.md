@@ -129,3 +129,19 @@ mandatory-signature acceptance. Generated fixtures/keys/builds are not committed
 Final full/build output is recorded outside tracked source under the fresh
 clone's `_temp-scripts/r9-*` with the exact tested source SHA. Exploratory tests
 in the original autocrlf worktree are not authoritative full-regression evidence.
+
+
+The first complete LF candidate matrix (eb62) ran 3337 tests: 3330 passed,
+6 failed and 1 was explicitly skipped. All six failures were in the unchanged
+`cms-self-eval-live` test scaffold, whose `URL.pathname`-based root became
+`C:\C:\...` on Windows. The exact c480 checkout/test reproduced the same six
+failures in `_temp-scripts/cms-row-d-r9-c480-self-eval-windows/` at the Dev root.
+Only that test's path conversion changes to `fileURLToPath`; product runner,
+assertions and timeouts remain unchanged. Cross-world and all three builds
+already exited0 on eb62; the authoritative full matrix/builds must be rerun on
+the final repaired source SHA, with their exact result retained outside Git.
+
+The matrix retains the preexisting explicit skip at
+`cms-school-never-save.test.mjs`: trusted catalog search/candidate race needs
+isolated-browser insertText evidence that jsdom execCommand cannot provide.
+This case is not claimed covered; no skip or timeout was added to obtain green.

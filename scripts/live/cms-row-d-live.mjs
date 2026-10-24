@@ -19,7 +19,8 @@ export const ROW_D_LIVE_BASE_TIP = '53791dfe6da2a6ae2b627b8e9b945ca0d411fefc';
 export const EVIDENCE_NAME = 'cms-row-d-live.json';
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const safety = () => ({ neverSave: true, liveSupportClaimed: false,
-  writeStarted: false, mutationAllowed: false, valuesExposed: false });
+  livePassClaimed: false, writeStarted: false, mutationAllowed: false,
+  valuesExposed: false, probeOnly: true });
 const validPort = port => Number.isInteger(port) && port >= 1 && port <= 65535;
 const inside = (root, candidate) => {
   const relative = path.relative(root, candidate);
@@ -195,7 +196,8 @@ const INSPECTION_TOP_REASONS = new Set([
 /** Copy allowlisted metadata only; never serialize arbitrary Runtime results. */
 function cleanInspection(value) {
   const safeFlags = row => Object.entries(safety()).every(([key, expected]) => row?.[key] === expected);
-  if (!safeFlags(value) || typeof value.ok !== 'boolean' || !INSPECTION_TOP_REASONS.has(value.reason)
+  if (!safeFlags(value) || value.visibilityBasis !== 'attributes_only'
+    || typeof value.ok !== 'boolean' || !INSPECTION_TOP_REASONS.has(value.reason)
     || !Array.isArray(value.fields) || value.fields.length > ROW_D_FIELDS.length
     || (value.reason !== 'document_read_failed' && value.fields.length !== ROW_D_FIELDS.length)) {
     throw new TypeError('inspection_invalid');
@@ -221,12 +223,12 @@ function cleanInspection(value) {
   if (value.ok !== complete || (value.reason === 'read_only_preflight') !== complete) {
     throw new TypeError('inspection_invalid');
   }
-  return { ok: value.ok, reason: value.reason, fields };
+  return { ok: value.ok, reason: value.reason, visibilityBasis: value.visibilityBasis, fields };
 }
 
 export function rowDProbeEvidence(reason = 'not_started') {
   return { version: 1, kind: 'cms_row_d_live_never_save_probe', ...safety(),
-    baseTip: ROW_D_LIVE_BASE_TIP, livePassClaimed: false, booked: 53, probeOnly: true,
+    baseTip: ROW_D_LIVE_BASE_TIP, booked: 53, visibilityBasis: 'attributes_only',
     probeCompleted: false, ok: false, reason, restoration: 'not_needed_no_interaction', fields: [] };
 }
 
@@ -268,6 +270,7 @@ export async function runCmsRowDLive({ port = 9242, timeoutMs = 10000, requests 
     if (reply?.exceptionDetails) { evidence.reason = 'inspection_exception'; return evidence; }
     const inspection = cleanInspection(reply?.result?.value);
     evidence.fields = inspection.fields;
+    evidence.visibilityBasis = inspection.visibilityBasis;
     evidence.probeCompleted = true;
     evidence.ok = inspection.ok;
     evidence.reason = inspection.reason;
@@ -304,7 +307,9 @@ export async function runCmsRowDLive({ port = 9242, timeoutMs = 10000, requests 
 
 export const HELP = `Usage: node scripts/live/cms-row-d-live.mjs
 Inert Never-Save row D CDP probe. No open/fill/Save/submit, no value reads.
-neverSave=true liveSupportClaimed=false writeStarted=false mutationAllowed=false
+neverSave=true liveSupportClaimed=false livePassClaimed=false writeStarted=false
+mutationAllowed=false valuesExposed=false probeOnly=true
+Visibility uses attributes only; stylesheet/layout visibility is not verified.
 No live PASS claimed until parent runs real CDP Never-Save. Booked stays 53.
 PORT defaults to 9242; STEP_TIMEOUT_MS defaults to 10000 (1000..30000).
 OUTDIR defaults to repo/_temp-scripts/cms-row-d-live-never-save.

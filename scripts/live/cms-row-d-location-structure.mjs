@@ -4,9 +4,10 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
-import { ROW_D_PAGE, buildCmsRowDOptionsProbeExpression } from '../lib/cms-row-d-options.mjs';
-import { runCmsRowDLive, readRowDProbeConfig, rowDTemporaryPath } from './cms-row-d-live.mjs';
-import { connectCdp } from '../../tools/live-harvest/cdp-client.mjs';
+import { isProxy } from 'node:util/types';
+import { buildCmsRowDOptionsProbeExpression } from '../lib/cms-row-d-options.mjs';
+import { runCmsRowDLive, readRowDProbeConfig, rowDTemporaryPath, selectRowDTarget } from './cms-row-d-live.mjs';
+import { connectCdp, getJson } from '../../tools/live-harvest/cdp-client.mjs';
 
 export const SOURCE_PINS = Object.freeze({
   'scripts/live/cms-row-d-live.mjs':'5945aeef1cdcdc3c4ebadb2d23f6518313303214f8d09349fd52fcfa68114873',
@@ -162,6 +163,7 @@ export function inspectLocationStructure(doc, expectedPage) {
           ?'linked_structure_observed':'list_or_portal_unverified';
       }
     }
+    if(doc.defaultView.location.href!==expectedPage)return {captured:false,reason:'wrong_page'};
     return {captured:true,reason:'read_only_structure',locations};
   }catch{return {captured:false,reason:'structure_limit_or_exception'};}
 }
@@ -222,11 +224,12 @@ export function validateStructure(value){
   }
   return JSON.parse(JSON.stringify(value));
 }
-export function buildLocationStructureExpression(){
+export function buildLocationStructureExpression(expectedFullUrl){
+  if(typeof expectedFullUrl!=='string'||!expectedFullUrl)throw Error('target_binding_invalid');
   const original=buildCmsRowDOptionsProbeExpression(),line='return inspectCmsRowDOptions(globalThis.document, {});';
   if(original.split(line).length!==2)throw Error('expression_shape_changed');
   return original.replace(line,`const inspection = inspectCmsRowDOptions(globalThis.document, {});\n`
-    +`const structure = (${inspectLocationStructure.toString()})(globalThis.document, ${JSON.stringify(ROW_D_PAGE)});\n`
+    +`const structure = (${inspectLocationStructure.toString()})(globalThis.document, ${JSON.stringify(expectedFullUrl)});\n`
     +'return { inspection, structure };');
 }
 export function cleanCaptureAllowed(official){
@@ -241,16 +244,45 @@ export function cleanCaptureAllowed(official){
     &&official.traffic.keeperAssessment.reasons.length===0&&official.traffic.responseToNonGetCount===0
     &&official.traffic.commandFailed===false&&official.traffic.truncated===false;
 }
-export async function runLocationStructure({port=9242,timeoutMs=10000,getTargets,connect=connectCdp,wait}={}){
-  let structure,evaluations=0,stopCause='not_reached';
-  const originalExpression=buildCmsRowDOptionsProbeExpression(),expression=buildLocationStructureExpression();
+// getJson owns this freshly parsed JSON. Freeze only its ordinary top-level
+// array/records; retain every entry/field/order and never recurse into metadata.
+function freezeTargetInventory(targets){
+  const dataOnly=value=>Reflect.ownKeys(value).every(key=>typeof key==='string'
+    &&Object.hasOwn(Object.getOwnPropertyDescriptor(value,key),'value'));
+  if(isProxy(targets)||Object.getPrototypeOf(targets)!==Array.prototype||!dataOnly(targets))throw Error('target_binding_invalid');
+  const records=[];
+  for(let index=0;index<targets.length;index++){
+    const descriptor=Object.getOwnPropertyDescriptor(targets,String(index));
+    if(!descriptor||!Object.hasOwn(descriptor,'value'))throw Error('target_binding_invalid');
+    const record=descriptor.value;
+    if(record!==null&&typeof record==='object'){
+      if(isProxy(record)||Object.getPrototypeOf(record)!==Object.prototype||!dataOnly(record))throw Error('target_binding_invalid');
+      records.push(record);
+    }else if(!['string','number','boolean'].includes(typeof record)&&record!==null)throw Error('target_binding_invalid');
+  }
+  for(const record of records)Object.freeze(record);
+  return Object.freeze(targets);
+}
+export async function runLocationStructure({port=9242,timeoutMs=10000,getTargets=getJson,connect=connectCdp,wait}={}){
+  let structure,binding,evaluations=0,discoveries=0,connections=0,stopCause='not_reached';
+  const originalExpression=buildCmsRowDOptionsProbeExpression();
+  const discover=async(...args)=>{
+    if(++discoveries!==1)throw Error('target_binding_invalid');
+    const targets=await getTargets(...args),choice=selectRowDTarget(targets,port);
+    if(!choice.ok)return targets; // The runner retains its original selection failure.
+    freezeTargetInventory(targets);
+    binding={fullUrl:choice.target.url,id:choice.target.id,socket:choice.target.webSocketDebuggerUrl};
+    return targets;
+  };
   const decorate=async(url,options)=>{
+    if(!binding||++connections!==1||url!==binding.socket)throw Error('target_binding_invalid');
     const session=await connect(url,options);
     return {close:()=>session.close(),async send(method,params={},sendOptions){
       if(method!=='Runtime.evaluate')return session.send(method,params,sendOptions);
       evaluations++;
       if(evaluations!==1||params.expression!==originalExpression||params.throwOnSideEffect!==true
         ||params.awaitPromise!==false||params.userGesture!==false||params.returnByValue!==true)throw Error('evaluation_contract_invalid');
+      const expression=buildLocationStructureExpression(binding.fullUrl);
       const reply=await session.send(method,{...params,expression},sendOptions);
       if(reply?.exceptionDetails||(reply&&Object.hasOwn(reply,'error'))||reply?.result?.subtype==='error')return reply;
       const envelope=reply?.result?.value;
@@ -260,8 +292,9 @@ export async function runLocationStructure({port=9242,timeoutMs=10000,getTargets
       return {...reply,result:{...reply.result,value:envelope.inspection}};
     }};
   };
-  const official=await runCmsRowDLive({port,timeoutMs,connect:decorate,
-    ...(getTargets?{getTargets}:{}),...(wait?{wait}:{})});
+  const official=await runCmsRowDLive({port,timeoutMs,connect:decorate,getTargets:discover,
+    ...(wait?{wait}:{})});
+  binding=undefined;
   const officialSafe=cleanCaptureAllowed(official);
   const captured=evaluations===1&&Boolean(structure)&&officialSafe;
   return {official,structure:captured?structure:undefined,captured,

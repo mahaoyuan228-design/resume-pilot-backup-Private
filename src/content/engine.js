@@ -8,7 +8,7 @@
   if(nativeMessages.hasListeners?.()===false)globalThis.__resumeNativeListenersResetObserved=true;
   if(globalThis.__resumeQuickFillInstalled){
     existingListenerAlive=!!ownedListener&&nativeMessages.hasListener?.(ownedListener)===true;
-    if(existingListenerAlive&&globalThis.__resumeQuickFillEngineRevision===7&&typeof globalThis.ResumeQuickFillGthInspect==='function')return;
+    if(existingListenerAlive&&globalThis.__resumeQuickFillEngineRevision===9&&typeof globalThis.ResumeQuickFillGthInspect==='function')return;
     if(existingListenerAlive){if(fillState.pending)throw Error('profile_write_context_busy');nativeMessages.removeListener(ownedListener);existingListenerAlive=false;}
     else if(!ownedListener&&nativeMessages.hasListeners?.()===true&&!globalThis.__resumeNativeListenersResetObserved)throw Error('extension_reload_required');
   }
@@ -860,9 +860,14 @@
     return null;
   }
 
-  function collect(profile, attachment = null) {
+  function collect(profile, attachment = null, trialScope = null) {
+    // A trial root is resolved before any classification/current-value read.
+    // All ordinary callers keep the existing document-wide collection path.
+    const query = selector => trialScope
+      ? [...(trialScope.wrapper.matches(selector) ? [trialScope.wrapper] : []), ...trialScope.wrapper.querySelectorAll(selector)]
+      : [...document.querySelectorAll(selector)];
     const radioGroups = new Set();
-    const controls = [...document.querySelectorAll("input,select,textarea")].filter((control) => {
+    const controls = query("input,select,textarea").filter((control) => {
       if (!visible(control)) return false;
       // An opened but unsupported Ant v3 select exposes its inner text input.
       // It is never a standalone answer field, even when this select itself
@@ -877,10 +882,10 @@
       }
       return true;
     });
-    const cmsControls = [...document.querySelectorAll(".ant-form-item .ant-select-selection--single")]
+    const cmsControls = query(".ant-form-item .ant-select-selection--single")
       .filter(cmsAntV3Control);
-    const regionControls=[...document.querySelectorAll('.cascader-plugins-wrap')].filter(cmsRegionControl);
-    const checkboxControls=[...document.querySelectorAll('.ant-checkbox-group')].filter(cmsCheckboxControl);
+    const regionControls=query('.cascader-plugins-wrap').filter(cmsRegionControl);
+    const checkboxControls=query('.ant-checkbox-group').filter(cmsCheckboxControl);
     const entries = [...controls, ...cmsControls,...regionControls,...checkboxControls].map((control, position) => {
       const radio = control instanceof HTMLInputElement && control.type === "radio";
       const group = radio ? radioGroup(control) : null;
@@ -1651,6 +1656,126 @@
     return control.value === String(answer);
   }
 
+
+  const CMS_ROW_D_TRIAL_SPECS=Object.freeze({
+    expectedWorkNature:Object.freeze({wrapper:'13_43_0',kind:'cms_ant_v3_select',question:'期望工作性质'}),
+    researchInterests:Object.freeze({wrapper:'13_102501_0',kind:'cms_checkbox_group',
+      question:'如应聘研究发展中心行业研究类岗位请勾选（建议仅勾选3~5项）'})
+  });
+  // Public static option labels from the R7 provenance fixture; no defaults.
+  const CMS_ROW_D_RESEARCH_OPTIONS=['非研究类岗位，不涉及','宏观','策略','债券','银行','非银行金融','房地产',
+    '量化','基金评价','金属及材料（有色金属）','化工','交通运输','生物医药','汽车','机械','军工',
+    '电力设备及新能源','建材','食品饮料','轻工纺服','纺服化妆品','农林牧渔','家电',
+    '商业（零售+社会服务）','电子','传媒','通信','计算机','中小盘','环保及公用事业','煤炭开采','智库研究'];
+  function cmsRowDTrialScope(spec) {
+    const fail=()=>{throw Error('trial_scope_changed');};
+    if(location.href!==CMS_PHOTO_PAGE||(document.designMode||'off').toLowerCase()!=='off')fail();
+    const sections=[...document.querySelectorAll('[id="13"]')],wrappers=[...document.querySelectorAll(`[id="${spec.wrapper}"]`)];
+    if(sections.length!==1||wrappers.length!==1)fail();
+    const section=sections[0],wrapper=wrappers[0];
+    const editable=node=>{for(let current=node;current;current=current.parentElement){
+      const value=current.getAttribute('contenteditable');if(value!==null&&value.toLowerCase()!=='false')return true;
+    }return false;};
+    // Static labels are read only after the complete editable ancestry boundary.
+    if(editable(section)||[...section.querySelectorAll('[contenteditable]')].some(editable))fail();
+    // The reused CMS parser checks shell headings and duplicate question labels
+    // globally. These may supply only static metadata, never editable text.
+    const staticLabels=[...document.querySelectorAll('.form-cell > .tit-wrap .tit,.form-cell .ant-form-item-label > label')];
+    if(staticLabels.some(node=>editable(node)||[...node.querySelectorAll('[contenteditable]')].some(editable)))fail();
+    const items=[...new Set([wrapper.closest('.ant-form-item'),...wrapper.querySelectorAll('.ant-form-item')].filter(Boolean))];
+    if(items.length!==1)fail();
+    const item=items[0],form=item.closest('form'),row=item.closest('.form-cell-inner');
+    const rows=[...section.querySelectorAll(':scope > .form-cell-right > .form-cell-inner')];
+    const labels=[...item.querySelectorAll('.ant-form-item-label > label')].filter(label=>label.closest('.ant-form-item')===item);
+    if(!form||wrapper.closest('.form-cell')!==section||item.closest('.form-cell')!==section
+      ||rows.length!==1||rows[0]!==row||labels.length!==1||M.normalize(labels[0].textContent)!==M.normalize(spec.question)
+      ||M.normalize(section.querySelector(':scope > .tit-wrap .tit')?.textContent)!==M.normalize('求职意向必填'))fail();
+    const selector=spec.kind==='cms_checkbox_group'?'.ant-checkbox-group':'.ant-select-selection--single';
+    const controls=[...(wrapper.matches(selector)?[wrapper]:[]),...wrapper.querySelectorAll(selector)];
+    if(controls.length!==1)fail();
+    const control=controls[0];
+    for(let node=control;node&&node!==section;node=node.parentElement){
+      const id=node.getAttribute('id')||'';if(/^\d+_\d+_\d+$/u.test(id)&&node!==wrapper)fail();
+    }
+    if(control.closest('.ant-form-item')!==item||!visible(control)||wrapper.querySelector('.ant-select-open,.cascader-plugins-wrap,.ant-calendar-picker,.ant-picker,button,textarea,select'))fail();
+    const inputs=[...wrapper.querySelectorAll('input')];
+    if(inputs.length!==(spec.kind==='cms_checkbox_group'?32:1)
+      ||inputs.some(input=>input.disabled||input.closest('.ant-form-item')!==item)
+      ||control.closest('[inert],[aria-disabled="true"],fieldset[disabled]'))fail();
+    if(spec.kind==='cms_checkbox_group') {
+      const snapshot=globalThis.ResumeCmsCheckboxes?.inspectControl(control);
+      if(!snapshot||snapshot.options.some((option,index)=>exactOptionText(option.text)!==exactOptionText(CMS_ROW_D_RESEARCH_OPTIONS[index])))fail();
+    }
+    return {section,wrapper,item,form,row,label:labels[0],control};
+  }
+  async function cmsRowDPreexistingTrial(message) {
+    const reject=reason=>{throw Error(reason);};
+    const spec=CMS_ROW_D_TRIAL_SPECS[message.target],startUrl=location.href;
+    if(!spec)reject('trial_request_invalid');
+    if(location.href!==CMS_PHOTO_PAGE)reject('trial_wrong_page');
+    if(globalThis.ResumeProfileWriteContext)reject('profile_write_context_busy');
+    let interrupted=false,observer;
+    const eventTypes=['click','input','change','focus','blur','focusin','focusout','submit'];
+    const onEvent=()=>{interrupted=true;};
+    const context={profileBinding:message.profileBinding,writeStarted:false,async check(write=true){
+      if(write)reject('trial_write_forbidden');
+      if(globalThis.ResumeProfileWriteContext!==context)reject('profile_write_context_changed');
+      if(interrupted||location.href!==startUrl)reject('trial_interrupted');
+      requireVisibleFillPage();
+      let verdict;try{verdict=await chrome.runtime.sendMessage({type:'RESUME_PROFILE_BINDING_CHECK',profileBinding:message.profileBinding});}catch{}
+      if(verdict?.allowed!==true)reject('profile_binding_changed');
+      if(interrupted||location.href!==startUrl)reject('trial_interrupted');
+      requireVisibleFillPage();
+    }};
+    const projection=async()=>{
+      let reply;try{reply=await chrome.runtime.sendMessage({type:'RESUME_CMS_ROW_D_TRIAL_FACT',target:message.target,profileBinding:message.profileBinding});}catch{}
+      if(reply?.allowed!==true)reject(/^profile_[a-z_]+$/u.test(reply?.reason||'')?reply.reason:'profile_trial_unavailable');
+      const profile=reply.projection,path=`customAnswers.${spec.question}`;
+      if(!profile||Object.keys(profile).sort().join('|')!=='confirmedFields|customAnswers|customFacts|schemaVersion'
+        ||profile.schemaVersion!==1||!Array.isArray(profile.customFacts)||profile.customFacts.length!==1
+        ||profile.customFacts[0]?.question!==spec.question||Object.keys(profile.customAnswers||{}).join('|')!==spec.question
+        ||JSON.stringify(profile.confirmedFields)!==JSON.stringify([path]))reject('profile_trial_fact_invalid');
+      return profile;
+    };
+    const entryAt=(profile,scope)=>{
+      const entries=collect(profile,null,scope),entry=entries[0];
+      if(entries.length!==1||entry.control!==scope.control||entry.kind!==spec.kind
+        ||entry.path!==`customAnswers.${spec.question}`||entry.reason!=='ready')reject('trial_target_not_ready');
+      if(spec.kind==='cms_ant_v3_select'&&!['全职','实习'].includes(String(entry.answer).trim()))reject('trial_target_not_ready');
+      if(!meaningfulCurrent(entry.control))reject('trial_current_empty');
+      // This is the product's actual comparison, before every mutation branch.
+      if(!answerMatches(entry,null))reject('trial_current_not_equal');
+      return entry;
+    };
+    globalThis.ResumeProfileWriteContext=context;
+    for(const type of eventTypes)document.addEventListener(type,onEvent,true);
+    try {
+      await context.check(false);
+      const profile=await projection();
+      await context.check(false);
+      if(interrupted||location.href!==startUrl)reject('trial_interrupted');
+      requireVisibleFillPage();
+      const scope=cmsRowDTrialScope(spec);
+      observer=new MutationObserver(()=>{interrupted=true;});
+      observer.observe(scope.section,{subtree:true,childList:true,attributes:true,characterData:true});
+      const entry=entryAt(profile,scope),signature=entrySignature(entry),fact=JSON.stringify(profile);
+      await context.check(false);
+      const fresh=await projection();
+      if(JSON.stringify(fresh)!==fact)reject('profile_binding_changed');
+      await context.check(false);
+      const liveScope=cmsRowDTrialScope(spec);
+      if(Object.keys(scope).some(key=>scope[key]!==liveScope[key]))reject('trial_scope_changed');
+      const live=entryAt(fresh,liveScope);
+      if(entrySignature(live)!==signature||interrupted)reject('trial_interrupted');
+      return {cmsRowDTrial:true,preexistingOnly:true,neverSave:true,target:message.target,status:'verified',reason:'preexisting_same_value',
+        writeStarted:false,softwareClickedSave:false,softwareClickedSubmit:false,liveSupportClaimed:false,
+        livePassClaimed:false,valuesExposed:false,adapterWriteVerified:false};
+    } finally {
+      observer?.disconnect();for(const type of eventTypes)document.removeEventListener(type,onEvent,true);
+      if(globalThis.ResumeProfileWriteContext===context)delete globalThis.ResumeProfileWriteContext;
+    }
+  }
+
   async function fill(profile,attachment,photoUploads=null,profileBinding=null){
     if(globalThis.ResumeProfileWriteContext)throw Error('profile_write_context_busy');
     const context={profileBinding,writeStarted:false,async check(write=true){
@@ -2201,6 +2326,18 @@
   }
 
   if (!existingListenerAlive) { const engineListener=(message, _sender, sendResponse) => {
+    if(message?.type==='CMS_ROW_D_PREEXISTING_TRIAL') {
+      const refuse=error=>sendResponse({ok:false,error,fillNotStarted:true,writeStarted:false});
+      if(_sender?.id!==chrome.runtime.id){refuse('profile_wrong_sender');return false;}
+      if(Object.keys(message).sort().join('|')!=='profileBinding|target|type'
+        ||!Object.hasOwn(CMS_ROW_D_TRIAL_SPECS,message.target)){refuse('trial_request_invalid');return false;}
+      if(fillState.pending){refuse('fill_in_progress');return false;}
+      fillState.pending=true;
+      cmsRowDPreexistingTrial(message).then(data=>({ok:true,data}),error=>({ok:false,
+        error:/^(?:profile|trial|fill)_[a-z_]+$/u.test(error?.message||'')?error.message:'trial_failed',
+        fillNotStarted:true,writeStarted:false})).then(reply=>{fillState.pending=false;sendResponse(reply);});
+      return true;
+    }
     if(["RESUME_FILL","GTH_SALARY_TRIAL","GTH_SALARY_STATUS"].includes(message?.type)&&_sender?.id!==chrome.runtime.id){sendResponse({ok:false,error:"profile_wrong_sender",fillNotStarted:true,writeStarted:false});return false;}
     if (!message || !["RESUME_INSPECT", "RESUME_FILL", "GTH_SALARY_TRIAL", "GTH_SALARY_STATUS"].includes(message.type)) return;
     if(message.type==='GTH_SALARY_STATUS') {
@@ -2259,7 +2396,7 @@
         sendResponse(reply);
       });
     return true;
-  };chrome.runtime.onMessage.addListener(engineListener);globalThis.__resumeQuickFillEngineListener=engineListener;globalThis.__resumeQuickFillEngineRevision=7;}
+  };chrome.runtime.onMessage.addListener(engineListener);globalThis.__resumeQuickFillEngineListener=engineListener;globalThis.__resumeQuickFillEngineRevision=9;}
   globalThis.ResumeQuickFillGthInspect = (profile) => {
     if (`${location.origin}${location.pathname}` !== "https://hr.gtht.com/resume/edit/")
       throw new Error("gth_inspect_wrong_page");

@@ -23,7 +23,7 @@ async function harness(t,{target='expectedWorkNature',current,raw=profile(target
   const control=research?`<div class="ant-checkbox-group">${RESEARCH_CHOICES.map(text=>`<label class="ant-checkbox-wrapper"><span class="ant-checkbox"><input type="checkbox"${selected.includes(text)?' checked':''}></span><span>${text}</span></label>`).join('')}</div>`:
     `<div class="ant-select"><div class="ant-select-selection ant-select-selection--single" role="combobox"><div class="ant-select-selection-selected-value">${selected}</div><input type="text" style="display:none"></div></div>`;
   const wrapper=research?'13_102501_0':'13_43_0';
-  const dom=new JSDOM(`<!doctype html><form id="fixture-form"><section class="form-cell" id="11"><div class="tit-wrap"><div class="tit">个人基本信息必填</div></div></section><section class="form-cell" id="13"><div class="tit-wrap"><div class="tit">${SECTION}</div></div><div class="form-cell-right"><div class="form-cell-inner"><div id="${wrapper}"><div class="ant-form-item"><div class="ant-form-item-label"><label>${research?RESEARCH:QUESTION}*</label></div><div class="ant-form-item-control">${html??control}</div></div></div></div></div></section><section class="form-cell" id="14"><div class="tit-wrap"><div class="tit">教育经历必填</div></div><button type="button" data-add-record="education">添加</button></section><input id="outside" value="offline outside sentinel"><input id="outside-check" type="checkbox"><input id="outside-file" type="file"><button type="button" id="save">保存</button></form>`,{url,runScripts:'dangerously',pretendToBeVisual:true});
+  const dom=new JSDOM(`<!doctype html><form id="fixture-form"><section class="form-cell" id="11"><div class="tit-wrap"><div class="tit">个人基本信息必填</div></div></section><section class="form-cell" id="13"><div class="tit-wrap"><div class="tit">${SECTION}</div></div><div class="form-cell-right"><div class="form-cell-inner"><div id="${wrapper}"><div class="ant-form-item"><div class="ant-form-item-label"><label>${research?RESEARCH:QUESTION}*</label></div><div class="ant-form-item-control">${html??control}</div></div></div></div></div></section><section class="form-cell" id="14"><div class="tit-wrap"><div class="tit">教育经历必填</div></div><button type="button" data-add-record="education">添加</button></section><div class="ant-form-item"><div class="ant-form-item-label"><label>离线其它字段</label></div><input id="outside" value="offline outside sentinel"><input id="outside-check" type="checkbox"><input id="outside-file" type="file"></div><button type="button" id="save">保存</button></form>`,{url,runScripts:'dangerously',pretendToBeVisual:true});
   t.after(()=>dom.window.close());
   const {window}=dom,{document}=window;
   window.Element.prototype.getClientRects=function(){return this.isConnected?[{}]:[];};
@@ -234,4 +234,19 @@ test('user input during the initial binding await stops before any target read',
   h.document.querySelectorAll=()=>{throw Error('target read after initial interruption');};
   assert.equal((await h.run()).error,'trial_interrupted');assert.equal(h.counts.classify,0);
   assert.equal(h.counts.setter,0);assert.equal(h.window.ResumeProfileWriteContext,undefined);
+});
+
+for(const shape of ['aria-editable','aria-current-display','outside-ant-editable','legend-editable','outside-ant-current-display'])test(`global parser metadata cannot read a non-target live label: ${shape}`,async t=>{
+  const h=await harness(t),container=h.document.createElement('div');
+  if(shape.startsWith('aria'))container.innerHTML='<span id="outside-live"></span><input aria-labelledby="outside-live">';
+  else if(shape.startsWith('outside-ant'))container.innerHTML='<div class="ant-form-item"><div class="ant-form-item-label"><label><span id="outside-live"></span></label></div><input></div>';
+  else container.innerHTML='<fieldset><legend id="outside-live"></legend><input type="radio" name="outside-radio"></fieldset>';
+  h.document.body.append(container);
+  const live=h.document.getElementById('outside-live');
+  if(shape.includes('editable'))live.setAttribute('contenteditable','plaintext-only');
+  else live.className='ant-select-selection-selected-value';
+  let reads=0;Object.defineProperty(live,'textContent',{get(){reads++;throw Error('non-target live text read');}});
+  // Parent textContent also traverses the same live descendant in real DOM.
+  if(shape.startsWith('outside-ant'))Object.defineProperty(live.parentElement,'textContent',{get(){reads++;throw Error('non-target Ant label read');}});
+  assert.equal((await h.run()).error,'trial_scope_changed');assert.equal(reads,0);assert.equal(h.counts.classify,0);h.safety();
 });

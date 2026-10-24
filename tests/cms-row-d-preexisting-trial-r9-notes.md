@@ -55,7 +55,15 @@ Only outer structural duplicate IDs, shell headings and static question labels
 may be examined for the existing parser's ownership checks. Editable ancestry
 (including plaintext-only/empty and outer true past an inner false), editable
 descendants and designMode reject before those text reads. Other current values
-are never collected. Scoped input/owner/kind/count checks reject peers, wrong
+are never collected. The real parser's global `repeatedCustomQuestion` can enter
+generic aria/near-label/radio legend lookup for non-Ant controls; a trial-only
+structural gate refuses every visible control outside an Ant form item before
+that branch runs. All global Ant question labels (including outside form-cell)
+must be noneditable and contain no control/current-select-display descendants.
+Unknown external generic controls are deliberately refused. This closes the
+fixed-f358 review finding without changing the default parser; getter traps on
+external editable labels, aria references, legend and current display nodes
+verify zero text reads before rejection. Scoped input/owner/kind/count checks reject peers, wrong
 controls, disabled inputs and changed static research dictionaries. The public
 32 labels use the R7 provenance; a desired fact is its complete explicit intended
 nonempty subset, not a requirement to select all32.
@@ -83,7 +91,7 @@ candidate cannot bookD. Booked remains53, D unbooked, live support/PASS unclaime
 
 ## Offline verification and consumer repairs
 
-100 new tests pass against the actual engine/parser and actual lifecycle bridge
+105 new tests pass against the actual engine/parser and actual lifecycle bridge
 with jsdom and in-memory storage. They cover same-value select/research,
 empty/different/subset/extra/unknown facts, scope/kind/dictionary/editability,
 outside-value getter traps, fixture/binding mixing, missing/legacy/changed state,

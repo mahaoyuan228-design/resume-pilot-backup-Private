@@ -1680,8 +1680,15 @@
     if(editable(section)||[...section.querySelectorAll('[contenteditable]')].some(editable))fail();
     // The reused CMS parser checks shell headings and duplicate question labels
     // globally. These may supply only static metadata, never editable text.
-    const staticLabels=[...document.querySelectorAll('.form-cell > .tit-wrap .tit,.form-cell .ant-form-item-label > label')];
-    if(staticLabels.some(node=>editable(node)||[...node.querySelectorAll('[contenteditable]')].some(editable)))fail();
+    const staticLabels=[...document.querySelectorAll('.form-cell > .tit-wrap .tit,.ant-form-item-label > label')];
+    const liveMetadata='input,select,textarea,button,[role="combobox"],.ant-select-selection-selected-value,.ant-select-selection-item';
+    if(staticLabels.some(node=>editable(node)||[...node.querySelectorAll('[contenteditable]')].some(editable)
+      ||node.matches(liveMetadata)||node.querySelector(liveMetadata)))fail();
+    // confirmedCustomAnswer -> repeatedCustomQuestion may otherwise follow
+    // arbitrary global aria-labelledby/near-label/fieldset legend references.
+    // Preserve that real parser, but refuse its generic outside-control branch
+    // structurally before it can read another field's current display text.
+    if([...document.querySelectorAll('input,select,textarea')].some(node=>visible(node)&&!node.closest('.ant-form-item')))fail();
     const items=[...new Set([wrapper.closest('.ant-form-item'),...wrapper.querySelectorAll('.ant-form-item')].filter(Boolean))];
     if(items.length!==1)fail();
     const item=items[0],form=item.closest('form'),row=item.closest('.form-cell-inner');

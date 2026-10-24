@@ -162,6 +162,28 @@ function withInspection(options, check, requests = {}) {
   try { check(auditedInspect(dom, requests)); } finally { dom.window.close(); }
 }
 
+for (const style of ['display:none', 'DISPLAY : none ! important', 'display:/* hidden */none',
+  'visibility:hidden', 'visibility:collapse!important', 'content-visibility:hidden']) {
+  test(`SYNTHETIC inline ancestor hiding is rejected from attributes: ${style}`, () => {
+    fieldFailure(SELECT, doc => get(doc, SELECT).firstElementChild.setAttribute('style', style),
+      'wrapper_scope_or_visibility_mismatch');
+  });
+}
+
+test('SYNTHETIC stylesheet-only hiding remains explicitly unverified', () => {
+  withInspection({ mutate: doc => {
+    const style = doc.createElement('style');
+    style.textContent = '[id="13_195_0"] { display:none }';
+    doc.head.append(style);
+  } }, result => {
+    assert.equal(result.visibilityBasis, 'attributes_only');
+    assert.equal(result.fields.find(row => row.wrapperId === SELECT).reason, 'read_only_options_preflight');
+    assert.equal(result.ok, false);
+    assert.equal(result.livePassClaimed, false);
+    assert.equal(result.mutationAllowed, false);
+  });
+});
+
 function fieldFailure(id, mutate, reason) {
   withInspection({ mutate }, result => {
     const row = result.fields.find(candidate => candidate.wrapperId === id);

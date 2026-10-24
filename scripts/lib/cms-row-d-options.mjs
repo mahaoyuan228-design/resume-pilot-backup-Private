@@ -13,9 +13,11 @@ export const ROW_D_PAGE = 'https://wecruit.hotjob.cn/SU629dbc0c0dcad452299bc0f7/
 const SAFETY = Object.freeze({
   neverSave: true,
   liveSupportClaimed: false,
+  livePassClaimed: false,
   writeStarted: false,
   mutationAllowed: false,
-  valuesExposed: false
+  valuesExposed: false,
+  probeOnly: true
 });
 
 // dormant-options.json records optionCount=30 but serializes only the first
@@ -125,13 +127,22 @@ export const ROW_D_FIELDS = Object.freeze([
 ].map(field => Object.freeze({ ...field, options: Object.freeze(field.options) })));
 
 const fieldFor = wrapperId => ROW_D_FIELDS.find(field => field.wrapperId === wrapperId);
-const identity = field => field ? {
+// V8 debug-evaluate rejects object spread/assign's CopyDataProperties path,
+// even when both objects were created by this evaluation. Copy own metadata
+// explicitly into a fresh evaluation-local result instead.
+const mergeProbeData = (...sources) => {
+  const result = {};
+  for (const source of sources) {
+    for (const key of Object.keys(source)) result[key] = source[key];
+  }
+  return result;
+};
+const identity = field => field ? mergeProbeData({
   key: field.key, wrapperId: field.wrapperId, sectionId: field.sectionId,
   controlKind: field.controlKind, evidenceSource: field.evidenceSource,
   optionsComplete: field.optionsComplete, harvestedOptionCount: field.harvestedOptionCount,
-  ...(field.reusedFrom ? { reusedFrom: field.reusedFrom, independentOptionsEvidence: false,
-    dictionaryOptionCount: field.dictionaryOptionCount } : {})
-} : {};
+}, field.reusedFrom ? { reusedFrom: field.reusedFrom, independentOptionsEvidence: false,
+  dictionaryOptionCount: field.dictionaryOptionCount } : {}) : {};
 
 /**
  * Match only literal evidenced labels after trimming the requested strings.
@@ -142,8 +153,8 @@ const identity = field => field ? {
  */
 export function resolveCmsRowDOption(wrapperId, requested) {
   const field = fieldFor(wrapperId);
-  const result = (ok, reason, extra = {}) => ({ ...SAFETY, ...identity(field),
-    ok, status: ok ? 'matched' : 'skipped', reason, ...extra });
+  const result = (ok, reason, extra = {}) => mergeProbeData(SAFETY, identity(field),
+    { ok, status: ok ? 'matched' : 'skipped', reason }, extra);
   if (!field) return result(false, 'unknown_field');
   if (field.controlKind === 'ant-calendar-picker') return result(false, 'calendar_live_evidence_missing');
   const multiple = field.controlKind === 'checkbox';
@@ -190,15 +201,17 @@ const listTokens = text => String(text ?? '').trim().split(/\s+/u).filter(Boolea
  * section/item boundaries are still required. No DOM node or option text is
  * included in a result.
  *
- * The wrapper/item, label, input association and visibility checks below are
- * conservative runtime requirements, not claims that the harvest captured
- * complete markup or input value codes. The calendar remains metadata only.
+ * Visibility here only rejects explicit attribute/inline-style hiding. It
+ * cannot verify stylesheet visibility, layout, clipping or on-screen geometry.
+ * The result labels this limit; structural observation grants no write/support
+ * permission. The calendar remains metadata only.
  */
 export function inspectCmsRowDOptions(doc, requests = {}) {
   const fields = [];
-  const finish = (ok, reason) => ({ ...SAFETY, ok, reason, fields });
-  const row = (field, ok, reason, extra = {}) => ({ ...SAFETY, ...identity(field),
-    ok, status: ok ? 'observed' : 'skipped', reason, ...extra });
+  const finish = (ok, reason) => mergeProbeData(SAFETY,
+    { visibilityBasis: 'attributes_only', ok, reason, fields });
+  const row = (field, ok, reason, extra = {}) => mergeProbeData(SAFETY, identity(field),
+    { ok, status: ok ? 'observed' : 'skipped', reason }, extra);
   const stop = reason => {
     fields.push(...ROW_D_FIELDS.map(field => row(field, false, reason)));
     return finish(false, reason);
@@ -206,9 +219,10 @@ export function inspectCmsRowDOptions(doc, requests = {}) {
   try {
     const view = doc?.defaultView;
     if (!doc || !view) return stop('no_document');
-    let url;
-    try { url = new URL(view.location.href); } catch { return stop('wrong_page'); }
-    if (`${url.origin}${url.pathname}` !== ROW_D_PAGE || url.username || url.password) return stop('wrong_page');
+    // Location.href is already browser-normalized. Compare the complete base
+    // URL (including any authority credentials) without invoking a URL
+    // constructor, which Blink rejects during throwOnSideEffect evaluation.
+    if (view.location.href.split(/[?#]/u, 1)[0] !== ROW_D_PAGE) return stop('wrong_page');
     if (doc.visibilityState !== 'visible') return stop('page_hidden');
     if (doc.readyState !== 'complete') return stop('page_not_ready');
     if (!requests || (Object.getPrototypeOf(requests) !== Object.prototype && Object.getPrototypeOf(requests) !== null)) {
@@ -219,17 +233,34 @@ export function inspectCmsRowDOptions(doc, requests = {}) {
     if (requestKeys.some(key => !Object.hasOwn(Object.getOwnPropertyDescriptor(requests, key), 'value'))) {
       return stop('requests_type_invalid');
     }
-    const visible = node => {
-      if (!node?.isConnected || node.closest('[hidden],[aria-hidden="true"],[inert]')) return false;
+    // Blink does not mark Element.matches/closest as Affects=Nothing. Use
+    // querySelectorAll (which is marked) and tree reads instead. Cache only
+    // evaluation-local snapshots; the inspector never changes the DOM.
+    const selectorCache = new Map();
+    const matches = (node, selector) => {
+      if (!node) return false;
+      if (!selectorCache.has(selector)) selectorCache.set(selector, [...doc.querySelectorAll(selector)]);
+      return selectorCache.get(selector).includes(node);
+    };
+    const closest = (node, selector) => {
       for (let parent = node; parent; parent = parent.parentElement) {
-        const style = view.getComputedStyle(parent);
-        if (style.display === 'none' || style.visibility === 'hidden' || style.visibility === 'collapse') return false;
+        if (matches(parent, selector)) return parent;
       }
-      return node.getClientRects().length > 0;
+      return null;
+    };
+    const visible = node => {
+      if (!node?.isConnected || closest(node, '[hidden],[aria-hidden="true"],[inert]')) return false;
+      for (let parent = node; parent; parent = parent.parentElement) {
+        // No computed style or geometry calls: those may force layout and
+        // getClientRects is rejected by Blink's debug-evaluate guard.
+        const style = (parent.getAttribute('style') || '').replace(/\/\*[\s\S]*?\*\//gu, '');
+        if (style.split(';').some(declaration => /^\s*(?:display\s*:\s*none|visibility\s*:\s*(?:hidden|collapse)|content-visibility\s*:\s*hidden)\s*(?:!\s*important\s*)?$/iu.test(declaration))) return false;
+      }
+      return true;
     };
     const available = node => visible(node) && !node.disabled
-      && !node.matches('[disabled],[aria-disabled="true"],.ant-select-disabled,.ant-radio-disabled,.ant-checkbox-disabled')
-      && !node.closest('fieldset[disabled],[inert],[aria-disabled="true"],.ant-select-disabled,.ant-radio-disabled,.ant-checkbox-disabled');
+      && !matches(node, '[disabled],[aria-disabled="true"],.ant-select-disabled,.ant-radio-disabled,.ant-checkbox-disabled')
+      && !closest(node, 'fieldset[disabled],[inert],[aria-disabled="true"],.ant-select-disabled,.ant-radio-disabled,.ant-checkbox-disabled');
     const allIds = [...doc.querySelectorAll('[id]')];
     const exactIds = id => allIds.filter(node => node.id === id);
     const namedWrapper = /^\d+_\d+_\d+$/u;
@@ -249,13 +280,13 @@ export function inspectCmsRowDOptions(doc, requests = {}) {
       const hasRequest = Object.hasOwn(requests, field.wrapperId);
       const resolution = hasRequest ? resolveCmsRowDOption(field.wrapperId, requests[field.wrapperId]) : undefined;
       const push = (ok, reason, extra = {}) => fields.push(row(field, ok, reason,
-        { ...(resolution ? { resolution } : {}), ...extra }));
+        mergeProbeData(resolution ? { resolution } : {}, extra)));
       if (field.controlKind === 'ant-calendar-picker') {
         push(false, 'calendar_live_evidence_missing');
         continue;
       }
       const sections = exactIds(field.sectionId);
-      if (sections.length !== 1 || !sections[0].matches('.form-cell') || !visible(sections[0])) {
+      if (sections.length !== 1 || !matches(sections[0], '.form-cell') || !visible(sections[0])) {
         push(false, 'section_not_unique_or_visible'); continue;
       }
       const section = sections[0];
@@ -266,23 +297,23 @@ export function inspectCmsRowDOptions(doc, requests = {}) {
       const item = candidates.length === 1 ? candidates[0] : null;
       // Captured scripts resolve a descendant item from the outer wrapper.
       // There is deliberately no ancestor, wrapper-as-item or label fallback.
-      if (!item || wrapper.matches('.ant-form-item') || wrapper.closest('.form-cell') !== section
-        || item.closest('.form-cell') !== section || wrapper.querySelector('.form-cell')
+      if (!item || matches(wrapper, '.ant-form-item') || closest(wrapper, '.form-cell') !== section
+        || closest(item, '.form-cell') !== section || wrapper.querySelector('.form-cell')
         || !ownedByWrapper(item, wrapper) || !visible(wrapper) || !visible(item)) {
         push(false, 'wrapper_scope_or_visibility_mismatch'); continue;
       }
-      const owns = node => node.closest('.ant-form-item') === item
-        && node.closest('.form-cell') === section && ownedByWrapper(node, wrapper);
+      const owns = node => closest(node, '.ant-form-item') === item
+        && closest(node, '.form-cell') === section && ownedByWrapper(node, wrapper);
       const owned = selector => [...item.querySelectorAll(selector)].filter(owns);
       const labelsFor = candidate => [...candidate.querySelectorAll('.ant-form-item-label > label')]
-        .filter(label => label.closest('.ant-form-item') === candidate && label.closest('.form-cell') === section);
+        .filter(label => closest(label, '.ant-form-item') === candidate && closest(label, '.form-cell') === section);
       const labels = labelsFor(item);
       if (labels.length !== 1 || !owns(labels[0]) || !visible(labels[0])
         || normalizeText(labels[0].textContent) !== field.label) {
         push(false, 'label_mismatch'); continue;
       }
       const peers = [...section.querySelectorAll('.ant-form-item')]
-        .filter(candidate => candidate.closest('.form-cell') === section
+        .filter(candidate => closest(candidate, '.form-cell') === section
           && labelsFor(candidate).some(label => normalizeText(label.textContent) === field.label));
       if (peers.length !== 1 || peers[0] !== item) { push(false, 'question_not_unique'); continue; }
       const controls = [...item.querySelectorAll('.ant-select,.ant-calendar-picker,.ant-picker,.ant-radio-group,.ant-checkbox-group,input,button,textarea,select,[contenteditable="true"],.el-select,.el-date-editor,.ant-upload')];
@@ -290,7 +321,10 @@ export function inspectCmsRowDOptions(doc, requests = {}) {
       if (owned('.ant-calendar-picker,.ant-picker,button,textarea,select,[contenteditable="true"],.el-select,.el-date-editor,.ant-upload,input[type="file"]').length) {
         push(false, 'control_kind_mismatch'); continue;
       }
-      let optionLabels;
+      // A reassigned binding captured by later callbacks emits a context-slot
+      // store that V8 rejects even on early-return paths. Keep a const local
+      // array and append only to this evaluation-created collection instead.
+      const optionLabels = [];
       if (field.controlKind === 'ant-select') {
         const selects = owned('.ant-select');
         if (selects.length !== 1 || owned('.ant-radio-group,.ant-checkbox-group,input[type="radio"],input[type="checkbox"]').length
@@ -299,7 +333,7 @@ export function inspectCmsRowDOptions(doc, requests = {}) {
         }
         const select = selects[0];
         const combos = [...select.querySelectorAll('[role="combobox"]')].filter(owns);
-        if (combos.length !== 1 || !combos[0].matches('.ant-select-selection')) {
+        if (combos.length !== 1 || !matches(combos[0], '.ant-select-selection')) {
           push(false, 'control_not_unique'); continue;
         }
         const combo = combos[0];
@@ -314,32 +348,32 @@ export function inspectCmsRowDOptions(doc, requests = {}) {
         if (!targets.length) { push(false, 'current_options_unavailable'); continue; }
         if (targets.length !== 1) { push(false, 'dropdown_target_not_unique'); continue; }
         const list = targets[0];
-        const dropdown = list.closest('.ant-select-dropdown');
-        const listItem = list.closest('.ant-form-item');
-        const listSection = list.closest('.form-cell');
+        const dropdown = closest(list, '.ant-select-dropdown');
+        const listItem = closest(list, '.ant-form-item');
+        const listSection = closest(list, '.form-cell');
         const listWrapper = nearestNamedWrapper(list);
         const dropdownWrapper = nearestNamedWrapper(dropdown);
-        if (!list.isConnected || !dropdown || dropdown.parentElement?.closest('.ant-select-dropdown')
+        if (!list.isConnected || !dropdown || closest(dropdown.parentElement, '.ant-select-dropdown')
           || list.querySelector('.ant-select-dropdown') || (listItem && listItem !== item)
           || (listSection && listSection !== section)
           || (listWrapper && listWrapper !== wrapper) || (dropdownWrapper && dropdownWrapper !== wrapper)
-          || (dropdown.closest('.ant-form-item') && dropdown.closest('.ant-form-item') !== item)
-          || (dropdown.closest('.form-cell') && dropdown.closest('.form-cell') !== section)) {
+          || (closest(dropdown, '.ant-form-item') && closest(dropdown, '.ant-form-item') !== item)
+          || (closest(dropdown, '.form-cell') && closest(dropdown, '.form-cell') !== section)) {
           push(false, 'dropdown_scope_mismatch'); continue;
         }
         const optionNodes = [...list.querySelectorAll('.ant-select-dropdown-menu-item,.ant-select-item-option,li[role="option"],.ant-select-item,li')];
         if (!optionNodes.length) { push(false, 'current_options_unavailable'); continue; }
-        if (optionNodes.some(node => node.closest('.ant-select-dropdown') !== dropdown
-          || node.closest('.ant-form-item') !== listItem || node.closest('.form-cell') !== listSection
+        if (optionNodes.some(node => closest(node, '.ant-select-dropdown') !== dropdown
+          || closest(node, '.ant-form-item') !== listItem || closest(node, '.form-cell') !== listSection
           || nearestNamedWrapper(node) !== listWrapper
           || optionNodes.some(other => other !== node && node.contains(other)))) {
           push(false, 'option_ownership_mismatch'); continue;
         }
         // A dormant dropdown may be hidden. No visibility action is performed.
-        if (optionNodes.some(node => node.matches('[disabled],[aria-disabled="true"],.ant-select-dropdown-menu-item-disabled,.ant-select-item-option-disabled'))) {
+        if (optionNodes.some(node => matches(node, '[disabled],[aria-disabled="true"],.ant-select-dropdown-menu-item-disabled,.ant-select-item-option-disabled'))) {
           push(false, 'option_not_available'); continue;
         }
-        optionLabels = optionNodes.map(node => normalizeText(node.textContent));
+        optionLabels.push(...optionNodes.map(node => normalizeText(node.textContent)));
       } else {
         const radio = field.controlKind === 'radio-group';
         const kind = radio ? 'radio' : 'checkbox';
@@ -355,7 +389,7 @@ export function inspectCmsRowDOptions(doc, requests = {}) {
         if (groups.length && optionWrappers.some(node => !groups[0].contains(node))) {
           push(false, 'control_ownership_mismatch'); continue;
         }
-        if (optionWrappers.some(option => !option.matches('label')
+        if (optionWrappers.some(option => !matches(option, 'label')
           || option.querySelectorAll(`input[type="${kind}"]`).length !== 1
           || optionWrappers.some(other => other !== option && option.contains(other)))
           || inputs.some(input => !optionWrappers.some(option => option.contains(input)))) {
@@ -364,7 +398,7 @@ export function inspectCmsRowDOptions(doc, requests = {}) {
         if (![...groups, ...optionWrappers, ...inputs].every(available)) {
           push(false, 'control_not_available'); continue;
         }
-        optionLabels = optionWrappers.map(option => normalizeText(option.textContent));
+        optionLabels.push(...optionWrappers.map(option => normalizeText(option.textContent)));
       }
       if (optionLabels.some(label => !label) || new Set(optionLabels).size !== optionLabels.length) {
         push(false, 'option_list_ambiguous'); continue;
@@ -423,6 +457,7 @@ export function buildCmsRowDOptionsProbeExpression(requests = {}) {
     `const ROW_D_FIELDS = ${JSON.stringify(ROW_D_FIELDS)};`,
     `const SAFETY = ${JSON.stringify(SAFETY)};`,
     `const fieldFor = ${fieldFor.toString()};`,
+    `const mergeProbeData = ${mergeProbeData.toString()};`,
     `const identity = ${identity.toString()};`,
     `const normalizeText = ${normalizeText.toString()};`,
     `const listTokens = ${listTokens.toString()};`,

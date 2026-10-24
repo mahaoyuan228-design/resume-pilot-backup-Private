@@ -47,10 +47,13 @@ function assertSafety(output) {
   for (const result of [output, ...output.fields, ...output.fields.flatMap(row => row.resolution ? [row.resolution] : [])]) {
     assert.equal(result.neverSave, true);
     assert.equal(result.liveSupportClaimed, false);
+    assert.equal(result.livePassClaimed, false);
     assert.equal(result.writeStarted, false);
     assert.equal(result.mutationAllowed, false);
     assert.equal(result.valuesExposed, false);
+    assert.equal(result.probeOnly, true);
   }
+  assert.equal(output.visibilityBasis, 'attributes_only');
   const serialized = JSON.stringify(output);
   assert.equal(serialized.includes(PRIVATE), false);
   assert.equal(serialized.includes('synthetic-private'), false);
@@ -73,11 +76,13 @@ function auditedResults(requests = {}, url) {
       input.getAttribute = name => /^(?:value|checked|selected|aria-checked|aria-selected)$/i.test(name)
         ? forbidden('reads')() : getAttribute(name);
     }
+    const nativeMatches = window.Element.prototype.matches;
     const text = Object.getOwnPropertyDescriptor(window.Node.prototype, 'textContent');
     Object.defineProperty(window.Node.prototype, 'textContent', {
       configurable: true,
       get() {
-        if (this.matches?.('[data-private-selected]') || this.querySelector?.('[data-private-selected]')) return forbidden('reads')();
+        if ((this.nodeType === 1 && nativeMatches.call(this, '[data-private-selected]'))
+          || this.querySelector?.('[data-private-selected]')) return forbidden('reads')();
         return text.get.call(this);
       },
       set: forbidden('writes')
@@ -93,6 +98,14 @@ function auditedResults(requests = {}, url) {
     window.XMLHttpRequest = forbidden('network');
     window.WebSocket = forbidden('network');
     window.navigator.sendBeacon = forbidden('network');
+    // These apparently read-only APIs are deliberately unavailable. In Blink,
+    // URL construction, closest/matches and getClientRects are rejected by
+    // throwOnSideEffect; computed style/geometry also exceed our stated scope.
+    for (const name of ['matches', 'closest', 'getClientRects', 'getBoundingClientRect']) {
+      window.Element.prototype[name] = forbidden('reads');
+    }
+    window.getComputedStyle = forbidden('reads');
+    window.URL = forbidden('reads');
     const observer = new window.MutationObserver(() => {});
     observer.observe(document, { subtree: true, attributes: true, childList: true, characterData: true });
     const direct = inspectCmsRowDOptions(document, requests);
@@ -134,6 +147,15 @@ test('serialized probe enforces the same exact tenant restriction', () => {
   const result = auditedResults({}, ROW_D_PAGE.replace('SU629dbc0c0dcad452299bc0f7', 'SUdifferent'));
   assert.equal(result.ok, false);
   assert.equal(result.reason, 'wrong_page');
+});
+
+for (const [name, url] of [
+  ['credentials', ROW_D_PAGE.replace('https://', 'https://user:secret@')],
+  ['nondefault port', ROW_D_PAGE.replace('wecruit.hotjob.cn', 'wecruit.hotjob.cn:8443')],
+  ['path suffix', `${ROW_D_PAGE}/extra`],
+  ['HTTP', ROW_D_PAGE.replace('https:', 'http:')]
+]) test(`serialized attribute-only probe rejects ${name} without constructing a URL`, () => {
+  assert.equal(auditedResults({}, url).reason, 'wrong_page');
 });
 
 function rejectsSanitized(requests) {

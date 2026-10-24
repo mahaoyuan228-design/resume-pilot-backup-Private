@@ -23,8 +23,8 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const temporaryRoot = path.join(root, '_temp-scripts');
 const runner = path.join(root, 'scripts/live/cms-row-d-live.mjs');
 const PRIVATE = 'SYNTHETIC_ROW_D_PRIVATE_DO_NOT_SERIALIZE';
-const FLAGS = { neverSave: true, liveSupportClaimed: false,
-  writeStarted: false, mutationAllowed: false, valuesExposed: false };
+const FLAGS = { neverSave: true, liveSupportClaimed: false, livePassClaimed: false,
+  writeStarted: false, mutationAllowed: false, valuesExposed: false, probeOnly: true };
 const exactUrl = `${ROW_D_PAGE}?resumeId=${PRIVATE}&tid=${PRIVATE}#${PRIVATE}`;
 const target = (changes = {}) => ({ id: 'synthetic-tab', type: 'page', url: exactUrl,
   title: PRIVATE, webSocketDebuggerUrl: 'ws://127.0.0.1:9242/devtools/page/synthetic-tab', ...changes });
@@ -39,6 +39,7 @@ function assertSafety(evidence) {
   assert.equal(evidence.livePassClaimed, false);
   assert.equal(evidence.booked, 53);
   assert.equal(evidence.probeOnly, true);
+  assert.equal(evidence.visibilityBasis, 'attributes_only');
   assert.equal(evidence.restoration, 'not_needed_no_interaction');
   const json = JSON.stringify(evidence);
   assert.equal(json.includes(PRIVATE), false, 'no selected value, body, URL, or exception leaks');
@@ -414,6 +415,18 @@ test('contradictory Runtime summaries cannot report complete preflight over skip
     const evidence = await fake.run();
     assertSafety(evidence);
     assert.equal(evidence.ok, false);
+    assert.equal(evidence.reason, 'inspection_failed');
+    assert.equal(evidence.probeCompleted, false);
+    assert.deepEqual(evidence.fields, []);
+  }
+});
+
+test('Runtime results must retain the attribute-only visibility limit', async () => {
+  for (const visibilityBasis of [undefined, 'computed', PRIVATE]) {
+    const inspection = { ...noDocumentInspection(), visibilityBasis };
+    const fake = fakeCdp({ evaluate: () => inspection });
+    const evidence = await fake.run();
+    assertSafety(evidence);
     assert.equal(evidence.reason, 'inspection_failed');
     assert.equal(evidence.probeCompleted, false);
     assert.deepEqual(evidence.fields, []);

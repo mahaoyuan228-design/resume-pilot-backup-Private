@@ -1709,9 +1709,18 @@
     if(inputs.length!==(spec.kind==='cms_checkbox_group'?32:1)
       ||inputs.some(input=>input.disabled||input.closest('.ant-form-item')!==item)
       ||control.closest('[inert],[aria-disabled="true"],fieldset[disabled]'))fail();
+    // Native inputs must be closed over this exact widget before collect can
+    // dispatch by type (notably radioGroup's document/form-wide legend path).
     if(spec.kind==='cms_checkbox_group') {
+      if(inputs.some(input=>input.type!=='checkbox'||!control.contains(input)
+        ||input.closest('.ant-checkbox-group')!==control))fail();
       const snapshot=globalThis.ResumeCmsCheckboxes?.inspectControl(control);
       if(!snapshot||snapshot.options.some((option,index)=>exactOptionText(option.text)!==exactOptionText(CMS_ROW_D_RESEARCH_OPTIONS[index])))fail();
+    } else {
+      const select=control.closest('.ant-select'),input=inputs[0];
+      if(!select||!wrapper.contains(select)||wrapper.querySelectorAll('.ant-select').length!==1
+        ||input.type!=='text'||visible(input)||!control.contains(input)
+        ||input.closest('.ant-select-selection')!==control||input.closest('.ant-select')!==select)fail();
     }
     return {section,wrapper,item,form,row,label:labels[0],control};
   }

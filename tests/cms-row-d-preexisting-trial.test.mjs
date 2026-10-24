@@ -250,3 +250,31 @@ for(const shape of ['aria-editable','aria-current-display','outside-ant-editable
   if(shape.startsWith('outside-ant'))Object.defineProperty(live.parentElement,'textContent',{get(){reads++;throw Error('non-target Ant label read');}});
   assert.equal((await h.run()).error,'trial_scope_changed');assert.equal(reads,0);assert.equal(h.counts.classify,0);h.safety();
 });
+
+for(const type of ['radio','checkbox','file','hidden','number','date','password','search'])test(`single-select rejects native input type before collection: ${type}`,async t=>{
+  const h=await harness(t),input=h.document.querySelector('.ant-select input');input.type=type;input.style.display='block';
+  let reads=0;for(const key of ['value','checked','files'])Object.defineProperty(input,key,{get(){reads++;throw Error('invalid native input read');}});
+  assert.equal((await h.run()).error,'trial_scope_changed');assert.equal(reads,0);assert.equal(h.counts.classify,0);h.safety();
+});
+for(const shape of ['visible-text','outside-selection','nested-selection','second-host'])test(`single-select requires its closed hidden search owner: ${shape}`,async t=>{
+  const h=await harness(t),input=h.document.querySelector('.ant-select input'),selection=h.document.querySelector('.ant-select-selection--single');
+  if(shape==='visible-text')input.style.display='block';
+  else if(shape==='outside-selection')selection.after(input);
+  else {const nested=h.document.createElement('div');nested.className=shape==='second-host'?'ant-select':'ant-select-selection';selection.append(nested);nested.append(input);}
+  let reads=0;Object.defineProperty(input,'value',{get(){reads++;throw Error('invalid search input read');}});
+  assert.equal((await h.run()).error,'trial_scope_changed');assert.equal(reads,0);assert.equal(h.counts.classify,0);h.safety();
+});
+test('target named radio cannot reach an external fieldset legend or peer value',async t=>{
+  const h=await harness(t),section=h.document.getElementById('13'),fieldset=h.document.createElement('fieldset');
+  fieldset.innerHTML='<legend id="external-legend">offline</legend><div class="ant-form-item"><div class="ant-form-item-label"><label>offline peer</label></div><input type="radio" name="trial-external-peer"></div>';
+  section.before(fieldset);fieldset.append(section);
+  const input=h.document.querySelector('.ant-select input');input.type='radio';input.name='trial-external-peer';input.style.display='block';
+  let reads=0;Object.defineProperty(fieldset.querySelector('legend'),'textContent',{get(){reads++;throw Error('external legend read');}});
+  for(const peer of fieldset.querySelectorAll('input'))for(const key of ['value','checked'])Object.defineProperty(peer,key,{get(){reads++;throw Error('external radio value read');}});
+  assert.equal((await h.run()).error,'trial_scope_changed');assert.equal(reads,0);assert.equal(h.counts.classify,0);h.safety();
+});
+test('research native inputs cannot become radio controls before collection',async t=>{
+  const h=await harness(t,{target:'researchInterests'}),input=h.document.querySelector('.ant-checkbox input');input.type='radio';input.name='outside-group';
+  let reads=0;Object.defineProperty(input,'checked',{get(){reads++;throw Error('invalid research input read');}});
+  assert.equal((await h.run()).error,'trial_scope_changed');assert.equal(reads,0);assert.equal(h.counts.classify,0);h.safety();
+});

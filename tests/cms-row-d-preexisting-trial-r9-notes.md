@@ -64,7 +64,12 @@ Unknown external generic controls are deliberately refused. This closes the
 fixed-f358 review finding without changing the default parser; getter traps on
 external editable labels, aria references, legend and current display nodes
 verify zero text reads before rejection. Scoped input/owner/kind/count checks reject peers, wrong
-controls, disabled inputs and changed static research dictionaries. The public
+controls, disabled inputs and changed static research dictionaries. Before the
+real collector dispatches by native input type, the select requires its one
+hidden text search within its unique selection/host; research requires only
+owned checkboxes. Visible text, radio/checkbox/file/other types and displaced or
+nested search owners fail before any radio-group/legend/current-value read.
+Getter traps cover the target-radio/external-fieldset review finding. The public
 32 labels use the R7 provenance; a desired fact is its complete explicit intended
 nonempty subset, not a requirement to select all32.
 
@@ -91,7 +96,7 @@ candidate cannot bookD. Booked remains53, D unbooked, live support/PASS unclaime
 
 ## Offline verification and consumer repairs
 
-105 new tests pass against the actual engine/parser and actual lifecycle bridge
+119 new tests pass against the actual engine/parser and actual lifecycle bridge
 with jsdom and in-memory storage. They cover same-value select/research,
 empty/different/subset/extra/unknown facts, scope/kind/dictionary/editability,
 outside-value getter traps, fixture/binding mixing, missing/legacy/changed state,

@@ -177,6 +177,23 @@ const BOOL_KEYS=['comboOwned','selectionIsCombo','inputOwned','inputWithinCombo'
 function keys(value,names){return value&&typeof value==='object'&&!Array.isArray(value)
   &&Object.keys(value).sort().join('|')===names.sort().join('|');}
 const count=value=>Number.isInteger(value)&&value>=0&&value<=256;
+const REFUSALS=Object.freeze(['wrong_page','document_unavailable','structure_limit_or_exception']);
+const STOP_CAUSES=Object.freeze(['none','not_reached','official_stop','schema_invalid',...REFUSALS]);
+// Only an exact own-data refusal envelope may contribute an inner stop enum.
+// Never serialize the source object or derive a reason from an exception.
+export function classifyStructureReply(value){
+  try{
+    const captured=Object.getOwnPropertyDescriptor(value,'captured');
+    if(captured&&!Object.hasOwn(captured,'value'))return {stopCause:'schema_invalid'};
+    if(captured?.value===false){
+      const names=Reflect.ownKeys(value),reason=Object.getOwnPropertyDescriptor(value,'reason');
+      if(names.length===2&&names.includes('captured')&&names.includes('reason')
+        &&reason&&Object.hasOwn(reason,'value')&&REFUSALS.includes(reason.value))return {stopCause:reason.value};
+      return {stopCause:'schema_invalid'};
+    }
+    return {structure:validateStructure(value),stopCause:'none'};
+  }catch{return {stopCause:'schema_invalid'};}
+}
 export function validateStructure(value){
   if(!keys(value,['captured','reason','locations'])||value.captured!==true||value.reason!=='read_only_structure'
     ||!Array.isArray(value.locations)||value.locations.length!==2)throw Error('diagnostic_invalid');
@@ -225,7 +242,7 @@ export function cleanCaptureAllowed(official){
     &&official.traffic.commandFailed===false&&official.traffic.truncated===false;
 }
 export async function runLocationStructure({port=9242,timeoutMs=10000,getTargets,connect=connectCdp,wait}={}){
-  let structure,evaluations=0;
+  let structure,evaluations=0,stopCause='not_reached';
   const originalExpression=buildCmsRowDOptionsProbeExpression(),expression=buildLocationStructureExpression();
   const decorate=async(url,options)=>{
     const session=await connect(url,options);
@@ -238,14 +255,17 @@ export async function runLocationStructure({port=9242,timeoutMs=10000,getTargets
       if(reply?.exceptionDetails||(reply&&Object.hasOwn(reply,'error'))||reply?.result?.subtype==='error')return reply;
       const envelope=reply?.result?.value;
       if(!keys(envelope,['inspection','structure']))throw Error('evaluation_envelope_invalid');
-      try{structure=validateStructure(envelope.structure);}catch{structure=undefined;}
+      const classified=classifyStructureReply(envelope.structure);
+      structure=classified.structure;stopCause=classified.stopCause;
       return {...reply,result:{...reply.result,value:envelope.inspection}};
     }};
   };
   const official=await runCmsRowDLive({port,timeoutMs,connect:decorate,
     ...(getTargets?{getTargets}:{}),...(wait?{wait}:{})});
-  const captured=evaluations===1&&Boolean(structure)&&cleanCaptureAllowed(official);
+  const officialSafe=cleanCaptureAllowed(official);
+  const captured=evaluations===1&&Boolean(structure)&&officialSafe;
   return {official,structure:captured?structure:undefined,captured,
+    stopCause:officialSafe?stopCause:'official_stop',
     reason:captured?'structure_captured':'capture_stopped'};
 }
 export function verifySources(root,tip){
@@ -263,7 +283,7 @@ export function readStructureConfig(args,env=process.env,root=ROOT){
   return {...config,tip};
 }
 export async function main(args=process.argv.slice(2),env=process.env,{root=ROOT,run=runLocationStructure,stdout=process.stdout}={}){
-  let config;
+  let config,stopStage='configuration',stopCause='not_reached';
   try{
     config=readStructureConfig(args,env,root);
     fs.mkdirSync(config.outDir); // Atomic reservation. Never reuse or overwrite.
@@ -271,11 +291,19 @@ export async function main(args=process.argv.slice(2),env=process.env,{root=ROOT
       if(fs.realpathSync(config.outDir)!==ownedDirectory)throw Error('output_changed');
       return rowDTemporaryPath(path.join(config.outDir,file),root,root);
     };
+    stopStage='official_run';
     const result=await run({port:config.port,timeoutMs:config.timeoutMs});
+    stopCause=STOP_CAUSES.includes(result.stopCause)?result.stopCause:'schema_invalid';
+    if(!cleanCaptureAllowed(result.official))stopCause='official_stop';
+    stopStage='official_evidence_write';
     fs.writeFileSync(out('cms-row-d-live.json'),JSON.stringify(result.official,null,2)+'\n',{flag:'wx'});
+    stopStage='source_recheck';
     verifySources(root,config.tip);
+    stopStage='capture_gate';
     if(!result.captured||!cleanCaptureAllowed(result.official))throw Error('capture_stopped');
-    const structure=validateStructure(result.structure);
+    let structure;
+    try{structure=validateStructure(result.structure);}catch{stopCause='schema_invalid';throw 0;}
+    stopStage='sidecar_write';
     const sidecar={version:1,kind:'cms_row_d_location_structure',...SAFETY,actualDevTip:config.tip,
       sourcePinsVerified:true,booked:53,bookD:false,optionLabelsExposed:false,dictionaryComplete:false,
       officialReason:result.official.reason,diagnostics:structure};
@@ -283,7 +311,7 @@ export async function main(args=process.argv.slice(2),env=process.env,{root=ROOT
     fs.writeFileSync(out('structure.json'),json,{flag:'wx'});
     stdout.write(JSON.stringify({captured:true,reason:'structure_captured',...SAFETY,booked:53,bookD:false})+'\n');
   }catch{
-    stdout.write(JSON.stringify({captured:false,reason:'capture_stopped',...SAFETY,booked:53,bookD:false})+'\n');
+    stdout.write(JSON.stringify({captured:false,reason:'capture_stopped',stopStage,stopCause,...SAFETY,booked:53,bookD:false})+'\n');
   }
   return 2; // Evidence preparation never becomes a fill/live PASS.
 }

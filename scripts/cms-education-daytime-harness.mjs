@@ -265,6 +265,8 @@ function observedTrialChecks(state, report, rowIndex) {
       ok: prepare?.ok === true && prepare.rowIndex === rowIndex && report?.finalDetails?.rowIndex === rowIndex
         && prepare.recordCount === report?.finalDetails?.recordCount
         && Array.isArray(prepare.identities) && prepare.identities.length === prepare.recordCount
+        && [...prepare.identities].every(identity => typeof identity === 'string' && identity.length > 0)
+        && new Set(prepare.identities).size === prepare.identities.length
         && prepare.identity === prepare.identities[rowIndex] },
     { key: 'nine_readbacks', path: 'run', reason: 'run_mismatch',
       ok: run?.ok === true && run.rowIndex === rowIndex && run.recordCount === prepare?.recordCount

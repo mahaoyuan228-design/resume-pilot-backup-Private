@@ -43,6 +43,9 @@ import { fileURLToPath } from 'node:url';
 import { connectCdp, getJson } from '../../tools/live-harvest/cdp-client.mjs';
 import { isTimeout } from '../../tools/live-harvest/errors.mjs';
 import { CMS_BASELINE_PAGE, CMS_BASELINE_SU, CMS_HOST, CMS_PAGE_PATH_RE } from '../lib/cms-page-target.mjs';
+// Optional read-only row C hooks. The existing three-field write trial keeps
+// its targets and Never-Save lifecycle; importing these hooks never attaches.
+export { ROW_C_FIELDS, inspectCmsBasicInfoRowC, buildCmsBasicInfoRowCProbeExpression } from '../lib/cms-basic-info-row-c.mjs';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 
@@ -65,6 +68,7 @@ export const LIVE_FILES = Object.freeze([
 export const RUNTIME_FILES = Object.freeze([
   'scripts/live/cms-basic-info-live.mjs',
   'scripts/lib/cms-page-target.mjs',
+  'scripts/lib/cms-basic-info-row-c.mjs',
   'tools/live-harvest/cdp-client.mjs',
   'tools/live-harvest/errors.mjs',
   'src/core/matcher.js',

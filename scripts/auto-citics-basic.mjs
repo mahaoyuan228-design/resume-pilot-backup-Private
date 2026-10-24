@@ -10,6 +10,7 @@ import path from 'node:path';
 import os from 'node:os';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { createHash } from 'node:crypto';
 if (typeof globalThis.WebSocket === 'undefined') {
   const { default: WS } = await import('ws');
   globalThis.WebSocket = WS;
@@ -162,9 +163,64 @@ function freePort() {
   });
 }
 
+
+// Test-only package assets. Never copied into an extension product allowlist.
+const CITICS_TEST_ASSETS = Object.freeze([
+  { route: '/__citics_assets__/vue-2.7.16.js', package: 'vue', version: '2.7.16', file: 'dist/vue.js',
+    size: 434871, sri: 'sha256-NrENO0kgWSpOwmwGTEKemj37RokjX9/JHhc2toHHZ4Y=', type: 'text/javascript; charset=utf-8' },
+  { route: '/__citics_assets__/antd-1.7.8.js', package: 'ant-design-vue', version: '1.7.8', file: 'dist/antd.min.js',
+    size: 1478243, sri: 'sha256-sNYD2f64gxJnB1zDymg4tebiJiE9cu1dcCFZu12i/+8=', type: 'text/javascript; charset=utf-8' },
+  { route: '/__citics_assets__/antd-1.7.8.css', package: 'ant-design-vue', version: '1.7.8', file: 'dist/antd.min.css',
+    size: 468534, sri: 'sha256-qmgRsNEN3Vze7Yad4+kDnTdst3Cmpy9BnaWWo72E9Rc=', type: 'text/css; charset=utf-8' }
+].map(spec => Object.freeze(spec)));
+const CITICS_TEST_PACKAGES = Object.freeze({
+  vue: { version: '2.7.16', resolved: 'https://registry.npmjs.org/vue/-/vue-2.7.16.tgz',
+    integrity: 'sha512-4gCtFXaAA3zYZdTp5s4Hl2sozuySsgz4jy1EnpBHNfpMa9dK1ZCG7viqBPCwXtmgc8nHqUsAu3G4gtmXkkY3Sw==' },
+  'ant-design-vue': { version: '1.7.8', resolved: 'https://registry.npmjs.org/ant-design-vue/-/ant-design-vue-1.7.8.tgz',
+    integrity: 'sha512-F1hmiS9vwbyfuFvlamdW5l9bHKqRlj9wHaGDIE41NZMWXyWy8qL0UFa/+I0Wl8gQWZCqODW5pN6Yfoyn85At3A==' }
+});
+function loadCiticsFixtureAssets(readFile = fs.readFileSync) {
+  const json = relative => {
+    try { return JSON.parse(readFile(path.join(repoRoot, relative), 'utf8')); }
+    catch { throw new Error('fixture_asset_metadata_unavailable'); }
+  };
+  const lock = json('package-lock.json');
+  for (const [name, expected] of Object.entries(CITICS_TEST_PACKAGES)) {
+    const installed = json(`node_modules/${name}/package.json`);
+    if (installed.version !== expected.version || installed.license !== 'MIT') throw new Error('fixture_asset_package_mismatch');
+    const entry = lock.packages?.[`node_modules/${name}`];
+    if (!entry || entry.version !== expected.version || entry.resolved !== expected.resolved || entry.integrity !== expected.integrity) {
+      throw new Error('fixture_asset_lock_mismatch');
+    }
+  }
+  if (json('node_modules/vue-template-compiler/package.json').version !== '2.7.16' ||
+      lock.packages?.['node_modules/vue-template-compiler']?.version !== '2.7.16') {
+    throw new Error('fixture_asset_compiler_mismatch');
+  }
+  const assets = new Map();
+  for (const spec of CITICS_TEST_ASSETS) {
+    let body;
+    try { body = readFile(path.join(repoRoot, 'node_modules', spec.package, spec.file)); }
+    catch { throw new Error('fixture_asset_content_unavailable'); }
+    if (!Buffer.isBuffer(body) || body.length !== spec.size ||
+        'sha256-' + createHash('sha256').update(body).digest('base64') !== spec.sri) throw new Error('fixture_asset_content_mismatch');
+    assets.set(spec.route, { type: spec.type, body });
+  }
+  return assets;
+}
+
 function startFixtureServer() {
+  const assets = loadCiticsFixtureAssets(); // Fail before opening a server or launching Chrome.
   const root = path.join(repoRoot, 'tests', 'fixtures');
   const server = http.createServer((req, res) => {
+    const asset = assets.get(req.url);
+    if (asset) {
+      if (req.method !== 'GET' && req.method !== 'HEAD') { res.writeHead(405); res.end('method_not_allowed'); return; }
+      res.writeHead(200, { 'content-type': asset.type, 'content-length': asset.body.length, 'cache-control': 'no-store' });
+      res.end(req.method === 'HEAD' ? undefined : asset.body);
+      return;
+    }
+    if ((req.url || '').startsWith('/__citics_assets__/')) { res.writeHead(404); res.end('missing'); return; }
     const url = new URL(req.url || '/', 'http://127.0.0.1');
     const name = path.basename(url.pathname);
     const file = path.join(root, name);
@@ -698,4 +754,5 @@ async function main() {
 const isMain = process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
 if (isMain) await main();
 
-export { requiredShape, writeEvidence, ALLOWED_ONLY, SELECT_FIXTURES };
+export { requiredShape, writeEvidence, ALLOWED_ONLY, SELECT_FIXTURES, CITICS_TEST_ASSETS,
+  loadCiticsFixtureAssets, startFixtureServer, injectAndFill, assertEvidence };

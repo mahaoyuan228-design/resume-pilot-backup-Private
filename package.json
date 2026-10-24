@@ -10,6 +10,8 @@
     "ws": "^8.18.3"
   },
   "devDependencies": {
-    "jsdom": "^26.1.0"
+    "ant-design-vue": "1.7.8",
+    "jsdom": "^26.1.0",
+    "vue": "2.7.16"
   }
 }

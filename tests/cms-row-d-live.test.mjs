@@ -128,9 +128,17 @@ function fakeCdp({ targets = [target()], evaluate = () => noDocumentInspection()
 const methods = fake => fake.calls.map(call => call.method);
 const paused = (method, url = `https://example.invalid/private?token=${PRIVATE}`, requestId = 'synthetic-request') =>
   ({ method: 'Fetch.requestPaused', params: { requestId, request: { method, url } } });
+const keeperRequest = (id = 'keeper', method = 'POST', url = `https://wecruit.hotjob.cn/resume/info/edit?resumeId=${PRIVATE}`) => {
+  const request = { method, url, postData: PRIVATE, headers: { private: PRIVATE } };
+  return [
+    { method: 'Network.requestWillBeSent', params: { requestId: `${PRIVATE}-network-${id}`, request } },
+    { method: 'Fetch.requestPaused', params: { requestId: `${PRIVATE}-fetch-${id}`,
+      networkId: `${PRIVATE}-network-${id}`, request } }
+  ];
+};
 
 test('baseline and initial evidence preserve Never-Save, no live PASS, and booked 53', () => {
-  assert.equal(ROW_D_LIVE_BASE_TIP, '38d19f749cff17ed311268924f63c9e9444029f8');
+  assert.equal(ROW_D_LIVE_BASE_TIP, '7e8a9e9bb1ad3f54c135f6b00b64fbb51ceda7e9');
   const evidence = rowDProbeEvidence();
   assertSafety(evidence);
   assert.equal(evidence.ok, false);
@@ -240,6 +248,210 @@ test('GET continues and every non-GET aborts; traffic evidence discards raw URLs
   assert.ok(guard.traffic.records.some(row => row.method === 'UNKNOWN'));
   assert.equal(guard.failed(), true);
   assert.equal(JSON.stringify(guard.traffic).includes(PRIVATE), false);
+});
+
+for (const reverse of [false, true]) test(`only a correlated acknowledged keeper block qualifies (reversed events=${reverse})`, async () => {
+  let acknowledge;
+  const guard = createRowDNetworkGuard(() => new Promise(resolve => { acknowledge = resolve; }));
+  guard.setKeeperActive(true);
+  const events = keeperRequest();
+  for (const event of reverse ? events.toReversed() : events) guard.onEvent(event);
+  assert.equal(guard.failed(), true, 'an outstanding block command is not successful prevention');
+  acknowledge({});
+  await guard.drain();
+  assert.equal(guard.failed(), false);
+  guard.setKeeperActive(false);
+  assert.equal(guard.failed(), false, 'completed proof remains valid after keeper teardown');
+  assert.equal(guard.traffic.observedNonGetCount, 1);
+  assert.equal(guard.traffic.interceptedNonGetCount, 1);
+  assert.equal(guard.traffic.blockedNonGetCount, 1);
+  assert.equal(guard.traffic.responseToNonGetCount, 0);
+  assert.equal(JSON.stringify(guard.traffic).includes(PRIVATE), false);
+});
+
+for (const mode of ['outside_keeper', 'crossed_window', 'observed_only', 'paused_only',
+  'different_network_id', 'missing_network_id', 'missing_fetch_id', 'missing_network_request_id',
+  'duplicate_observation', 'duplicate_pause', 'reused_fetch_id', 'different_method',
+  'different_query', 'response_stage', 'error_stage', 'untracked_redirect']) {
+  test(`keeper block exception rejects ${mode}`, async () => {
+    const guard = createRowDNetworkGuard(() => Promise.resolve({}));
+    guard.setKeeperActive(mode !== 'outside_keeper');
+    const [network, fetch] = keeperRequest();
+    if (mode === 'different_network_id') fetch.params.networkId = 'other-network';
+    if (mode === 'missing_network_id') delete fetch.params.networkId;
+    if (mode === 'missing_fetch_id') delete fetch.params.requestId;
+    if (mode === 'missing_network_request_id') delete network.params.requestId;
+    if (mode === 'different_method') fetch.params.request = { ...fetch.params.request, method: 'HEAD' };
+    if (mode === 'different_query') fetch.params.request = { ...fetch.params.request, url: `${fetch.params.request.url}&other=1` };
+    if (mode === 'response_stage') fetch.params.responseStatusCode = 200;
+    if (mode === 'error_stage') fetch.params.responseErrorReason = 'Failed';
+    if (mode === 'untracked_redirect') network.params.redirectResponse = { status: 307 };
+    if (mode !== 'paused_only') guard.onEvent(network);
+    if (mode === 'crossed_window') guard.setKeeperActive(false);
+    if (mode !== 'observed_only') guard.onEvent(fetch);
+    if (mode === 'duplicate_observation') guard.onEvent(network);
+    if (mode === 'duplicate_pause') guard.onEvent(fetch);
+    if (mode === 'reused_fetch_id') {
+      const second = keeperRequest('second');
+      second[1].params.requestId = fetch.params.requestId;
+      second.forEach(guard.onEvent);
+    }
+    await guard.drain();
+    assert.equal(guard.failed(), true);
+    assert.equal(JSON.stringify(guard.traffic).includes(PRIVATE), false);
+    if (mode === 'different_network_id') {
+      assert.equal(guard.traffic.observedNonGetCount, 1);
+      assert.equal(guard.traffic.interceptedNonGetCount, 1);
+      assert.equal(guard.traffic.blockedNonGetCount, 1, 'equal aggregate counts cannot establish correlation');
+    }
+  });
+}
+
+for (const [method, url] of [
+  ['HEAD', 'https://wecruit.hotjob.cn/resume/info/edit'],
+  ['PUT', 'https://wecruit.hotjob.cn/resume/info/edit'],
+  ['POST', 'https://example.invalid/resume/info/edit'],
+  ['POST', 'http://wecruit.hotjob.cn/resume/info/edit'],
+  ['POST', 'https://wecruit.hotjob.cn:8443/resume/info/edit'],
+  ['POST', 'https://user:secret@wecruit.hotjob.cn/resume/info/edit'],
+  ['POST', 'https://wecruit.hotjob.cn/resume/info/edit/extra'],
+  ['POST', 'https://wecruit.hotjob.cn/private/resume/info/edit'],
+  ['POST', 'https://wecruit.hotjob.cn/%72esume/INFO/EdIt']
+]) test(`keeper exception rejects method/origin/path ${method} ${url}`, async () => {
+  const guard = createRowDNetworkGuard(() => Promise.resolve({}));
+  guard.setKeeperActive(true);
+  keeperRequest('ineligible', method, url).forEach(guard.onEvent);
+  await guard.drain();
+  assert.equal(guard.traffic.blockedNonGetCount, 1);
+  assert.equal(guard.failed(), true);
+});
+
+for (const responseMethod of ['Network.responseReceived', 'Network.responseReceivedExtraInfo',
+  'Network.responseReceivedEarlyHints', 'Network.dataReceived', 'Network.loadingFinished']) {
+  for (const early of [false, true]) test(`server evidence hard fails ${responseMethod} (early=${early})`, async () => {
+    const guard = createRowDNetworkGuard(() => Promise.resolve({}));
+    guard.setKeeperActive(true);
+    const events = keeperRequest();
+    const response = { method: responseMethod, params: { requestId: events[0].params.requestId, body: PRIVATE } };
+    if (early) guard.onEvent(response);
+    events.forEach(guard.onEvent);
+    await guard.drain();
+    if (!early) {
+      assert.equal(guard.failed(), false);
+      guard.onEvent({ method: 'Network.loadingFailed', params: { requestId: events[0].params.requestId } });
+      guard.onEvent(response);
+    }
+    assert.equal(guard.traffic.responseToNonGetCount, 1);
+    assert.equal(guard.failed(), true);
+    assert.equal(JSON.stringify(guard.traffic).includes(PRIVATE), false);
+  });
+}
+
+test('redirect server evidence defeats an acknowledged block without attributing the later GET response to POST', async () => {
+  const guard = createRowDNetworkGuard(() => Promise.resolve({}));
+  guard.setKeeperActive(true);
+  const events = keeperRequest();
+  events.forEach(guard.onEvent);
+  await guard.drain();
+  guard.onEvent({ method: 'Network.requestWillBeSent', params: {
+    requestId: events[0].params.requestId, redirectResponse: { status: 302, body: PRIVATE },
+    request: { method: 'GET', url: `https://wecruit.hotjob.cn/finished?token=${PRIVATE}` }
+  } });
+  guard.onEvent({ method: 'Network.responseReceived', params: { requestId: events[0].params.requestId } });
+  assert.equal(guard.traffic.responseToNonGetCount, 1);
+  assert.equal(guard.failed(), true);
+  assert.equal(JSON.stringify(guard.traffic).includes(PRIVATE), false);
+});
+
+test('blocked keeper traffic preserves the actual 12/16 modeled field inspection across its retained lifetime', async () => {
+  const dom = syntheticDom();
+  try {
+    const inspection = clone(dom.window.eval(buildCmsRowDOptionsProbeExpression()));
+    assert.equal(inspection.fields.filter(row => row.ok).length, 12);
+    for (const phase of ['activate', 'front', 'enable', 'inspection', 'settlement', 'reset', 'cleanup']) {
+      let emitted = false;
+      const emitBlock = emit => { emitted = true; keeperRequest(phase).forEach(emit); };
+      const fake = fakeCdp({ evaluate: () => inspection,
+        onSend(method, params, { emit }) {
+          if ((phase === 'activate' && method === 'Target.activateTarget')
+            || (phase === 'front' && method === 'Page.bringToFront')
+            || (phase === 'enable' && method === 'Emulation.setFocusEmulationEnabled' && params.enabled)
+            || (phase === 'inspection' && method === 'Runtime.evaluate')
+            || (phase === 'reset' && method === 'Emulation.setFocusEmulationEnabled' && !params.enabled)) emitBlock(emit);
+        },
+        onWait({ emit, calls }) {
+          const reset = calls.some(call => call.method === 'Emulation.setFocusEmulationEnabled' && !call.params.enabled);
+          if ((phase === 'settlement' && !reset) || (phase === 'cleanup' && reset)) emitBlock(emit);
+        }
+      });
+      const evidence = await fake.run();
+      assertSafety(evidence);
+      assert.equal(emitted, true, phase);
+      assert.equal(evidence.probeCompleted, true, phase);
+      assert.equal(evidence.ok, false, phase);
+      assert.equal(evidence.reason, inspection.reason, phase);
+      assert.equal(evidence.reason, 'row_d_preflight_incomplete');
+      assert.equal(evidence.fields.filter(row => row.ok).length, 12);
+      for (let index = 0; index < inspection.fields.length; index += 1) {
+        assert.equal(evidence.fields[index].ok, inspection.fields[index].ok);
+        assert.equal(evidence.fields[index].reason, inspection.fields[index].reason);
+      }
+      assert.equal(evidence.traffic.blockedNonGetCount, 1);
+      assert.equal(evidence.traffic.responseToNonGetCount, 0);
+      assert.deepEqual(evidence.visibilityKeeper, { targetActivated: true, pageBroughtToFront: true,
+        focusEmulationEnabled: true, focusEmulationCleared: true });
+      assert.equal(fake.calls.find(call => call.method === 'Runtime.evaluate').params.throwOnSideEffect, true);
+    }
+  } finally { dom.window.close(); }
+});
+
+test('a response still hard fails after completed field inspection without dropping field evidence', async () => {
+  const dom = syntheticDom();
+  try {
+    const inspection = clone(dom.window.eval(buildCmsRowDOptionsProbeExpression()));
+    const events = keeperRequest();
+    const fake = fakeCdp({ evaluate: () => inspection, onSend(method, params, { emit }) {
+      if (method === 'Runtime.evaluate') events.forEach(emit);
+    }, onWait({ emit }) {
+      emit({ method: 'Network.responseReceived', params: { requestId: events[0].params.requestId } });
+    } });
+    const evidence = await fake.run();
+    assertSafety(evidence);
+    assert.equal(evidence.probeCompleted, true);
+    assert.equal(evidence.fields.filter(row => row.ok).length, 12);
+    assert.equal(evidence.reason, 'non_get_or_guard_failure');
+    assert.equal(evidence.traffic.responseToNonGetCount, 1);
+  } finally { dom.window.close(); }
+});
+
+for (const teardown of ['Fetch.disable', 'Network.disable']) test(`fully correlated POST first seen during ${teardown} still fails`, async () => {
+  const fake = fakeCdp({ onSend(method, params, { emit }) {
+    if (method === teardown) keeperRequest(teardown).forEach(emit);
+  } });
+  const evidence = await fake.run();
+  assertSafety(evidence);
+  assert.equal(evidence.probeCompleted, true);
+  assert.equal(evidence.reason, 'non_get_or_guard_failure');
+  assert.equal(evidence.traffic.blockedNonGetCount, 1);
+});
+
+test('keeper setup awaits a pending correlated block acknowledgement before inspection', async () => {
+  let release;
+  let began;
+  const pending = new Promise(resolve => { release = resolve; });
+  const started = new Promise(resolve => { began = resolve; });
+  const fake = fakeCdp({ onSend(method, params, { emit }) {
+    if (method === 'Page.bringToFront') keeperRequest().forEach(emit);
+    if (method === 'Fetch.failRequest') { began(); return pending; }
+  } });
+  const running = fake.run();
+  await started;
+  assert.equal(methods(fake).includes('Runtime.evaluate'), false);
+  release({});
+  const evidence = await running;
+  assertSafety(evidence);
+  assert.equal(evidence.probeCompleted, true);
+  assert.equal(evidence.reason, 'no_document');
 });
 
 test('one guarded CDP session retains its visibility keeper through inspection and settlement', async () => {

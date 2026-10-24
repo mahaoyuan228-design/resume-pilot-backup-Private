@@ -1,13 +1,15 @@
 #!/usr/bin/env node
 /**
  * Explicitly invoked, inert CMS row D CDP probe. No fill adapter is installed.
- * Network/Fetch guards are mandatory; even a blocked non-GET fails the run.
+ * Network/Fetch guards are mandatory; only correlated keeper info/edit blocks
+ * may preserve the inspection verdict. Every non-GET is still aborted.
  * The merged inspector never opens, focuses, blurs, emits events, reads current
  * values, or mutates controls. Originals therefore need no restoration writes.
  * See cms-row-d-live.md. No live PASS/support claim; booked remains 53.
  */
 import fs from 'node:fs';
 import path from 'node:path';
+import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { setTimeout as delay } from 'node:timers/promises';
 import { connectCdp, getJson } from '../../tools/live-harvest/cdp-client.mjs';
@@ -15,7 +17,7 @@ import {
   ROW_D_FIELDS, ROW_D_PAGE, buildCmsRowDOptionsProbeExpression
 } from '../lib/cms-row-d-options.mjs';
 
-export const ROW_D_LIVE_BASE_TIP = '38d19f749cff17ed311268924f63c9e9444029f8';
+export const ROW_D_LIVE_BASE_TIP = '7e8a9e9bb1ad3f54c135f6b00b64fbb51ceda7e9';
 export const EVIDENCE_NAME = 'cms-row-d-live.json';
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const safety = () => ({ neverSave: true, liveSupportClaimed: false,
@@ -109,6 +111,13 @@ function trafficIdentity(request) {
 export function createRowDNetworkGuard(send) {
   const pending = new Set();
   const observed = new Map();
+  // Internal IDs only: never serialize correlation metadata or raw URLs.
+  // Retain the bounded ledger after loadingFailed; failure alone proves no block.
+  const requests = new Map();
+  const fetchIds = new Set();
+  const earlyResponses = new Set();
+  let keeperActive = false;
+  let correlationFailed = false;
   const traffic = { observedNonGetCount: 0, interceptedNonGetCount: 0,
     blockedNonGetCount: 0, infoEditObservedCount: 0, infoEditBlockedCount: 0,
     responseToNonGetCount: 0, commandFailed: false, truncated: false, records: [] };
@@ -116,12 +125,55 @@ export function createRowDNetworkGuard(send) {
     if (traffic.records.length < 200) traffic.records.push({ phase, ...identity });
     else traffic.truncated = true;
   };
-  function command(method, params, identity) {
+  const validId = id => typeof id === 'string' && id.length > 0 && id.length <= 1024;
+  function track(phase, id, request, identity) {
+    if (!validId(id)) { correlationFailed = true; return undefined; }
+    let eligible = false;
+    let urlHash;
+    try {
+      const url = new URL(request.url);
+      urlHash = createHash('sha256').update(url.href).digest('hex');
+      eligible = keeperActive && identity.method === 'POST'
+        && url.origin === new URL(ROW_D_PAGE).origin
+        && url.pathname === '/resume/info/edit' && !url.username && !url.password;
+    } catch { /* unknown identity never qualifies */ }
+    let entry = requests.get(id);
+    if (!entry) {
+      if (requests.size >= 200) { traffic.truncated = true; return undefined; }
+      entry = { identity, urlHash, eligible, observed: false, paused: false, blocked: false, responded: false };
+      requests.set(id, entry);
+    }
+    if (entry[phase] || entry.identity.method !== identity.method || entry.urlHash !== urlHash) correlationFailed = true;
+    entry.eligible &&= eligible;
+    entry[phase] = true;
+    if (earlyResponses.has(id)) response(entry);
+    return entry;
+  }
+  const response = entry => {
+    if (entry && !entry.responded) {
+      entry.responded = true;
+      traffic.responseToNonGetCount += 1;
+      record('response_observed', entry.identity);
+    }
+  };
+  const responseFor = id => {
+    const entry = observed.get(id);
+    if (entry) response(entry);
+    // Redirected GET responses must not be attributed to the old POST. Reuse
+    // already fails correlation. Retain otherwise unknown IDs for event reordering.
+    else if (!requests.has(id)) {
+      if (!validId(id)) correlationFailed = true;
+      else if (earlyResponses.size < 200) earlyResponses.add(id);
+      else traffic.truncated = true;
+    }
+  };
+  function command(method, params, identity, entry) {
     let reply;
     try { reply = send(method, params); }
     catch { reply = Promise.reject(new Error('guard_command_failed')); }
     const task = Promise.resolve(reply).then(() => {
       if (method === 'Fetch.failRequest') {
+        if (entry) entry.blocked = true;
         traffic.blockedNonGetCount += 1;
         if (identity.infoEdit) traffic.infoEditBlockedCount += 1;
         record('blocked', identity);
@@ -142,36 +194,56 @@ export function createRowDNetworkGuard(send) {
         else {
           traffic.interceptedNonGetCount += 1;
           record('paused', identity);
-          command('Fetch.failRequest', { requestId: params.requestId, errorReason: 'BlockedByClient' }, identity);
+          const entry = track('paused', params.networkId, params.request, identity);
+          if (entry) observed.set(params.networkId, entry);
+          if (!validId(params.requestId) || fetchIds.has(params.requestId)) correlationFailed = true;
+          else if (fetchIds.size < 200) fetchIds.add(params.requestId);
+          else traffic.truncated = true;
+          // A response-stage pause cannot establish request-stage prevention.
+          if (params.responseStatusCode !== undefined || params.responseErrorReason !== undefined) {
+            correlationFailed = true;
+            if (params.responseStatusCode !== undefined) response(entry);
+          }
+          command('Fetch.failRequest', { requestId: params.requestId, errorReason: 'BlockedByClient' }, identity, entry);
         }
       } else if (message?.method === 'Network.requestWillBeSent') {
         const identity = trafficIdentity(params.request);
-        // Redirects reuse requestId. A later GET response must not be reported
-        // as a response to the preceding POST.
+        // Redirect responses are server evidence for the preceding hop. Do not
+        // mistake the later GET response for a response to its preceding POST.
+        if (params.redirectResponse) {
+          const preceding = observed.get(params.requestId);
+          response(preceding);
+          if (!preceding && identity.method !== 'GET') correlationFailed = true;
+        }
+        const prior = requests.get(params.requestId);
+        if (prior && (prior.observed || identity.method === 'GET')) correlationFailed = true;
         observed.delete(params.requestId);
         if (identity.method !== 'GET') {
           traffic.observedNonGetCount += 1;
           if (identity.infoEdit) traffic.infoEditObservedCount += 1;
-          // The bounded map only correlates response events; raw URLs/bodies are discarded.
-          if (observed.size < 200) observed.set(params.requestId, identity);
-          else traffic.truncated = true;
+          const entry = track('observed', params.requestId, params.request, identity);
+          if (entry) observed.set(params.requestId, entry);
           record('observed', identity);
         }
-      } else if (message?.method === 'Network.responseReceived' && observed.has(params.requestId)) {
-        traffic.responseToNonGetCount += 1;
-        record('response_observed', observed.get(params.requestId));
-      } else if (['Network.loadingFinished', 'Network.loadingFailed'].includes(message?.method)) {
-        observed.delete(params.requestId);
+      } else if (['Network.responseReceived', 'Network.responseReceivedExtraInfo',
+        'Network.responseReceivedEarlyHints', 'Network.dataReceived', 'Network.loadingFinished']
+        .includes(message?.method)) {
+        responseFor(params.requestId);
       }
     } catch { traffic.commandFailed = true; }
   };
   return { onEvent, traffic,
+    setKeeperActive(active) { keeperActive = active === true; },
     async drain() {
       for (let round = 0; pending.size && round < 20; round += 1) await Promise.all([...pending]);
       if (pending.size) traffic.commandFailed = true;
     },
-    failed: () => traffic.commandFailed || traffic.truncated
-      || traffic.observedNonGetCount > 0 || traffic.interceptedNonGetCount > 0
+    failed: () => traffic.commandFailed || traffic.truncated || correlationFailed
+      || traffic.responseToNonGetCount > 0
+      || traffic.observedNonGetCount !== requests.size
+      || traffic.interceptedNonGetCount !== requests.size
+      || [...requests.values()].some(entry => !entry.eligible
+        || !entry.observed || !entry.paused || !entry.blocked)
   };
 }
 
@@ -294,6 +366,7 @@ export async function runCmsRowDLive({ port = 9242, timeoutMs = 10000, requests 
     await guard.drain();
     if (guard.failed()) { evidence.reason = 'non_get_or_guard_failure'; return evidence; }
     stage = 'visibility_keeper';
+    guard.setKeeperActive(true);
     // The real CMS document can remain hidden without a retained focus-emulated
     // CDP session. Guard network before activation: visibility/focus listeners
     // can themselves initiate requests. These are browser commands, not page
@@ -349,6 +422,7 @@ export async function runCmsRowDLive({ port = 9242, timeoutMs = 10000, requests 
       await guard.drain();
       // Disable only CDP domains enabled by this session, after all known
       // paused requests received their decisions.
+      guard.setKeeperActive(false);
       if (fetchEnabled) {
         try { await session.send('Fetch.disable'); } catch { guard.traffic.commandFailed = true; }
       }

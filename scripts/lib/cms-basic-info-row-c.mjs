@@ -60,7 +60,7 @@ export function inspectCmsBasicInfoRowC(doc, specs = ROW_C_FIELDS, page = ROW_C_
   }
   const section = sections[0];
   const labelsFor = item => [...item.querySelectorAll('.ant-form-item-label > label')]
-    .filter(node => node.closest('.ant-form-item') === item);
+    .filter(node => node.closest('.ant-form-item') === item && node.closest('.form-cell') === section);
   const items = [...section.querySelectorAll('.ant-form-item')]
     .filter(item => item.closest('.form-cell') === section);
   for (const spec of specs) {
@@ -68,8 +68,12 @@ export function inspectCmsBasicInfoRowC(doc, specs = ROW_C_FIELDS, page = ROW_C_
     const wrappers = allIds.filter(node => node.id === spec.wrapperId);
     if (wrappers.length !== 1) { fail('wrapper_not_unique'); continue; }
     const wrapper = wrappers[0];
-    const item = wrapper.closest('.ant-form-item');
-    if (!item || wrapper.closest('.form-cell') !== section || !visible(wrapper) || !visible(item)) {
+    // Captured #11_* wrappers contain their form item, sometimes through a
+    // position:static div. Do not resolve an ancestor or a same-label neighbor.
+    const candidates = [...wrapper.querySelectorAll('.ant-form-item')];
+    const item = candidates.length === 1 ? candidates[0] : null;
+    if (!item || wrapper.closest('.form-cell') !== section || item.closest('.form-cell') !== section
+      || !visible(wrapper) || !visible(item)) {
       fail('wrapper_scope_or_visibility_mismatch'); continue;
     }
     const labels = labelsFor(item);
@@ -78,9 +82,10 @@ export function inspectCmsBasicInfoRowC(doc, specs = ROW_C_FIELDS, page = ROW_C_
     }
     const peers = items.filter(candidate => labelsFor(candidate).some(label => norm(label.textContent) === norm(spec.label)));
     if (peers.length !== 1 || peers[0] !== item) { fail('question_not_unique'); continue; }
-    // Scope to the evidenced wrapper. Never fall back to a same-label neighbor.
-    const owned = selector => [ ...(wrapper.matches(selector) ? [wrapper] : []),
-      ...wrapper.querySelectorAll(selector) ].filter(node => node.closest('.ant-form-item') === item);
+    // Controls must belong to this item and section, not another part of its
+    // wrapper or a nested foreign section.
+    const owned = selector => [...item.querySelectorAll(selector)]
+      .filter(node => node.closest('.ant-form-item') === item && node.closest('.form-cell') === section);
     const selects = owned('.ant-select');
     const calendars = owned('.ant-calendar-picker');
     const radios = owned('input[type="radio"]');

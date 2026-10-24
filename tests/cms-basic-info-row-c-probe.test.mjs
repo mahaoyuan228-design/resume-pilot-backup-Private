@@ -27,6 +27,8 @@ const EXPECTED_WRAPPERS = [
 const SYNTHETIC_PRIVATE = 'SYNTHETIC_PRIVATE_SENTINEL_DO_NOT_READ';
 const escape = text => String(text).replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]);
 const field = (doc, id) => doc.getElementById(id);
+const formItem = (doc, id) => field(doc, id).querySelector('.ant-form-item');
+const controlContainer = (doc, id) => formItem(doc, id).querySelector('.ant-form-item-control');
 
 function syntheticControl(row) {
   if (row.controlKind === 'input') {
@@ -44,7 +46,9 @@ function syntheticControl(row) {
 }
 
 function syntheticDom({ url = `${ROW_C_PAGE}?resumeId=synthetic-private&tid=synthetic-private`, mutate } = {}) {
-  const items = harvest.fields.map(row => `<div class="ant-form-item"><div class="ant-form-item-label"><label>${escape(row.label)}</label></div><div id="${row.wrapperId}">${syntheticControl(row)}</div></div>`).join('');
+  // Mirrors the observed wrapper > static div > form item topology only.
+  // All labels/control metadata remain the sanitized harvest projection.
+  const items = harvest.fields.map(row => `<div id="${row.wrapperId}"><div style="position:static"><div class="ant-row ant-form-item"><div class="ant-form-item-label"><label>${escape(row.label)}</label></div><div class="ant-form-item-control">${syntheticControl(row)}</div></div></div></div>`).join('');
   const dom = new JSDOM(`<!doctype html><body><section id="11" class="form-cell">${items}</section><button type="submit">synthetic submit</button></body>`, {
     url, pretendToBeVisual: true, runScripts: 'outside-only'
   });
@@ -164,8 +168,15 @@ test('live runner re-exports the same inert read-only hooks', () => {
   assert.equal(liveHooks.buildCmsBasicInfoRowCProbeExpression, buildCmsBasicInfoRowCProbeExpression);
 });
 
-for (const expression of [false, true]) test(`SYNTHETIC preflight returns 8 unopened select skips and 5 live-required observations (${expression ? 'serialized' : 'direct'})`, () => {
-  withProbe({}, result => {
+for (const expression of [false, true]) test(`SYNTHETIC descendant-item topology succeeds where closest-only is null (${expression ? 'serialized' : 'direct'})`, () => {
+  withProbe({ mutate: doc => {
+    for (const spec of ROW_C_FIELDS) {
+      const wrapper = field(doc, spec.wrapperId);
+      assert.equal(wrapper.closest('.ant-form-item'), null);
+      assert.equal(wrapper.querySelectorAll('.ant-form-item').length, 1);
+      assert.equal(formItem(doc, spec.wrapperId).parentElement.style.position, 'static');
+    }
+  } }, result => {
     assert.equal(result.ok, true);
     assert.equal(result.reason, 'read_only_preflight');
     assert.equal(result.fields.length, 13);
@@ -202,26 +213,54 @@ for (const [name, reason, mutate] of [
   ['missing wrapper', 'wrapper_not_unique', doc => field(doc, HEIGHT).remove()],
   ['duplicate wrapper', 'wrapper_not_unique', doc => doc.body.append(field(doc, HEIGHT).cloneNode(true))],
   ['hidden wrapper', 'wrapper_scope_or_visibility_mismatch', doc => { field(doc, HEIGHT).hidden = true; }],
-  ['hidden ancestor', 'wrapper_scope_or_visibility_mismatch', doc => { field(doc, HEIGHT).parentElement.style.display = 'none'; }],
+  ['hidden intermediate ancestor', 'wrapper_scope_or_visibility_mismatch', doc => { formItem(doc, HEIGHT).parentElement.style.display = 'none'; }],
+  ['hidden descendant item', 'wrapper_scope_or_visibility_mismatch', doc => { formItem(doc, HEIGHT).hidden = true; }],
+  ['zero descendant items', 'wrapper_scope_or_visibility_mismatch', doc => formItem(doc, HEIGHT).remove()],
+  ['ambiguous descendant items', 'wrapper_scope_or_visibility_mismatch', doc => {
+    const item = formItem(doc, HEIGHT); item.parentElement.append(item.cloneNode(true));
+  }],
+  ['ambiguous items including hidden wrong-label item', 'wrapper_scope_or_visibility_mismatch', doc => {
+    const duplicate = formItem(doc, HEIGHT).cloneNode(true); duplicate.hidden = true;
+    duplicate.querySelector('label').textContent = 'synthetic other label'; field(doc, HEIGHT).append(duplicate);
+  }],
   ['wrapper moved to other section', 'wrapper_scope_or_visibility_mismatch', doc => {
     const elsewhere = doc.createElement('section'); elsewhere.className = 'form-cell'; elsewhere.id = '12';
-    doc.body.append(elsewhere); elsewhere.append(field(doc, HEIGHT).parentElement);
+    doc.body.append(elsewhere); elsewhere.append(field(doc, HEIGHT));
   }],
-  ['missing label', 'label_mismatch', doc => field(doc, HEIGHT).parentElement.querySelector('label').remove()],
-  ['hidden label', 'label_mismatch', doc => { field(doc, HEIGHT).parentElement.querySelector('label').hidden = true; }],
-  ['wrong label', 'label_mismatch', doc => { field(doc, HEIGHT).parentElement.querySelector('label').textContent = 'synthetic wrong label'; }],
+  ['descendant item in foreign nested section', 'wrapper_scope_or_visibility_mismatch', doc => {
+    const item = formItem(doc, HEIGHT), elsewhere = doc.createElement('section'); elsewhere.className = 'form-cell'; elsewhere.id = '12';
+    item.parentElement.append(elsewhere); elsewhere.append(item);
+  }],
+  ['empty wrapper with same-label neighbor', 'wrapper_scope_or_visibility_mismatch', doc => { field(doc, '11').append(formItem(doc, HEIGHT)); }],
+  ['empty wrapper inside same-label ancestor item', 'wrapper_scope_or_visibility_mismatch', doc => {
+    const wrapper = field(doc, HEIGHT), item = formItem(doc, HEIGHT);
+    wrapper.parentElement.insertBefore(item, wrapper); item.querySelector('.ant-form-item-control').append(wrapper);
+    assert.equal(wrapper.closest('.ant-form-item'), item);
+  }],
+  ['missing label', 'label_mismatch', doc => formItem(doc, HEIGHT).querySelector('label').remove()],
+  ['hidden label', 'label_mismatch', doc => { formItem(doc, HEIGHT).querySelector('label').hidden = true; }],
+  ['wrong label', 'label_mismatch', doc => { formItem(doc, HEIGHT).querySelector('label').textContent = 'synthetic wrong label'; }],
   ['duplicate label within item', 'label_mismatch', doc => {
-    const label = field(doc, HEIGHT).parentElement.querySelector('label'); label.parentElement.append(label.cloneNode(true));
+    const label = formItem(doc, HEIGHT).querySelector('label'); label.parentElement.append(label.cloneNode(true));
+  }],
+  ['label in foreign nested section', 'label_mismatch', doc => {
+    const labelHost = formItem(doc, HEIGHT).querySelector('.ant-form-item-label'), elsewhere = doc.createElement('section'); elsewhere.className = 'form-cell';
+    labelHost.parentElement.append(elsewhere); elsewhere.append(labelHost);
   }],
   ['duplicate same question elsewhere', 'question_not_unique', doc => {
-    const item = field(doc, HEIGHT).parentElement.cloneNode(true); item.querySelector('[id]').removeAttribute('id'); field(doc, '11').append(item);
+    const wrapper = field(doc, HEIGHT).cloneNode(true); wrapper.removeAttribute('id'); field(doc, '11').append(wrapper);
   }],
   ['input type drift', 'control_kind_mismatch', doc => { field(doc, HEIGHT).querySelector('input').type = 'number'; }],
   ['input placeholder drift', 'control_kind_mismatch', doc => { field(doc, HEIGHT).querySelector('input').placeholder = 'synthetic other placeholder'; }],
   ['input readonly drift', 'control_kind_mismatch', doc => { field(doc, HEIGHT).querySelector('input').readOnly = true; }],
   ['duplicate text input', 'control_kind_mismatch', doc => { const input = field(doc, HEIGHT).querySelector('input'); input.parentElement.append(input.cloneNode(true)); }],
-  ['calendar widget in text wrapper', 'control_kind_mismatch', doc => { const widget = doc.createElement('span'); widget.className = 'ant-calendar-picker'; field(doc, HEIGHT).append(widget); }],
-  ['unsupported upload widget', 'control_kind_mismatch', doc => { const widget = doc.createElement('span'); widget.className = 'ant-upload'; field(doc, HEIGHT).append(widget); }],
+  ['calendar widget in text item', 'control_kind_mismatch', doc => { const widget = doc.createElement('span'); widget.className = 'ant-calendar-picker'; controlContainer(doc, HEIGHT).append(widget); }],
+  ['unsupported upload widget', 'control_kind_mismatch', doc => { const widget = doc.createElement('span'); widget.className = 'ant-upload'; controlContainer(doc, HEIGHT).append(widget); }],
+  ['input outside matched item in same wrapper', 'control_kind_mismatch', doc => { field(doc, HEIGHT).append(field(doc, HEIGHT).querySelector('input')); }],
+  ['input in foreign nested section', 'control_kind_mismatch', doc => {
+    const input = field(doc, HEIGHT).querySelector('input'), elsewhere = doc.createElement('section'); elsewhere.className = 'form-cell'; elsewhere.id = '12';
+    input.parentElement.append(elsewhere); elsewhere.append(input);
+  }],
   ['disabled text input', 'control_not_available', doc => { field(doc, HEIGHT).querySelector('input').disabled = true; }],
   ['hidden text input', 'control_not_available', doc => { field(doc, HEIGHT).querySelector('input').style.visibility = 'hidden'; }],
   ['disabled fieldset ancestor', 'control_not_available', doc => {
@@ -229,23 +268,31 @@ for (const [name, reason, mutate] of [
   }]
 ]) test(`SYNTHETIC ${name} fails closed for height`, () => expectFieldFailure(HEIGHT, reason, mutate));
 
+for (const expression of [false, true]) test(`SYNTHETIC controls outside the matched item are ignored (${expression ? 'serialized' : 'direct'})`, () => withProbe({ mutate: doc => {
+  const unowned = doc.createElement('input'); unowned.type = 'number'; unowned.disabled = true;
+  field(doc, HEIGHT).append(unowned);
+} }, result => {
+  assert.equal(result.ok, true);
+  assert.equal(result.fields.find(row => row.wrapperId === HEIGHT).reason, 'live_never_save_required');
+}, expression));
+
 test('calendar readonly mismatch fails closed', () => expectFieldFailure('11_21_0', 'control_kind_mismatch', doc => { field(doc, '11_21_0').querySelector('input').readOnly = false; }));
 test('disabled calendar input fails closed', () => expectFieldFailure('11_21_0', 'control_not_available', doc => { field(doc, '11_21_0').querySelector('input').disabled = true; }));
 test('radio changed to checkbox fails closed', () => expectFieldFailure('11_20_0', 'control_kind_mismatch', doc => { field(doc, '11_20_0').querySelector('input').type = 'checkbox'; }));
 test('disabled radio fails closed', () => expectFieldFailure('11_20_0', 'control_not_available', doc => { field(doc, '11_20_0').querySelector('input').disabled = true; }));
-test('disabled select host fails closed', () => expectFieldFailure('11_22_0', 'control_not_available', doc => { field(doc, '11_22_0').firstElementChild.classList.add('ant-select-disabled'); }));
-test('aria-disabled select host fails closed', () => expectFieldFailure('11_22_0', 'control_not_available', doc => { field(doc, '11_22_0').firstElementChild.setAttribute('aria-disabled', 'true'); }));
+test('disabled select host fails closed', () => expectFieldFailure('11_22_0', 'control_not_available', doc => { controlContainer(doc, '11_22_0').firstElementChild.classList.add('ant-select-disabled'); }));
+test('aria-disabled select host fails closed', () => expectFieldFailure('11_22_0', 'control_not_available', doc => { controlContainer(doc, '11_22_0').firstElementChild.setAttribute('aria-disabled', 'true'); }));
 test('disabled select inner input fails closed', () => expectFieldFailure('11_22_0', 'control_not_available', doc => {
-  const input = doc.createElement('input'); input.type = 'text'; input.disabled = true; field(doc, '11_22_0').firstElementChild.append(input);
+  const input = doc.createElement('input'); input.type = 'text'; input.disabled = true; controlContainer(doc, '11_22_0').firstElementChild.append(input);
 }));
-test('text input replacing select fails closed', () => expectFieldFailure('11_22_0', 'control_kind_mismatch', doc => { field(doc, '11_22_0').innerHTML = '<input type="text">'; }));
-test('foreign text input beside select fails closed', () => expectFieldFailure('11_22_0', 'control_kind_mismatch', doc => { field(doc, '11_22_0').append(doc.createElement('input')); }));
+test('text input replacing select fails closed', () => expectFieldFailure('11_22_0', 'control_kind_mismatch', doc => { controlContainer(doc, '11_22_0').innerHTML = '<input type="text">'; }));
+test('foreign text input beside select fails closed', () => expectFieldFailure('11_22_0', 'control_kind_mismatch', doc => { controlContainer(doc, '11_22_0').append(doc.createElement('input')); }));
 test('duplicate nonregion select hosts fail closed', () => expectFieldFailure('11_22_0', 'control_not_unique', doc => {
-  const host = field(doc, '11_22_0').firstElementChild; host.parentElement.append(host.cloneNode(true));
+  const host = controlContainer(doc, '11_22_0').firstElementChild; host.parentElement.append(host.cloneNode(true));
 }));
 
 for (const id of ['11_26_0', '11_245_0']) test(`SYNTHETIC multi-host region ${id} remains unopened and skipped`, () => withProbe({ mutate: doc => {
-  const host = field(doc, id).firstElementChild; host.parentElement.append(host.cloneNode(true));
+  const host = controlContainer(doc, id).firstElementChild; host.parentElement.append(host.cloneNode(true));
 } }, result => {
   const row = result.fields.find(item => item.wrapperId === id);
   assert.equal(row.status, 'skipped');

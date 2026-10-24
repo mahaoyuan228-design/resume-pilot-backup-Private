@@ -14,6 +14,7 @@ const records = (value, keys, max = 30) => Array.isArray(value)
   ? value.slice(0, max).filter((item) => item && typeof item === 'object' && !Array.isArray(item))
       .map((item) => Object.fromEntries(keys.map((key) => [key, text(item[key])])) )
   : [];
+export const validExperienceSalary = value => typeof value === 'string' && /^[0-9]{1,10}$/u.test(value);
 const EXPERIENCE_KEYS = ['type', 'organization', 'position', 'startDate', 'endDate', 'description'];
 const EXPERIENCE_EXTRAS = ['jobCategory', 'industry', 'workArea', 'companyIntro', 'department', 'reportTo', 'subordinateCount', 'leaveReason'];
 function experienceRecords(value) {
@@ -26,6 +27,9 @@ function experienceRecords(value) {
       const extra = text(item[key]);
       if (extra) row[key] = extra;
     }
+    // Keep a typed draft verbatim, including invalid text. It is not a usable
+    // confirmed fact until validExperienceSalary passes; never trim or truncate.
+    if (typeof item.salary === 'string' && item.salary !== '') row.salary = item.salary;
     rows.push(row);
   }
   return rows;
@@ -121,7 +125,7 @@ export function listFilledPaths(profile) {
   for (const key of ['education', 'experience', 'projects', 'familyMembers']) {
     (profile[key] || []).forEach((row, index) => {
       for (const [field, value] of Object.entries(row)) {
-        if (value) result.push(`${key}.${index}.${field}`);
+        if (value && (key !== 'experience' || field !== 'salary' || validExperienceSalary(value))) result.push(`${key}.${index}.${field}`);
       }
     });
   }

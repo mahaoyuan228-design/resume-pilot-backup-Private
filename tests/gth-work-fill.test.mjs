@@ -12,7 +12,9 @@ import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 import { JSDOM } from 'jsdom';
 import { acceptGthMonthInPage, assessGthWorkOpenFill, shippedGthWorkOpenFill } from '../src/background/gth-open-fills.mjs';
-import { normalizeProfile } from '../src/profile/store.js';
+import { normalizeProfile, loadProfile } from '../src/profile/store.js';
+import { captureProfileBinding, assertProfileBinding } from '../src/profile/profile-lifecycle.js';
+import { openSalaryProfileUi } from './fixtures/profile-salary-ui.mjs';
 import { sourceSnapshot } from '../src/profile/cms-internship-plan.mjs';
 
 const core = readFileSync(new URL('../src/content/gth-open-fill.js', import.meta.url), 'utf8');
@@ -2615,4 +2617,49 @@ test('work final binding refusal invalidates retained native receipts without st
     assert.equal(f.dom.window.document.getElementById('position').value, ROW.position);
     assert.equal(forbidden(f.clicks).length, 0);
   } finally { f.dom.window.close(); }
+});
+
+
+for (const confirmed of [false, true]) test('normal profile UI -> store -> shipped complete work request preserves salary confirmation: ' + confirmed, async t => {
+  const ui = await openSalaryProfileUi(t, workProfile(ROW));
+  await ui.edit('0000012345');
+  if (confirmed) await ui.confirm(); else await ui.flush();
+  const profile = await loadProfile(), actualBinding = await captureProfileBinding(ui.memory.local);
+  assert.equal(profile.experience[0].salary, '0000012345');
+  assert.equal(profile.confirmedFields.includes('experience.0.salary'), confirmed);
+  const f = boot(shell(formWrap(withProbeSalary({ industrySingle: true, industryCounter: '(0/1)' }))), {
+    async bindingCheck(message) {
+      await assertProfileBinding(ui.memory.local, message.profileBinding); return { allowed: true };
+    }
+  });
+  t.after(() => f.dom.window.close());
+  wire(f.dom.window.document, { industrySingle: true });
+  let sent = 0;
+  const result = await shippedGthWorkOpenFill({
+    api: {
+      scripting: { async executeScript({files}) { assert.deepEqual(files, ['src/content/gth-open-fill.js', 'src/content/gth-work-fill.js']); } },
+      tabs: { async sendMessage(_id, message) {
+        sent++; assert.equal(message.type, 'GTH_WORK_FILL'); assert.equal(message.profile, profile);
+        return f.context.ResumeGthWorkOpen.trial(message);
+      } }
+    }, tab: {id: 3}, requestId: 'synthetic-e1-work-chain', binding: actualBinding,
+    profile, profileIndex: 0, replaceExisting: false
+  });
+  assert.equal(sent, 1);
+  assert.equal(result.complete, false); assert.equal(result.liveSupportClaimed, false);
+  assert.equal(result.softwareClickedSave, false); assert.equal(result.softwareClickedSubmit, false);
+  assert.equal(result.softwareClickedDelete, false);
+  const assessed = assessGthWorkOpenFill(result);
+  if (confirmed) {
+    flags(result);
+    assert.equal(result.ok, true, JSON.stringify({reason:result.reason})); assert.equal(assessed.ok, true);
+    assert.equal(f.dom.window.document.getElementById('salary').value, '0000012345');
+    assert.equal(f.dom.window.document.getElementById('position').value, ROW.position);
+    assert.equal(result.fields.find(field => field.question === '薪资').path, 'experience.0.salary');
+  } else {
+    assert.equal(result.reason, 'profile_fact_unconfirmed'); assert.equal(result.writeStarted, false); assert.equal(assessed.ok, false);
+    assert.equal(f.dom.window.document.getElementById('salary').value, '');
+    assert.equal(f.dom.window.document.getElementById('position').value, '');
+  }
+  assert.equal(forbidden(f.clicks).length, 0);
 });

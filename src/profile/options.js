@@ -1,4 +1,4 @@
-import { MAX_CUSTOM_FACTS, clearProfile, emptyProfile, listFilledPaths, loadProfile, normalizeProfile, normalizeQuestionKey, saveProfile, sitePageUrl, customAnswerPath, scopedAnswerPath, questionIdentity, questionScopesOverlap, customAnswersProjection, preserveUniqueScopedConfirmations } from './store.js';
+import { validExperienceSalary, MAX_CUSTOM_FACTS, clearProfile, emptyProfile, listFilledPaths, loadProfile, normalizeProfile, normalizeQuestionKey, saveProfile, sitePageUrl, customAnswerPath, scopedAnswerPath, questionIdentity, questionScopesOverlap, customAnswersProjection, preserveUniqueScopedConfirmations } from './store.js';
 import { clearAttachment, loadAttachment, saveAttachment } from '../import/attachment-store.js';
 import {captureProfileBinding,assertProfileBinding,canonicalProfileHash,withProfileBinding,withProfileLifecycleLock,replaceProfileLifecycle,PROFILE_EPOCH_KEY} from './profile-lifecycle.js';
 import {SITE_FACTS_KEY,activeSiteFacts,confirmRecordSiteFacts,createProfileBackup,restoreProfileBackup} from './cms-education-site-facts.mjs';
@@ -55,6 +55,11 @@ function pauseForExternalConflict() {
   showToast('另一页面修改了资料。为避免覆盖，已暂停本页保存。');
 }
 
+function invalidExperienceSalaryIndex() {
+  return profile.experience.findIndex(row => Object.hasOwn(row, 'salary')
+    && row.salary !== '' && !validExperienceSalary(row.salary));
+}
+
 function sectionPaths(section) {
   if (section === 'family' && !profile.familyDisclosureEnabled) return [];
   return listFilledPaths(profile).filter((path) => isSectionPath(section, path));
@@ -92,7 +97,8 @@ function listField(label, list, index, key, options = {}) {
   } else if (options.type === 'select') {
     control = `<select data-list="${list}" data-index="${index}" data-field="${key}"><option value="">请选择</option>${options.choices.map(([optionValue, title]) => `<option value="${escapeHtml(optionValue)}"${value === optionValue ? ' selected' : ''}>${escapeHtml(title)}</option>`).join('')}</select>`;
   } else {
-    control = `<input data-list="${list}" data-index="${index}" data-field="${key}" type="${options.type || 'text'}" value="${escapeHtml(value)}" maxlength="${options.maxlength || 400}"${placeholder}>`;
+    const maxlength = options.maxlength === null ? '' : ` maxlength="${options.maxlength || 400}"`;
+    control = `<input data-list="${list}" data-index="${index}" data-field="${key}" type="${options.type || 'text'}" value="${escapeHtml(value)}"${maxlength}${placeholder}>`;
   }
   const notePath = list === 'customFacts' ? customAnswerPath(profile.customFacts[index],profile.customFacts)
     : list === 'siteOptionMappings' ? `siteOptionMappings.${index}.optionText` : path;
@@ -105,7 +111,7 @@ function confirmedMappingSources() {
   const titles = {
     fullName:'姓名',identityNumber:'证件号码',gender:'性别',height:'身高',selfEvaluation:'自我评价',birthDate:'出生日期',email:'邮箱',phone:'电话',currentCity:'现居住地',expectedSalary:'期望薪资',availableDate:'到岗日期',availabilityNote:'到岗说明',
     school:'学校',degree:'学历',major:'专业',startDate:'开始日期',endDate:'结束日期',majorCategory:'专业类别',unifiedAdmissions:'是否统招',campusActivities:'在校活动／职务',gradeRank:'成绩排名',majorDescription:'专业描述',gpa:'绩点',schoolLocation:'学校所在地',
-    type:'工作类型',organization:'单位',position:'岗位',description:'主要内容',jobCategory:'职位类别',industry:'公司所属行业',workArea:'工作地区',companyIntro:'公司介绍',department:'所属部门',reportTo:'汇报对象',subordinateCount:'下属人数',leaveReason:'离职原因',name:'名称',role:'角色',relation:'关系',occupation:'职业',employer:'工作单位'
+    type:'工作类型',organization:'单位',position:'岗位',description:'主要内容',jobCategory:'职位类别',industry:'公司所属行业',workArea:'工作地区',companyIntro:'公司介绍',department:'所属部门',reportTo:'汇报对象',subordinateCount:'下属人数',salary:'该段薪资（元/月）',leaveReason:'离职原因',name:'名称',role:'角色',relation:'关系',occupation:'职业',employer:'工作单位'
   };
   const preview = value => value.length > 160 ? value.slice(0,160)+'…' : value;
   return [...new Set(listFilledPaths(profile))].flatMap(path => {
@@ -217,9 +223,10 @@ function sectionMarkup(section) {
       listField('所属部门', 'experience', index, 'department'),
       listField('汇报对象', 'experience', index, 'reportTo'),
       listField('下属人数', 'experience', index, 'subordinateCount'),
+      listField('该段薪资（元/月，纯数字，可不填）', 'experience', index, 'salary', { maxlength: null }),
       listField('离职原因', 'experience', index, 'leaveReason', { type: 'textarea', wide: true })
     ], '还没有工作或实习经历。没有经历可以保持空白。')
-      + '<div class="hint">日期月、日须两位（如 2022-09-01，不要写成 2022-9-1）。离开输入框或点确认时会自动补零；无法识别的格式仍须你改正。国泰海通已打开的工作经验编辑器只接受 YYYY-MM 任职时间，职位类别和公司所属行业须为「一级||二级」。薪资控件尚未支持，这里不采集。</div>';
+      + '<div class="hint">日期月、日须两位（如 2022-09-01，不要写成 2022-9-1）。离开输入框或点确认时会自动补零；无法识别的格式仍须你改正。国泰海通已打开的工作经验编辑器只接受 YYYY-MM 任职时间，职位类别和公司所属行业须为「一级||二级」。薪资可不填；填写时请按元/月填写1–10位数字，不要附带单位。</div>';
     case 'projects': return listEditor('projects', '项目经历', (index) => [
       listField('项目名称', 'projects', index, 'name'), listField('你的角色', 'projects', index, 'role'),
       listField('项目内容与成果', 'projects', index, 'description', { type: 'textarea', wide: true })
@@ -254,7 +261,8 @@ function renderMenu() {
     const paths = sectionPaths(section);
     const count = paths.filter((path) => profile.confirmedFields.includes(path)).length;
     const pending = section === 'custom' ? unansweredCustomDrafts() : 0;
-    const status = pending ? `待回答 ${pending}` : !paths.length ? '空白' : count === paths.length ? '已核对' : `${count}/${paths.length}`;
+    const invalidSalary = section === 'experience' && invalidExperienceSalaryIndex() !== -1;
+    const status = invalidSalary ? '待核对' : pending ? `待回答 ${pending}` : !paths.length ? '空白' : count === paths.length ? '已核对' : `${count}/${paths.length}`;
     return `<button type="button" data-section="${section}" class="${section === activeSection ? 'active' : ''}" ${section === activeSection ? 'aria-current="true"' : ''}><span>${escapeHtml(SECTION_INFO[section][0])}</span><small>${status}</small></button>`;
   }).join('');
 }
@@ -277,7 +285,8 @@ function renderSection() {
   if(activeSection==='education')refreshSiteFactPanels(sitePanelRevision).catch(()=>{showToast('招聘网站补充资料读取失败，请刷新后重试。');});
   const paths = sectionPaths(activeSection);
   const done = paths.length > 0 && paths.every((path) => profile.confirmedFields.includes(path))
-    && (activeSection !== 'custom' || !unansweredCustomDrafts());
+    && (activeSection !== 'custom' || !unansweredCustomDrafts())
+    && (activeSection !== 'experience' || invalidExperienceSalaryIndex() === -1);
   $('#section-state').textContent = done ? '已核对' : '待核对';
   $('#section-state').classList.toggle('confirmed', done);
   $('#review-check').checked = done;
@@ -290,7 +299,8 @@ function renderSection() {
 function updateStatus() {
   const paths = sectionPaths(activeSection);
   const done = paths.length > 0 && paths.every((path) => profile.confirmedFields.includes(path))
-    && (activeSection !== 'custom' || !unansweredCustomDrafts());
+    && (activeSection !== 'custom' || !unansweredCustomDrafts())
+    && (activeSection !== 'experience' || invalidExperienceSalaryIndex() === -1);
   $('#section-state').textContent = done ? '已核对' : '待核对';
   $('#section-state').classList.toggle('confirmed', done);
   renderMenu();
@@ -534,7 +544,7 @@ function addEntry(list) {
     experience: {
       type: '', organization: '', position: '', startDate: '', endDate: '', description: '',
       jobCategory: '', industry: '', workArea: '', companyIntro: '', department: '', reportTo: '',
-      subordinateCount: '', leaveReason: ''
+      subordinateCount: '', salary: '', leaveReason: ''
     },
     projects: { name: '', role: '', description: '' },
     familyMembers: { relation: '', occupation: '', employer: '' },
@@ -565,6 +575,12 @@ function removeEntry(list, index) {
 async function confirmSection() {
   if (externalConflict) { showToast('资料在其他页面已改变，请刷新资料库后再确认。'); return; }
   if (!$('#review-check').checked) { showToast('请先勾选“我已逐项核对本页内容”。'); return; }
+  // Validate the raw draft first: normalization must not discard an invalid
+  // salary and then confirm the remaining section as though it were reviewed.
+  if (activeSection === 'experience') {
+    const invalid = invalidExperienceSalaryIndex();
+    if (invalid !== -1) { showToast(`第${invalid + 1}段薪资请填写1–10位数字（元/月），或留空。`); return; }
+  }
   profile = normalizeProfile(profile);
   if (activeSection === 'family' && !profile.familyDisclosureEnabled) { showToast('家庭信息使用已关闭。'); return; }
   if (activeSection === 'basic') {

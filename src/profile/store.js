@@ -14,6 +14,26 @@ const records = (value, keys, max = 30) => Array.isArray(value)
   ? value.slice(0, max).filter((item) => item && typeof item === 'object' && !Array.isArray(item))
       .map((item) => Object.fromEntries(keys.map((key) => [key, text(item[key])])) )
   : [];
+export const validExperienceSalary = value => typeof value === 'string' && /^[0-9]{1,10}$/u.test(value);
+const EXPERIENCE_KEYS = ['type', 'organization', 'position', 'startDate', 'endDate', 'description'];
+const EXPERIENCE_EXTRAS = ['jobCategory', 'industry', 'workArea', 'companyIntro', 'department', 'reportTo', 'subordinateCount', 'leaveReason'];
+function experienceRecords(value) {
+  if (!Array.isArray(value)) return [];
+  const rows = [];
+  for (const item of value.slice(0, 30)) {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) continue;
+    const row = Object.fromEntries(EXPERIENCE_KEYS.map((key) => [key, text(item[key])]));
+    for (const key of EXPERIENCE_EXTRAS) {
+      const extra = text(item[key]);
+      if (extra) row[key] = extra;
+    }
+    // Keep a typed draft verbatim, including invalid text. It is not a usable
+    // confirmed fact until validExperienceSalary passes; never trim or truncate.
+    if (typeof item.salary === 'string' && item.salary !== '') row.salary = item.salary;
+    rows.push(row);
+  }
+  return rows;
+}
 
 export function emptyProfile() {
   return {
@@ -35,6 +55,10 @@ export function normalizeProfile(input) {
   for (const key of ['fullName', 'identityNumber', 'gender', 'height', 'selfEvaluation', 'birthDate', 'email', 'phone', 'currentCity', 'expectedSalary', 'availableDate', 'availabilityNote']) {
     profile[key] = text(source[key], key === 'selfEvaluation' ? 4000 : key === 'availabilityNote' ? 500 : 200);
   }
+  // Optional confirmed month fact used by GTH 参加工作时间. Preserve imported
+  // explicit data without deriving it from any education or experience dates.
+  const workStart = text(source.workStart, 200);
+  if (workStart) profile.workStart = workStart;
   profile.desiredRoles = strings(source.desiredRoles);
   profile.desiredCities = strings(source.desiredCities);
   profile.education = records(source.education, [
@@ -49,7 +73,7 @@ export function normalizeProfile(input) {
       row.unifiedAdmissions = '';
     }
   }
-  profile.experience = records(source.experience, ['type', 'organization', 'position', 'startDate', 'endDate', 'description']);
+  profile.experience = experienceRecords(source.experience);
   profile.projects = records(source.projects, ['name', 'role', 'description']);
   profile.familyDisclosureEnabled = source.familyDisclosureEnabled === true;
   profile.familyMembers = records(source.familyMembers, ['relation', 'occupation', 'employer']);
@@ -92,7 +116,7 @@ export function normalizeProfile(input) {
 // Dotted paths for nonempty facts; array members use their current index.
 export function listFilledPaths(profile) {
   const result = [];
-  for (const key of ['fullName', 'identityNumber', 'gender', 'height', 'selfEvaluation', 'birthDate', 'email', 'phone', 'currentCity', 'expectedSalary', 'availableDate', 'availabilityNote']) {
+  for (const key of ['fullName', 'identityNumber', 'gender', 'height', 'selfEvaluation', 'birthDate', 'email', 'phone', 'currentCity', 'expectedSalary', 'availableDate', 'availabilityNote', 'workStart']) {
     if (profile[key]) result.push(key);
   }
   for (const key of ['desiredRoles', 'desiredCities']) {
@@ -101,7 +125,7 @@ export function listFilledPaths(profile) {
   for (const key of ['education', 'experience', 'projects', 'familyMembers']) {
     (profile[key] || []).forEach((row, index) => {
       for (const [field, value] of Object.entries(row)) {
-        if (value) result.push(`${key}.${index}.${field}`);
+        if (value && (key !== 'experience' || field !== 'salary' || validExperienceSalary(value))) result.push(`${key}.${index}.${field}`);
       }
     });
   }

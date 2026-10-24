@@ -1,0 +1,25 @@
+{
+  "ok": true,
+  "site": "CMB",
+  "url": "https://career.cmbchina.com/center/resume",
+  "field": {
+    "ok": true,
+    "label": "出生日期",
+    "kindGuess": "DatePicker",
+    "input": {
+      "id": "resume_basicInfo_birthday",
+      "placeholder": "请选择日期",
+      "readOnly": true,
+      "disabled": false,
+      "value": null,
+      "ariaControls": null
+    },
+    "pickerClass": "ant-picker time-cell",
+    "panel": null,
+    "fillHint": "antd DatePicker readonly; hint-only; Never Save; NOT auto-filled"
+  },
+  "neverSave": true,
+  "harvestedAt": "2026-10-19T15:49:34.765Z",
+  "harvestedAtAsiaShanghai": "2026/10/19 23:49:34",
+  "runId": "2026-10-19T15-49-34-129Z"
+}

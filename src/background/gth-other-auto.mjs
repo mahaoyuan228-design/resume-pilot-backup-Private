@@ -1,14 +1,21 @@
 // GTH 其他信息 auto (mirror GTH_SIMPLE_AUTO). Default: readiness.
 // Fill-without-save optional. Never clicks Save/Cancel/submit. Fields: 描述/标题.
+// Ready only when each question has a confirmed customAnswer and one matching
+// customFact for this page. Missing values fail closed. Nothing is invented.
+// liveSupportClaimed stays false. This path does not claim the site is supported.
+// Fill ok is true only after a settled readback. A Save/submit/delete or
+// savedOnSite/submitted claim is kept and fails closed.
 import {captureProfileBinding,assertProfileBinding,canonicalProfileHash,
   dispatchBoundSource,withProfileBinding} from '../profile/profile-lifecycle.js';
-import {evaluateGthSavePolicy,assertAutoNeverAttemptedSave} from './gth-save-policy.mjs';
+import {evaluateGthSavePolicy,assertAutoNeverAttemptedSave,gthAutoSiteClaims,gthAutoSiteClaimed} from './gth-save-policy.mjs';
+import {assessGthOtherFill,shippedGthOtherFill} from './gth-open-fills.mjs';
 
 const PAGE='https://hr.gtht.com/resume/edit/',ORIGIN='https://hr.gtht.com';
 const SECTION='其他信息';
-const QUESTIONS=['描述','标题'];
+const QUESTIONS=['标题','描述'];
 const TITLES=['基本信息','教育经历','求职意向','工作经验','职业技能与特长','附件简历','其他信息'];
 const fail=reason=>{throw Error(reason);};
+const newRequestId=()=>`${Date.now()}-${Math.random().toString(36).slice(2,10)}`;
 const safe=error=>{const value=typeof error==='string'?error:(error?.message||'');return typeof value==='string'&&/^[a-z0-9_]{2,100}$/u.test(value)?value:'gth_other_auto_failed';};
 const sleep=ms=>new Promise(done=>setTimeout(done,ms));
 
@@ -46,23 +53,53 @@ function probePageFunc(expectedTitles){
     ...(otherForms.length?{warning:'gth_other_section_editor_open'}:{})};
 }
 
+function matchingFact(profile,question,answer){
+  const facts=Array.isArray(profile?.customFacts)?profile.customFacts:[];
+  const matched=facts.filter(item=>item?.question===question);
+  const fact=matched.length===1?matched[0]:null;
+  if(!fact||fact.answer!==answer||fact.sitePageUrl!==PAGE||fact.sectionName!==SECTION||fact.rowContext!=='none')return null;
+  return fact;
+}
 function otherSource(profile){
-  const answers={};
-  let confirmedAll=true,hasAll=true;
-  for(const question of QUESTIONS){
+  const confirmed=new Set(Array.isArray(profile?.confirmedFields)?profile.confirmedFields:[]);
+  const items=QUESTIONS.map(question=>{
     const value=typeof profile?.customAnswers?.[question]==='string'?profile.customAnswers[question]:'';
-    answers[question]=value;
-    if(!value.trim())hasAll=false;
-    const confirmed=Array.isArray(profile?.confirmedFields)&&profile.confirmedFields.includes(`customAnswers.${question}`);
-    if(!confirmed)confirmedAll=false;
-  }
+    const hasAnswer=!!value.trim();
+    const fact=hasAnswer?matchingFact(profile,question,value):null;
+    const fieldConfirmed=confirmed.has(`customAnswers.${question}`);
+    return {
+      question,path:`customAnswers.${question}`,hasAnswer,factOk:!!fact,confirmed:fieldConfirmed,
+      ready:hasAnswer&&!!fact&&fieldConfirmed,answerLength:value.trim().length
+    };
+  });
   return {
     section:SECTION,
     questions:QUESTIONS,
-    hasAllAnswers:hasAll,
-    confirmedAll:confirmedAll===true,
-    ready:hasAll&&confirmedAll===true,
-    answerLengths:Object.fromEntries(QUESTIONS.map(q=>[q,(answers[q]||'').trim().length]))
+    items,
+    hasAllAnswers:items.every(item=>item.hasAnswer),
+    confirmedAll:items.every(item=>item.confirmed),
+    factsAll:items.every(item=>item.factOk),
+    ready:items.every(item=>item.ready),
+    answerLengths:Object.fromEntries(items.map(item=>[item.question,item.answerLength]))
+  };
+}
+function otherFillProfile(profile){
+  const source=otherSource(profile);
+  if(!source.ready)fail(source.hasAllAnswers?'profile_fact_unconfirmed':'missing_profile_value');
+  const customAnswers={};
+  const customFacts=[];
+  for(const question of QUESTIONS){
+    const answer=profile.customAnswers[question];
+    const fact=matchingFact(profile,question,answer);
+    customAnswers[question]=answer;
+    customFacts.push({
+      question,answer:fact.answer,sitePageUrl:fact.sitePageUrl,sectionName:fact.sectionName,rowContext:fact.rowContext
+    });
+  }
+  return {
+    customAnswers,
+    confirmedFields:QUESTIONS.map(question=>`customAnswers.${question}`),
+    customFacts
   };
 }
 
@@ -149,7 +186,7 @@ export function createGthOtherAutoRunner({api=globalThis.chrome,verifyBeforeFill
       other:source,profileBinding:binding,profileBindingError:bindingError,
       saveAllowedByPolicy:evaluateGthSavePolicy({fromAutoPath:true}).saveAllowedByPolicy,
       savePolicy:evaluateGthSavePolicy({fromAutoPath:true}),
-      note:'Auto path does not Save/submit; 描述/标题 only; existing non-empty different → soft-skip'
+      note:'Auto path does not Save/submit and does not claim the site is supported. 标题/描述 come only from confirmed customAnswers plus one matching customFact. Missing values fail closed.'
     };
   }
 
@@ -160,52 +197,60 @@ export function createGthOtherAutoRunner({api=globalThis.chrome,verifyBeforeFill
     const raw=await get('resumeProfile');
     if(await canonicalProfileHash(raw,lifecycleOptions.cryptoImpl)!==binding.profileHash)fail('profile_binding_changed');
     const source=otherSource(raw);
-    if(!source.ready)fail(source.hasAllAnswers?(source.confirmedAll?'other_not_ready':'profile_fact_unconfirmed'):'missing_profile_value');
-    const answers=Object.fromEntries(QUESTIONS.map(q=>[q,raw.customAnswers[q]]));
+    if(!source.ready)fail(source.hasAllAnswers?'profile_fact_unconfirmed':'missing_profile_value');
+    const profile=otherFillProfile(raw);
     const trusted=await get('resumeTrustedOrigins');
     if(!Array.isArray(trusted)||!trusted.includes(ORIGIN)){
       if(message.originConfirmed!==true)fail('other_job_origin_unconfirmed');
       await withProfileBinding(api.storage.local,binding,()=>api.storage.local.set({resumeTrustedOrigins:[...(Array.isArray(trusted)?trusted:[]),ORIGIN].slice(-100)}),lifecycleOptions);
     }
-    await bounded(()=>dispatchBoundSource(api.storage.local,binding,()=>api.scripting.executeScript({target:{tabId:tab.id},files:['src/content/gth-other-section.js']}),lifecycleOptions),15000);
-    const rows=await bounded(()=>dispatchBoundSource(api.storage.local,binding,()=>api.scripting.executeScript({
-      target:{tabId:tab.id},world:'ISOLATED',
-      func:async(payload)=>typeof globalThis.ResumeGthOtherSection?.fill==='function'
-        ?globalThis.ResumeGthOtherSection.fill(payload)
-        :{ok:false,reason:'other_fill_missing'},
-      args:[{profileBinding:binding,sectionName:SECTION,answers}]
-    }),lifecycleOptions));
-    await assertProfileBinding(api.storage.local,binding,lifecycleOptions);
-    const response=rows?.length===1&&rows[0].frameId===0?rows[0].result:null;
-    if(!response||typeof response!=='object')fail('gth_other_fill_no_response');
-    const fields=Array.isArray(response.fields)?response.fields:[];
-    const ok=response.ok===true&&response.sectionName===SECTION&&response.editorLeftOpen===true
-      &&response.softwareClickedSave===false&&response.softwareClickedSubmit===false
-      &&fields.length===2
-      &&QUESTIONS.every((question,index)=>fields[index]?.question===question)
-      &&(response.writeStarted===true
-        ?fields.every(field=>field.status==='verified'&&field.reason==='readback_matched')
-        :fields.every(field=>field.status==='verified'&&field.reason==='preexisting_same_value'
-          ||field.status==='skipped'&&field.reason==='existing_value'));
+    let response=null,failureReason=null,dispatched=false,dispatchClosed=false;
+    try{
+      response=await bounded(()=>dispatchBoundSource(api.storage.local,binding,()=>{
+        // A timed-out lock wait must not dispatch a fill later.
+        if(dispatchClosed)fail('gth_other_auto_timeout');
+        return shippedGthOtherFill({api,tab,requestId:newRequestId(),binding,profile,replaceExisting:false,
+          beforeSend:()=>{
+            if(dispatchClosed)fail('gth_other_auto_timeout');
+            dispatched=true;
+          }});
+      },lifecycleOptions));
+      await assertProfileBinding(api.storage.local,binding,lifecycleOptions);
+      if(!response||typeof response!=='object')fail('gth_other_fill_no_response');
+    }catch(error){
+      dispatchClosed=true;
+      if(!dispatched)throw error;
+      // Binding invalidation cannot erase an already received write/policy claim.
+      // A missing reply after dispatch proves neither a write nor a no-write.
+      failureReason=safe(error);
+    }
+    const fields=!failureReason&&Array.isArray(response?.fields)?response.fields:[];
+    const claims=gthAutoSiteClaims(response);
+    const claimed=gthAutoSiteClaimed(claims);
+    const assessed=assessGthOtherFill(response);
+    const ok=!failureReason&&!claimed&&assessed.ok===true;
     const job={
       state:ok?'completed':'unknown',
-      reason:ok?null:safe(response.reason||'gth_other_fill_invalid'),
-      outcome:ok?(response.writeStarted?'verified':'verified_or_skipped_preexisting'):'unknown',
+      reason:claimed?'gth_other_save_policy_violated':(failureReason||(ok?null:safe(assessed.reason||response?.reason||'gth_other_fill_invalid'))),
+      ...(failureReason?{failureReason}:{}),
+      outcome:ok?assessed.outcome:'unknown',
       section:SECTION,
       fields,
-      writeStarted:response.writeStarted===true,
-      editorLeftOpen:response.editorLeftOpen===true,
-      softwareClickedSave:false,
-      softwareClickedSubmit:false
+      writeStarted:response?.writeStarted===true,
+      writeMayHaveStarted:response?.writeStarted===true||(dispatched&&response?.writeStarted!==false),
+      editorLeftOpen:response?.editorLeftOpen===true,
+      liveSupportClaimed:false,
+      complete:false,
+      ...claims
     };
-    return {job,responseSummary:{ok,writeStarted:job.writeStarted,reason:job.reason,fieldCount:fields.length},outcome:job.outcome};
+    return {job,responseSummary:{ok,writeStarted:job.writeStarted,reason:job.reason,fieldCount:fields.length,...claims},outcome:job.outcome};
   }
 
   async function auto(message,sender=null){
     const mode=['readiness','fill'].includes(message.mode)?message.mode:'readiness';
     const openIfMissing=message.openIfMissing!==false;
     const report={version:1,kind:'gth_other_auto',mode,at:Date.now(),section:SECTION,
-      steps:[],helpNeeded:false,saveAttempted:false,writeAttempted:false};
+      steps:[],helpNeeded:false,saveAttempted:false,writeAttempted:false,liveSupportClaimed:false,complete:false};
     const found=await findGthTab(sender?.tab?.id,{openIfMissing});
     report.steps.push({find:found.kind,tabId:found.tab.id,url:found.tab.url||null});
     await focusTab(found.tab);
@@ -246,13 +291,21 @@ export function createGthOtherAutoRunner({api=globalThis.chrome,verifyBeforeFill
     }
 
     const filled=await runFill(found.tab,message,readiness);
-    report.writeAttempted=filled.job?.writeStarted===true;
+    report.writeMayHaveStarted=filled.job?.writeMayHaveStarted===true;
+    report.writeAttempted=filled.job?.writeStarted===true?true:(report.writeMayHaveStarted?null:false);
     report.steps.push({fill:filled.job?.state,outcome:filled.outcome});
     report.job=filled.job;
     report.fill=filled.responseSummary;
     report.saveAllowedByPolicy=evaluateGthSavePolicy({fromAutoPath:true}).saveAllowedByPolicy;
-    assertAutoNeverAttemptedSave(report);
-    report.ok=true;
+    const claims=gthAutoSiteClaims(filled.job);
+    Object.assign(report,claims);
+    const settled=filled.job?.state==='completed'&&filled.responseSummary?.ok===true&&!gthAutoSiteClaimed(claims);
+    report.ok=settled;
+    if(!report.ok)report.reason=filled.job?.reason||filled.responseSummary?.reason||'gth_other_fill_failed';
+    try{assertAutoNeverAttemptedSave(report);}catch(error){
+      report.ok=false;
+      report.reason=report.reason||safe(error);
+    }
     await api.storage.local.set({resumeGthOtherAutoRun:report});
     return report;
   }
@@ -265,7 +318,7 @@ export function createGthOtherAutoRunner({api=globalThis.chrome,verifyBeforeFill
       const helpUrl=error?.helpUrl||PAGE;
       const help=reason==='gth_other_login_or_wrong_page'||reason==='gth_other_tab_missing'||/\/login\b/i.test(String(helpUrl));
       const payload={ok:false,reason,helpNeeded:help,helpUrl,helpReason:error?.helpReason||(help?'我需要帮助！请打开已登录的国泰海通简历编辑页 https://hr.gtht.com/resume/edit/':''),
-        mode:message?.mode||'readiness',saveAttempted:false,writeAttempted:false,at:Date.now(),version:1,kind:'gth_other_auto'};
+        mode:message?.mode||'readiness',saveAttempted:false,saveAllowedByPolicy:false,writeAttempted:false,writeMayHaveStarted:false,liveSupportClaimed:false,complete:false,at:Date.now(),version:1,kind:'gth_other_auto'};
       api.storage.local.set({resumeGthOtherAutoRun:payload}).catch(()=>{});
       sendResponse(payload);
     });

@@ -1,0 +1,36 @@
+# Moka public JS/CSS class hints (2026-10-18 Asia/Shanghai)
+# Source: app.mokahr.com/campus-recruitment/ti/143986
+# Bundles: static-ats.mokahr.com/recruitment-web-client/
+#   recruitmentWeb-20261012-1723-f0ef3-release.{js,css}
+#   vendor-112b3d9cba7673886459eb30128f54a6.js
+# Method: curl (+ cookie jar for acw_tc); no login; no live form DOM
+
+## Provisional fixture classes — NOT found in public bundles
+moka-form-item          (0 in js/css/vendor)
+moka-form-item-label    (0)
+moka-form-item-control  (0)
+moka-input              (0)
+# Only moka-* chrome in CSS: moka-ui-tabs*
+
+## CSS-confirmed apply/campus form hints (public stylesheet; live field tree unproven)
+.apply-form / .apply-form-preview
+.apply-form__field / .apply-form__field-title-text / .apply-form__field-input
+.apply-form__item / .apply-form__fields / .apply-form__form
+.campus-apply__item / .campus-apply__label / .campus-apply__input / .campus-apply__field
+.text-input
+.modal-form-item (+ CSS-module hashed variants) — modal Form.Item chrome in JS
+.sd-Form-label-* / .sd-Input-input-* — CSS modules (hashes; unstable for selectors)
+
+## Public portal chrome — confirmed in SSR HTML
+#app
+#init-data (hidden JSON; org.id=ti siteId=143986 mode=campus useApplyForm=true)
+#moka-version data-version=20261012-1723-f0ef3-release
+.forSEO + footer "Moka，智能化招聘管理系统"
+static-ats.mokahr.com/recruitment-web-client/*
+
+## Gap
+SSR has no resume field <input> (only hidden init-data / version). Apply/resume edit is
+login-walled SPA. CSS hints above are NOT adopted as content selectors yet — would invent
+live form DOM without harvest. Keep offline fixture on provisional .moka-form-item until
+Jeremy logs in and captures real resume-edit markup; then prefer stable BEM
+(campus-apply__* / apply-form__*) over hashed sd-* modules.

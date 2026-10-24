@@ -1,0 +1,111 @@
+{
+  "version": 1,
+  "kind": "cms_row_d_research_dictionary_r7_provenance",
+  "tip": "8abbdc20dc1b79bfb52d4378f62a4f2023943ef0",
+  "neverSave": true,
+  "liveSupportClaimed": false,
+  "livePassClaimed": false,
+  "writeStarted": false,
+  "mutationAllowed": false,
+  "valuesExposed": false,
+  "probeOnly": true,
+  "booked": 53,
+  "bookD": false,
+  "purpose": "Sanitized complete owned static option labels captured without reading current values; not live fill or support evidence.",
+  "sources": [
+    {
+      "file": "diagnostics.json",
+      "sha256": "6fba18afae9b2b97a64c411a0b71d63bda33a6e0505f6e4d9b85c8e7a2b3ddf9"
+    },
+    {
+      "file": "collect-reviewed.mjs",
+      "sha256": "9518bac6c4d99512504803ce27baac005bff7d5f992f66bcf2490c39acfcb43b"
+    },
+    {
+      "file": "official-cms-row-d-live.json",
+      "sha256": "561576f1e3ed6b606078fdd43f26982dd840fb23f01ded277df18340a67e0b4e"
+    },
+    {
+      "file": "guarded-diagnostic-live.json",
+      "sha256": "ea457be75578de04b3908a817466a89c9eb1ba029c23ad569a6c90ed9e46ce35"
+    }
+  ],
+  "official": {
+    "reason": "row_d_preflight_incomplete",
+    "probeCompleted": true,
+    "fieldsOk": 12,
+    "fieldsTotal": 16,
+    "keeperAssessment": "correlated_keeper_blocks",
+    "responseToNonGetCount": 0,
+    "commandFailed": false,
+    "truncated": false
+  },
+  "scope": {
+    "sectionCount": 1,
+    "wrapperCount": 1,
+    "formItemCount": 1,
+    "itemScoped": true,
+    "labelMatched": true,
+    "peerQuestionCount": 1,
+    "questionUnique": true,
+    "wrapperVisibleByAttributes": true,
+    "itemVisibleByAttributes": true,
+    "sectionVisibleByAttributes": true,
+    "controlsCount": 33,
+    "ownedControlsCount": 33,
+    "allControlsOwned": true
+  },
+  "groupCount": 1,
+  "ownedOptionCount": 32,
+  "ownedInputCount": 32,
+  "optionOwnershipVerified": true,
+  "staticTextSpanShapeVerified": true,
+  "knownPrefixMatched": true,
+  "labelsUnique": true,
+  "field": {
+    "key": "researchInterests",
+    "wrapperId": "13_102501_0",
+    "sectionId": "13",
+    "controlKind": "checkbox",
+    "label": "如应聘研究发展中心行业研究类岗位请勾选（建议仅勾选3~5项）*",
+    "options": [
+      "非研究类岗位，不涉及",
+      "宏观",
+      "策略",
+      "债券",
+      "银行",
+      "非银行金融",
+      "房地产",
+      "量化",
+      "基金评价",
+      "金属及材料（有色金属）",
+      "化工",
+      "交通运输",
+      "生物医药",
+      "汽车",
+      "机械",
+      "军工",
+      "电力设备及新能源",
+      "建材",
+      "食品饮料",
+      "轻工纺服",
+      "纺服化妆品",
+      "农林牧渔",
+      "家电",
+      "商业（零售+社会服务）",
+      "电子",
+      "传媒",
+      "通信",
+      "计算机",
+      "中小盘",
+      "环保及公用事业",
+      "煤炭开采",
+      "智库研究"
+    ],
+    "harvestedOptionCount": 32,
+    "recordedLabelCount": 32,
+    "optionsComplete": true,
+    "evidenceSource": "visible",
+    "countKind": "complete_owned_static_options"
+  }
+}

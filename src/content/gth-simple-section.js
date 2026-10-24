@@ -1,5 +1,9 @@
-// Narrow GTH section trial. The caller supplies an experimental answer in
-// memory; this module never reads applicant storage or clicks Save/Submit.
+// Narrow 国泰海通「职业技能与特长」fill-without-save. The value comes only
+// from a confirmed resumeProfile customAnswer plus one matching customFact.
+// Caller-supplied answers are not a fill source. A missing or unconfirmed
+// value fails closed and is not invented. liveSupportClaimed stays false.
+// This file does not claim the site is supported. Never clicks 保存 / 提交 /
+// 投递 / 删除. The editor is left open.
 (() => {
   if (globalThis.ResumeGthSimpleSection && globalThis.ResumeGthSimpleSectionRevision===3) return;
 
@@ -86,20 +90,38 @@
       && (!control.validity || control.validity.valid);
   }
 
-  async function fill({ sectionName, answers, profileBinding } = {}) {
+  const fieldRow = (status, reason) => ({
+    question: QUESTION, path: `customAnswers.${QUESTION}`, labels: [QUESTION], status, reason
+  });
+  function profileAnswer(profile) {
+    if (!profile || typeof profile !== 'object' || Array.isArray(profile)) stop('missing_profile_value');
+    const answer = profile.customAnswers?.[QUESTION];
+    if (typeof answer !== 'string' || !answer.trim()) stop('missing_profile_value');
+    if (answer.length > 4000 || /[\u0000-\u0008\u000b\u000c\u000e-\u001f]/u.test(answer))
+      stop('invalid_profile_value');
+    const facts = Array.isArray(profile.customFacts) ? profile.customFacts : [];
+    const matched = facts.filter(item => item?.question === QUESTION);
+    const fact = matched.length === 1 ? matched[0] : null;
+    const confirmed = Array.isArray(profile.confirmedFields)
+      && profile.confirmedFields.includes(`customAnswers.${QUESTION}`);
+    if (!fact || fact.answer !== answer || fact.sitePageUrl !== PAGE
+      || fact.sectionName !== SECTION || fact.rowContext !== 'none' || !confirmed)
+      stop('profile_fact_unconfirmed');
+    return answer;
+  }
+
+  async function fill({ sectionName, profile, profileBinding } = {}) {
     const result = { ok: false, sectionName: SECTION, fields: [],
       editorLeftOpen: false, writeStarted: false, savedOnSite: null,
-      submitted: null, softwareClickedSave: false, softwareClickedSubmit: false };
+      submitted: null, softwareClickedSave: false, softwareClickedSubmit: false,
+      softwareClickedDelete: false, liveSupportClaimed: false, complete: false };
     if (busy) return { ...result, reason: 'fill_in_progress' };
     busy = true;activeBinding=profileBinding;lastBinding=profileBinding;
     const timeOrigin = performance.timeOrigin;
     try {
       await checkBinding();
       if (sectionName !== SECTION) stop('unsupported_section');
-      const answer = answers?.[QUESTION];
-      if (typeof answer !== 'string' || !answer.trim()
-        || answer.length > 2000 || /[\u0000-\u0008\u000b\u000c\u000e-\u001f]/u.test(answer))
-        stop('invalid_test_answer');
+      const answer = profileAnswer(profile);
       let sections = requirePage(timeOrigin);
       let forms = formsOf(sections);
       if (forms.length > 1 || (forms.length === 1 && !sections[4].contains(forms[0])))
@@ -129,8 +151,8 @@
       const existing = control.value;
       if (existing !== '') {
         await checkBinding();result.ok = true;
-        result.fields = [{ question: QUESTION, status: existing === answer ? 'verified' : 'skipped',
-          reason: existing === answer ? 'preexisting_same_value' : 'existing_value' }];
+        result.fields = [fieldRow(existing === answer ? 'verified' : 'skipped',
+          existing === answer ? 'preexisting_same_value' : 'existing_value')];
         return result;
       }
       if (control.maxLength >= 0 && answer.length > control.maxLength)
@@ -161,12 +183,11 @@
       if (control.value !== answer) stop('readback_mismatch');
       if (!validationClear(latest.item, control)) stop('site_validation_failed');
       await checkBinding();result.ok = true;
-      result.fields = [{ question: QUESTION, status: 'verified', reason: 'readback_matched' }];
+      result.fields = [fieldRow('verified', 'readback_matched')];
       return result;
     } catch (error) {
       result.reason = error instanceof Stop ? error.code : 'fill_failed';
-      result.fields = [{ question: QUESTION, status: result.writeStarted ? 'failed' : 'skipped',
-        reason: result.reason }];
+      result.fields = [fieldRow(result.writeStarted ? 'failed' : 'skipped', result.reason)];
       return result;
     } finally {
       busy = false;activeBinding=null;

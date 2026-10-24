@@ -1,0 +1,27 @@
+{
+  "schema": "cmb-rankingmajor-harvest/1",
+  "synthetic": true,
+  "reachable": true,
+  "scopeReadable": true,
+  "labelLocated": true,
+  "labelText": "专业排名",
+  "candidateCount": 1,
+  "association": "clear",
+  "snapshots": { "first": true, "second": true, "agree": true },
+  "selector": "#fixtureRankingNode",
+  "control": {
+    "observedId": "fixtureRankingNode",
+    "nodeName": "select",
+    "role": "combobox",
+    "visible": true,
+    "disabled": false
+  },
+  "files": {
+    "context": true,
+    "dom01": true,
+    "dom02": true,
+    "fieldImage": true,
+    "verdict": true
+  },
+  "note": "A smuggled selector is rejected. The gate must not echo it."
+}

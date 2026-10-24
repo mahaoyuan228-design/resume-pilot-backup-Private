@@ -1,8 +1,13 @@
 // GTH basic auto path (mirror GTH_EDUCATION_AUTO). Default: readiness.
 // Fill-without-save optional. Never clicks Save/Cancel/submit.
+// Fill ok is true only after a settled verified readback. A reported
+// Save/submit/delete click, a status that is not verified, or a requested
+// 现居住地/照片 that is unsupported or region-unsettled fails closed.
+// Those rows are failed, not a skipped success, and the job is not completed.
 import {captureProfileBinding,assertProfileBinding,canonicalProfileHash,commitBoundJob,
   dispatchBoundSource,withProfileBinding,reserveBoundJob} from '../profile/profile-lifecycle.js';
-import {BASIC_PAGE,BASIC_KIND,BASIC_FIELDS,basicCandidate,basicCoverage,basicJobKey} from './basic-task-runner.mjs';
+import {BASIC_PAGE,BASIC_KIND,basicCandidate,basicCoverage,basicJobKey,
+  planGthBasicCoverage,sealGthJobCoverage,gthRequestedFillBlocksComplete,validResponse} from './basic-task-runner.mjs';
 import {evaluateGthSavePolicy,assertAutoNeverAttemptedSave} from './gth-save-policy.mjs';
 
 const PAGE=BASIC_PAGE,ORIGIN='https://hr.gtht.com';
@@ -11,16 +16,14 @@ const pendingKey=tabId=>`resumePendingFillReview:${tabId}`;
 const fail=reason=>{throw Error(reason);};
 const safe=error=>{const value=typeof error==='string'?error:(error?.message||'');return typeof value==='string'&&/^[a-z0-9_]{2,100}$/u.test(value)?value:'gth_basic_auto_failed';};
 const sleep=ms=>new Promise(done=>setTimeout(done,ms));
-const stable=value=>JSON.stringify(value,(_key,item)=>item&&typeof item==='object'&&!Array.isArray(item)
-  ?Object.fromEntries(Object.keys(item).sort().map(key=>[key,item[key]])):item);
-const verified=['readback_matched','readback_reapplied','preexisting_same_value'];
-const skipped=['missing_profile_value','profile_fact_unconfirmed','invalid_profile_value','existing_value'];
-const readOnlyStates=['same','different','empty','source_unavailable'];
-const isReadOnly=(row,key)=>['phone','email'].includes(key)&&row?.status==='skipped'
-  &&row.reason==='site_readonly'&&readOnlyStates.includes(row.readOnlyState);
-const validRow=(row,key)=>row&&(row.status==='verified'?verified.includes(row.reason)
-  :row.status==='skipped'&&skipped.includes(row.reason)||isReadOnly(row,key));
-const pathFor=(key,index)=>key==='degree'?`education.${index}.degree`:['photo','workStart'].includes(key)?null:key;
+const clickFlags=response=>({
+  softwareClickedSave:response?.softwareClickedSave===true,
+  softwareClickedSubmit:response?.softwareClickedSubmit===true,
+  softwareClickedDelete:response?.softwareClickedDelete===true
+});
+const anySiteClick=flags=>flags.softwareClickedSave||flags.softwareClickedSubmit||flags.softwareClickedDelete;
+const projectFields=rows=>Array.isArray(rows)?rows.map(({question,path,status,reason,readOnlyState})=>({question,path,status,reason,
+  ...(reason==='site_readonly'?{readOnlyState}:{})})):undefined;
 
 function probePageFunc(expectedTitles){
   const PAGE='https://hr.gtht.com/resume/edit/';
@@ -60,14 +63,8 @@ function probePageFunc(expectedTitles){
 }
 
 function validBasicResponse(response,educationIndex){
-  const rows=response?.fields;
-  return response?.ok===true&&response.scope==='gth_basic_six'&&response.complete===false
-    &&response.editorLeftOpen===true&&response.savedOnSite===null&&response.submitted===null
-    &&response.softwareClickedSave===false&&response.softwareClickedSubmit===false&&response.softwareClickedDelete===false
-    &&Array.isArray(rows)&&rows.length===6&&BASIC_FIELDS.every(([question,key])=>{
-      const matches=rows.filter(row=>row?.question===question&&row.path===pathFor(key,educationIndex));
-      return matches.length===1&&validRow(matches[0],key);
-    })&&Array.isArray(response.coverage)&&stable(response.coverage)===stable(basicCoverage(response,educationIndex));
+  // Shared with the popup runner, including an optional 现居住地 row.
+  return validResponse(response,educationIndex);
 }
 
 export function createGthBasicAutoRunner({api=globalThis.chrome,verifyBeforeFill=null,timeoutMs=90000,lifecycleOptions={}}={}){
@@ -161,6 +158,7 @@ export function createGthBasicAutoRunner({api=globalThis.chrome,verifyBeforeFill
     const pending=await get(pendingKey(tab.id));
     const raw=await get('resumeProfile');
     const educationCount=Array.isArray(raw?.education)?raw.education.length:0;
+    const coverageReadiness=planGthBasicCoverage(raw,{fillRequested:false});
     let sources=[];
     try{
       const binding=await captureProfileBinding(api.storage.local,lifecycleOptions);
@@ -168,7 +166,7 @@ export function createGthBasicAutoRunner({api=globalThis.chrome,verifyBeforeFill
         try{
           const candidate=basicCandidate(raw,educationIndex);
           return {educationIndex,hasDegree:!!candidate.profile?.education?.[educationIndex]?.degree,
-            confirmedBasics:['fullName','gender','phone','birthDate','email'].filter(key=>candidate.profile?.confirmedFields?.includes(key))};
+            confirmedBasics:['fullName','gender','phone','birthDate','email','workStart'].filter(key=>candidate.profile?.confirmedFields?.includes(key))};
         }catch(error){return {educationIndex,error:safe(error)};}
       });
       return {
@@ -181,7 +179,8 @@ export function createGthBasicAutoRunner({api=globalThis.chrome,verifyBeforeFill
         profileEducationCount:educationCount,sources,profileBinding:binding,
         saveAllowedByPolicy:evaluateGthSavePolicy({fromAutoPath:true}).saveAllowedByPolicy,
         savePolicy:evaluateGthSavePolicy({fromAutoPath:true}),
-        note:'Auto path does not Save/submit; six operable basic fields only (city/photo/workStart unsupported)'
+        coverageReadiness,
+        note:'Auto path does not Save/submit. Unsupported or unsettled 现居住地/照片 fail closed and are not a completed fill.'
       };
     }catch(error){
       return {
@@ -192,7 +191,8 @@ export function createGthBasicAutoRunner({api=globalThis.chrome,verifyBeforeFill
         profileEducationCount:educationCount,sources,
         profileBindingError:safe(error),
         saveAllowedByPolicy:evaluateGthSavePolicy({fromAutoPath:true}).saveAllowedByPolicy,
-        savePolicy:evaluateGthSavePolicy({fromAutoPath:true})
+        savePolicy:evaluateGthSavePolicy({fromAutoPath:true}),
+        coverageReadiness
       };
     }
   }
@@ -231,26 +231,60 @@ export function createGthBasicAutoRunner({api=globalThis.chrome,verifyBeforeFill
     const status=await bounded(()=>api.tabs.sendMessage(tab.id,{type:'GTH_BASIC_TRIAL_STATUS',requestId}),15000);
     const outcome=status?.ok===true&&status.data?.requestId===requestId&&status.data.state==='settled'?status.data.outcome:'unknown';
     const coverage=basicCoverage(response,educationIndex);
+    const clicks=clickFlags(response);
+    // A page-script Save/submit/delete report must not be rewritten to false
+    // or stored as a completed fill. Pending review stays until a human looks.
+    if(anySiteClick(clicks)){
+      const partialFields=projectFields(response?.fields);
+      const reason=clicks.softwareClickedSave?'gth_basic_save_clicked':'gth_basic_submit_or_delete_clicked';
+      job={...job,state:'unknown',reason,coverage,at:Date.now(),
+        ...(partialFields?{fields:partialFields}:{}),writeStarted:response?.writeStarted===true,
+        ...clicks};
+      await commitBoundJob(api.storage.local,key,job,binding,lifecycleOptions);
+      return {job,responseSummary:{ok:false,reason,writeStarted:response?.writeStarted===true,
+        fieldCount:partialFields?.length||0,...clicks},outcome};
+    }
     if(!validBasicResponse(response,educationIndex)){
       if(response?.writeStarted===false&&outcome==='failed_before_write'){
         job={...job,state:'stopped_before_write',reason:safe(response?.reason),coverage,at:Date.now(),
-          writeStarted:false,softwareClickedSave:false,softwareClickedSubmit:false};
+          writeStarted:false,...clicks};
         await commitBoundJob(api.storage.local,key,job,binding,lifecycleOptions);
         await withProfileBinding(api.storage.local,binding,()=>api.storage.local.remove(pendingKey(tab.id)),lifecycleOptions);
-        return {job,responseSummary:{ok:false,writeStarted:false,reason:response?.reason||null},outcome};
+        return {job,responseSummary:{ok:false,writeStarted:false,reason:response?.reason||null,...clicks},outcome};
       }
-      const partialFields=Array.isArray(response?.fields)?response.fields.map(({question,path,status,reason,readOnlyState})=>({question,path,status,reason,
-        ...(reason==='site_readonly'?{readOnlyState}:{})})):undefined;
+      const partialFields=projectFields(response?.fields);
       job={...job,state:'unknown',reason:safe(response?.reason),coverage,at:Date.now(),
         ...(partialFields?{fields:partialFields}:{}),writeStarted:response?.writeStarted===true,
-        softwareClickedSave:false,softwareClickedSubmit:false};
+        ...clicks};
       await commitBoundJob(api.storage.local,key,job,binding,lifecycleOptions);
       return {job,responseSummary:{ok:false,reason:response?.reason||null,writeStarted:response?.writeStarted===true,
-        fieldCount:partialFields?.length||0},outcome};
+        fieldCount:partialFields?.length||0,...clicks},outcome};
     }
-    const fields=response.fields.map(({question,path,status,reason,readOnlyState})=>({question,path,status,reason,
-      ...(reason==='site_readonly'?{readOnlyState}:{})}));
-    job={...job,state:outcome==='failed_before_write'?'stopped_before_write':'completed',outcome,coverage,fields,
+    const fields=projectFields(response.fields);
+    // Popup basic jobs refuse to complete unless status settled on verified.
+    // Auto used to mark completed for unknown / failed_before_write anyway.
+    if(outcome!=='verified'&&outcome!=='verified_preexisting'){
+      const beforeWrite=outcome==='failed_before_write'&&response.writeStarted!==true;
+      job={...job,state:beforeWrite?'stopped_before_write':'unknown',outcome,coverage,fields,
+        reason:beforeWrite?'gth_basic_fill_incomplete':'gth_basic_status_unsettled',
+        supportedComplete:response.supportedComplete===true,operableComplete:response.operableComplete===true,
+        writeStarted:response.writeStarted===true,complete:false,liveSupportClaimed:false,at:Date.now(),...clicks};
+      await commitBoundJob(api.storage.local,key,job,binding,lifecycleOptions);
+      if(beforeWrite)await withProfileBinding(api.storage.local,binding,()=>api.storage.local.remove(pendingKey(tab.id)),lifecycleOptions);
+      return {job,responseSummary:{ok:false,reason:job.reason,writeStarted:response.writeStarted===true,
+        fieldCount:fields.length,...clicks},outcome};
+    }
+    const coveragePlan=planGthBasicCoverage(raw,{fillRequested:true});
+    if(gthRequestedFillBlocksComplete(coveragePlan)){
+      const sealed=sealGthJobCoverage(coverage,coveragePlan);
+      job={...job,state:'unknown',outcome,coverage:sealed,fields,reason:coveragePlan.reason,
+        supportedComplete:response.supportedComplete===true,operableComplete:response.operableComplete===true,
+        writeStarted:response.writeStarted===true,complete:false,liveSupportClaimed:false,at:Date.now(),...clicks};
+      await commitBoundJob(api.storage.local,key,job,binding,lifecycleOptions);
+      return {job,responseSummary:{ok:false,reason:coveragePlan.reason,writeStarted:response.writeStarted===true,
+        fieldCount:fields.length,...clicks},outcome};
+    }
+    job={...job,state:'completed',outcome,coverage,fields,
       supportedComplete:response.supportedComplete===true,operableComplete:response.operableComplete===true,
       writeStarted:response.writeStarted===true,complete:false,at:Date.now(),
       softwareClickedSave:false,softwareClickedSubmit:false,
@@ -258,7 +292,7 @@ export function createGthBasicAutoRunner({api=globalThis.chrome,verifyBeforeFill
         reapplied:fields.filter(row=>row.reason==='readback_reapplied').length,
         originalSame:fields.filter(row=>row.reason==='preexisting_same_value').length,
         siteReadOnly:fields.filter(row=>row.reason==='site_readonly').length,
-        operable:fields.filter(row=>row.reason!=='site_readonly').length,unsupported:3}};
+        operable:fields.filter(row=>row.reason!=='site_readonly').length,unsupported:coverage.filter(row=>row.supported===false).length}};
     await commitBoundJob(api.storage.local,key,job,binding,lifecycleOptions);
     await withProfileBinding(api.storage.local,binding,()=>api.storage.local.remove(pendingKey(tab.id)),lifecycleOptions);
     return {job,responseSummary:{ok:true,editorLeftOpen:true,fieldCount:fields.length,supportedComplete:job.supportedComplete,
@@ -272,7 +306,7 @@ export function createGthBasicAutoRunner({api=globalThis.chrome,verifyBeforeFill
       :(Number.isInteger(message.profileIndex)?message.profileIndex:5);
     const report={version:1,kind:'gth_basic_auto',mode,at:Date.now(),educationIndex,
       replaceExisting:message.replaceExisting!==false,steps:[],helpNeeded:false,saveAttempted:false,
-      writeAttempted:false};
+      writeAttempted:false,liveSupportClaimed:false,complete:false};
     const found=await findGthTab(sender?.tab?.id,{openIfMissing});
     report.steps.push({find:found.kind,tabId:found.tab.id,url:found.tab.url||null});
     await focusTab(found.tab);
@@ -303,6 +337,7 @@ export function createGthBasicAutoRunner({api=globalThis.chrome,verifyBeforeFill
       pending:readiness.pending,
       profileEducationCount:readiness.profileEducationCount,
       sources:readiness.sources,
+      coverageReadiness:readiness.coverageReadiness,
       saveAllowedByPolicy:evaluateGthSavePolicy({fromAutoPath:true}).saveAllowedByPolicy,
       savePolicy:evaluateGthSavePolicy({fromAutoPath:true})
     };
@@ -322,15 +357,24 @@ export function createGthBasicAutoRunner({api=globalThis.chrome,verifyBeforeFill
     const filled=await runFill(found.tab,{...message,educationIndex},readiness);
     report.writeAttempted=filled.job?.writeStarted===true||filled.responseSummary?.writeStarted===true;
     report.steps.push({fill:filled.job?.state,outcome:filled.outcome});
+    const clicks=clickFlags(filled.job);
+    report.softwareClickedSave=clicks.softwareClickedSave;
+    report.softwareClickedSubmit=clicks.softwareClickedSubmit;
+    report.softwareClickedDelete=clicks.softwareClickedDelete;
     report.job=filled.job?{state:filled.job.state,reason:filled.job.reason||null,requestId:filled.job.requestId,
       outcome:filled.job.outcome||null,educationIndex:filled.job.educationIndex,
       supportedComplete:filled.job.supportedComplete===true,operableComplete:filled.job.operableComplete===true,
       fields:filled.job.fields||[],coverage:filled.job.coverage||[],counts:filled.job.counts||null,
-      writeStarted:filled.job.writeStarted===true,softwareClickedSave:false,softwareClickedSubmit:false}:null;
+      writeStarted:filled.job.writeStarted===true,complete:false,liveSupportClaimed:false,...clicks}:null;
     report.fill=filled.responseSummary;
     report.saveAllowedByPolicy=evaluateGthSavePolicy({fromAutoPath:true}).saveAllowedByPolicy;
-    assertAutoNeverAttemptedSave(report);
-    report.ok=true;
+    const settled=filled.job?.state==='completed'&&(filled.outcome==='verified'||filled.outcome==='verified_preexisting');
+    report.ok=settled&&!anySiteClick(clicks);
+    if(!report.ok)report.reason=filled.job?.reason||filled.responseSummary?.reason||'gth_basic_fill_failed';
+    try{assertAutoNeverAttemptedSave(report);}catch(error){
+      report.ok=false;
+      report.reason=safe(error);
+    }
     await api.storage.local.set({resumeGthBasicAutoRun:report});
     return report;
   }
@@ -343,7 +387,7 @@ export function createGthBasicAutoRunner({api=globalThis.chrome,verifyBeforeFill
       const helpUrl=error?.helpUrl||PAGE;
       const help=reason==='gth_basic_login_or_wrong_page'||reason==='gth_basic_tab_missing'||/\/login\b/i.test(String(helpUrl));
       const payload={ok:false,reason,helpNeeded:help,helpUrl,helpReason:error?.helpReason||(help?'我需要帮助！请打开已登录的国泰海通简历编辑页 https://hr.gtht.com/resume/edit/':''),
-        mode:message?.mode||'readiness',saveAttempted:false,writeAttempted:false,at:Date.now(),version:1,kind:'gth_basic_auto'};
+        mode:message?.mode||'readiness',saveAttempted:false,writeAttempted:false,liveSupportClaimed:false,complete:false,at:Date.now(),version:1,kind:'gth_basic_auto'};
       api.storage.local.set({resumeGthBasicAutoRun:payload}).catch(()=>{});
       sendResponse(payload);
     });

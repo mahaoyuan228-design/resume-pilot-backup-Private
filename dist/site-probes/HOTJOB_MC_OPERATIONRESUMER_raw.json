@@ -1,0 +1,29 @@
+{
+  "tabId": "559ED25BB07F836F2F878BF522317F2A",
+  "title": "基本信息",
+  "url": "https://wecruit.hotjob.cn/SU661f37091eb8053acd6cdf3d/mc/deliver/operationResumer?recruitType=1&postId=undefined&templateId=60a646cf0dcad46f8591096f&isHaveSite=undefined&isHaveVolunteer=undefined&isPostQuestion=undefined&lang=1&isFast=0&resumeId=6ad4bbb3df99e734cc4d81cd",
+  "probe": {
+    "href": "https://wecruit.hotjob.cn/SU661f37091eb8053acd6cdf3d/mc/deliver/operationResumer?recruitType=1&postId=undefined&templateId=60a646cf0dcad46f8591096f&isHaveSite=undefined&isHaveVolunteer=undefined&isPostQuestion=undefined&lang=1&isFast=0&resumeId=6ad4bbb3df99e734cc4d81cd",
+    "path": "/SU661f37091eb8053acd6cdf3d/mc/deliver/operationResumer",
+    "title": "基本信息",
+    "loading": false,
+    "loginHints": false,
+    "frameworks": {
+      "ant": false,
+      "amList": true,
+      "myListItem": 13,
+      "formCell": false,
+      "antFormItem": false
+    },
+    "placeholders": [
+      "请填写姓名",
+      "请填写证件号码",
+      "请填写移动电话",
+      "请填写电子邮箱",
+      "请填写身高(cm)",
+      "请填写体重(kg)"
+    ],
+    "stillLoggedIn": true
+  },
+  "at": "2026-10-18T20:40:00+08:00"
+}

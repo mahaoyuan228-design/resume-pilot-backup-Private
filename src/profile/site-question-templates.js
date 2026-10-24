@@ -60,6 +60,110 @@ export function regionAnswer(province, city) {
   const values = [province, city].map(value => String(value || '').trim());
   return values.some(Boolean) ? JSON.stringify({ province: values[0], city: values[1] }) : '';
 }
+
+// Offline classifier for CMS 个人基本信息 region facts (现居住地 / 籍贯).
+// Non-unique or unsettled facts fail closed. This planner does not look up DOM,
+// invent selectors, fill, Save, or submit, and it does not claim site support.
+export const CMS_BASIC_REGION_QUESTIONS = Object.freeze(['现居住地', '籍贯']);
+export const CMS_REGION_FACT_FAIL_CLOSED_REASONS = Object.freeze([
+  'region_fact_not_unique',
+  'region_fact_unconfirmed',
+  'region_fact_scope_mismatch',
+  'explicit_region_pair_required',
+  'region_adapter_missing',
+  'unconfirmed_or_incomplete_region_pair'
+]);
+const regionClean = value => String(value ?? '').normalize('NFKC').replace(/[＊*：:\s]/gu, '');
+function explicitRegionPair(answer) {
+  let pair;
+  try { pair = JSON.parse(answer); } catch { return null; }
+  if (!pair || typeof pair !== 'object' || Array.isArray(pair)) return null;
+  if (Object.keys(pair).sort().join('|') !== 'city|province') return null;
+  if (!['province', 'city'].every(key => typeof pair[key] === 'string' && pair[key].trim()
+    && pair[key].length <= 160 && !/[\u0000-\u001f]/u.test(pair[key]))) return null;
+  return { province: pair.province, city: pair.city };
+}
+export function planCmsRegionFact(profile, target) {
+  const question = regionClean(target?.question);
+  const sectionName = regionClean(target?.sectionName);
+  const closed = {
+    ok: false,
+    status: 'failed',
+    supported: false,
+    liveSupportClaimed: false,
+    fillAllowed: false,
+    saveAllowed: false,
+    writeAttempted: false,
+    softwareClickedSave: false,
+    softwareClickedSubmit: false,
+    selector: null,
+    query: null,
+    question,
+    sectionName
+  };
+  const basicRegion = sectionName === '个人基本信息必填' && CMS_BASIC_REGION_QUESTIONS.includes(question);
+  if (!basicRegion) return { ...closed, reason: 'region_fact_scope_mismatch', matchCount: 0 };
+  const matches = (profile?.customFacts || []).filter(row => regionClean(row?.question) === question);
+  if (matches.length !== 1) {
+    return { ...closed, reason: 'region_fact_not_unique', matchCount: matches.length };
+  }
+  const saved = matches[0];
+  const path = `customAnswers.${saved.question}`;
+  if (!(profile?.confirmedFields || []).includes(path) || saved.answer !== profile?.customAnswers?.[saved.question]) {
+    return { ...closed, reason: 'region_fact_unconfirmed', path, matchCount: 1 };
+  }
+  const pair = explicitRegionPair(saved.answer);
+  if (!pair) return { ...closed, reason: 'explicit_region_pair_required', path, matchCount: 1 };
+  const sitePageUrl = typeof target?.sitePageUrl === 'string' ? target.sitePageUrl : '';
+  const settled = saved.sitePageUrl === sitePageUrl
+    && regionClean(saved.sectionName) === sectionName
+    && regionClean(saved.question) === question
+    && saved.rowContext === target?.rowContext
+    && (saved.rowContext === 'single' || saved.rowContext === 'none');
+  if (!settled) return { ...closed, reason: 'region_fact_scope_mismatch', path, matchCount: 1 };
+  return {
+    ...closed,
+    ok: true,
+    status: 'ready',
+    reason: 'region_fact_settled',
+    path,
+    matchCount: 1,
+    fact: {
+      province: pair.province,
+      city: pair.city,
+      question: saved.question,
+      sectionName: saved.sectionName,
+      rowContext: saved.rowContext,
+      sitePageUrl: saved.sitePageUrl,
+      confirmed: true
+    }
+  };
+}
+export function planCmsBasicRegionFacts(profile, sitePageUrl) {
+  const plans = CMS_QUESTION_TEMPLATES
+    .filter(item => item.kind === 'region' && item.sectionName === '个人基本信息必填')
+    .map(item => planCmsRegionFact(profile, {
+      question: item.question,
+      sectionName: item.sectionName,
+      rowContext: item.rowContext,
+      sitePageUrl
+    }));
+  const blocked = plans.filter(plan => plan.ok !== true);
+  return {
+    ok: blocked.length === 0,
+    plans,
+    reason: blocked.find(plan => plan.reason === 'region_fact_not_unique')?.reason || blocked[0]?.reason || null,
+    supported: false,
+    liveSupportClaimed: false,
+    fillAllowed: false,
+    saveAllowed: false,
+    writeAttempted: false,
+    softwareClickedSave: false,
+    softwareClickedSubmit: false,
+    selector: null,
+    query: null
+  };
+}
 export function researchAnswer(selected) {
   if (!Array.isArray(selected) || selected.some(value => !RESEARCH_CHOICES.includes(value))
     || new Set(selected).size !== selected.length) throw Error('invalid_research_choices');

@@ -36,7 +36,7 @@ const fixture = () => ({
   ],
 });
 
-async function harness({ fillResponse } = {}) {
+async function harness({ fillResponse, patchFill } = {}) {
   const data = {
     resumeProfile: fixture(),
     resumeProfileLifecycle: { version: 1, epoch, state: 'ready' },
@@ -96,6 +96,10 @@ async function harness({ fillResponse } = {}) {
       savedOnSite: null,
       submitted: null,
       softwareClickedSubmit: false,
+      softwareClickedSave: false,
+      writeStarted: false,
+      supportedComplete: true,
+      operableComplete: true,
     },
   };
   const api = {
@@ -119,7 +123,9 @@ async function harness({ fillResponse } = {}) {
       sendMessage: async (_tab, message) => {
         if (message.type === 'RESUME_FILL') {
           stats.fill += 1;
-          return fillResponse || defaultFill;
+          const response = structuredClone(fillResponse || defaultFill);
+          patchFill?.(response);
+          return response;
         }
         throw Error('unexpected_message:' + message.type);
       },
@@ -214,6 +220,10 @@ test('CMS_BASIC_AUTO fill dispatches RESUME_FILL once and never Save', async () 
   assert.equal(h.stats.inject, 1);
   assert.equal(h.stats.fill, 1);
   assert.equal(response.job?.state, 'completed');
+  assert.equal(response.job?.outcome, 'verified_preexisting');
+  assert.equal(response.job?.writeStarted, false);
+  assert.equal(response.job?.supportedComplete, true);
+  assert.equal(response.job?.operableComplete, true);
   assert.equal(response.job?.softwareClickedSave, false);
   assert.equal(response.job?.softwareClickedSubmit, false);
   assert.equal(response.job?.summary?.personalCount, 1);
@@ -367,16 +377,37 @@ test('CMS_BASIC_AUTO isPersonalField filters education/internship rows out of su
     labels: ['学校'],
   }), false);
   assert.equal(runner.isPersonalField({
+    path: 'education.0.major',
+    status: 'failed',
+    reason: 'duplicate_target',
+    scope: { sectionName: '教育经历必填' },
+    labels: ['专业名称'],
+  }), false);
+  assert.equal(runner.isPersonalField({
+    path: 'customAnswers.__cms_education_academic_degree',
+    scope: { sectionName: '教育经历必填' },
+    labels: ['学位'],
+  }), false);
+  assert.equal(runner.isPersonalField({
     id: 'cms-academic-__cms_basic_education_level',
     labels: ['学历'],
   }), true);
   const summary = runner.summarizeFields([
     { id: 'a', path: 'customAnswers.__cms_basic_major', status: 'verified', scope: { sectionName: '个人基本信息必填' } },
     { id: 'b', path: 'education.0.major', status: 'verified', scope: { sectionName: '教育经历必填' } },
+    {
+      id: 'c',
+      path: 'education.0.major',
+      status: 'failed',
+      reason: 'duplicate_target',
+      scope: { sectionName: '教育经历必填' },
+      labels: ['专业名称'],
+    },
   ]);
   assert.equal(summary.personalCount, 1);
   assert.equal(summary.verified, 1);
-  assert.equal(summary.totalReturned, 2);
+  assert.equal(summary.failed, 0);
+  assert.equal(summary.totalReturned, 3);
   const source = runner.basicSource({
     customAnswers: { __cms_basic_academic_degree: '硕士' },
     confirmedFields: ['customAnswers.__cms_basic_academic_degree'],
@@ -385,7 +416,7 @@ test('CMS_BASIC_AUTO isPersonalField filters education/internship rows out of su
   assert.equal(source.ready, true);
 });
 
-test('CMS_BASIC_AUTO fill rejects softwareClickedSave as policy violation', async () => {
+test('CMS_BASIC_AUTO fill rejects softwareClickedSave and preserves the click evidence', async () => {
   const h = await harness({
     fillResponse: {
       ok: true,
@@ -410,4 +441,382 @@ test('CMS_BASIC_AUTO fill rejects softwareClickedSave as policy violation', asyn
   assert.equal(response.ok, false);
   assert.equal(response.reason, 'cms_basic_save_policy_violated');
   assert.equal(response.saveAttempted, false);
+  assert.equal(response.softwareClickedSave, true);
+  assert.equal(response.job.state, 'unknown');
+  assert.equal(response.job.softwareClickedSave, true);
+  assert.equal(response.fill.softwareClickedSave, true);
+  assert.equal(h.data.resumeCmsBasicAutoRun.softwareClickedSave, true);
+  assert.equal(h.data.resumeCmsBasicAutoRun.job.softwareClickedSave, true);
+  assert.ok(h.data[`resumePendingFillReview:${tabId}`]);
+});
+
+test('CMS_BASIC_AUTO excludes path-null education 学历 duplicate_target from personal failures', async () => {
+  const h = await harness({ fillResponse: { ok: true, data: {
+    fields: [
+      {
+        id: 'cms-academic-__cms_basic_education_level', labels: ['学历*'],
+        path: 'customAnswers.__cms_basic_education_level', status: 'verified',
+        reason: 'preexisting_same_value', kind: 'cms_ant_v3_select',
+        scope: { sectionName: '个人基本信息必填', rowContext: 'single' },
+      },
+      {
+        id: 'cms-ant-v3-学历', labels: ['学历*'], path: null, status: 'failed',
+        reason: 'duplicate_target', kind: 'cms_ant_v3_select',
+        scope: { sectionName: '教育经历必填', rowContext: 'multiple' },
+      },
+    ], softwareClickedSave: false, softwareClickedSubmit: false,
+    writeStarted: false, supportedComplete: true, operableComplete: true,
+  } } });
+  const response = await h.invoke({ type: 'CMS_BASIC_AUTO', mode: 'fill', originConfirmed: true });
+  assert.equal(response.ok, true);
+  assert.equal(response.job.summary.personalCount, 1);
+  assert.equal(response.job.summary.verified, 1);
+  assert.equal(response.job.summary.failed, 0);
+  assert.equal(response.job.summary.totalReturned, 2);
+  assert.equal(response.saveAttempted, false);
+  assert.equal(response.job.softwareClickedSave, false);
+  assert.equal(response.job.softwareClickedSubmit, false);
+});
+
+// Synthetic protocol responses only: these are not captured employer DOM or a
+// claim that the legacy RESUME_FILL producer supplies a completion contract.
+for (const status of ['unknown', 'pending', 'failed', 'skipped', null, undefined]) {
+  test(`CMS_BASIC_AUTO does not complete an unverified personal status (${status})`, async () => {
+    const h = await harness({ patchFill: response => {
+      response.data.fields[0].status = status;
+    } });
+    const response = await h.invoke({ type: 'CMS_BASIC_AUTO', mode: 'fill' });
+    assert.equal(response.ok, false);
+    assert.equal(response.job.state, 'unknown');
+    assert.equal(response.job.complete, false);
+    assert.equal(h.data.resumeCmsBasicAutoRun.ok, false);
+    assert.ok(h.data[`resumePendingFillReview:${tabId}`]);
+  });
+}
+
+for (const key of ['writeStarted', 'supportedComplete', 'operableComplete']) {
+  for (const value of [undefined, null, 'true', 1]) {
+    test(`CMS_BASIC_AUTO requires a boolean ${key} (${value})`, async () => {
+      const h = await harness({ patchFill: response => {
+        if (value === undefined) delete response.data[key];
+        else response.data[key] = value;
+      } });
+      const response = await h.invoke({ type: 'CMS_BASIC_AUTO', mode: 'fill' });
+      assert.equal(response.ok, false);
+      assert.equal(response.job.state, 'unknown');
+      assert.equal(response.reason, 'cms_basic_response_incomplete');
+      assert.equal(h.data.resumeCmsBasicAutoRun.ok, false);
+    });
+  }
+}
+
+for (const key of ['supportedComplete', 'operableComplete']) {
+  test(`CMS_BASIC_AUTO refuses incomplete ${key}`, async () => {
+    const h = await harness({ patchFill: response => { response.data[key] = false; } });
+    const response = await h.invoke({ type: 'CMS_BASIC_AUTO', mode: 'fill' });
+    assert.equal(response.ok, false);
+    assert.equal(response.job.state, 'unknown');
+  });
+}
+
+test('CMS_BASIC_AUTO requires personal readback evidence and consistent writeStarted', async () => {
+  for (const patchFill of [
+    response => { response.data.fields = []; },
+    response => { response.data.fields.shift(); },
+    response => { response.data.fields[0].reason = 'ready'; },
+    response => { response.data.fields[0].reason = 'readback_matched'; },
+    response => { response.data.writeStarted = true; },
+    response => { response.writeStarted = true; },
+    response => { response.fillNotStarted = true; },
+    response => { response.data.status = 'unknown'; },
+    response => { response.data.outcome = 'unknown'; },
+    response => { response.data.status = 'verified'; },
+    response => { response.data.ok = false; },
+  ]) {
+    const h = await harness({ patchFill });
+    const response = await h.invoke({ type: 'CMS_BASIC_AUTO', mode: 'fill' });
+    assert.equal(response.ok, false);
+    assert.notEqual(response.job.state, 'completed');
+    assert.equal(response.saveAttempted, false);
+  }
+});
+
+test('CMS_BASIC_AUTO retains a reported click even if the profile binding changes after fill', async () => {
+  const h = await harness({ patchFill: response => {
+    response.data.softwareClickedSave = true;
+    h.data.resumeProfile.fullName = 'Changed synthetic profile';
+  } });
+  const response = await h.invoke({ type: 'CMS_BASIC_AUTO', mode: 'fill' });
+  assert.equal(response.ok, false);
+  assert.equal(response.reason, 'cms_basic_save_policy_violated');
+  assert.equal(response.job.state, 'unknown');
+  assert.equal(response.softwareClickedSave, true);
+  assert.equal(h.data.resumeCmsBasicAutoRun.job.softwareClickedSave, true);
+});
+
+test('CMS_BASIC_AUTO completes a verified write with an explicit contract, without Save', async () => {
+  const h = await harness({ patchFill: response => {
+    response.data.fields[0].reason = 'readback_matched';
+    response.data.writeStarted = true;
+  } });
+  const response = await h.invoke({ type: 'CMS_BASIC_AUTO', mode: 'fill' });
+  assert.equal(response.ok, true);
+  assert.equal(response.job.state, 'completed');
+  assert.equal(response.job.outcome, 'verified');
+  assert.equal(response.writeAttempted, true);
+  assert.equal(response.job.complete, false);
+  assert.equal(response.softwareClickedSave, false);
+  assert.equal(response.softwareClickedSubmit, false);
+  assert.equal(response.saveAttempted, false);
+  assert.equal(h.data[`resumePendingFillReview:${tabId}`], undefined);
+});
+
+test('CMS_BASIC_AUTO pre-write failures stay false instead of being greened by auto()', async () => {
+  const h = await harness({ fillResponse: {
+    ok: false, error: 'site_session_unverified', fillNotStarted: true, writeStarted: false,
+  } });
+  const response = await h.invoke({ type: 'CMS_BASIC_AUTO', mode: 'fill' });
+  assert.equal(response.ok, false);
+  assert.equal(response.job.state, 'stopped_before_write');
+  assert.equal(response.writeAttempted, false);
+  assert.equal(response.reason, 'site_session_unverified');
+  assert.equal(h.data.resumeCmsBasicAutoRun.ok, false);
+  assert.equal(h.data[`resumePendingFillReview:${tabId}`], undefined);
+});
+
+for (const flag of ['softwareClickedSave', 'softwareClickedSubmit', 'savedOnSite', 'submitted']) {
+  for (const location of ['envelope', 'data']) {
+    for (const ok of [true, false]) {
+      test(`CMS_BASIC_AUTO preserves ${location}.${flag} even with ok=${ok}`, async () => {
+        const h = await harness({ patchFill: response => {
+          response.ok = ok;
+          response.writeStarted = false;
+          response.fillNotStarted = true;
+          (location === 'data' ? response.data : response)[flag] = true;
+        } });
+        const response = await h.invoke({ type: 'CMS_BASIC_AUTO', mode: 'fill' });
+        assert.equal(response.ok, false);
+        assert.equal(response.reason, 'cms_basic_save_policy_violated');
+        assert.equal(response.job.state, 'unknown');
+        assert.equal(response[flag], true);
+        assert.equal(response.job[flag], true);
+        assert.equal(response.fill[flag], true);
+        assert.equal(h.data.resumeCmsBasicAutoRun[flag], true);
+        assert.equal(h.data.resumeCmsBasicAutoRun.job[flag], true);
+        assert.ok(h.data[`resumePendingFillReview:${tabId}`]);
+      });
+    }
+  }
+}
+
+test('CMS_BASIC_AUTO fill fails closed when the page reports savedOnSite or submitted', async () => {
+  const saved = await harness({
+    fillResponse: {
+      ok: true,
+      data: {
+        fields: [{
+          id: 'cms-academic-__cms_basic_academic_degree',
+          labels: ['学位'],
+          path: 'customAnswers.__cms_basic_academic_degree',
+          status: 'verified',
+          reason: 'readback_matched',
+          scope: { sectionName: '个人基本信息必填' },
+        }],
+        savedOnSite: true,
+        submitted: null,
+        softwareClickedSave: false,
+        softwareClickedSubmit: false,
+      },
+    },
+  });
+  const savedResponse = await saved.invoke({ type: 'CMS_BASIC_AUTO', mode: 'fill', originConfirmed: true });
+  assert.equal(savedResponse.ok, false);
+  assert.equal(savedResponse.reason, 'cms_basic_save_policy_violated');
+  assert.equal(savedResponse.saveAttempted, false);
+  assert.equal(savedResponse.savedOnSite, true);
+  assert.equal(savedResponse.softwareClickedSave, false);
+  assert.equal(savedResponse.job?.state, 'unknown');
+  assert.notEqual(savedResponse.job?.state, 'completed');
+
+  const submitted = await harness({
+    fillResponse: {
+      ok: true,
+      data: {
+        fields: [{
+          id: 'cms-academic-__cms_basic_academic_degree',
+          labels: ['学位'],
+          path: 'customAnswers.__cms_basic_academic_degree',
+          status: 'verified',
+          scope: { sectionName: '个人基本信息必填' },
+        }],
+        savedOnSite: null,
+        submitted: true,
+        softwareClickedSave: false,
+        softwareClickedSubmit: false,
+      },
+    },
+  });
+  const submittedResponse = await submitted.invoke({ type: 'CMS_BASIC_AUTO', mode: 'fill', originConfirmed: true });
+  assert.equal(submittedResponse.ok, false);
+  assert.equal(submittedResponse.reason, 'cms_basic_save_policy_violated');
+  assert.equal(submittedResponse.submitted, true);
+  assert.equal(submittedResponse.job?.softwareClickedSubmit, false);
+  assert.equal(submittedResponse.saveAttempted, false);
+});
+
+test('CMS_BASIC_AUTO fill fails closed before write and does not complete', async () => {
+  const h = await harness({
+    fillResponse: {
+      ok: false,
+      error: 'page_hidden',
+      fillNotStarted: true,
+      writeStarted: false,
+    },
+  });
+  const response = await h.invoke({ type: 'CMS_BASIC_AUTO', mode: 'fill', originConfirmed: true });
+  assert.equal(response.ok, false);
+  assert.equal(response.reason, 'page_hidden');
+  assert.equal(response.saveAttempted, false);
+  assert.equal(response.writeAttempted, false);
+  assert.equal(response.softwareClickedSave, false);
+  assert.equal(response.job?.state, 'stopped_before_write');
+  assert.notEqual(response.job?.state, 'completed');
+  assert.equal(h.data.resumeCmsBasicAutoRun?.ok, false);
+  assert.equal(h.data['resumePendingFillReview:' + tabId], undefined);
+});
+
+test('CMS_BASIC_AUTO fill fails closed when personal readback is failed or missing', async () => {
+  const failed = await harness({
+    fillResponse: {
+      ok: true,
+      data: {
+        fields: [{
+          id: 'cms-academic-__cms_basic_academic_degree',
+          labels: ['学位'],
+          path: 'customAnswers.__cms_basic_academic_degree',
+          status: 'failed',
+          reason: 'readback_mismatch',
+          scope: { sectionName: '个人基本信息必填' },
+        }],
+        savedOnSite: null,
+        submitted: null,
+        softwareClickedSave: false,
+        softwareClickedSubmit: false,
+      },
+    },
+  });
+  const failedResponse = await failed.invoke({ type: 'CMS_BASIC_AUTO', mode: 'fill', originConfirmed: true });
+  assert.equal(failedResponse.ok, false);
+  assert.equal(failedResponse.reason, 'cms_basic_status_unsettled');
+  assert.equal(failedResponse.saveAttempted, false);
+  assert.equal(failedResponse.softwareClickedSave, false);
+  assert.equal(failedResponse.job?.state, 'unknown');
+  assert.equal(failedResponse.job?.summary?.failed, 1);
+  assert.equal(failed.data.resumeCmsBasicAutoRun?.ok, false);
+  assert.equal(failed.data['resumePendingFillReview:' + tabId]?.kind, 'cms_basic_auto');
+
+  const empty = await harness({
+    fillResponse: {
+      ok: true,
+      data: {
+        fields: [{
+          id: 'other-section',
+          labels: ['期望年薪'],
+          path: 'customAnswers.期望年薪',
+          status: 'verified',
+          scope: { sectionName: '求职意向必填' },
+        }],
+        savedOnSite: null,
+        submitted: null,
+        softwareClickedSave: false,
+        softwareClickedSubmit: false,
+      },
+    },
+  });
+  const emptyResponse = await empty.invoke({ type: 'CMS_BASIC_AUTO', mode: 'fill', originConfirmed: true });
+  assert.equal(emptyResponse.ok, false);
+  assert.equal(emptyResponse.reason, 'cms_basic_status_unsettled');
+  assert.equal(emptyResponse.job?.state, 'unknown');
+  assert.equal(emptyResponse.job?.summary?.personalCount, 0);
+  assert.equal(emptyResponse.saveAttempted, false);
+});
+
+test('CMS_BASIC_AUTO fails closed when 现居住地/籍贯 are skipped as region_fact_not_unique', async () => {
+  const h = await harness({ fillResponse: { ok: true, data: {
+    fields: [
+      {
+        id: 'cms-academic-__cms_basic_academic_degree', labels: ['学位'],
+        path: 'customAnswers.__cms_basic_academic_degree', status: 'verified',
+        reason: 'preexisting_same_value', kind: 'cms_ant_v3_select',
+        scope: { sectionName: '个人基本信息必填', rowContext: 'single' },
+      },
+      {
+        id: 'cms-region-residence', labels: ['现居住地*'], path: null, status: 'skipped',
+        reason: 'region_fact_not_unique', kind: 'cms_region',
+        scope: { sectionName: '个人基本信息必填', rowContext: 'single' },
+      },
+      {
+        id: 'cms-region-origin', labels: ['籍贯*'], path: null, status: 'skipped',
+        reason: 'region_fact_not_unique', kind: 'cms_region',
+        scope: { sectionName: '个人基本信息必填', rowContext: 'single' },
+      },
+      {
+        id: 'cms-ant-v3-学历', labels: ['学历*'], path: null, status: 'failed',
+        reason: 'duplicate_target', kind: 'cms_ant_v3_select',
+        scope: { sectionName: '教育经历必填', rowContext: 'multiple' },
+      },
+    ],
+    softwareClickedSave: false, softwareClickedSubmit: false,
+    writeStarted: false, supportedComplete: true, operableComplete: true,
+  } } });
+  const response = await h.invoke({ type: 'CMS_BASIC_AUTO', mode: 'fill', originConfirmed: true });
+  assert.equal(response.ok, false);
+  assert.equal(response.reason, 'region_fact_not_unique');
+  assert.equal(response.saveAttempted, false);
+  assert.equal(response.softwareClickedSave, false);
+  assert.equal(response.softwareClickedSubmit, false);
+  assert.equal(response.job.state, 'unknown');
+  assert.equal(response.job.complete, false);
+  const residence = response.job.fields.find(field => field.labels[0] === '现居住地*');
+  const origin = response.job.fields.find(field => field.labels[0] === '籍贯*');
+  assert.equal(residence.status, 'failed');
+  assert.equal(residence.reason, 'region_fact_not_unique');
+  assert.equal(origin.status, 'failed');
+  assert.equal(origin.reason, 'region_fact_not_unique');
+  assert.equal(response.job.summary.failed, 2);
+  assert.equal(response.job.fields.some(field => field.reason === 'duplicate_target'), false);
+  assert.equal(response.job.summary.totalReturned, 4);
+});
+
+test('CMS_BASIC_AUTO region readiness stays unready when 现居住地 is not unique', () => {
+  const runner = createCmsBasicAutoRunner({
+    api: {
+      storage: { local: { get: async () => ({}), set: async () => {}, remove: async () => {} } },
+      runtime: {
+        id: 'x',
+        getURL: (p) => 'chrome-extension://x/' + p,
+        getManifest: () => ({ background: { service_worker: 'src/background/worker.mjs' } }),
+      },
+      tabs: {},
+      scripting: {},
+    },
+  });
+  const pair = JSON.stringify({ province: 'Synthetic Province', city: 'Synthetic City' });
+  const source = runner.basicSource({
+    customAnswers: { 现居住地: pair, 籍贯: 'not-json' },
+    confirmedFields: ['customAnswers.现居住地', 'customAnswers.籍贯'],
+    customFacts: [
+      { question: '现居住地', answer: pair, sitePageUrl: PAGE, sectionName: '个人基本信息必填', rowContext: 'single' },
+      { question: '现居住地', answer: pair, sitePageUrl: PAGE, sectionName: '个人基本信息必填', rowContext: 'single' },
+      { question: '籍贯', answer: 'not-json', sitePageUrl: PAGE, sectionName: '个人基本信息必填', rowContext: 'single' },
+    ],
+  }, PAGE);
+  const residence = source.questions.find(row => row.question === '现居住地');
+  const origin = source.questions.find(row => row.question === '籍贯');
+  assert.equal(residence.ready, false);
+  assert.equal(residence.region.reason, 'region_fact_not_unique');
+  assert.equal(residence.region.status, 'failed');
+  assert.equal(origin.ready, false);
+  assert.equal(origin.region.reason, 'explicit_region_pair_required');
+  assert.equal(JSON.stringify(source).includes('已支持'), false);
 });

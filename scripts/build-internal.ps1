@@ -18,12 +18,18 @@ $files = @(
   'src/background/cms-education-task-runner.mjs',
   'src/background/cms-page-focus.mjs',
   'src/background/cms-basic-auto.mjs',
+  'src/background/feishu-atsx-basic-auto.mjs',
+  'src/background/beisen-2022-basic-auto.mjs',
+  'src/background/moka-basic-auto.mjs',
+  'src/background/hotjob-mc-basic-auto.mjs',
+  'src/background/cmb-basic-auto.mjs',
   'src/background/education-task-runner.mjs',
   'src/background/gth-education-auto.mjs',
   'src/background/gth-basic-auto.mjs',
   'src/background/gth-simple-auto.mjs',
   'src/background/gth-other-auto.mjs',
   'src/background/gth-intent-auto.mjs',
+  'src/background/gth-open-fills.mjs',
   'src/background/gth-save-policy.mjs',
   'src/background/gth-draft-metadata.mjs',
   'src/background/gth-draft-task-runner.mjs',
@@ -32,12 +38,24 @@ $files = @(
   'src/background/gth-serial-runner.mjs',
   'src/background/gth-serial-step.mjs',
   'src/background/worker.mjs',
+  'src/background/bg-ping.mjs',
+  'src/auto/bg-request.mjs',
   'src/auto/cms-education-auto.html',
   'src/auto/cms-education-auto.js',
   'src/auto/cms-internship-auto.html',
   'src/auto/cms-internship-auto.js',
   'src/auto/cms-basic-auto.html',
   'src/auto/cms-basic-auto.js',
+  'src/auto/feishu-atsx-basic-auto.html',
+  'src/auto/feishu-atsx-basic-auto.js',
+  'src/auto/beisen-2022-basic-auto.html',
+  'src/auto/beisen-2022-basic-auto.js',
+  'src/auto/moka-basic-auto.html',
+  'src/auto/moka-basic-auto.js',
+  'src/auto/hotjob-mc-basic-auto.html',
+  'src/auto/hotjob-mc-basic-auto.js',
+  'src/auto/cmb-basic-auto.html',
+  'src/auto/cmb-basic-auto.js',
   'src/auto/gth-education-auto.html',
   'src/auto/gth-education-auto.js',
   'src/auto/gth-basic-auto.html',
@@ -69,9 +87,27 @@ $files = @(
   'src/content/cms-session.js',
   'src/content/cms-validation-gaps.js',
   'src/content/engine.js',
+  'src/content/feishu-atsx-basic.js',
+  'src/content/feishu-atsx-profile-map.mjs',
+  'src/content/beisen-2022-basic.js',
+  'src/content/beisen-2022-profile-map.mjs',
+  'src/content/moka-basic.js',
+  'src/content/moka-profile-map.mjs',
+  'src/content/hotjob-mc-basic.js',
+  'src/content/hotjob-mc-profile-map.mjs',
+  'src/content/cmb-basic.js',
+  'src/content/cmb-birthdate-picker.mjs',
+  'src/content/cmb-profile-map.mjs',
+  'src/content/cmb-gated-dicts.mjs',
   'src/content/gth-basic.js',
   'src/content/gth-draft-save.js',
   'src/content/gth-education.js',
+  'src/content/gth-intent.js',
+  'src/content/gth-open-fill.js',
+  'src/content/gth-skills.js',
+  'src/content/gth-other.js',
+  'src/content/gth-education-fill.js',
+  'src/content/gth-work-fill.js',
   'src/content/gth-other-section.js',
   'src/content/gth-section-discovery.js',
   'src/content/gth-simple-section.js',
@@ -103,6 +139,7 @@ $files = @(
   'src/profile/cms-education-site-facts-ui.mjs',
   'src/profile/cms-education-site-facts.mjs',
   'src/profile/cms-internship-plan.mjs',
+  'src/profile/cms-basic-seed-from-education.mjs',
   'src/profile/options.html',
   'src/profile/options.js',
   'src/profile/profile-lifecycle.js',
@@ -156,11 +193,13 @@ if ($manifest.declarative_net_request.rule_resources) {
 }
 
 # Check local imports and HTML asset links in our source (vendor bundles are self-contained).
+# Module specifiers include `from '…'`, dynamic `import('…')`, and side-effect `import '…'`
+# (no from). `import './bg-ping.mjs'` must fail this check when that file is off the list.
 $sourceFiles = $files | Where-Object { $_ -like 'src/*' -and $_ -notlike 'src/import/vendor/*' -and $_ -match '\.(?:html|js|mjs)$' }
 foreach ($relative in $sourceFiles) {
   $source = Join-Path $repoRoot ($relative -replace '/', '\')
   $content = Get-Content -LiteralPath $source -Raw -Encoding UTF8
-  $patterns = if ($relative -like '*.html') { @('(?:src|href)\s*=\s*["'']([^"'']+)["'']') } else { @('(?:from\s*|import\s*\()\s*["''](\.[^"'']+)["'']') }
+  $patterns = if ($relative -like '*.html') { @('(?:src|href)\s*=\s*["'']([^"'']+)["'']') } else { @('(?:from\s*|import\s*\(|import\s*)\s*["''](\.[^"'']+)["'']') }
   foreach ($pattern in $patterns) {
     foreach ($match in [regex]::Matches($content, $pattern)) {
       $reference = $match.Groups[1].Value
@@ -169,6 +208,7 @@ foreach ($relative in $sourceFiles) {
       if (-not $resolved.StartsWith($repoRoot + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase)) { throw "源码引用越界：$relative -> $reference" }
       $local = $resolved.Substring($repoRoot.Length + 1).Replace('\', '/')
       if (-not $allowed.Contains($local)) { throw "源码引用未纳入打包清单：$relative -> $local" }
+      if (-not (Test-Path -LiteralPath $resolved -PathType Leaf)) { throw "源码引用文件不存在：$relative -> $local" }
     }
   }
 }
@@ -201,6 +241,17 @@ foreach ($relative in ($files | Sort-Object)) {
   if ($hash -ne $sourceHashes[$relative]) { throw "源码在复制时发生变化，请重新构建：$relative" }
   $hashLines.Add("$hash  extension/$relative")
 }
+
+function Assert-PackedOmitsGthIntentTest([string]$Root) {
+  $needle = 'GTH_INTENT_TEST'
+  foreach ($file in (Get-ChildItem -LiteralPath $Root -Recurse -File)) {
+    $packedText = [IO.File]::ReadAllText($file.FullName)
+    if ($packedText.Contains($needle)) {
+      throw "交付包含有 GTH_INTENT_TEST（$($file.FullName)）。实验写入钩子不得进入内部或付费包。"
+    }
+  }
+}
+Assert-PackedOmitsGthIntentTest $extensionRoot
 
 Add-Type -AssemblyName System.IO.Compression
 Add-Type -AssemblyName System.IO.Compression.FileSystem
@@ -252,7 +303,3 @@ Write-Output "内部试用包：$buildRoot"
 Write-Output "ZIP：$zipPath"
 Write-Output "文件数：$($files.Count)"
 Write-Output "ZIP SHA256：$zipHash"
-$engineSource = Get-Content -LiteralPath (Join-Path $repoRoot 'src/content/engine.js') -Raw -Encoding UTF8
-if ($engineSource.Contains('"GTH_INTENT_TEST"')) {
-  Write-Output '仅内部实验：GTH_INTENT_TEST 写入消息仍在试用引擎中；此包不得作为付费或最终交付。'
-}

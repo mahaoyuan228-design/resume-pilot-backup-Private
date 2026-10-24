@@ -1,0 +1,29 @@
+{
+  "field": "birthDate",
+  "schema": "cmb-birthdate-hint-gate/1",
+  "harvestLanded": false,
+  "verdict": "datepicker_hint_only",
+  "gate": "offline_recorded",
+  "reason": "datepicker_hint_only",
+  "supported": false,
+  "liveFillClaimed": false,
+  "fillAllowed": false,
+  "saveAllowed": false,
+  "saveRefused": true,
+  "saved": false,
+  "skippedSave": true,
+  "writeAttempted": false,
+  "calendarClicked": false,
+  "selector": null,
+  "query": null,
+  "hint": {
+    "key": "birthDate",
+    "label": "出生日期",
+    "placeholder": "请选择日期",
+    "readOnly": true,
+    "selectId": "resume_basicInfo_birthday",
+    "saveAllowed": false
+  },
+  "observedFacts": null,
+  "note": "Recorded hint-only gate. The select id is the existing harvest hint, not a new selector. Cannot Save."
+}

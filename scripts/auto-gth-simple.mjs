@@ -150,7 +150,8 @@ try {
     reason: body?.reason || body?.job?.reason,
     helpNeeded: body?.helpNeeded === true,
     helpUrl: body?.helpUrl || null,
-    writeAttempted: body?.writeAttempted === true,
+    writeAttempted: body?.writeAttempted === true ? true : (body?.writeMayHaveStarted === true ? null : false),
+    writeMayHaveStarted: body?.writeMayHaveStarted === true,
     skillsReady: body?.readiness?.skills?.ready === true
   }, null, 2));
   try { server.close(); } catch {}

@@ -1,0 +1,72 @@
+{
+  "source": "Structural excerpt of the 2026-10-23 hotjob pb resumeOperation probe for the industry checkbox only. The probe recorded valueSample as an internal code triple and did not open the options. The one exclusion caption is reconciled from the same-page certs and intent-salary probe fixtures. Ordinary industry captions remain absent. A fixture is not a live support claim.",
+  "page": {
+    "hostname": "wecruit.hotjob.cn",
+    "pathPattern": "/SU[0-9A-Za-z]{8,64}/pb/resumeOperation.html",
+    "samplePath": "/SU629dbc0c0dcad452299bc0f7/pb/resumeOperation.html",
+    "rootClass": "resume-operation-wrap",
+    "contentClass": "resume-content-wrap",
+    "childrenClass": "ant-form-item-children",
+    "itemClass": "ant-row ant-form-item",
+    "hasAntDesign": true,
+    "hasElForm": false,
+    "buttonLabels": ["保存", "返回"],
+    "forbiddenButtons": ["保存", "提交", "投递", "删除", "下一步", "返回", "确定"]
+  },
+  "checkbox": {
+    "label": "如应聘研究发展中心行业研究类岗位请勾选（建议仅勾选3~5项）",
+    "kind": "checkbox",
+    "controlClass": "ant-checkbox-input",
+    "inputType": "checkbox",
+    "valueSample": "0/111601/111905",
+    "valueSampleNote": "Probe valueSample is an internal code triple, not display text. Options were not opened. Do not match 0, 111601, or 111905. Display captions are page-derived at runtime.",
+    "optionsOpened": false,
+    "optionCaptions": ["非研究类岗位，不涉及"],
+    "captionEvidence": {
+      "fixtures": ["hotjob-pb-certs-probe-dom.json", "hotjob-pb-intent-salary-probe-dom.json"],
+      "field": "neighbors.research.option",
+      "note": "Both same-page fixtures capture this exact exclusion caption beside input.ant-checkbox-input. No ordinary industry option captions or option codes are inferred."
+    },
+    "suggested": {
+      "min": 3,
+      "max": 5,
+      "note": "The label suggests 3~5. Do not force that count when the preexisting checked set already matches."
+    },
+    "cancel": "Escape"
+  },
+  "menu": {
+    "dropdownClass": "ant-select-dropdown ant-select-dropdown--single ant-select-dropdown-placement-bottomLeft",
+    "openClass": "ant-select ant-select-open ant-select-focused ant-select-enabled",
+    "cancel": "Escape",
+    "note": "This checkbox group does not open a menu. The dropdown class is the same page's flat ant-select probe so an already-open menu can be left with Escape. No option text is included."
+  },
+  "stray": {
+    "textClass": "ant-input",
+    "calendarClass": "ant-calendar-picker-input",
+    "note": "Same-page text and readonly-date classes. A checkbox row that also contains one fails closed."
+  },
+  "neighbors": {
+    "name": {
+      "label": "姓名",
+      "controlClass": "ant-input",
+      "inputType": "text",
+      "token": "NEIGHBOR_NAME"
+    },
+    "residence": {
+      "label": "现居住地",
+      "controlClass": "ant-select ant-select-enabled",
+      "menuClass": "cascader-plugins-wrap",
+      "token": "REGION_KEEP"
+    },
+    "obey": {
+      "label": "期望工作地是否服从分配",
+      "controlClass": "ant-radio-input",
+      "inputType": "radio",
+      "options": ["是", "否"]
+    },
+    "photo": {
+      "label": "照片",
+      "itemClass": "ant-row ant-form-item formItem41"
+    }
+  }
+}

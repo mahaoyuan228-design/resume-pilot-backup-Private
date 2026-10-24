@@ -1,0 +1,27 @@
+{
+  "schema": "cmb-rankingmajor-harvest/1",
+  "synthetic": true,
+  "reachable": true,
+  "scopeReadable": true,
+  "labelLocated": true,
+  "labelText": "专业排名",
+  "candidateCount": 1,
+  "association": "clear",
+  "snapshots": { "first": true, "second": true, "agree": true },
+  "control": {
+    "observedId": null,
+    "nodeName": "select",
+    "role": null,
+    "visible": false,
+    "disabled": true
+  },
+  "files": {
+    "context": true,
+    "dom01": true,
+    "dom02": true,
+    "fieldImage": true,
+    "verdict": true
+  },
+  "interactionEvidence": false,
+  "note": "Hidden and disabled stay present. A null observed id is not filled in from another field."
+}

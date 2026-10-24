@@ -1,3 +1,5 @@
+import { requestBackground } from './bg-request.mjs';
+
 // Internal one-shot helper: no toolbar popup. Can self-reload SW once, then fill.
 const params = new URLSearchParams(location.search);
 const mode = params.get('mode') || 'fill';
@@ -54,7 +56,7 @@ if (mode === 'reload') {
   show(`正在请求后台 CMS_BASIC_AUTO（mode=${autoMode}）…`, { reportPort });
   await postEvent('auto_begin', { autoMode, via: 'cms-education-auto' });
   try {
-    const result = await chrome.runtime.sendMessage({
+    const result = await requestBackground({
       type: 'CMS_BASIC_AUTO',
       mode: autoMode,
       originConfirmed: true
@@ -92,7 +94,7 @@ if (mode === 'reload') {
   show(`正在请求后台 CMS_INTERNSHIP_AUTO（mode=${autoMode}）…`, { profileIndex, replaceExisting, reportPort });
   await postEvent('auto_begin', { autoMode, profileIndex, replaceExisting, via: 'cms-education-auto' });
   try {
-    const result = await chrome.runtime.sendMessage({
+    const result = await requestBackground({
       type: 'CMS_INTERNSHIP_AUTO',
       mode: autoMode,
       profileIndex,
@@ -127,7 +129,7 @@ if (mode === 'reload') {
   show('正在请求后台 CMS_EDUCATION_AUTO_FILL…', { profileIndex, alsoProfileIndexes, replaceExisting, reportPort });
   await postEvent('fill_begin', { profileIndex, alsoProfileIndexes, replaceExisting });
   try {
-    const result = await chrome.runtime.sendMessage({
+    const result = await requestBackground({
       type: 'CMS_EDUCATION_AUTO_FILL',
       profileIndex,
       alsoProfileIndexes,

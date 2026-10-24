@@ -333,6 +333,24 @@
           if (!path.length || path.length > 6) stop('education_category_path_invalid');
           const labelOf = row => row.querySelector(':scope > label > span[uid],:scope > label > span,:scope > span');
           const selectedRows = () => [...popup.querySelectorAll('.selected-view-data > li')];
+          const confirmCategory = async (uid, text) => {
+            // This is only the local picker confirmation. A matching leaf name
+            // alone cannot bind a selected row with a different category UID.
+            selectorStep('category_confirm');
+            await boundAction(() => {
+              const selected = selectedRows();
+              const confirm = [...popup.querySelectorAll('a.pop-btn.confirm')].filter(visible);
+              const href = confirm[0]?.getAttribute('href');
+              if (selected.length !== 1 || selected[0].getAttribute('uid') !== uid
+                || norm(selected[0].textContent) !== text || confirm.length !== 1
+                || !enabled(confirm[0]) || norm(confirm[0].textContent) !== '确定'
+                || href && !/^(#|javascript:(?:;|void\(0\)))$/iu.test(href))
+                stop('education_category_selection_unknown');
+              if (!popup?.isConnected || !visible(popup) || !confirm[0]?.isConnected
+                || !popup.contains(confirm[0])) stop('profile_action_target_changed');
+              return confirm[0].click();
+            });
+          };
           const acceptsCategory = value => norm(value) === norm(answer) || norm(value) === path.at(-1)
             || path.length === 1 && norm(value).split('/').at(-1) === path[0];
           const reopenCategory = async () => {
@@ -509,22 +527,13 @@
                 stop('education_category_reselect_unknown');
               selectorStep('category_reselect_click');await boundAction(()=>{if(!(againCheckbox)?.isConnected)stop('profile_action_target_changed');return againCheckbox.click();});await pause(180);
               if (visible(popup)) {
-                const selected = [...popup.querySelectorAll('.selected-view-data > li')].filter(visible);
-                const confirm = [...popup.querySelectorAll('a.pop-btn.confirm')].filter(visible);
-                if (selected.length !== 1 || norm(selected[0].textContent) !== knownText
-                  || confirm.length !== 1 || !enabled(confirm[0]))
-                  stop('education_category_selection_unknown');
-                selectorStep('category_confirm');await boundAction(()=>{if(!(confirm[0])?.isConnected)stop('profile_action_target_changed');return confirm[0].click();});
+                await confirmCategory(knownUid, knownText);
               }
               return;
             }
             selectorStep('category_option_click');commit();await boundAction(()=>{if(!(checkbox)?.isConnected)stop('profile_action_target_changed');return checkbox.click();});await pause(150);
             if (visible(popup)) {
-              const selected = [...popup.querySelectorAll('.selected-view-data > li')].filter(visible);
-              const confirm = [...popup.querySelectorAll('a.pop-btn.confirm')].filter(visible);
-              if (selected.length !== 1 || norm(selected[0].textContent) !== path.at(-1)
-                || confirm.length !== 1 || !enabled(confirm[0])) stop('education_category_selection_unknown');
-              selectorStep('category_confirm');await boundAction(()=>{if(!(confirm[0])?.isConnected)stop('profile_action_target_changed');return confirm[0].click();});
+              await confirmCategory(knownUid, knownText);
             }
           };
           let categoryReselectAttempt = 0;
@@ -670,7 +679,7 @@
 
   async function trial(request, full = false) {
     const FIELDS = full ? [...FULL_FIELDS, ...COMPLEX_FIELDS] : TEXT_FIELDS;
-    const result = { fields: [], editorLeftOpen: false, writeStarted: false,
+    const result = { fields: [], editorLeftOpen: false, writeStarted: false, liveSupportClaimed: false,
       savedOnSite: null, submitted: null, softwareClickedSave: false,
       softwareClickedSubmit: false, softwareClickedDelete: false };
     if (state.busy) return { ok: false, reason: 'fill_in_progress', ...result };
@@ -972,10 +981,35 @@
             ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
           const setter = Object.getOwnPropertyDescriptor(prototype, 'value')?.set;
           if (!setter) stop('native_setter_missing');
-          result.writeStarted = true;
-          await boundAction(()=>{if(!(control)?.isConnected)stop('profile_action_target_changed');return setter.call(control, answer);});
-          await boundAction(()=>{if(!(control)?.isConnected)stop('profile_action_target_changed');return control.dispatchEvent(new Event('input', {bubbles:true}));});
-          await boundAction(()=>{if(!(control)?.isConnected)stop('profile_action_target_changed');return control.dispatchEvent(new Event('change', {bubbles:true}));});
+          // Binding verification yields to the page before every action. Keep
+          // the guard inside that await boundary so a connected old control or
+          // a newly typed value cannot be overwritten or receive stale events.
+          const guardTextAction = expected => {
+            if (!control?.isConnected) stop('profile_action_target_changed');
+            const live = page();
+            if (performance.timeOrigin !== timeOrigin || forms(live).length !== 1
+              || forms(live)[0] !== form || outside(live) !== outsideBefore
+              || !sameTarget(selectedTarget, target(form, field))
+              || selectedTarget.read() !== expected
+              || valuesExcept(form, selectedTarget.controls) !== untouchedBefore
+              || JSON.stringify(records(live[1]).map(snapshot)) !== otherRecordsBefore)
+              stop('original_value_changed');
+            if (control.maxLength >= 0 && answer.length > control.maxLength)
+              stop('value_too_long');
+          };
+          await boundAction(() => {
+            guardTextAction(existing);
+            result.writeStarted = true;
+            return setter.call(control, answer);
+          });
+          await boundAction(() => {
+            guardTextAction(answer);
+            return control.dispatchEvent(new Event('input', {bubbles:true}));
+          });
+          await boundAction(() => {
+            guardTextAction(answer);
+            return control.dispatchEvent(new Event('change', {bubbles:true}));
+          });
         }
         selectorStep('field_readback');await pause(250);
         sections = page();

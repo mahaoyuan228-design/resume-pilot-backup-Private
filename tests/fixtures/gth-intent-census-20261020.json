@@ -1,0 +1,2745 @@
+{
+ "formCls": "el-form sec-form",
+ "editLinkVisible": false,
+ "items": [
+  {
+   "label": "期望工作地区",
+   "required": true,
+   "itemCls": "el-form-item is-required",
+   "tree": {
+    "t": "div.el-form-item__content.cascader-wrap",
+    "v": true,
+    "kids": [
+     {
+      "t": "div.input-l.pointer.local---222",
+      "v": true,
+      "kids": [
+       {
+        "t": "div.input-l.pointer.el-input",
+        "v": true,
+        "kids": [
+         {
+          "t": "input.el-input__inner",
+          "v": true,
+          "kids": []
+         }
+        ]
+       },
+       {
+        "t": "span.el-input__suffix",
+        "v": true,
+        "kids": [
+         {
+          "t": "span.el-input__suffix-inner",
+          "v": true,
+          "kids": [
+           {
+            "t": "i.el-select__caret.el-input__icon.el-icon-arrow-up",
+            "v": true,
+            "kids": []
+           }
+          ]
+         }
+        ]
+       }
+      ]
+     },
+     {
+      "t": "div.dialog-wrap.plugin-dialog-wrap.popover.blue",
+      "v": false,
+      "kids": [
+       {
+        "t": "div.eo-checked-wrap.selected-view-outer",
+        "v": false,
+        "kids": [
+         {
+          "t": "ul.selected-view-data",
+          "v": false,
+          "kids": [
+           {
+            "t": "li",
+            "v": false,
+            "kids": [
+             {
+              "t": "p",
+              "v": false,
+              "kids": []
+             },
+             {
+              "t": "i",
+              "v": false,
+              "kids": []
+             }
+            ]
+           }
+          ]
+         },
+         {
+          "t": "div.selected-counter",
+          "v": false,
+          "kids": [
+           {
+            "t": "p",
+            "v": false,
+            "kids": []
+           }
+          ]
+         }
+        ]
+       },
+       {
+        "t": "div.search-outer",
+        "v": false,
+        "kids": [
+         {
+          "t": "div.search-leaves-outer",
+          "v": false,
+          "kids": [
+           {
+            "t": "ul.search-leaves-wrapper",
+            "v": false,
+            "kids": []
+           }
+          ]
+         },
+         {
+          "t": "div.search-input-wrapper",
+          "v": false,
+          "kids": [
+           {
+            "t": "input.search-input",
+            "v": false,
+            "kids": []
+           },
+           {
+            "t": "i.clear-input",
+            "v": false,
+            "kids": []
+           }
+          ]
+         }
+        ]
+       },
+       {
+        "t": "div.eo-cascader-panel",
+        "v": false,
+        "kids": [
+         {
+          "t": "div.eo-cascader-menu.simple-tree-outer",
+          "v": false,
+          "kids": [
+           {
+            "t": "ul.simple-tree-wrapper",
+            "v": false,
+            "kids": [
+             {
+              "t": "li.branch.has-child.undefined.selected.currentClick",
+              "v": false,
+              "kids": [
+               {
+                "t": "span",
+                "v": false,
+                "kids": []
+               }
+              ]
+             },
+             {
+              "t": "li.branch.has-child.undefined",
+              "v": false,
+              "kids": [
+               {
+                "t": "span",
+                "v": false,
+                "kids": []
+               }
+              ]
+             },
+             {
+              "t": "li.branch.has-child.undefined",
+              "v": false,
+              "kids": [
+               {
+                "t": "span",
+                "v": false,
+                "kids": []
+               }
+              ]
+             },
+             {
+              "t": "li.branch.has-child.undefined",
+              "v": false,
+              "kids": [
+               {
+                "t": "span",
+                "v": false,
+                "kids": []
+               }
+              ]
+             },
+             {
+              "t": "li.branch.has-child.undefined",
+              "v": false,
+              "kids": [
+               {
+                "t": "span",
+                "v": false,
+                "kids": []
+               }
+              ]
+             },
+             {
+              "t": "li.branch.has-child.undefined",
+              "v": false,
+              "kids": [
+               {
+                "t": "span",
+                "v": false,
+                "kids": []
+               }
+              ]
+             }
+            ],
+            "more": 35
+           }
+          ]
+         },
+         {
+          "t": "div.eo-cascader-menu.simple-tree-outer",
+          "v": false,
+          "kids": [
+           {
+            "t": "ul.simple-tree-wrapper",
+            "v": false,
+            "kids": [
+             {
+              "t": "li.branch.spe.selected.currentClick",
+              "v": false,
+              "kids": [
+               {
+                "t": "label",
+                "v": false,
+                "kids": []
+               }
+              ]
+             },
+             {
+              "t": "li.branch.undefined",
+              "v": false,
+              "kids": [
+               {
+                "t": "label",
+                "v": false,
+                "kids": []
+               }
+              ]
+             },
+             {
+              "t": "li.branch.undefined",
+              "v": false,
+              "kids": [
+               {
+                "t": "label",
+                "v": false,
+                "kids": []
+               }
+              ]
+             },
+             {
+              "t": "li.branch.undefined",
+              "v": false,
+              "kids": [
+               {
+                "t": "label",
+                "v": false,
+                "kids": []
+               }
+              ]
+             },
+             {
+              "t": "li.branch.undefined",
+              "v": false,
+              "kids": [
+               {
+                "t": "label",
+                "v": false,
+                "kids": []
+               }
+              ]
+             },
+             {
+              "t": "li.branch.undefined",
+              "v": false,
+              "kids": [
+               {
+                "t": "label",
+                "v": false,
+                "kids": []
+               }
+              ]
+             }
+            ],
+            "more": 17
+           }
+          ]
+         }
+        ]
+       },
+       {
+        "t": "div.pop-foot.plugin-dialog-pop-foot",
+        "v": false,
+        "kids": [
+         {
+          "t": "div.btn-group-outer",
+          "v": false,
+          "kids": [
+           {
+            "t": "a.confirm.pop-btn",
+            "v": false,
+            "kids": []
+           },
+           {
+            "t": "a.cancel.pop-btn",
+            "v": false,
+            "kids": []
+           }
+          ]
+         }
+        ]
+       },
+       {
+        "t": "div.dialog-search-wrap",
+        "v": false,
+        "kids": []
+       }
+      ]
+     }
+    ]
+   },
+   "inputs": [
+    {
+     "type": "text",
+     "cls": "el-input__inner",
+     "ph": "请选择",
+     "value": "北京",
+     "ro": true,
+     "dis": false,
+     "vis": true
+    },
+    {
+     "type": "text",
+     "cls": "search-input",
+     "ph": "请输入关键字",
+     "value": "",
+     "ro": false,
+     "dis": false,
+     "vis": false
+    },
+    {
+     "type": "checkbox",
+     "cls": "",
+     "ph": "",
+     "value": "on",
+     "ro": false,
+     "dis": false,
+     "vis": false
+    },
+    {
+     "type": "checkbox",
+     "cls": "",
+     "ph": "",
+     "value": "on",
+     "ro": false,
+     "dis": false,
+     "vis": false
+    },
+    {
+     "type": "checkbox",
+     "cls": "",
+     "ph": "",
+     "value": "on",
+     "ro": false,
+     "dis": false,
+     "vis": false
+    },
+    {
+     "type": "checkbox",
+     "cls": "",
+     "ph": "",
+     "value": "on",
+     "ro": false,
+     "dis": false,
+     "vis": false
+    },
+    {
+     "type": "checkbox",
+     "cls": "",
+     "ph": "",
+     "value": "on",
+     "ro": false,
+     "dis": false,
+     "vis": false
+    },
+    {
+     "type": "checkbox",
+     "cls": "",
+     "ph": "",
+     "value": "on",
+     "ro": false,
+     "dis": false,
+     "vis": false
+    },
+    {
+     "type": "checkbox",
+     "cls": "",
+     "ph": "",
+     "value": "on",
+     "ro": false,
+     "dis": false,
+     "vis": false
+    },
+    {
+     "type": "checkbox",
+     "cls": "",
+     "ph": "",
+     "value": "on",
+     "ro": false,
+     "dis": false,
+     "vis": false
+    },
+    {
+     "type": "checkbox",
+     "cls": "",
+     "ph": "",
+     "value": "on",
+     "ro": false,
+     "dis": false,
+     "vis": false
+    },
+    {
+     "type": "checkbox",
+     "cls": "",
+     "ph": "",
+     "value": "on",
+     "ro": false,
+     "dis": false,
+     "vis": false
+    },
+    {
+     "type": "checkbox",
+     "cls": "",
+     "ph": "",
+     "value": "on",
+     "ro": false,
+     "dis": false,
+     "vis": false
+    },
+    {
+     "type": "checkbox",
+     "cls": "",
+     "ph": "",
+     "value": "on",
+     "ro": false,
+     "dis": false,
+     "vis": false
+    },
+    {
+     "type": "checkbox",
+     "cls": "",
+     "ph": "",
+     "value": "on",
+     "ro": false,
+     "dis": false,
+     "vis": false
+    },
+    {
+     "type": "checkbox",
+     "cls": "",
+     "ph": "",
+     "value": "on",
+     "ro": false,
+     "dis": false,
+     "vis": false
+    },
+    {
+     "type": "checkbox",
+     "cls": "",
+     "ph": "",
+     "value": "on",
+     "ro": false,
+     "dis": false,
+     "vis": false
+    },
+    {
+     "type": "checkbox",
+     "cls": "",
+     "ph": "",
+     "value": "on",
+     "ro": false,
+     "dis": false,
+     "vis": false
+    },
+    {
+     "type": "checkbox",
+     "cls": "",
+     "ph": "",
+     "value": "on",
+     "ro": false,
+     "dis": false,
+     "vis": false
+    },
+    {
+     "type": "checkbox",
+     "cls": "",
+     "ph": "",
+     "value": "on",
+     "ro": false,
+     "dis": false,
+     "vis": false
+    },
+    {
+     "type": "checkbox",
+     "cls": "",
+     "ph": "",
+     "value": "on",
+     "ro": false,
+     "dis": false,
+     "vis": false
+    },
+    {
+     "type": "checkbox",
+     "cls": "",
+     "ph": "",
+     "value": "on",
+     "ro": false,
+     "dis": false,
+     "vis": false
+    }
+   ],
+   "poppers": [
+    {
+     "c": "dialog-wrap plugin-dialog-wrap popover blue",
+     "v": false,
+     "n": 53
+    },
+    {
+     "c": "eo-cascader-panel",
+     "v": false,
+     "n": 52
+    },
+    {
+     "c": "pop-foot plugin-dialog-pop-foot",
+     "v": false,
+     "n": 0
+    },
+    {
+     "c": "confirm pop-btn",
+     "v": false,
+     "n": 0
+    },
+    {
+     "c": "cancel pop-btn",
+     "v": false,
+     "n": 0
+    }
+   ],
+   "buttons": [],
+   "optionCount": 73,
+   "options": [
+    {
+     "c": "",
+     "x": "北京",
+     "v": false
+    },
+    {
+     "c": "branch has-child undefined selected currentClick",
+     "x": "北京",
+     "v": false
+    },
+    {
+     "c": "branch has-child undefined",
+     "x": "上海",
+     "v": false
+    },
+    {
+     "c": "branch has-child undefined",
+     "x": "天津",
+     "v": false
+    },
+    {
+     "c": "branch has-child undefined",
+     "x": "重庆",
+     "v": false
+    },
+    {
+     "c": "branch has-child undefined",
+     "x": "河北",
+     "v": false
+    },
+    {
+     "c": "branch has-child undefined",
+     "x": "山西",
+     "v": false
+    },
+    {
+     "c": "branch has-child undefined",
+     "x": "内蒙古",
+     "v": false
+    },
+    {
+     "c": "branch has-child undefined",
+     "x": "辽宁",
+     "v": false
+    },
+    {
+     "c": "branch has-child undefined",
+     "x": "吉林",
+     "v": false
+    },
+    {
+     "c": "branch has-child undefined",
+     "x": "黑龙江",
+     "v": false
+    },
+    {
+     "c": "branch has-child undefined",
+     "x": "江苏",
+     "v": false
+    },
+    {
+     "c": "branch has-child undefined",
+     "x": "浙江",
+     "v": false
+    },
+    {
+     "c": "branch has-child undefined",
+     "x": "安徽",
+     "v": false
+    },
+    {
+     "c": "branch has-child undefined",
+     "x": "福建",
+     "v": false
+    },
+    {
+     "c": "branch has-child undefined",
+     "x": "江西",
+     "v": false
+    },
+    {
+     "c": "branch has-child undefined",
+     "x": "山东",
+     "v": false
+    },
+    {
+     "c": "branch has-child undefined",
+     "x": "河南",
+     "v": false
+    },
+    {
+     "c": "branch has-child undefined",
+     "x": "湖北",
+     "v": false
+    },
+    {
+     "c": "branch has-child undefined",
+     "x": "湖南",
+     "v": false
+    },
+    {
+     "c": "branch has-child undefined",
+     "x": "广东",
+     "v": false
+    },
+    {
+     "c": "branch has-child undefined",
+     "x": "广西",
+     "v": false
+    },
+    {
+     "c": "branch has-child undefined",
+     "x": "海南",
+     "v": false
+    },
+    {
+     "c": "branch has-child undefined",
+     "x": "四川",
+     "v": false
+    },
+    {
+     "c": "branch has-child undefined",
+     "x": "贵州",
+     "v": false
+    },
+    {
+     "c": "branch has-child undefined",
+     "x": "云南",
+     "v": false
+    },
+    {
+     "c": "branch has-child undefined",
+     "x": "西藏",
+     "v": false
+    },
+    {
+     "c": "branch has-child undefined",
+     "x": "陕西",
+     "v": false
+    },
+    {
+     "c": "branch has-child undefined",
+     "x": "甘肃",
+     "v": false
+    },
+    {
+     "c": "branch has-child undefined",
+     "x": "青海",
+     "v": false
+    },
+    {
+     "c": "branch has-child undefined",
+     "x": "宁夏",
+     "v": false
+    },
+    {
+     "c": "branch has-child undefined",
+     "x": "新疆",
+     "v": false
+    },
+    {
+     "c": "branch undefined",
+     "x": "香港",
+     "v": false
+    },
+    {
+     "c": "",
+     "x": "香港",
+     "v": false
+    },
+    {
+     "c": "branch undefined",
+     "x": "澳门",
+     "v": false
+    },
+    {
+     "c": "",
+     "x": "澳门",
+     "v": false
+    },
+    {
+     "c": "branch undefined",
+     "x": "台湾",
+     "v": false
+    },
+    {
+     "c": "",
+     "x": "台湾",
+     "v": false
+    },
+    {
+     "c": "branch has-child undefined",
+     "x": "其他国家",
+     "v": false
+    },
+    {
+     "c": "branch spe selected currentClick",
+     "x": "北京",
+     "v": false
+    },
+    {
+     "c": "",
+     "x": "北京",
+     "v": false
+    },
+    {
+     "c": "branch undefined",
+     "x": "东城区",
+     "v": false
+    },
+    {
+     "c": "",
+     "x": "东城区",
+     "v": false
+    },
+    {
+     "c": "branch undefined",
+     "x": "西城区",
+     "v": false
+    },
+    {
+     "c": "",
+     "x": "西城区",
+     "v": false
+    },
+    {
+     "c": "branch undefined",
+     "x": "朝阳区",
+     "v": false
+    },
+    {
+     "c": "",
+     "x": "朝阳区",
+     "v": false
+    },
+    {
+     "c": "branch undefined",
+     "x": "丰台区",
+     "v": false
+    },
+    {
+     "c": "",
+     "x": "丰台区",
+     "v": false
+    },
+    {
+     "c": "branch undefined",
+     "x": "石景山区",
+     "v": false
+    },
+    {
+     "c": "",
+     "x": "石景山区",
+     "v": false
+    },
+    {
+     "c": "branch undefined",
+     "x": "海淀区",
+     "v": false
+    },
+    {
+     "c": "",
+     "x": "海淀区",
+     "v": false
+    },
+    {
+     "c": "branch undefined",
+     "x": "门头沟区",
+     "v": false
+    },
+    {
+     "c": "",
+     "x": "门头沟区",
+     "v": false
+    },
+    {
+     "c": "branch undefined",
+     "x": "房山区",
+     "v": false
+    },
+    {
+     "c": "",
+     "x": "房山区",
+     "v": false
+    },
+    {
+     "c": "branch undefined",
+     "x": "通州区",
+     "v": false
+    },
+    {
+     "c": "",
+     "x": "通州区",
+     "v": false
+    },
+    {
+     "c": "branch undefined",
+     "x": "顺义区",
+     "v": false
+    },
+    {
+     "c": "",
+     "x": "顺义区",
+     "v": false
+    },
+    {
+     "c": "branch undefined",
+     "x": "昌平区",
+     "v": false
+    },
+    {
+     "c": "",
+     "x": "昌平区",
+     "v": false
+    },
+    {
+     "c": "branch undefined",
+     "x": "大兴区",
+     "v": false
+    },
+    {
+     "c": "",
+     "x": "大兴区",
+     "v": false
+    },
+    {
+     "c": "branch undefined",
+     "x": "怀柔区",
+     "v": false
+    },
+    {
+     "c": "",
+     "x": "怀柔区",
+     "v": false
+    },
+    {
+     "c": "branch undefined",
+     "x": "平谷区",
+     "v": false
+    },
+    {
+     "c": "",
+     "x": "平谷区",
+     "v": false
+    },
+    {
+     "c": "branch undefined",
+     "x": "密云区",
+     "v": false
+    },
+    {
+     "c": "",
+     "x": "密云区",
+     "v": false
+    },
+    {
+     "c": "branch undefined",
+     "x": "延庆区",
+     "v": false
+    },
+    {
+     "c": "",
+     "x": "延庆区",
+     "v": false
+    }
+   ]
+  },
+  {
+   "label": "期望从事职位类别",
+   "required": true,
+   "itemCls": "el-form-item is-required",
+   "tree": {
+    "t": "div.el-form-item__content.cascader-wrap",
+    "v": true,
+    "kids": [
+     {
+      "t": "div.input-l.pointer",
+      "v": true,
+      "kids": [
+       {
+        "t": "div.input-l.pointer.el-input",
+        "v": true,
+        "kids": [
+         {
+          "t": "input.el-input__inner",
+          "v": true,
+          "kids": []
+         }
+        ]
+       },
+       {
+        "t": "span.el-input__suffix",
+        "v": true,
+        "kids": [
+         {
+          "t": "span.el-input__suffix-inner",
+          "v": true,
+          "kids": [
+           {
+            "t": "i.el-select__caret.el-input__icon.el-icon-arrow-up",
+            "v": true,
+            "kids": []
+           }
+          ]
+         }
+        ]
+       }
+      ]
+     },
+     {
+      "t": "div.dialog-wrap.plugin-dialog-wrap.popover.blue",
+      "v": false,
+      "kids": [
+       {
+        "t": "div.eo-checked-wrap.selected-view-outer",
+        "v": false,
+        "kids": [
+         {
+          "t": "ul.selected-view-data",
+          "v": false,
+          "kids": [
+           {
+            "t": "li",
+            "v": false,
+            "kids": [
+             {
+              "t": "p",
+              "v": false,
+              "kids": []
+             },
+             {
+              "t": "i",
+              "v": false,
+              "kids": []
+             }
+            ]
+           }
+          ]
+         },
+         {
+          "t": "div.selected-counter",
+          "v": false,
+          "kids": [
+           {
+            "t": "p",
+            "v": false,
+            "kids": []
+           }
+          ]
+         }
+        ]
+       },
+       {
+        "t": "div.search-outer",
+        "v": false,
+        "kids": [
+         {
+          "t": "div.search-leaves-outer",
+          "v": false,
+          "kids": [
+           {
+            "t": "ul.search-leaves-wrapper",
+            "v": false,
+            "kids": []
+           }
+          ]
+         },
+         {
+          "t": "div.search-input-wrapper",
+          "v": false,
+          "kids": [
+           {
+            "t": "input.search-input",
+            "v": false,
+            "kids": []
+           },
+           {
+            "t": "i.clear-input",
+            "v": false,
+            "kids": []
+           }
+          ]
+         }
+        ]
+       },
+       {
+        "t": "div.eo-cascader-panel",
+        "v": false,
+        "kids": [
+         {
+          "t": "div.eo-cascader-menu.simple-tree-outer",
+          "v": false,
+          "kids": [
+           {
+            "t": "ul.simple-tree-wrapper",
+            "v": false,
+            "kids": [
+             {
+              "t": "li.branch.has-child.undefined",
+              "v": false,
+              "kids": [
+               {
+                "t": "span",
+                "v": false,
+                "kids": []
+               }
+              ]
+             },
+             {
+              "t": "li.branch.has-child.undefined",
+              "v": false,
+              "kids": [
+               {
+                "t": "span",
+                "v": false,
+                "kids": []
+               }
+              ]
+             },
+             {
+              "t": "li.branch.has-child.undefined",
+              "v": false,
+              "kids": [
+               {
+                "t": "span",
+                "v": false,
+                "kids": []
+               }
+              ]
+             },
+             {
+              "t": "li.branch.has-child.undefined",
+              "v": false,
+              "kids": [
+               {
+                "t": "span",
+                "v": false,
+                "kids": []
+               }
+              ]
+             },
+             {
+              "t": "li.branch.has-child.undefined",
+              "v": false,
+              "kids": [
+               {
+                "t": "span",
+                "v": false,
+                "kids": []
+               }
+              ]
+             },
+             {
+              "t": "li.branch.has-child.undefined.selected.currentClick",
+              "v": false,
+              "kids": [
+               {
+                "t": "span",
+                "v": false,
+                "kids": []
+               }
+              ]
+             }
+            ],
+            "more": 14
+           }
+          ]
+         },
+         {
+          "t": "div.eo-cascader-menu.simple-tree-outer",
+          "v": false,
+          "kids": [
+           {
+            "t": "ul.simple-tree-wrapper",
+            "v": false,
+            "kids": [
+             {
+              "t": "li.branch.undefined",
+              "v": false,
+              "kids": [
+               {
+                "t": "label",
+                "v": false,
+                "kids": []
+               }
+              ]
+             },
+             {
+              "t": "li.branch.undefined.selected.currentClick",
+              "v": false,
+              "kids": [
+               {
+                "t": "label",
+                "v": false,
+                "kids": []
+               }
+              ]
+             },
+             {
+              "t": "li.branch.undefined",
+              "v": false,
+              "kids": [
+               {
+                "t": "label",
+                "v": false,
+                "kids": []
+               }
+              ]
+             },
+             {
+              "t": "li.branch.undefined",
+              "v": false,
+              "kids": [
+               {
+                "t": "label",
+                "v": false,
+                "kids": []
+               }
+              ]
+             }
+            ]
+           }
+          ]
+         }
+        ]
+       },
+       {
+        "t": "div.pop-foot.plugin-dialog-pop-foot",
+        "v": false,
+        "kids": [
+         {
+          "t": "div.btn-group-outer",
+          "v": false,
+          "kids": [
+           {
+            "t": "a.confirm.pop-btn",
+            "v": false,
+            "kids": []
+           },
+           {
+            "t": "a.cancel.pop-btn",
+            "v": false,
+            "kids": []
+           }
+          ]
+         }
+        ]
+       },
+       {
+        "t": "div.dialog-search-wrap",
+        "v": false,
+        "kids": []
+       }
+      ]
+     }
+    ]
+   },
+   "inputs": [
+    {
+     "type": "text",
+     "cls": "el-input__inner",
+     "ph": "",
+     "value": "投资/证券/基金",
+     "ro": true,
+     "dis": false,
+     "vis": true
+    },
+    {
+     "type": "text",
+     "cls": "search-input",
+     "ph": "请输入关键字",
+     "value": "",
+     "ro": false,
+     "dis": false,
+     "vis": false
+    },
+    {
+     "type": "checkbox",
+     "cls": "",
+     "ph": "",
+     "value": "on",
+     "ro": false,
+     "dis": false,
+     "vis": false
+    },
+    {
+     "type": "checkbox",
+     "cls": "",
+     "ph": "",
+     "value": "on",
+     "ro": false,
+     "dis": false,
+     "vis": false
+    },
+    {
+     "type": "checkbox",
+     "cls": "",
+     "ph": "",
+     "value": "on",
+     "ro": false,
+     "dis": false,
+     "vis": false
+    },
+    {
+     "type": "checkbox",
+     "cls": "",
+     "ph": "",
+     "value": "on",
+     "ro": false,
+     "dis": false,
+     "vis": false
+    }
+   ],
+   "poppers": [
+    {
+     "c": "dialog-wrap plugin-dialog-wrap popover blue",
+     "v": false,
+     "n": 19
+    },
+    {
+     "c": "eo-cascader-panel",
+     "v": false,
+     "n": 18
+    },
+    {
+     "c": "pop-foot plugin-dialog-pop-foot",
+     "v": false,
+     "n": 0
+    },
+    {
+     "c": "confirm pop-btn",
+     "v": false,
+     "n": 0
+    },
+    {
+     "c": "cancel pop-btn",
+     "v": false,
+     "n": 0
+    }
+   ],
+   "buttons": [],
+   "optionCount": 23,
+   "options": [
+    {
+     "c": "",
+     "x": "投资/证券/基金",
+     "v": false
+    },
+    {
+     "c": "branch has-child undefined",
+     "x": "销售/客服",
+     "v": false
+    },
+    {
+     "c": "branch has-child undefined",
+     "x": "市场/广告/设计/影视传媒",
+     "v": false
+    },
+    {
+     "c": "branch has-child undefined",
+     "x": "人事/行政/财务/法务",
+     "v": false
+    },
+    {
+     "c": "branch has-child undefined",
+     "x": "高管/项目/质量管理",
+     "v": false
+    },
+    {
+     "c": "branch has-child undefined",
+     "x": "IT/产品/运营",
+     "v": false
+    },
+    {
+     "c": "branch has-child undefined selected currentClick",
+     "x": "金融/保险",
+     "v": false
+    },
+    {
+     "c": "branch has-child undefined",
+     "x": "房产/建筑/物业",
+     "v": false
+    },
+    {
+     "c": "branch has-child undefined",
+     "x": "生物/制药/医疗服务",
+     "v": false
+    },
+    {
+     "c": "branch has-child undefined",
+     "x": "采购/商贸/交通/物流",
+     "v": false
+    },
+    {
+     "c": "branch has-child undefined",
+     "x": "生产/制造",
+     "v": false
+    },
+    {
+     "c": "branch has-child undefined",
+     "x": "专业服务/教育科研",
+     "v": false
+    },
+    {
+     "c": "branch has-child undefined",
+     "x": "生活服务",
+     "v": false
+    },
+    {
+     "c": "branch has-child undefined",
+     "x": "能源/矿产/水利/环保",
+     "v": false
+    },
+    {
+     "c": "branch has-child undefined",
+     "x": "公务员/农林牧渔/其他",
+     "v": false
+    },
+    {
+     "c": "branch undefined",
+     "x": "银行",
+     "v": false
+    },
+    {
+     "c": "",
+     "x": "银行",
+     "v": false
+    },
+    {
+     "c": "branch undefined selected currentClick",
+     "x": "投资/证券/基金",
+     "v": false
+    },
+    {
+     "c": "",
+     "x": "投资/证券/基金",
+     "v": false
+    },
+    {
+     "c": "branch undefined",
+     "x": "保险",
+     "v": false
+    },
+    {
+     "c": "",
+     "x": "保险",
+     "v": false
+    },
+    {
+     "c": "branch undefined",
+     "x": "担保/典当/拍卖",
+     "v": false
+    },
+    {
+     "c": "",
+     "x": "担保/典当/拍卖",
+     "v": false
+    }
+   ]
+  },
+  {
+   "label": "期望薪资",
+   "required": true,
+   "itemCls": "el-form-item is-required",
+   "tree": {
+    "t": "div.el-form-item__content",
+    "v": true,
+    "kids": [
+     {
+      "t": "div.el-input.select-l",
+      "v": true,
+      "kids": [
+       {
+        "t": "input.el-input__inner",
+        "v": true,
+        "kids": []
+       }
+      ]
+     },
+     {
+      "t": "span",
+      "v": true,
+      "kids": []
+     }
+    ]
+   },
+   "inputs": [
+    {
+     "type": "text",
+     "cls": "el-input__inner",
+     "ph": "",
+     "value": "12000",
+     "ro": false,
+     "dis": false,
+     "vis": true
+    }
+   ],
+   "poppers": [],
+   "buttons": [],
+   "optionCount": 0,
+   "options": []
+  },
+  {
+   "label": "到岗日期",
+   "required": false,
+   "itemCls": "el-form-item select-item",
+   "tree": {
+    "t": "div.el-form-item__content",
+    "v": true,
+    "kids": [
+     {
+      "t": "div.el-select.select-l",
+      "v": true,
+      "kids": [
+       {
+        "t": "div.el-input.el-input--suffix",
+        "v": true,
+        "kids": [
+         {
+          "t": "input.el-input__inner",
+          "v": true,
+          "kids": []
+         },
+         {
+          "t": "span.el-input__suffix",
+          "v": true,
+          "kids": [
+           {
+            "t": "span.el-input__suffix-inner",
+            "v": true,
+            "kids": [
+             {
+              "t": "i.el-select__caret.el-input__icon.el-icon-arrow-up",
+              "v": true,
+              "kids": []
+             }
+            ]
+           }
+          ]
+         }
+        ]
+       },
+       {
+        "t": "div.el-select-dropdown.el-popper",
+        "v": false,
+        "kids": [
+         {
+          "t": "div.el-scrollbar",
+          "v": false,
+          "kids": [
+           {
+            "t": "div.el-select-dropdown__wrap.el-scrollbar__wrap",
+            "v": false,
+            "kids": [
+             {
+              "t": "ul.el-scrollbar__view.el-select-dropdown__list",
+              "v": false,
+              "kids": [
+               {
+                "t": "li.el-select-dropdown__item",
+                "v": false,
+                "kids": []
+               },
+               {
+                "t": "li.el-select-dropdown__item",
+                "v": false,
+                "kids": []
+               },
+               {
+                "t": "li.el-select-dropdown__item",
+                "v": false,
+                "kids": []
+               },
+               {
+                "t": "li.el-select-dropdown__item",
+                "v": false,
+                "kids": []
+               },
+               {
+                "t": "li.el-select-dropdown__item",
+                "v": false,
+                "kids": []
+               },
+               {
+                "t": "li.el-select-dropdown__item",
+                "v": false,
+                "kids": []
+               }
+              ]
+             }
+            ]
+           },
+           {
+            "t": "div.el-scrollbar__bar.is-horizontal",
+            "v": false,
+            "kids": [
+             {
+              "t": "div.el-scrollbar__thumb",
+              "v": false,
+              "kids": []
+             }
+            ]
+           },
+           {
+            "t": "div.el-scrollbar__bar.is-vertical",
+            "v": false,
+            "kids": [
+             {
+              "t": "div.el-scrollbar__thumb",
+              "v": false,
+              "kids": []
+             }
+            ]
+           }
+          ]
+         }
+        ]
+       }
+      ]
+     }
+    ]
+   },
+   "inputs": [
+    {
+     "type": "text",
+     "cls": "el-input__inner",
+     "ph": "请选择",
+     "value": "",
+     "ro": true,
+     "dis": false,
+     "vis": true
+    }
+   ],
+   "poppers": [
+    {
+     "c": "el-select-dropdown el-popper",
+     "v": false,
+     "n": 6
+    },
+    {
+     "c": "el-select-dropdown__wrap el-scrollbar__wrap",
+     "v": false,
+     "n": 6
+    },
+    {
+     "c": "el-scrollbar__view el-select-dropdown__list",
+     "v": false,
+     "n": 6
+    },
+    {
+     "c": "el-select-dropdown__item",
+     "v": false,
+     "n": 0
+    },
+    {
+     "c": "el-select-dropdown__item",
+     "v": false,
+     "n": 0
+    },
+    {
+     "c": "el-select-dropdown__item",
+     "v": false,
+     "n": 0
+    },
+    {
+     "c": "el-select-dropdown__item",
+     "v": false,
+     "n": 0
+    },
+    {
+     "c": "el-select-dropdown__item",
+     "v": false,
+     "n": 0
+    },
+    {
+     "c": "el-select-dropdown__item",
+     "v": false,
+     "n": 0
+    }
+   ],
+   "buttons": [],
+   "optionCount": 6,
+   "options": [
+    {
+     "c": "el-select-dropdown__item",
+     "x": "请选择",
+     "v": false
+    },
+    {
+     "c": "el-select-dropdown__item",
+     "x": "一周内",
+     "v": false
+    },
+    {
+     "c": "el-select-dropdown__item",
+     "x": "一个月内",
+     "v": false
+    },
+    {
+     "c": "el-select-dropdown__item",
+     "x": "一个月以上",
+     "v": false
+    },
+    {
+     "c": "el-select-dropdown__item",
+     "x": "即时",
+     "v": false
+    },
+    {
+     "c": "el-select-dropdown__item",
+     "x": "面议",
+     "v": false
+    }
+   ]
+  },
+  {
+   "label": "现从事行业",
+   "required": true,
+   "itemCls": "el-form-item is-required",
+   "tree": {
+    "t": "div.el-form-item__content.cascader-wrap",
+    "v": true,
+    "kids": [
+     {
+      "t": "div.input-l.pointer",
+      "v": true,
+      "kids": [
+       {
+        "t": "div.input-l.pointer.el-input",
+        "v": true,
+        "kids": [
+         {
+          "t": "input.el-input__inner",
+          "v": true,
+          "kids": []
+         }
+        ]
+       },
+       {
+        "t": "span.el-input__suffix",
+        "v": true,
+        "kids": [
+         {
+          "t": "span.el-input__suffix-inner",
+          "v": true,
+          "kids": [
+           {
+            "t": "i.el-select__caret.el-input__icon.el-icon-arrow-up",
+            "v": true,
+            "kids": []
+           }
+          ]
+         }
+        ]
+       }
+      ]
+     },
+     {
+      "t": "div.dialog-wrap.plugin-dialog-wrap.popover.blue",
+      "v": false,
+      "kids": [
+       {
+        "t": "div.eo-checked-wrap.selected-view-outer",
+        "v": false,
+        "kids": [
+         {
+          "t": "ul.selected-view-data",
+          "v": false,
+          "kids": [
+           {
+            "t": "li",
+            "v": false,
+            "kids": [
+             {
+              "t": "p",
+              "v": false,
+              "kids": []
+             },
+             {
+              "t": "i",
+              "v": false,
+              "kids": []
+             }
+            ]
+           }
+          ]
+         },
+         {
+          "t": "div.selected-counter",
+          "v": false,
+          "kids": [
+           {
+            "t": "p",
+            "v": false,
+            "kids": []
+           }
+          ]
+         }
+        ]
+       },
+       {
+        "t": "div.search-outer",
+        "v": false,
+        "kids": [
+         {
+          "t": "div.search-leaves-outer",
+          "v": false,
+          "kids": [
+           {
+            "t": "ul.search-leaves-wrapper",
+            "v": false,
+            "kids": []
+           }
+          ]
+         },
+         {
+          "t": "div.search-input-wrapper",
+          "v": false,
+          "kids": [
+           {
+            "t": "input.search-input",
+            "v": false,
+            "kids": []
+           },
+           {
+            "t": "i.clear-input",
+            "v": false,
+            "kids": []
+           }
+          ]
+         }
+        ]
+       },
+       {
+        "t": "div.eo-cascader-panel",
+        "v": false,
+        "kids": [
+         {
+          "t": "div.eo-cascader-menu.simple-tree-outer",
+          "v": false,
+          "kids": [
+           {
+            "t": "ul.simple-tree-wrapper",
+            "v": false,
+            "kids": [
+             {
+              "t": "li.branch.has-child.undefined",
+              "v": false,
+              "kids": [
+               {
+                "t": "span",
+                "v": false,
+                "kids": []
+               }
+              ]
+             },
+             {
+              "t": "li.branch.has-child.undefined",
+              "v": false,
+              "kids": [
+               {
+                "t": "span",
+                "v": false,
+                "kids": []
+               }
+              ]
+             },
+             {
+              "t": "li.branch.has-child.undefined.selected.currentClick",
+              "v": false,
+              "kids": [
+               {
+                "t": "span",
+                "v": false,
+                "kids": []
+               }
+              ]
+             },
+             {
+              "t": "li.branch.has-child.undefined",
+              "v": false,
+              "kids": [
+               {
+                "t": "span",
+                "v": false,
+                "kids": []
+               }
+              ]
+             },
+             {
+              "t": "li.branch.has-child.undefined",
+              "v": false,
+              "kids": [
+               {
+                "t": "span",
+                "v": false,
+                "kids": []
+               }
+              ]
+             },
+             {
+              "t": "li.branch.has-child.undefined",
+              "v": false,
+              "kids": [
+               {
+                "t": "span",
+                "v": false,
+                "kids": []
+               }
+              ]
+             }
+            ],
+            "more": 16
+           }
+          ]
+         },
+         {
+          "t": "div.eo-cascader-menu.simple-tree-outer",
+          "v": false,
+          "kids": [
+           {
+            "t": "ul.simple-tree-wrapper",
+            "v": false,
+            "kids": [
+             {
+              "t": "li.branch.undefined",
+              "v": false,
+              "kids": [
+               {
+                "t": "label",
+                "v": false,
+                "kids": []
+               }
+              ]
+             },
+             {
+              "t": "li.branch.undefined",
+              "v": false,
+              "kids": [
+               {
+                "t": "label",
+                "v": false,
+                "kids": []
+               }
+              ]
+             },
+             {
+              "t": "li.branch.undefined.selected.currentClick",
+              "v": false,
+              "kids": [
+               {
+                "t": "label",
+                "v": false,
+                "kids": []
+               }
+              ]
+             },
+             {
+              "t": "li.branch.undefined",
+              "v": false,
+              "kids": [
+               {
+                "t": "label",
+                "v": false,
+                "kids": []
+               }
+              ]
+             },
+             {
+              "t": "li.branch.undefined",
+              "v": false,
+              "kids": [
+               {
+                "t": "label",
+                "v": false,
+                "kids": []
+               }
+              ]
+             }
+            ]
+           }
+          ]
+         }
+        ]
+       },
+       {
+        "t": "div.pop-foot.plugin-dialog-pop-foot",
+        "v": false,
+        "kids": [
+         {
+          "t": "div.btn-group-outer",
+          "v": false,
+          "kids": [
+           {
+            "t": "a.confirm.pop-btn",
+            "v": false,
+            "kids": []
+           },
+           {
+            "t": "a.cancel.pop-btn",
+            "v": false,
+            "kids": []
+           }
+          ]
+         }
+        ]
+       },
+       {
+        "t": "div.dialog-search-wrap",
+        "v": false,
+        "kids": []
+       }
+      ]
+     }
+    ]
+   },
+   "inputs": [
+    {
+     "type": "text",
+     "cls": "el-input__inner",
+     "ph": "",
+     "value": "证券/投资/基金/信托",
+     "ro": true,
+     "dis": false,
+     "vis": true
+    },
+    {
+     "type": "text",
+     "cls": "search-input",
+     "ph": "请输入关键字",
+     "value": "",
+     "ro": false,
+     "dis": false,
+     "vis": false
+    },
+    {
+     "type": "checkbox",
+     "cls": "",
+     "ph": "",
+     "value": "on",
+     "ro": false,
+     "dis": false,
+     "vis": false
+    },
+    {
+     "type": "checkbox",
+     "cls": "",
+     "ph": "",
+     "value": "on",
+     "ro": false,
+     "dis": false,
+     "vis": false
+    },
+    {
+     "type": "checkbox",
+     "cls": "",
+     "ph": "",
+     "value": "on",
+     "ro": false,
+     "dis": false,
+     "vis": false
+    },
+    {
+     "type": "checkbox",
+     "cls": "",
+     "ph": "",
+     "value": "on",
+     "ro": false,
+     "dis": false,
+     "vis": false
+    },
+    {
+     "type": "checkbox",
+     "cls": "",
+     "ph": "",
+     "value": "on",
+     "ro": false,
+     "dis": false,
+     "vis": false
+    }
+   ],
+   "poppers": [
+    {
+     "c": "dialog-wrap plugin-dialog-wrap popover blue",
+     "v": false,
+     "n": 22
+    },
+    {
+     "c": "eo-cascader-panel",
+     "v": false,
+     "n": 21
+    },
+    {
+     "c": "pop-foot plugin-dialog-pop-foot",
+     "v": false,
+     "n": 0
+    },
+    {
+     "c": "confirm pop-btn",
+     "v": false,
+     "n": 0
+    },
+    {
+     "c": "cancel pop-btn",
+     "v": false,
+     "n": 0
+    }
+   ],
+   "buttons": [],
+   "optionCount": 27,
+   "options": [
+    {
+     "c": "",
+     "x": "证券/投资/基金/信托",
+     "v": false
+    },
+    {
+     "c": "branch has-child undefined",
+     "x": "IT/互联网",
+     "v": false
+    },
+    {
+     "c": "branch has-child undefined",
+     "x": "通信/电子/半导体",
+     "v": false
+    },
+    {
+     "c": "branch has-child undefined selected currentClick",
+     "x": "金融",
+     "v": false
+    },
+    {
+     "c": "branch has-child undefined",
+     "x": "广告传媒/影视/文化",
+     "v": false
+    },
+    {
+     "c": "branch has-child undefined",
+     "x": "专业服务",
+     "v": false
+    },
+    {
+     "c": "branch has-child undefined",
+     "x": "教育/科研",
+     "v": false
+    },
+    {
+     "c": "branch has-child undefined",
+     "x": "酒店/旅游/餐饮/租车",
+     "v": false
+    },
+    {
+     "c": "branch has-child undefined",
+     "x": "贸易/物流/交通运输",
+     "v": false
+    },
+    {
+     "c": "branch has-child undefined",
+     "x": "消费品",
+     "v": false
+    },
+    {
+     "c": "branch has-child undefined",
+     "x": "制药/医疗器械/医疗服务",
+     "v": false
+    },
+    {
+     "c": "branch has-child undefined",
+     "x": "房地产/建筑/基建/市政",
+     "v": false
+    },
+    {
+     "c": "branch has-child undefined",
+     "x": "建材",
+     "v": false
+    },
+    {
+     "c": "branch has-child undefined",
+     "x": "制造业",
+     "v": false
+    },
+    {
+     "c": "branch has-child undefined",
+     "x": "能源/矿产/石油/化工/环保",
+     "v": false
+    },
+    {
+     "c": "branch has-child undefined",
+     "x": "生活服务",
+     "v": false
+    },
+    {
+     "c": "branch has-child undefined",
+     "x": "农业/养殖/农药/政府/非营利组织",
+     "v": false
+    },
+    {
+     "c": "branch undefined",
+     "x": "银行",
+     "v": false
+    },
+    {
+     "c": "",
+     "x": "银行",
+     "v": false
+    },
+    {
+     "c": "branch undefined",
+     "x": "保险",
+     "v": false
+    },
+    {
+     "c": "",
+     "x": "保险",
+     "v": false
+    },
+    {
+     "c": "branch undefined selected currentClick",
+     "x": "证券/投资/基金/信托",
+     "v": false
+    },
+    {
+     "c": "",
+     "x": "证券/投资/基金/信托",
+     "v": false
+    },
+    {
+     "c": "branch undefined",
+     "x": "担保/典当/拍卖",
+     "v": false
+    },
+    {
+     "c": "",
+     "x": "担保/典当/拍卖",
+     "v": false
+    },
+    {
+     "c": "branch undefined",
+     "x": "互联网金融",
+     "v": false
+    },
+    {
+     "c": "",
+     "x": "互联网金融",
+     "v": false
+    }
+   ]
+  },
+  {
+   "label": "现从事职位类别",
+   "required": true,
+   "itemCls": "el-form-item is-required",
+   "tree": {
+    "t": "div.el-form-item__content.cascader-wrap",
+    "v": true,
+    "kids": [
+     {
+      "t": "div.input-l.pointer",
+      "v": true,
+      "kids": [
+       {
+        "t": "div.input-l.pointer.el-input",
+        "v": true,
+        "kids": [
+         {
+          "t": "input.el-input__inner",
+          "v": true,
+          "kids": []
+         }
+        ]
+       },
+       {
+        "t": "span.el-input__suffix",
+        "v": true,
+        "kids": [
+         {
+          "t": "span.el-input__suffix-inner",
+          "v": true,
+          "kids": [
+           {
+            "t": "i.el-select__caret.el-input__icon.el-icon-arrow-up",
+            "v": true,
+            "kids": []
+           }
+          ]
+         }
+        ]
+       }
+      ]
+     },
+     {
+      "t": "div.dialog-wrap.plugin-dialog-wrap.popover.blue",
+      "v": false,
+      "kids": [
+       {
+        "t": "div.eo-checked-wrap.selected-view-outer",
+        "v": false,
+        "kids": [
+         {
+          "t": "ul.selected-view-data",
+          "v": false,
+          "kids": [
+           {
+            "t": "li",
+            "v": false,
+            "kids": [
+             {
+              "t": "p",
+              "v": false,
+              "kids": []
+             },
+             {
+              "t": "i",
+              "v": false,
+              "kids": []
+             }
+            ]
+           }
+          ]
+         },
+         {
+          "t": "div.selected-counter",
+          "v": false,
+          "kids": [
+           {
+            "t": "p",
+            "v": false,
+            "kids": []
+           }
+          ]
+         }
+        ]
+       },
+       {
+        "t": "div.search-outer",
+        "v": false,
+        "kids": [
+         {
+          "t": "div.search-leaves-outer",
+          "v": false,
+          "kids": [
+           {
+            "t": "ul.search-leaves-wrapper",
+            "v": false,
+            "kids": []
+           }
+          ]
+         },
+         {
+          "t": "div.search-input-wrapper",
+          "v": false,
+          "kids": [
+           {
+            "t": "input.search-input",
+            "v": false,
+            "kids": []
+           },
+           {
+            "t": "i.clear-input",
+            "v": false,
+            "kids": []
+           }
+          ]
+         }
+        ]
+       },
+       {
+        "t": "div.eo-cascader-panel",
+        "v": false,
+        "kids": [
+         {
+          "t": "div.eo-cascader-menu.simple-tree-outer",
+          "v": false,
+          "kids": [
+           {
+            "t": "ul.simple-tree-wrapper",
+            "v": false,
+            "kids": [
+             {
+              "t": "li.branch.has-child.undefined",
+              "v": false,
+              "kids": [
+               {
+                "t": "span",
+                "v": false,
+                "kids": []
+               }
+              ]
+             },
+             {
+              "t": "li.branch.has-child.undefined",
+              "v": false,
+              "kids": [
+               {
+                "t": "span",
+                "v": false,
+                "kids": []
+               }
+              ]
+             },
+             {
+              "t": "li.branch.has-child.undefined",
+              "v": false,
+              "kids": [
+               {
+                "t": "span",
+                "v": false,
+                "kids": []
+               }
+              ]
+             },
+             {
+              "t": "li.branch.has-child.undefined",
+              "v": false,
+              "kids": [
+               {
+                "t": "span",
+                "v": false,
+                "kids": []
+               }
+              ]
+             },
+             {
+              "t": "li.branch.has-child.undefined",
+              "v": false,
+              "kids": [
+               {
+                "t": "span",
+                "v": false,
+                "kids": []
+               }
+              ]
+             },
+             {
+              "t": "li.branch.has-child.undefined.selected.currentClick",
+              "v": false,
+              "kids": [
+               {
+                "t": "span",
+                "v": false,
+                "kids": []
+               }
+              ]
+             }
+            ],
+            "more": 14
+           }
+          ]
+         },
+         {
+          "t": "div.eo-cascader-menu.simple-tree-outer",
+          "v": false,
+          "kids": [
+           {
+            "t": "ul.simple-tree-wrapper",
+            "v": false,
+            "kids": [
+             {
+              "t": "li.branch.undefined",
+              "v": false,
+              "kids": [
+               {
+                "t": "label",
+                "v": false,
+                "kids": []
+               }
+              ]
+             },
+             {
+              "t": "li.branch.undefined.selected.currentClick",
+              "v": false,
+              "kids": [
+               {
+                "t": "label",
+                "v": false,
+                "kids": []
+               }
+              ]
+             },
+             {
+              "t": "li.branch.undefined",
+              "v": false,
+              "kids": [
+               {
+                "t": "label",
+                "v": false,
+                "kids": []
+               }
+              ]
+             },
+             {
+              "t": "li.branch.undefined",
+              "v": false,
+              "kids": [
+               {
+                "t": "label",
+                "v": false,
+                "kids": []
+               }
+              ]
+             }
+            ]
+           }
+          ]
+         }
+        ]
+       },
+       {
+        "t": "div.pop-foot.plugin-dialog-pop-foot",
+        "v": false,
+        "kids": [
+         {
+          "t": "div.btn-group-outer",
+          "v": false,
+          "kids": [
+           {
+            "t": "a.confirm.pop-btn",
+            "v": false,
+            "kids": []
+           },
+           {
+            "t": "a.cancel.pop-btn",
+            "v": false,
+            "kids": []
+           }
+          ]
+         }
+        ]
+       },
+       {
+        "t": "div.dialog-search-wrap",
+        "v": false,
+        "kids": []
+       }
+      ]
+     }
+    ]
+   },
+   "inputs": [
+    {
+     "type": "text",
+     "cls": "el-input__inner",
+     "ph": "",
+     "value": "投资/证券/基金",
+     "ro": true,
+     "dis": false,
+     "vis": true
+    },
+    {
+     "type": "text",
+     "cls": "search-input",
+     "ph": "请输入关键字",
+     "value": "",
+     "ro": false,
+     "dis": false,
+     "vis": false
+    },
+    {
+     "type": "checkbox",
+     "cls": "",
+     "ph": "",
+     "value": "on",
+     "ro": false,
+     "dis": false,
+     "vis": false
+    },
+    {
+     "type": "checkbox",
+     "cls": "",
+     "ph": "",
+     "value": "on",
+     "ro": false,
+     "dis": false,
+     "vis": false
+    },
+    {
+     "type": "checkbox",
+     "cls": "",
+     "ph": "",
+     "value": "on",
+     "ro": false,
+     "dis": false,
+     "vis": false
+    },
+    {
+     "type": "checkbox",
+     "cls": "",
+     "ph": "",
+     "value": "on",
+     "ro": false,
+     "dis": false,
+     "vis": false
+    }
+   ],
+   "poppers": [
+    {
+     "c": "dialog-wrap plugin-dialog-wrap popover blue",
+     "v": false,
+     "n": 19
+    },
+    {
+     "c": "eo-cascader-panel",
+     "v": false,
+     "n": 18
+    },
+    {
+     "c": "pop-foot plugin-dialog-pop-foot",
+     "v": false,
+     "n": 0
+    },
+    {
+     "c": "confirm pop-btn",
+     "v": false,
+     "n": 0
+    },
+    {
+     "c": "cancel pop-btn",
+     "v": false,
+     "n": 0
+    }
+   ],
+   "buttons": [],
+   "optionCount": 23,
+   "options": [
+    {
+     "c": "",
+     "x": "投资/证券/基金",
+     "v": false
+    },
+    {
+     "c": "branch has-child undefined",
+     "x": "销售/客服",
+     "v": false
+    },
+    {
+     "c": "branch has-child undefined",
+     "x": "市场/广告/设计/影视传媒",
+     "v": false
+    },
+    {
+     "c": "branch has-child undefined",
+     "x": "人事/行政/财务/法务",
+     "v": false
+    },
+    {
+     "c": "branch has-child undefined",
+     "x": "高管/项目/质量管理",
+     "v": false
+    },
+    {
+     "c": "branch has-child undefined",
+     "x": "IT/产品/运营",
+     "v": false
+    },
+    {
+     "c": "branch has-child undefined selected currentClick",
+     "x": "金融/保险",
+     "v": false
+    },
+    {
+     "c": "branch has-child undefined",
+     "x": "房产/建筑/物业",
+     "v": false
+    },
+    {
+     "c": "branch has-child undefined",
+     "x": "生物/制药/医疗服务",
+     "v": false
+    },
+    {
+     "c": "branch has-child undefined",
+     "x": "采购/商贸/交通/物流",
+     "v": false
+    },
+    {
+     "c": "branch has-child undefined",
+     "x": "生产/制造",
+     "v": false
+    },
+    {
+     "c": "branch has-child undefined",
+     "x": "专业服务/教育科研",
+     "v": false
+    },
+    {
+     "c": "branch has-child undefined",
+     "x": "生活服务",
+     "v": false
+    },
+    {
+     "c": "branch has-child undefined",
+     "x": "能源/矿产/水利/环保",
+     "v": false
+    },
+    {
+     "c": "branch has-child undefined",
+     "x": "公务员/农林牧渔/其他",
+     "v": false
+    },
+    {
+     "c": "branch undefined",
+     "x": "银行",
+     "v": false
+    },
+    {
+     "c": "",
+     "x": "银行",
+     "v": false
+    },
+    {
+     "c": "branch undefined selected currentClick",
+     "x": "投资/证券/基金",
+     "v": false
+    },
+    {
+     "c": "",
+     "x": "投资/证券/基金",
+     "v": false
+    },
+    {
+     "c": "branch undefined",
+     "x": "保险",
+     "v": false
+    },
+    {
+     "c": "",
+     "x": "保险",
+     "v": false
+    },
+    {
+     "c": "branch undefined",
+     "x": "担保/典当/拍卖",
+     "v": false
+    },
+    {
+     "c": "",
+     "x": "担保/典当/拍卖",
+     "v": false
+    }
+   ]
+  },
+  {
+   "label": "现薪资",
+   "required": true,
+   "itemCls": "el-form-item is-required",
+   "tree": {
+    "t": "div.el-form-item__content",
+    "v": true,
+    "kids": [
+     {
+      "t": "div.el-input.select-l",
+      "v": true,
+      "kids": [
+       {
+        "t": "input.el-input__inner",
+        "v": true,
+        "kids": []
+       }
+      ]
+     },
+     {
+      "t": "span",
+      "v": true,
+      "kids": []
+     }
+    ]
+   },
+   "inputs": [
+    {
+     "type": "text",
+     "cls": "el-input__inner",
+     "ph": "",
+     "value": "12000",
+     "ro": false,
+     "dis": false,
+     "vis": true
+    }
+   ],
+   "poppers": [],
+   "buttons": [],
+   "optionCount": 0,
+   "options": []
+  }
+ ],
+ "bodyPoppers": [],
+ "formButtons": [
+  {
+   "x": "取消",
+   "c": "el-button el-button--default is-plain",
+   "v": true
+  },
+  {
+   "x": "保存",
+   "c": "el-button el-button--primary",
+   "v": true
+  }
+ ]
+}

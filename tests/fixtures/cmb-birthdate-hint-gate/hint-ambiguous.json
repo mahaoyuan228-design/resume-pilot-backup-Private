@@ -1,0 +1,39 @@
+{
+  "schema": "cmb-birthdate-harvest/1",
+  "synthetic": true,
+  "autoSaveExcluded": true,
+  "labelLocated": true,
+  "labelText": " 出生日期 ",
+  "controlObserved": true,
+  "control": {
+    "observedId": "fixtureDobNode",
+    "inputType": "text",
+    "role": "textbox",
+    "readOnly": true,
+    "disabled": false,
+    "placeholder": "请选择日期",
+    "calendarEntryObserved": true
+  },
+  "hint": {
+    "placeholder": "请选择日期",
+    "formatNote": "YYYY/MM/DD",
+    "pattern": "",
+    "conflicting": true
+  },
+  "interaction": { "openedManually": false, "autoClicked": false, "daySelected": false },
+  "format": { "described": false, "verified": false },
+  "actions": { "fieldChanged": false, "saveAttempted": false, "submitAttempted": false },
+  "files": {
+    "context": true,
+    "locator": true,
+    "controlImage": true,
+    "controlHtml": true,
+    "hints": true,
+    "interaction": true,
+    "popup": false,
+    "format": true,
+    "actions": true,
+    "verdict": false
+  },
+  "note": "Conflicting hint notes. calendarEntryObserved does not mean the gate opened it."
+}

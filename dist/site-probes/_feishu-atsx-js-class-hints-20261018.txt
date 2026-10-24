@@ -1,0 +1,31 @@
+# Feishu ATSX public JS class hints (2026-10-18 Asia/Shanghai)
+# Source: gffunds.jobs.feishu.cn/index → saas-career static/js
+# Chunks: pc.4481de59.js · 8825.0e3d5ab8.js · 3548.515a223b.js
+# Method: curl only; no login; no live form DOM
+
+## Form (Ant Design prefixCls=atsx) — confirmed in bundle CSS/strings
+atsx-form
+atsx-form-item
+atsx-form-item-label
+atsx-form-item-control
+atsx-form-item-children
+atsx-form-item-required
+atsx-input
+atsx-input-affix-wrapper
+
+## Public portal chrome — confirmed in pc.4481de59.js
+#bd (SSR mount)
+portal-pc
+topbar
+topbar-content
+topbar-logo
+topbar-site-title
+topbar-navigation-list
+topbar-navigation-item
+topbar-user-login
+footer
+footer-content
+
+## Gap
+Resume edit form is NOT SSR on /index; login-walled SPA route.
+Do not claim live fill. Fixture form nodes are offline stand-ins using JS-confirmed class names.

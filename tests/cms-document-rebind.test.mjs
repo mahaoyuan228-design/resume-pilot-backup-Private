@@ -28,7 +28,7 @@ test('source: sameResumeDocument tolerates query churn; bridges use timeOrigin n
   for (const src of [internshipBridge, educationBridge]) {
     assert.match(src, /performance\.timeOrigin!==doc\.timeOrigin/);
     assert.equal(src.includes('location.href===doc?.href'), false);
-    assert.match(src, /__resumeCms.*BridgeRevision===3/);
+    assert.match(src, /__resumeCms.*BridgeRevision===4/);
   }
 });
 

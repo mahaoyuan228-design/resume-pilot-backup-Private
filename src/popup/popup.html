@@ -43,11 +43,11 @@
         <select id="gth-basic-source"><option value="">请选择资料记录</option></select>
         <label class="remember-choice"><input id="gth-basic-replace" type="checkbox"> 重新填写基本信息的已有内容</label>
         <button id="gth-basic-button" class="button secondary" type="button" disabled>试填基本信息并读回（不保存）</button>
-        <small>目前官网可填姓名、性别、出生年月和最高学历。手机和邮箱属于账户只读内容，会保留并单独报告；现居住地、照片和参加工作时间尚未支持。关闭弹窗后后台仍会继续，不保存、不投递。</small>
+        <small>可在编辑器试填姓名、性别、出生年月、最高学历和参加工作时间。手机和邮箱属于账户只读内容，会保留并单独报告；现居住地和照片尚未支持。关闭弹窗后后台仍会继续，不保存、不投递。</small>
       </section>
       <section id="gth-intent-trial" class="gth-simple-trial" hidden>
-        <button id="gth-intent-button" class="button secondary" type="button" disabled>试填求职意向五项并读回（不保存）</button>
-        <small>仅在五项答案都已单独核对并限定本页、本分区时启用。网站选项必须与答案完全一致；保留网页原值，编辑器保持打开，不点击保存或投递。</small>
+        <button id="gth-intent-button" class="button secondary" type="button" disabled>试填求职意向并读回（不保存）</button>
+        <small>五项都在资料库核对后才会向网页发填写。没有录到编辑器控件的项记为失败，不算完成。期望薪资只按普通文本框读回。不点击保存或投递。</small>
       </section>
       <section id="gth-education-trial" class="gth-simple-trial" hidden>
         <label for="gth-education-source">使用资料库中的哪段教育经历</label>
@@ -58,6 +58,7 @@
         <small>勾选后会用选定资料逐项重填这条网站教育记录。请先核对资料源；软件会标明重填项，编辑后可用网站“取消”放弃未保存的修改。</small>
         <button id="gth-education-target-button" class="button primary" type="button" disabled>填写所选教育记录并读回（不保存）</button>
         <button id="gth-education-new-button" class="button secondary" type="button" disabled>新增一段教育并填写（不保存）</button>
+        <button id="gth-education-open-button" class="button secondary" type="button" disabled>填写已打开的教育编辑器（不保存）</button>
         <button id="gth-education-full-first-button" type="button" hidden disabled>旧第一段入口</button>
         <button id="gth-education-full-second-button" type="button" hidden disabled>旧第二段入口</button>
         <small>逐项报告学校、专业、学历、时间及其他教育问题的结果。资料缺失或控件未支持会明确列出；只有全部项目验收后才显示完整。网站保存状态另行核对。</small>
@@ -67,6 +68,13 @@
         <button id="gth-education-draft-save" class="button primary" type="button" disabled>保存本条教育草稿并核对</button>
         <button id="gth-education-draft-resume" class="button secondary" type="button" disabled>继续核对已保存草稿（不重复保存）</button>
         <small id="gth-education-draft-note">教育填写完成后，先检查草稿，再决定是否保存；不会最终投递。</small>
+      </section>
+      <section id="gth-work-trial" class="gth-simple-trial" hidden>
+        <label for="gth-work-source">使用资料库中的哪段工作／实习</label>
+        <select id="gth-work-source"><option value="">请选择资料记录</option></select>
+        <label class="remember-choice"><input id="gth-work-replace" type="checkbox"> 重新填写已打开编辑器里的已有内容</label>
+        <button id="gth-work-open-button" class="button secondary" type="button" disabled>填写已打开的工作经验编辑器（不保存）</button>
+        <small>请先自行打开工作经验编辑器。职位类别和公司所属行业按「一级||二级」精确选择，任职时间只填 YYYY-MM。薪资控件尚未支持。不点击保存、提交、投递或删除。</small>
       </section>
       <section id="gth-simple-trial" class="gth-simple-trial" hidden>
         <button id="gth-simple-button" class="button secondary" type="button" disabled>试填职业技能与特长并读回（不保存）</button>

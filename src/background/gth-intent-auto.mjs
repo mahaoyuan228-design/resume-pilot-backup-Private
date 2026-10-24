@@ -1,13 +1,47 @@
 // GTH 求职意向 auto (mirror GTH_SIMPLE_AUTO). Default: readiness.
-// Fill-without-save uses product GTH_INTENT_TEST (engine.js). Never clicks Save/Cancel/submit.
+// Fill sends GTH_INTENT_FILL to the shipped content script. It does not use the
+// removed test hook. Never clicks Save/submit. ok is true only when every
+// requested field verified. Unsupported or unsettled intent fields fail closed
+// and are not a completed fill. A Save/submit/delete or savedOnSite/submitted
+// claim is kept and fails closed.
 import {captureProfileBinding,assertProfileBinding,canonicalProfileHash,
   dispatchBoundSource,withProfileBinding} from '../profile/profile-lifecycle.js';
-import {evaluateGthSavePolicy,assertAutoNeverAttemptedSave} from './gth-save-policy.mjs';
+import {evaluateGthSavePolicy,assertAutoNeverAttemptedSave,gthAutoSiteClaims,gthAutoSiteClaimed} from './gth-save-policy.mjs';
 
 const PAGE='https://hr.gtht.com/resume/edit/',ORIGIN='https://hr.gtht.com';
 const SECTION='求职意向';
 const SECTION_INDEX=2;
 const QUESTIONS=['期望从事职位类别','期望薪资','现从事行业','现从事职位类别','现薪资'];
+const OPTIONAL_QUESTIONS=['期望工作地区','到岗日期'];
+const PICKER_QUESTIONS=['期望从事职位类别','现从事行业','现从事职位类别','期望工作地区'];
+export const GTH_INTENT_ARRIVAL_OPTIONS=Object.freeze(['一周内','一个月内','一个月以上','即时','面议']);
+export const GTH_INTENT_FILL_TYPE='GTH_INTENT_FILL';
+export const GTH_INTENT_FAIL_CLOSED_REASONS=Object.freeze([
+  'control_not_supported','missing_profile_value','profile_fact_unconfirmed','invalid_profile_value',
+  'existing_value','blocked_by_unsettled_field','intent_target_not_unique','intent_target_not_plain_text',
+  'intent_readback_mismatch','intent_other_values_changed','intent_site_validation_failed','intent_value_too_long',
+  'picker_label_ambiguous','picker_structure_changed','picker_panel_not_unique','picker_panel_already_open',
+  'picker_level1_missing','picker_level1_ambiguous','picker_level2_missing','picker_level2_menu_missing','picker_level2_ambiguous',
+  'picker_level2_checkbox_missing','picker_counter_unknown','picker_selection_limit',
+  'picker_existing_selection_conflict','picker_chip_unknown','picker_confirm_not_unique','picker_cancel_not_unique',
+  'picker_readback_mismatch','picker_replace_unverified','picker_selection_not_applied','select_label_ambiguous','select_structure_changed',
+  'select_menu_not_unique','select_option_missing','select_option_ambiguous'
+]);
+export function intentPickerAnswer(value){
+  const text=typeof value==='string'?value:'';
+  const parts=text.split('||');
+  if(parts.length!==2||text.length>80||/[\r\n\u0000-\u001f]/u.test(text))return null;
+  if(parts.some(part=>!part||part!==part.trim()))return null;
+  return {l1:parts[0],l2:parts[1]};
+}
+export function intentValueShape(question,answer){
+  if(typeof answer!=='string'||!answer.trim()||answer.length>80||/[\r\n\u0000-\u001f]/u.test(answer))return false;
+  if(question==='期望薪资'||question==='现薪资')return /^\d{1,10}$/u.test(answer.trim());
+  if(question==='到岗日期')return GTH_INTENT_ARRIVAL_OPTIONS.includes(answer);
+  if(PICKER_QUESTIONS.includes(question))return !!intentPickerAnswer(answer);
+  return false;
+}
+const VERIFIED_REASONS=['readback_matched','readback_reapplied','preexisting_same_value'];
 const TITLES=['基本信息','教育经历','求职意向','工作经验','职业技能与特长','附件简历','其他信息'];
 const fail=reason=>{throw Error(reason);};
 const safe=error=>{const value=typeof error==='string'?error:(error?.message||'');return typeof value==='string'&&/^[a-z0-9_]{2,100}$/u.test(value)?value:'gth_intent_auto_failed';};
@@ -61,8 +95,7 @@ export function intentSource(profile){
     const trimmed=answer.trim();
     const matched=facts.filter(item=>item?.question===question);
     const fact=matched.length===1?matched[0]:null;
-    const salaryOk=!['期望薪资','现薪资'].includes(question)||/^\d{1,10}$/u.test(trimmed);
-    const hasAnswer=!!trimmed&&trimmed.length<=80&&!/[\r\n\u0000-\u001f]/u.test(trimmed)&&salaryOk;
+    const hasAnswer=intentValueShape(question,answer);
     const factOk=!!fact&&fact.answer===trimmed&&fact.sitePageUrl===PAGE
       &&fact.sectionName===SECTION&&fact.rowContext==='none';
     const fieldConfirmed=confirmed.has(`customAnswers.${question}`);
@@ -76,19 +109,112 @@ export function intentSource(profile){
   });
   const missing=items.filter(item=>!item.hasAnswer).map(item=>item.question);
   const unconfirmed=items.filter(item=>item.hasAnswer&&(!item.factOk||!item.confirmed)).map(item=>item.question);
+  const optional=OPTIONAL_QUESTIONS.map(question=>{
+    const answer=typeof profile?.customAnswers?.[question]==='string'?profile.customAnswers[question]:'';
+    if(!answer.trim())return {question,include:false,ready:true};
+    const matched=facts.filter(item=>item?.question===question);
+    const fact=matched.length===1?matched[0]:null;
+    const shape=intentValueShape(question,answer);
+    const factOk=!!fact&&fact.answer===answer&&fact.sitePageUrl===PAGE&&fact.sectionName===SECTION&&fact.rowContext==='none';
+    const fieldConfirmed=confirmed.has(`customAnswers.${question}`);
+    return {question,include:true,ready:shape&&factOk&&fieldConfirmed,shape,factOk,confirmed:fieldConfirmed};
+  });
+  if(optional.some(item=>item.include&&!item.shape))missing.push(...optional.filter(item=>item.include&&!item.shape).map(item=>item.question));
+  if(optional.some(item=>item.include&&item.shape&&!item.ready))unconfirmed.push(...optional.filter(item=>item.include&&item.shape&&!item.ready).map(item=>item.question));
   return {
     section:SECTION,
     questions:[...QUESTIONS],
     items,
+    optional,
     readyCount:items.filter(item=>item.ready).length,
     requiredCount:QUESTIONS.length,
-    ready:items.every(item=>item.ready),
+    ready:items.every(item=>item.ready)&&optional.every(item=>item.ready),
     missing,
     unconfirmed
   };
 }
 
-export function createGthIntentAutoRunner({api=globalThis.chrome,verifyBeforeFill=null,timeoutMs=90000,lifecycleOptions={}}={}){
+export function intentFillPayload(profile){
+  const source=intentSource(profile);
+  if(!source.ready){
+    const error=Error(source.missing.length?'missing_profile_value':'profile_fact_unconfirmed');
+    error.missing=source.missing;
+    error.unconfirmed=source.unconfirmed;
+    throw error;
+  }
+  const optional=source.optional.filter(item=>item.include&&item.ready).map(item=>item.question);
+  const questions=[...QUESTIONS,...optional];
+  const answers=Object.fromEntries(questions.map(question=>[question,profile.customAnswers[question]]));
+  return {
+    answers,
+    profile:{
+      customAnswers:{...answers},
+      confirmedFields:questions.map(question=>`customAnswers.${question}`),
+      customFacts:questions.map(question=>({
+        question,answer:answers[question],sitePageUrl:PAGE,sectionName:SECTION,rowContext:'none'
+      }))
+    }
+  };
+}
+
+/** Shipped page fill. Injects the intent content script and sends GTH_INTENT_FILL. */
+export function shippedGthIntentFill({api,tab,requestId,binding,answers,profile,replaceExisting}){
+  return api.scripting.executeScript({
+    target:{tabId:tab.id},files:['src/content/gth-intent.js']
+  }).then(()=>api.tabs.sendMessage(tab.id,{
+    type:GTH_INTENT_FILL_TYPE,requestId,profileBinding:binding,answers,profile,
+    replaceExisting:replaceExisting===true
+  }));
+}
+
+/**
+ * Fail closed unless every requested field is verified and the completion flags
+ * agree. A skipped row is not a success. A save/submit claim is kept.
+ */
+export function assessGthIntentFill(response){
+  const claims=gthAutoSiteClaims(response);
+  const claimed=gthAutoSiteClaimed(claims);
+  const fields=Array.isArray(response?.fields)?response.fields:[];
+  const tail=fields.slice(QUESTIONS.length);
+  let optionalCursor=0;
+  const tailOk=tail.every(row=>{
+    const at=OPTIONAL_QUESTIONS.indexOf(row?.question,optionalCursor);
+    if(at<0||row.path!==`customAnswers.${row.question}`)return false;
+    if(!Array.isArray(row.labels)||row.labels.length!==1||row.labels[0]!==row.question)return false;
+    optionalCursor=at+1;
+    return true;
+  });
+  const aligned=fields.length>=QUESTIONS.length&&fields.length<=QUESTIONS.length+OPTIONAL_QUESTIONS.length
+    &&QUESTIONS.every((question,index)=>fields[index]?.question===question
+    &&fields[index]?.path===`customAnswers.${question}`&&Array.isArray(fields[index]?.labels)
+    &&fields[index].labels.length===1&&fields[index].labels[0]===question)&&tailOk;
+  const verified=row=>row?.status==='verified'&&VERIFIED_REASONS.includes(row.reason);
+  const allVerified=aligned&&fields.every(verified);
+  const wrote=fields.some(row=>row?.reason==='readback_matched'||row?.reason==='readback_reapplied');
+  const writeStarted=response?.writeStarted===true;
+  const supportedComplete=response?.supportedComplete===true&&allVerified;
+  const operableComplete=response?.operableComplete===true&&allVerified;
+  const flagsOk=response?.complete===false&&response?.scope==='gth_intent_five'
+    &&response?.savedOnSite==null&&response?.submitted==null
+    &&response?.softwareClickedSave===false&&response?.softwareClickedSubmit===false
+    &&response?.softwareClickedDelete!==true&&response?.editorLeftOpen===true
+    &&response?.liveSupportClaimed!==true;
+  const unmet=row=>row&&row.status!=='verified'&&row.reason!=='not_run';
+  const failed=fields.find(row=>unmet(row)&&GTH_INTENT_FAIL_CLOSED_REASONS.includes(row.reason))
+    ||fields.find(unmet);
+  const writeAgrees=writeStarted===wrote;
+  let reason=null;
+  if(claimed)reason='gth_intent_save_policy_violated';
+  else if(!aligned||!writeAgrees||response?.ok!==allVerified||!flagsOk&&allVerified)reason=safe(response?.reason||response?.error||'gth_intent_fill_invalid');
+  else if(!allVerified||!supportedComplete||!operableComplete)reason=safe(failed?.reason||response?.reason||response?.error||'gth_intent_fill_invalid');
+  const ok=reason==null&&allVerified&&supportedComplete&&operableComplete&&response?.ok===true;
+  const state=ok?'completed':(writeStarted?'unknown':'stopped_before_write');
+  const outcome=ok?(wrote?'verified':'verified_preexisting'):(writeStarted?'unknown':'failed_before_write');
+  return {ok,state,reason,outcome,fields,writeStarted,supportedComplete:ok&&supportedComplete,operableComplete:ok&&operableComplete,
+    complete:false,...claims};
+}
+
+export function createGthIntentAutoRunner({api=globalThis.chrome,verifyBeforeFill=null,timeoutMs=90000,lifecycleOptions={},fillIntent=null}={}){
   const get=async key=>(await api.storage.local.get(key))[key];
   const autoPageUrl=()=>api.runtime.getURL('src/auto/gth-intent-auto.html');
   const trustedUi=sender=>{
@@ -173,7 +299,7 @@ export function createGthIntentAutoRunner({api=globalThis.chrome,verifyBeforeFil
       intent:source,profileBinding:binding,profileBindingError:bindingError,
       saveAllowedByPolicy:evaluateGthSavePolicy({fromAutoPath:true}).saveAllowedByPolicy,
       savePolicy:evaluateGthSavePolicy({fromAutoPath:true}),
-      note:'Auto path does not Save/submit; five intent fields only via GTH_INTENT_TEST; existing different values fail-closed'
+      note:'Auto path does not Save/submit. GTH_INTENT_FILL runs only after readiness. Unsupported or unsettled intent fields fail closed and are not a completed fill.'
     };
   }
 
@@ -188,61 +314,45 @@ export function createGthIntentAutoRunner({api=globalThis.chrome,verifyBeforeFil
       if(source.missing.length)fail('missing_profile_value');
       fail('profile_fact_unconfirmed');
     }
-    const answers=Object.fromEntries(QUESTIONS.map(question=>[question,raw.customAnswers[question]]));
+    const payload=intentFillPayload(raw);
+    const replaceExisting=message.replaceExisting===true;
     const trusted=await get('resumeTrustedOrigins');
     if(!Array.isArray(trusted)||!trusted.includes(ORIGIN)){
       if(message.originConfirmed!==true)fail('intent_job_origin_unconfirmed');
       await withProfileBinding(api.storage.local,binding,()=>api.storage.local.set({resumeTrustedOrigins:[...(Array.isArray(trusted)?trusted:[]),ORIGIN].slice(-100)}),lifecycleOptions);
     }
-    await bounded(()=>dispatchBoundSource(api.storage.local,binding,()=>api.scripting.executeScript({
-      target:{tabId:tab.id},files:['src/core/matcher.js','src/content/engine.js']
-    }),lifecycleOptions),15000);
+    const fill=typeof fillIntent==='function'?fillIntent:shippedGthIntentFill;
     const requestId=typeof message.requestId==='string'&&/^[A-Za-z0-9-]{10,100}$/u.test(message.requestId)
       ?message.requestId:newRequestId();
-    const response=await bounded(()=>dispatchBoundSource(api.storage.local,binding,()=>api.tabs.sendMessage(tab.id,{
-      type:'GTH_INTENT_TEST',requestId,profileBinding:binding,answers
+    const response=await bounded(()=>dispatchBoundSource(api.storage.local,binding,()=>fill({
+      api,tab,requestId,binding,answers:payload.answers,profile:payload.profile,replaceExisting
     }),lifecycleOptions));
     await assertProfileBinding(api.storage.local,binding,lifecycleOptions);
     if(!response||typeof response!=='object')fail('gth_intent_fill_no_response');
-    if(response.ok!==true){
-      const reason=safe(response.error||'gth_intent_fill_failed');
-      const job={
-        state:response.writeStarted===false?'stopped_before_write':'unknown',
-        reason,
-        outcome:response.writeStarted===false?'failed_before_write':'write_started_unverified',
-        section:SECTION,
-        fields:[],
-        writeStarted:response.writeStarted===true,
-        editorLeftOpen:false,
-        softwareClickedSave:false,
-        softwareClickedSubmit:false,
-        requestId
-      };
-      return {job,responseSummary:{ok:false,writeStarted:job.writeStarted,reason,error:response.error||null},outcome:job.outcome};
-    }
-    const data=response.data||{};
-    const fields=Array.isArray(data.fields)?data.fields:[];
-    const valid=data.experimental===true&&data.editorLeftOpen===true
-      &&data.savedOnSite===null&&data.submitted===null
-      &&data.softwareClickedSave===false&&data.softwareClickedSubmit===false
-      &&fields.length===QUESTIONS.length
-      &&QUESTIONS.every((question,index)=>fields[index]?.id===`gth:求职意向:${question}`
-        &&fields[index]?.labels?.length===1&&fields[index].labels[0]===question
-        &&fields[index]?.status==='verified'
-        &&['readback_matched','preexisting_same_value'].includes(fields[index].reason));
+    const assessed=assessGthIntentFill(response);
     const job={
-      state:valid?'completed':'unknown',
-      reason:valid?null:'gth_intent_fill_invalid',
-      outcome:valid?(fields.every(field=>field.reason==='preexisting_same_value')?'verified_preexisting':'verified'):'unknown',
+      state:assessed.state,
+      reason:assessed.reason,
+      outcome:assessed.outcome,
       section:SECTION,
-      fields,
-      writeStarted:fields.some(field=>field.reason==='readback_matched'),
-      editorLeftOpen:data.editorLeftOpen===true,
-      softwareClickedSave:false,
-      softwareClickedSubmit:false,
+      fields:assessed.fields,
+      writeStarted:assessed.writeStarted,
+      supportedComplete:assessed.supportedComplete===true,
+      operableComplete:assessed.operableComplete===true,
+      complete:false,
+      editorLeftOpen:response.editorLeftOpen===true,
+      liveSupportClaimed:false,
+      softwareClickedSave:assessed.softwareClickedSave===true,
+      softwareClickedSubmit:assessed.softwareClickedSubmit===true,
+      softwareClickedDelete:assessed.softwareClickedDelete===true,
+      savedOnSite:assessed.savedOnSite===true,
+      submitted:assessed.submitted===true,
       requestId
     };
-    return {job,responseSummary:{ok:valid,writeStarted:job.writeStarted,reason:job.reason,fieldCount:fields.length},outcome:job.outcome};
+    return {job,responseSummary:{ok:assessed.ok,writeStarted:job.writeStarted,reason:job.reason,
+      supportedComplete:job.supportedComplete,operableComplete:job.operableComplete,fieldCount:assessed.fields.length,
+      softwareClickedSave:job.softwareClickedSave,softwareClickedSubmit:job.softwareClickedSubmit,
+      softwareClickedDelete:job.softwareClickedDelete,savedOnSite:job.savedOnSite,submitted:job.submitted},outcome:job.outcome};
   }
 
   async function auto(message,sender=null){
@@ -295,8 +405,15 @@ export function createGthIntentAutoRunner({api=globalThis.chrome,verifyBeforeFil
     report.job=filled.job;
     report.fill=filled.responseSummary;
     report.saveAllowedByPolicy=evaluateGthSavePolicy({fromAutoPath:true}).saveAllowedByPolicy;
-    assertAutoNeverAttemptedSave(report);
-    report.ok=true;
+    const claims=gthAutoSiteClaims(filled.job);
+    Object.assign(report,claims);
+    const settled=filled.job?.state==='completed'&&filled.responseSummary?.ok===true&&!gthAutoSiteClaimed(claims);
+    report.ok=settled;
+    if(!report.ok)report.reason=filled.job?.reason||filled.responseSummary?.reason||'gth_intent_fill_failed';
+    try{assertAutoNeverAttemptedSave(report);}catch(error){
+      report.ok=false;
+      report.reason=report.reason||safe(error);
+    }
     await api.storage.local.set({resumeGthIntentAutoRun:report});
     return report;
   }

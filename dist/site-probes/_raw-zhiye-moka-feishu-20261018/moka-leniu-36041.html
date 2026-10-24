@@ -1,0 +1,196 @@
+<!DOCTYPE html><html lang="en-US"><head><meta charset="UTF-8"><meta http-equiv="X-UA-Compatible" content="IE=edge"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="renderer" content="webkit"><link rel="stylesheet" href="/icon/style.css" type="text/css"><link rel="icon" href="data:image/x-icon;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7"><script>if (Boolean(true)) {
+  (function() {
+    if (1 === 1) {
+      document.documentElement.lang = 'zh-CN';
+    } else if (typeof navigator !== 'undefined' && /en/i.test(navigator.language)) {
+      document.documentElement.lang = 'en-US';
+    } else {
+      document.documentElement.lang = 'zh-CN';
+    }
+  })();
+}
+</script><script>document.documentElement.lang = document.documentElement.lang || 'zh-CN';
+</script><title>广州乐牛游戏 - 校园招聘</title><meta name="keywords" content="广州乐牛游戏校园招聘,广州乐牛游戏校招,广州乐牛游戏招聘,广州乐牛游戏招聘官网,广州乐牛游戏招聘官方网站"><meta name="description" content="2026年广州乐牛游戏校园招聘正在进行，点击申请职位"><!--[if lt IE 10]><script>//- Only support IE >= 10
+(function () {
+    window.location = '/browser-not-support';
+}());</script><![endif]--><script>function report(error) {
+  if (window.location.origin.indexOf("localhost") !== -1 || window.location.origin.indexOf("staging") !== -1) {
+    return null;
+  }
+  function createXHR() {
+      if (typeof window.XMLHttpRequest !== "undefined") {
+      return new window.XMLHttpRequest();
+    } else if (typeof window.ActiveXObject !== "undefined") {
+      if (typeof arguments.callee.activeXString !== "string") {
+        var versions = [
+          "Msxml3.XMLHTTP",
+          "MSXML2.XMLHttp.6.0",
+          "MSXML2.XMLHttp.3.0",
+          "MSXML2.XMLHttp",
+          "Microsoft.XMLHTTP",
+        ];
+        for (var i = 0, len = versions.length; i < len; i++) {
+          try {
+            var xhr = new window.ActiveXObject(versions[i]);
+            arguments.callee.activeXString = versions[i];
+            return xhr;
+          } catch (error) {
+            console.error(error);
+            //跳过
+          }
+        }
+      }
+      return new window.ActiveXObject(arguments.callee.activeXString);
+    } else {
+      return null;
+    }
+  }
+
+  var xhr = createXHR();
+  if (!xhr) {
+    return null;
+  }
+
+  function getEventId() {
+    var a = window.crypto || window.msCrypto;
+    if (a && a.getRandomValues) {
+        var b = new Uint16Array(8);
+        a.getRandomValues(b), b[3] = 4095 & b[3] | 16384, b[4] = 16383 & b[4] | 32768;
+        var c = function (a) {
+            for (var b = a.toString(16); b.length < 4;) b = "0" + b;
+            return b
+        };
+        return c(b[0]) + c(b[1]) + c(b[2]) + c(b[3]) + c(b[4]) + c(b[5]) + c(b[6]) + c(b[7])
+    }
+    return "xxxxxxxxxxxx4xxxyxxxxxxxxxxxxxxx".replace(/[xy]/g, function (a) {
+        var b = 16 * Math.random() | 0,
+            c = "x" === a ? b : 3 & b | 8;
+        return c.toString(16)
+    })
+  }
+  xhr.open("POST", "https://sentry-fe.mokahr.com/api/107/store/?sentry_version=7&sentry_client=raven-js%2F3.26.4&sentry_key=840dcafb7d524b21a665748fae084418");
+  xhr.send(JSON.stringify({
+    project: "107",
+    logger: "javascript",
+    platform: "javascript",
+    request: {
+        headers: {
+          "User-Agent": window.navigator.userAgent
+        },
+        url: window.location.href
+    },
+    exception: {
+      values: [error],
+      mechanism: {
+        type: "generic",
+        handled: true
+      }
+    },
+    level: "fatal",
+    tags: { "user.orgId": "", "user.role": "" },
+    user: {
+      id: "",
+      orgId: "",
+      pay: "",
+      role: "",
+      isGrayReleased: "0",
+    },
+    environment: "prod-ali",
+    release: "20261012-1723-f0ef3-release",
+    event_id: getEventId()
+  }));
+}
+
+window.MOKA_RETRY = {
+  origins: ["https://static-ats.mokahr.com","https://static.mokahr.com","https://app.mokahr.com"],
+  pointer: 0,
+  timer: null,
+  getCdnPath: function() {
+    return window.MOKA_RETRY.origins[window.MOKA_RETRY.pointer] || window.location.origin;
+  },
+  refreshOriginPathFunc: function() {
+    var oldPath = window.MOKA_RETRY.getCdnPath();
+
+    window.MOKA_RETRY.pointer = window.MOKA_RETRY.pointer + 1;
+
+    var newPath = window.MOKA_RETRY.getCdnPath();
+
+    report({
+      type: "cdn资源事故！！！",
+      value: oldPath + " 出现故障：切换至 " + newPath + " --- window.MOKA_RETRY:" +  (window.MOKA_RETRY ? JSON.stringify(window.MOKA_RETRY) : " MOKA_RETRY not found")
+    });
+
+    if (!window.MOKA_RETRY.timer) {
+      window.MOKA_RETRY.timer = setTimeout(function(){
+        window.MOKA_RETRY.pointer = 0;
+      }, 30 * 60 * 1000)
+    }
+  },
+  onError: function(error){
+    report({
+      type: "cdn资源事故！！！ " + error.type,
+      value: error.message
+    });
+  },
+}
+
+window.addEventListener("error", function(e) {
+  if (!(e instanceof ErrorEvent) && e.target instanceof HTMLElement) {
+    var type = e.target.tagName;
+    var src = type === "SCRIPT" ? e.target.src : type === "LINK" ? e.target.href : "";
+    var url = src.split("/");
+    var origin = src.split("//").length > 1 ? url[0] + "//" + url[2]: window.location.origin;
+    var extraMessage = "";
+    if (!src || (origin.indexOf("mokahr.com") === -1 && !/new_i18n.*messages/.test(src)) || src.indexOf(".chunk.") > -1 || src.indexOf("style_") > -1 || src.indexOf("micro-app") > -1) {
+      return;
+    }
+    if(window.performance){
+      try {
+        var performanceData = window.performance.getEntriesByName(e.target.src);
+        var mainData = performanceData[0] ? performanceData[0].duration : "";
+        extraMessage = "duration:" + mainData+ "\\n" + JSON.stringify(performanceData);
+      } catch (e) {
+        extraMessage = "performance data error";
+      }
+    }
+    var error = new Error();
+    error.message = origin + " 出现故障：" + "Loading static failed after 0 retries. \\n(" + src + ")" +"\\n extraMessage:" + extraMessage;
+    error.request = src;
+    error.type = "failed";
+    window.MOKA_RETRY.onError(error);
+
+    if (origin === window.location.origin && window.MOKA_RETRY.getCdnPath() === window.location.origin) {
+      return;
+    } else if (origin === window.MOKA_RETRY.getCdnPath()) {
+      window.MOKA_RETRY.refreshOriginPathFunc();
+    }
+    
+    var el = null;
+    if (type === "SCRIPT") {
+      el = document.createElement("script");
+      el.setAttribute("crossorigin", "anonymous");
+      el.src = src.replace(origin, window.MOKA_RETRY.getCdnPath());
+    } else if (type === "LINK") {
+      el = document.createElement("link");
+      el.setAttribute("rel", "stylesheet");
+      el.href = src.replace(origin, window.MOKA_RETRY.getCdnPath());
+    }
+
+    if (el) {
+      var head = document.querySelector("head");
+      head.appendChild(el);
+    }
+  }
+}, true);</script><script>window.MATERIAL_PLATFORM_HOST = "";
+window.MATERIAL_PLATFORM_PUBLIC_PATHS = ["https://static-ats.mokahr.com","https://static.mokahr.com","https://app.mokahr.com"];</script><script type="text/javascript" crossorigin="anonymous" data-dev-ignore="true" src="https://static-ats.mokahr.com/moka-fe-public/mage-i18n/javascripts/new_i18n_zh_cn_messages.2b8b2ac22fab43f9c1952a1209e533d7.js"></script><script>window.languageManifest = {"new_i18n_en_us_messages":"/moka-fe-public/mage-i18n/javascripts/new_i18n_en_us_messages.e39a0d6c963163eff8c72d7e1d298264.js","new_i18n_zh_cn_messages":"/moka-fe-public/mage-i18n/javascripts/new_i18n_zh_cn_messages.2b8b2ac22fab43f9c1952a1209e533d7.js","new_i18n_en_dingtalk_messages":"/moka-fe-public/mage-i18n/javascripts/new_i18n_en_dingtalk_messages.73b682385cac893ca216671bb926ebef.js","new_i18n_zh_dingtalk_messages":"/moka-fe-public/mage-i18n/javascripts/new_i18n_zh_dingtalk_messages.b847f51189e2f4e2d6e8809ac0d21af1.js","new_i18n_fr_fr_messages":"/moka-fe-public/mage-i18n/javascripts/new_i18n_fr_fr_messages.635069fb8ba968f7163c8ab16b592122.js","new_i18n_ms_my_messages":"/moka-fe-public/mage-i18n/javascripts/new_i18n_ms_my_messages.b4eb485e358f4b7472def888b753abe4.js","new_i18n_vi_vn_messages":"/moka-fe-public/mage-i18n/javascripts/new_i18n_vi_vn_messages.2e1892259175963bce6f1569c17662fe.js","new_i18n_es_es_messages":"/moka-fe-public/mage-i18n/javascripts/new_i18n_es_es_messages.ad596a70114c638204a1925ba9a9e676.js","new_i18n_th_th_messages":"/moka-fe-public/mage-i18n/javascripts/new_i18n_th_th_messages.e96dd4461305ba468c22c6f466165fce.js","new_i18n_id_id_messages":"/moka-fe-public/mage-i18n/javascripts/new_i18n_id_id_messages.b158d7d7bc65734fe889d6a0fa0890d1.js","new_i18n_sr_sp_messages":"/moka-fe-public/mage-i18n/javascripts/new_i18n_sr_sp_messages.f9c5cba9012e31edf5e306768e561520.js","new_i18n_de_de_messages":"/moka-fe-public/mage-i18n/javascripts/new_i18n_de_de_messages.f5bae1174c048e88bd8e4ec171965f4c.js","new_i18n_zh_tw_messages":"/moka-fe-public/mage-i18n/javascripts/new_i18n_zh_tw_messages.1eec0de7f2289cf079bdd411e07a5f87.js","new_i18n_zh_hk_messages":"/moka-fe-public/mage-i18n/javascripts/new_i18n_zh_hk_messages.3134d8c46d53b36aac77794d6f8e07fc.js","new_i18n_ja_jp_messages":"/moka-fe-public/mage-i18n/javascripts/new_i18n_ja_jp_messages.7751fb064dcbcf665ab37e576d2db6d7.js","new_i18n_ko_kr_messages":"/moka-fe-public/mage-i18n/javascripts/new_i18n_ko_kr_messages.b96c166a70c9980519c5a21e90472055.js","new_i18n_pt_pt_messages":"/moka-fe-public/mage-i18n/javascripts/new_i18n_pt_pt_messages.f23cd7672ba5462863e4d53cfc2d09e3.js","new_i18n_tl_ph_messages":"/moka-fe-public/mage-i18n/javascripts/new_i18n_tl_ph_messages.8fc79759a8de165365b648899896f835.js","new_i18n_ru_ru_messages":"/moka-fe-public/mage-i18n/javascripts/new_i18n_ru_ru_messages.a6664cf82f24a3bbc4f4bcc267494e85.js","new_i18n_ta_lk_messages":"/moka-fe-public/mage-i18n/javascripts/new_i18n_ta_lk_messages.e39de778b6e87306432403f99dea57a5.js","new_i18n_uz_uz_messages":"/moka-fe-public/mage-i18n/javascripts/new_i18n_uz_uz_messages.451d1ed68321315c5a680dd7dc64732d.js","new_i18n_kk_kz_messages":"/moka-fe-public/mage-i18n/javascripts/new_i18n_kk_kz_messages.f4dc3752645db621a8513428b4fba187.js"};
+window.orgMainLocale = "zh-CN";
+window.orgSupportLocales = ["zh-CN","en-US"];</script><link rel="stylesheet" href="https://static-ats.mokahr.com/recruitment-web-client/stylesheets/recruitmentWeb-20261012-1723-f0ef3-release.css" type="text/css"><script crossorigin="anonymous" src="https://static-ats.mokahr.com/recruitment-web-client/javascripts/sentry-0391c5210d1478c1df01880d317a7d6b.js"></script><script crossorigin="anonymous" src="https://static-ats.mokahr.com/recruitment-web-client/javascripts/initial-c7938d5913b537dd38a5f944d2f61cf4.js"></script></head><body><input style="display: none" id="moka-version" data-gray-released="0" data-version="20261012-1723-f0ef3-release"><div id="app"><div class="forSEO" style="height:0;width:0;overflow:hidden;"><h1><img src="https://public-cdn.mokahr.com/leniu/49aaec8c-748f-4a51-934d-2e05e079c192.png" alt="广州乐牛游戏"></h1><footer><a href="http://mokahr.com">Moka，智能化招聘管理系统</a></footer></div></div><input id="init-data" type="hidden" value="{&quot;org&quot;:{&quot;id&quot;:&quot;leniu&quot;,&quot;name&quot;:&quot;广州乐牛游戏&quot;,&quot;logo&quot;:&quot;https://public-cdn.mokahr.com/leniu/49aaec8c-748f-4a51-934d-2e05e079c192.png&quot;,&quot;displayName&quot;:null,&quot;openWebsiteFooter&quot;:1,&quot;openStoreInterview&quot;:null,&quot;authRecommenderByEmail&quot;:1,&quot;authRecommenderByMobile&quot;:0,&quot;recommenderInviteCode&quot;:null,&quot;dingdingCorpId&quot;:null,&quot;intro&quot;:null,&quot;siteId&quot;:36041,&quot;type&quot;:&quot;camp&quot;,&quot;siteName&quot;:&quot;系统默认校园招聘门户&quot;,&quot;applyShareTitle&quot;:null,&quot;applyShareLogo&quot;:&quot;https://moka-public.oss-cn-beijing.aliyuncs.com/leniu/c553750e22794ecf95766b94fb7c7aaa.jpg&quot;,&quot;applyShareSubtitle&quot;:null,&quot;jobDepartmentShow&quot;:0,&quot;jobFieldVisbility&quot;:&quot;{\&quot;发布时间\&quot;:true,\&quot;所属部门\&quot;:false,\&quot;职位类别\&quot;:true,\&quot;工作经验\&quot;:false,\&quot;招聘人数\&quot;:false,\&quot;职位性质\&quot;:true,\&quot;薪资范围\&quot;:false,\&quot;__customs__\&quot;:[],\&quot;职位级别\&quot;:false,\&quot;学历要求\&quot;:false,\&quot;showProject\&quot;:true}&quot;,&quot;webSettings&quot;:{&quot;nav&quot;:{&quot;mainTitleEnable&quot;:true,&quot;navbarTextColor&quot;:&quot;#666666&quot;,&quot;menus&quot;:[{&quot;id&quot;:&quot;Nav&quot;,&quot;type&quot;:&quot;module&quot;,&quot;title&quot;:&quot;首页&quot;},{&quot;id&quot;:&quot;jobs&quot;,&quot;title&quot;:&quot;职位列表&quot;,&quot;pageUnionId&quot;:&quot;jobsList&quot;,&quot;type&quot;:&quot;page&quot;,&quot;builtIn&quot;:true}],&quot;navbarBackgroundColor&quot;:&quot;#ffffff&quot;,&quot;logoUrl&quot;:[{&quot;url&quot;:&quot;https://public-cdn.mokahr.com/leniu/ec058304-358b-4b2c-964c-f506d5d42503.png&quot;}],&quot;subtitleEnable&quot;:true,&quot;maxWidth&quot;:198,&quot;searchPresentType&quot;:&quot;independent&quot;,&quot;navTabPosition&quot;:&quot;row&quot;,&quot;navTabFontSize&quot;:14,&quot;logoHeight&quot;:24,&quot;secondaryLogoHeight&quot;:24,&quot;hasBg&quot;:true,&quot;backgroundColor&quot;:&quot;#BBD2FF&quot;,&quot;textColor&quot;:&quot;#ED985E&quot;,&quot;textActiveColor&quot;:&quot;#ED985E&quot;,&quot;secondaryBgColor&quot;:&quot;#E6E8F2&quot;,&quot;secondaryTextColor&quot;:&quot;#141933&quot;,&quot;secondaryTextActiveColor&quot;:&quot;#FCC419&quot;,&quot;bgColor&quot;:&quot;#FFFFFF&quot;,&quot;hasPortalLabel&quot;:true,&quot;portalLabelBgColor&quot;:&quot;#FFFFFF&quot;,&quot;portalLabelTextColor&quot;:&quot;#ED985E&quot;},&quot;moduleEntries&quot;:{&quot;default_banner&quot;:{&quot;paddingBottom&quot;:0,&quot;bannerTitle&quot;:&quot;&quot;,&quot;bannerSubTitle&quot;:&quot;&quot;,&quot;bannerTitleColor&quot;:&quot;#575d6a&quot;,&quot;bannerSubTitleColor&quot;:&quot;#575d6a&quot;,&quot;id&quot;:&quot;default_banner&quot;,&quot;paddingTop&quot;:0,&quot;type&quot;:&quot;bigBanner&quot;,&quot;title&quot;:&quot;首页&quot;,&quot;picUrls&quot;:[{&quot;url&quot;:&quot;https://public-cdn.mokahr.com/leniu/934bda54-54c0-4349-9f5e-797197622595.png&quot;},{&quot;url&quot;:&quot;https://public-cdn.mokahr.com/leniu/1884d7ac-cd20-400c-85e5-5151225de649.jpg&quot;},{&quot;url&quot;:&quot;https://public-cdn.mokahr.com/leniu/32cf0157-f5ca-4e69-b285-05ea2244b6ab.jpg&quot;}],&quot;showSearchBar&quot;:&quot;notShow&quot;},&quot;default_joblist&quot;:{&quot;subTitleColor&quot;:&quot;#575d6a&quot;,&quot;displayType&quot;:&quot;zhineng&quot;,&quot;backgroundColor&quot;:&quot;#f2f2f2&quot;,&quot;paddingBottom&quot;:80,&quot;titleColor&quot;:&quot;#575d6a&quot;,&quot;subTitle&quot;:&quot;&quot;,&quot;id&quot;:&quot;default_joblist&quot;,&quot;paddingTop&quot;:60,&quot;type&quot;:&quot;jobList&quot;,&quot;title&quot;:&quot;招聘职位&quot;,&quot;jobFilter&quot;:{}},&quot;4938231580&quot;:{&quot;title&quot;:&quot;职位模块&quot;,&quot;subTitle&quot;:&quot;&quot;,&quot;showShading&quot;:false,&quot;hasBg&quot;:false,&quot;bgColor&quot;:&quot;#FFFFFF&quot;,&quot;displayType&quot;:&quot;zhineng&quot;,&quot;jobFilter&quot;:{},&quot;paddingBottom&quot;:&quot;20&quot;,&quot;paddingTop&quot;:&quot;20&quot;,&quot;items&quot;:[],&quot;column&quot;:3,&quot;row&quot;:5,&quot;moreTextColor&quot;:&quot;#0068FF&quot;,&quot;radiusType&quot;:&quot;UNION&quot;,&quot;radius&quot;:8,&quot;jobEnableFields&quot;:[&quot;location&quot;],&quot;enableBrandIcon&quot;:false,&quot;relatedJobPageId&quot;:&quot;jobsList&quot;,&quot;type&quot;:&quot;JobList&quot;,&quot;id&quot;:&quot;4938231580&quot;,&quot;sortedJobs&quot;:{&quot;zhinengs&quot;:[{&quot;id&quot;:73312,&quot;jobCount&quot;:2,&quot;label&quot;:&quot;游戏策划类（校招）&quot;,&quot;parentId&quot;:0,&quot;count&quot;:2,&quot;value&quot;:&quot;73312&quot;,&quot;isShow&quot;:true},{&quot;id&quot;:73313,&quot;jobCount&quot;:4,&quot;label&quot;:&quot;程序开发类（校招）&quot;,&quot;parentId&quot;:0,&quot;count&quot;:4,&quot;value&quot;:&quot;73313&quot;,&quot;isShow&quot;:true},{&quot;id&quot;:75048,&quot;jobCount&quot;:2,&quot;label&quot;:&quot;手游运营类（校招）&quot;,&quot;parentId&quot;:0,&quot;count&quot;:2,&quot;value&quot;:&quot;75048&quot;,&quot;isShow&quot;:true},{&quot;id&quot;:75049,&quot;jobCount&quot;:4,&quot;label&quot;:&quot;市场商务类（校招）&quot;,&quot;parentId&quot;:0,&quot;count&quot;:4,&quot;value&quot;:&quot;75049&quot;,&quot;isShow&quot;:true},{&quot;id&quot;:75050,&quot;jobCount&quot;:4,&quot;label&quot;:&quot;美术设计类（校招）&quot;,&quot;parentId&quot;:0,&quot;count&quot;:4,&quot;value&quot;:&quot;75050&quot;,&quot;isShow&quot;:true},{&quot;id&quot;:73314,&quot;jobCount&quot;:1,&quot;label&quot;:&quot;综合管理类（校招）&quot;,&quot;parentId&quot;:0,&quot;count&quot;:1,&quot;value&quot;:&quot;73314&quot;,&quot;isShow&quot;:true}]}},&quot;5286001992&quot;:{&quot;title&quot;:&quot;标题模块&quot;,&quot;mainTitle&quot;:&quot;职位列表&quot;,&quot;mainTitleColor&quot;:&quot;#292C32&quot;,&quot;mainTitleWeight&quot;:&quot;normal&quot;,&quot;mainTitleSize&quot;:40,&quot;mainTitleAlign&quot;:&quot;center&quot;,&quot;mainTitleEnable&quot;:true,&quot;mainTitleWordSpacing&quot;:&quot;0&quot;,&quot;mainTitleLetterSpacing&quot;:&quot;0&quot;,&quot;subtitle&quot;:&quot;副标题&quot;,&quot;subtitleColor&quot;:&quot;#89909E&quot;,&quot;subtitleWeight&quot;:&quot;normal&quot;,&quot;subtitleSize&quot;:20,&quot;subtitleAlign&quot;:&quot;center&quot;,&quot;subtitleEnable&quot;:false,&quot;subtitleWordSpacing&quot;:&quot;0&quot;,&quot;subtitleLetterSpacing&quot;:&quot;0&quot;,&quot;paddingTop&quot;:2,&quot;paddingBottom&quot;:0,&quot;bgColor&quot;:&quot;&quot;,&quot;titleGap&quot;:0,&quot;contentHasPadding&quot;:false,&quot;type&quot;:&quot;Title&quot;,&quot;id&quot;:&quot;5286001992&quot;},&quot;5274191045&quot;:{&quot;title&quot;:&quot;轮播图模块&quot;,&quot;mainTitle&quot;:&quot;主标题&quot;,&quot;mainTitleColor&quot;:&quot;#FFFFFF&quot;,&quot;mainTitleWeight&quot;:&quot;normal&quot;,&quot;mainTitleEnable&quot;:false,&quot;subtitle&quot;:&quot;副标题&quot;,&quot;subtitleColor&quot;:&quot;#FFFFFF&quot;,&quot;subtitleWeight&quot;:&quot;normal&quot;,&quot;subtitleEnable&quot;:false,&quot;template&quot;:&quot;fullscreen&quot;,&quot;paddingTop&quot;:56,&quot;paddingBottom&quot;:&quot;20&quot;,&quot;bgColor&quot;:&quot;&quot;,&quot;images&quot;:[{&quot;url&quot;:&quot;https://public-cdn.mokahr.com/leniu/4be14d77-1979-4bfe-bb19-0f43d234c7c6.png&quot;,&quot;width&quot;:2880,&quot;height&quot;:960},{&quot;url&quot;:&quot;https://public-cdn.mokahr.com/leniu/3dfb15d9-eb03-439b-b126-37bdbdfd63e3.png&quot;,&quot;width&quot;:2880,&quot;height&quot;:960},{&quot;url&quot;:&quot;https://public-cdn.mokahr.com/leniu/88c48882-89f7-4377-aec0-8614de6b934e.png&quot;,&quot;width&quot;:2880,&quot;height&quot;:960},{&quot;url&quot;:&quot;https://public-cdn.mokahr.com/leniu/d064f19f-bf18-45f2-a53c-16b965c4f8b6.png&quot;,&quot;width&quot;:2880,&quot;height&quot;:960},{&quot;url&quot;:&quot;https://public-cdn.mokahr.com/leniu/f7b18625-1fc0-4d00-83c0-784a76271e07.png&quot;,&quot;width&quot;:2880,&quot;height&quot;:960}],&quot;videos&quot;:[],&quot;videoAdapt&quot;:&quot;auto&quot;,&quot;bannerContentPosition&quot;:&quot;center&quot;,&quot;autoplayInterval&quot;:3,&quot;hasHoverScale&quot;:false,&quot;type&quot;:&quot;Banner&quot;,&quot;id&quot;:&quot;5274191045&quot;}},&quot;moduleIds&quot;:[&quot;5274191045&quot;,&quot;5286001992&quot;,&quot;4938231580&quot;],&quot;homeTitle&quot;:&quot;首页&quot;,&quot;hideNav&quot;:false,&quot;navType&quot;:&quot;float&quot;,&quot;bgColor&quot;:&quot;#FFFFFF&quot;,&quot;btnColor&quot;:&quot;#d5b381&quot;,&quot;btnBgColor&quot;:&quot;#0C8CF6&quot;,&quot;jobListTitle&quot;:&quot;职位列表&quot;,&quot;jobListHideNav&quot;:false,&quot;jobListNavType&quot;:&quot;independent&quot;,&quot;jobListBgColor&quot;:&quot;#F2F2F4&quot;,&quot;jobListBtnColor&quot;:&quot;#FFFFFF&quot;,&quot;jobListBtnBgColor&quot;:&quot;#0C8CF6&quot;,&quot;jobListCardRadius&quot;:0,&quot;jobListButtonRadius&quot;:8,&quot;jobListBgType&quot;:&quot;color&quot;},&quot;mobileSettings&quot;:&quot;{\&quot;moduleIds\&quot;:[\&quot;default_banner\&quot;,\&quot;default_joblist\&quot;,\&quot;1583715872\&quot;,\&quot;7367680074\&quot;,\&quot;2124932509\&quot;],\&quot;moduleEntries\&quot;:{\&quot;1583715872\&quot;:{\&quot;title\&quot;:\&quot;Banner模块\&quot;,\&quot;mainTitle\&quot;:\&quot;主标题\&quot;,\&quot;mainTitleColor\&quot;:\&quot;#FFFFFF\&quot;,\&quot;mainTitleWeight\&quot;:\&quot;normal\&quot;,\&quot;mainTitleSize\&quot;:40,\&quot;mainTitleEnable\&quot;:false,\&quot;subtitle\&quot;:\&quot;副标题\&quot;,\&quot;subtitleColor\&quot;:\&quot;#FFFFFF\&quot;,\&quot;subtitleWeight\&quot;:\&quot;normal\&quot;,\&quot;subtitleSize\&quot;:20,\&quot;subtitleEnable\&quot;:false,\&quot;images\&quot;:[{\&quot;url\&quot;:\&quot;https://public-cdn.mokahr.com/leniu/f94245e4-5ec3-4d81-854b-cae522d486db.png\&quot;,\&quot;width\&quot;:750,\&quot;height\&quot;:609},{\&quot;url\&quot;:\&quot;https://public-cdn.mokahr.com/leniu/986bc9e9-da5a-4682-aec7-85f8b4d17545.png\&quot;,\&quot;width\&quot;:750,\&quot;height\&quot;:609},{\&quot;url\&quot;:\&quot;https://public-cdn.mokahr.com/leniu/faf97528-1a2f-4046-bae5-3720e0fadfd7.png\&quot;,\&quot;width\&quot;:750,\&quot;height\&quot;:609},{\&quot;url\&quot;:\&quot;https://public-cdn.mokahr.com/leniu/67867342-a6c7-4fb5-b573-ad2cb7e12385.png\&quot;,\&quot;width\&quot;:750,\&quot;height\&quot;:609},{\&quot;url\&quot;:\&quot;https://public-cdn.mokahr.com/leniu/314fd91b-d1c1-4666-a86b-64394303f1f5.png\&quot;,\&quot;width\&quot;:750,\&quot;height\&quot;:609}],\&quot;videos\&quot;:[],\&quot;aspectRatio\&quot;:\&quot;wide\&quot;,\&quot;displayType\&quot;:\&quot;fullscreen\&quot;,\&quot;boxShadow\&quot;:false,\&quot;paddingTop\&quot;:\&quot;0\&quot;,\&quot;paddingBottom\&quot;:\&quot;0\&quot;,\&quot;bgColor\&quot;:\&quot;\&quot;,\&quot;bannerContentPosition\&quot;:\&quot;center\&quot;,\&quot;autoplayInterval\&quot;:5,\&quot;videoAdapt\&quot;:\&quot;auto\&quot;,\&quot;bannerPresentType\&quot;:\&quot;huge\&quot;,\&quot;bannerContentType\&quot;:\&quot;image\&quot;,\&quot;showSearch\&quot;:false,\&quot;enableGrid\&quot;:false,\&quot;gridType\&quot;:\&quot;fullscreen\&quot;,\&quot;gridLine\&quot;:2,\&quot;girdColumn\&quot;:3,\&quot;items\&quot;:[],\&quot;gridBgColorType\&quot;:\&quot;SOLID\&quot;,\&quot;bgSolidColor\&quot;:\&quot;rgba(3,4,13,0.7)\&quot;,\&quot;gridTextColor\&quot;:\&quot;#FFFFFF\&quot;,\&quot;bgGradientColor\&quot;:\&quot;linear-gradient(0deg, rgba(3, 4, 13, 0)0%, rgba(3,4,13,1) 100%)\&quot;,\&quot;gridTextFontSize\&quot;:16,\&quot;relatedJobPageId\&quot;:\&quot;jobList\&quot;,\&quot;type\&quot;:\&quot;PrimeBanner\&quot;,\&quot;id\&quot;:\&quot;1583715872\&quot;,\&quot;gridPosition\&quot;:null},\&quot;2124932509\&quot;:{\&quot;title\&quot;:\&quot;职位列表\&quot;,\&quot;subTitle\&quot;:\&quot;\&quot;,\&quot;showShading\&quot;:false,\&quot;hasBg\&quot;:false,\&quot;bgColor\&quot;:\&quot;#FFFFFF\&quot;,\&quot;displayType\&quot;:\&quot;zhineng\&quot;,\&quot;jobFilter\&quot;:{},\&quot;paddingBottom\&quot;:10,\&quot;paddingTop\&quot;:10,\&quot;items\&quot;:[],\&quot;row\&quot;:10,\&quot;moreTextColor\&quot;:\&quot;#0068FF\&quot;,\&quot;jobEnableFields\&quot;:[\&quot;department\&quot;,\&quot;location\&quot;],\&quot;enableBrandIcon\&quot;:true,\&quot;relatedJobPageId\&quot;:\&quot;jobList\&quot;,\&quot;type\&quot;:\&quot;JobList\&quot;,\&quot;id\&quot;:\&quot;2124932509\&quot;,\&quot;sortedJobs\&quot;:{\&quot;zhinengs\&quot;:[{\&quot;id\&quot;:73312,\&quot;jobCount\&quot;:2,\&quot;label\&quot;:\&quot;游戏策划类（校招）\&quot;,\&quot;parentId\&quot;:0,\&quot;count\&quot;:2,\&quot;value\&quot;:\&quot;73312\&quot;,\&quot;isShow\&quot;:true},{\&quot;id\&quot;:73313,\&quot;jobCount\&quot;:4,\&quot;label\&quot;:\&quot;程序开发类（校招）\&quot;,\&quot;parentId\&quot;:0,\&quot;count\&quot;:4,\&quot;value\&quot;:\&quot;73313\&quot;,\&quot;isShow\&quot;:true},{\&quot;id\&quot;:75048,\&quot;jobCount\&quot;:2,\&quot;label\&quot;:\&quot;手游运营类（校招）\&quot;,\&quot;parentId\&quot;:0,\&quot;count\&quot;:2,\&quot;value\&quot;:\&quot;75048\&quot;,\&quot;isShow\&quot;:true},{\&quot;id\&quot;:75049,\&quot;jobCount\&quot;:4,\&quot;label\&quot;:\&quot;市场商务类（校招）\&quot;,\&quot;parentId\&quot;:0,\&quot;count\&quot;:4,\&quot;value\&quot;:\&quot;75049\&quot;,\&quot;isShow\&quot;:true},{\&quot;id\&quot;:75050,\&quot;jobCount\&quot;:4,\&quot;label\&quot;:\&quot;美术设计类（校招）\&quot;,\&quot;parentId\&quot;:0,\&quot;count\&quot;:4,\&quot;value\&quot;:\&quot;75050\&quot;,\&quot;isShow\&quot;:true},{\&quot;id\&quot;:73314,\&quot;jobCount\&quot;:1,\&quot;label\&quot;:\&quot;综合管理类（校招）\&quot;,\&quot;parentId\&quot;:0,\&quot;count\&quot;:1,\&quot;value\&quot;:\&quot;73314\&quot;,\&quot;isShow\&quot;:true}]}},\&quot;default_banner\&quot;:{\&quot;paddingBottom\&quot;:0,\&quot;bannerTitle\&quot;:\&quot;\&quot;,\&quot;bannerSubTitle\&quot;:\&quot;\&quot;,\&quot;bannerTitleColor\&quot;:\&quot;#575d6a\&quot;,\&quot;bannerSubTitleColor\&quot;:\&quot;#575d6a\&quot;,\&quot;id\&quot;:\&quot;default_banner\&quot;,\&quot;paddingTop\&quot;:0,\&quot;type\&quot;:\&quot;bigBanner\&quot;,\&quot;title\&quot;:\&quot;首页\&quot;,\&quot;picUrls\&quot;:[{\&quot;url\&quot;:\&quot;https://public-cdn.mokahr.com/4486fd6f-94e6-451e-a37d-e4b6b5d75976.jpg\&quot;},{\&quot;url\&quot;:\&quot;https://public-cdn.mokahr.com/3133ca52-4f16-4c4f-a3c7-f932dc712ca1.jpg\&quot;},{\&quot;url\&quot;:\&quot;https://public-cdn.mokahr.com/49a2c7fc-8010-426b-911f-ad9e534430af.jpg\&quot;}],\&quot;showSearchBar\&quot;:\&quot;notShow\&quot;},\&quot;default_joblist\&quot;:{\&quot;zhineng\&quot;:[{\&quot;id\&quot;:73314,\&quot;label\&quot;:\&quot;职能管理类（校招）\&quot;,\&quot;jobCount\&quot;:1,\&quot;value\&quot;:73314},{\&quot;id\&quot;:75050,\&quot;label\&quot;:\&quot;美术设计类（校招）\&quot;,\&quot;jobCount\&quot;:4,\&quot;value\&quot;:75050},{\&quot;id\&quot;:75049,\&quot;label\&quot;:\&quot;市场商务类（校招）\&quot;,\&quot;jobCount\&quot;:4,\&quot;value\&quot;:75049},{\&quot;id\&quot;:75048,\&quot;label\&quot;:\&quot;手游运营类（校招）\&quot;,\&quot;jobCount\&quot;:2,\&quot;value\&quot;:75048},{\&quot;id\&quot;:73313,\&quot;label\&quot;:\&quot;平台开发类（校招）\&quot;,\&quot;jobCount\&quot;:4,\&quot;value\&quot;:73313},{\&quot;id\&quot;:73312,\&quot;label\&quot;:\&quot;手游研发类（校招）\&quot;,\&quot;jobCount\&quot;:2,\&quot;value\&quot;:73312}],\&quot;subTitleColor\&quot;:\&quot;#575d6a\&quot;,\&quot;displayType\&quot;:\&quot;zhineng\&quot;,\&quot;backgroundColor\&quot;:\&quot;#f2f2f2\&quot;,\&quot;paddingBottom\&quot;:80,\&quot;titleColor\&quot;:\&quot;#575d6a\&quot;,\&quot;subTitle\&quot;:\&quot;\&quot;,\&quot;id\&quot;:\&quot;default_joblist\&quot;,\&quot;paddingTop\&quot;:60,\&quot;type\&quot;:\&quot;jobList\&quot;,\&quot;title\&quot;:\&quot;招聘职位\&quot;},\&quot;7367680074\&quot;:{\&quot;title\&quot;:\&quot;标题模块\&quot;,\&quot;mainTitle\&quot;:\&quot;职位列表\&quot;,\&quot;mainTitleColor\&quot;:\&quot;#292C32\&quot;,\&quot;mainTitleWeight\&quot;:\&quot;normal\&quot;,\&quot;mainTitleSize\&quot;:24,\&quot;mainTitleAlign\&quot;:\&quot;center\&quot;,\&quot;mainTitleEnable\&quot;:true,\&quot;subtitle\&quot;:\&quot;副标题\&quot;,\&quot;subtitleColor\&quot;:\&quot;#89909E\&quot;,\&quot;subtitleWeight\&quot;:\&quot;normal\&quot;,\&quot;subtitleSize\&quot;:20,\&quot;subtitleAlign\&quot;:\&quot;center\&quot;,\&quot;subtitleEnable\&quot;:false,\&quot;paddingTop\&quot;:10,\&quot;paddingBottom\&quot;:10,\&quot;bgColor\&quot;:\&quot;\&quot;,\&quot;titleGap\&quot;:16,\&quot;type\&quot;:\&quot;Title\&quot;,\&quot;id\&quot;:\&quot;7367680074\&quot;}},\&quot;nav\&quot;:{\&quot;type\&quot;:\&quot;Nav\&quot;,\&quot;title\&quot;:\&quot;导航栏模块\&quot;,\&quot;hasBg\&quot;:false,\&quot;navPresentType\&quot;:\&quot;top\&quot;,\&quot;searchPresentType\&quot;:\&quot;hidden\&quot;,\&quot;textColor\&quot;:\&quot;#FFFFFF\&quot;,\&quot;bgColor\&quot;:\&quot;#0C8CF6\&quot;,\&quot;secondaryBgColor\&quot;:null,\&quot;tabBgColor\&quot;:\&quot;#FFFFFF\&quot;,\&quot;tabTextColor\&quot;:\&quot;#292C32\&quot;,\&quot;tabTextActiveColor\&quot;:\&quot;#292C32\&quot;,\&quot;menus\&quot;:[{\&quot;id\&quot;:\&quot;Nav\&quot;,\&quot;pageUnionId\&quot;:\&quot;home\&quot;,\&quot;title\&quot;:\&quot;首页\&quot;,\&quot;type\&quot;:\&quot;module\&quot;},{\&quot;id\&quot;:\&quot;jobs\&quot;,\&quot;title\&quot;:\&quot;职位列表\&quot;,\&quot;pageUnionId\&quot;:\&quot;jobList\&quot;,\&quot;type\&quot;:\&quot;page\&quot;,\&quot;builtIn\&quot;:true}],\&quot;tabs\&quot;:[{\&quot;title\&quot;:\&quot;首页\&quot;,\&quot;type\&quot;:\&quot;path\&quot;,\&quot;path\&quot;:\&quot;/home\&quot;,\&quot;icon\&quot;:\&quot;tab-icon-home\&quot;,\&quot;isBuiltin\&quot;:true},{\&quot;title\&quot;:\&quot;职位\&quot;,\&quot;type\&quot;:\&quot;path\&quot;,\&quot;path\&quot;:\&quot;/jobs\&quot;,\&quot;icon\&quot;:\&quot;tab-icon-job\&quot;,\&quot;isBuiltin\&quot;:true},{\&quot;title\&quot;:\&quot;我的\&quot;,\&quot;type\&quot;:\&quot;path\&quot;,\&quot;path\&quot;:\&quot;/home/candidate\&quot;,\&quot;icon\&quot;:\&quot;tab-icon-user\&quot;,\&quot;isBuiltin\&quot;:true}],\&quot;secondaryTextColor\&quot;:\&quot;#474C66\&quot;,\&quot;secondaryTextActiveColor\&quot;:\&quot;#0068FF\&quot;,\&quot;backgroundColor\&quot;:\&quot;\&quot;,\&quot;hasPortalLabel\&quot;:false,\&quot;portalLabelBgColor\&quot;:\&quot;#FFFFFF\&quot;,\&quot;portalLabelTextColor\&quot;:\&quot;#000\&quot;,\&quot;hasMenuIcon\&quot;:true,\&quot;logoHeight\&quot;:24,\&quot;secondaryLogoHeight\&quot;:24,\&quot;logo\&quot;:\&quot;\&quot;,\&quot;secondaryLogo\&quot;:\&quot;\&quot;,\&quot;mainTitleEnable\&quot;:true,\&quot;navbarTextColor\&quot;:\&quot;#666666\&quot;,\&quot;navbarBackgroundColor\&quot;:\&quot;#ffffff\&quot;,\&quot;logoUrl\&quot;:[{\&quot;url\&quot;:\&quot;https://public-cdn.mokahr.com/leniu/7e8126ce-dbfb-497a-ba2e-453434b16d55.png\&quot;}],\&quot;showNavBarOnMobile\&quot;:true,\&quot;subtitleEnable\&quot;:true},\&quot;filterPanel\&quot;:{\&quot;showFlattenFilter\&quot;:true},\&quot;homePageId\&quot;:\&quot;home\&quot;,\&quot;homeTitle\&quot;:\&quot;首页\&quot;,\&quot;navType\&quot;:\&quot;float\&quot;,\&quot;bgColor\&quot;:\&quot;#FFFFFF\&quot;,\&quot;btnColor\&quot;:\&quot;#d5b381\&quot;,\&quot;btnBgColor\&quot;:\&quot;#0C8CF6\&quot;,\&quot;jobListTitle\&quot;:\&quot;职位列表\&quot;,\&quot;jobListBgColor\&quot;:\&quot;#FFFFFF\&quot;,\&quot;jobListBtnColor\&quot;:\&quot;#F4F4F5\&quot;,\&quot;jobListBtnBgColor\&quot;:\&quot;#0C8CF6\&quot;,\&quot;jobListCardRadius\&quot;:0,\&quot;jobListButtonRadius\&quot;:8}&quot;,&quot;introShow&quot;:0,&quot;showNearbyStores&quot;:0,&quot;storeFilters&quot;:&quot;{\&quot;location\&quot;:true,\&quot;zhineng\&quot;:false}&quot;,&quot;customTitle&quot;:&quot;广州乐牛游戏 - 校园招聘&quot;,&quot;customFavicon&quot;:null,&quot;availableLocales&quot;:&quot;[\&quot;zh-CN\&quot;]&quot;,&quot;applyShowBonus&quot;:0,&quot;siteStoreInterview&quot;:null,&quot;qaBotShow&quot;:0,&quot;candidateBot&quot;:0,&quot;jobIdTopList&quot;:[],&quot;commonSettings&quot;:&quot;{}&quot;,&quot;recruitmentSetting&quot;:{&quot;applicantLimit&quot;:{&quot;duration&quot;:3,&quot;jobNumber&quot;:2},&quot;limitApplicant&quot;:true,&quot;allowRecommenderCode&quot;:true,&quot;useApplyForm&quot;:true,&quot;sendFeedbackEmail&quot;:true,&quot;allowAmbassadorCode&quot;:true},&quot;websiteVersion&quot;:2,&quot;templateId&quot;:&quot;&quot;,&quot;recommendSiteId&quot;:null,&quot;locale&quot;:&quot;zh-CN&quot;,&quot;jobsListSettings&quot;:{&quot;moduleIds&quot;:[&quot;4554797329&quot;],&quot;moduleEntries&quot;:{&quot;4554797329&quot;:{&quot;jobEnableFields&quot;:[&quot;commitment&quot;,&quot;title&quot;],&quot;enableBrandIcon&quot;:false,&quot;filterFields&quot;:[&quot;keyword&quot;,&quot;zhineng&quot;,&quot;commitment&quot;,&quot;location&quot;],&quot;type&quot;:&quot;JobsList&quot;,&quot;title&quot;:&quot;职位列表&quot;,&quot;filterLinkage&quot;:false,&quot;primaryFilter&quot;:&quot;&quot;,&quot;displayedFilters&quot;:[{&quot;key&quot;:&quot;commitment&quot;},{&quot;key&quot;:&quot;zhineng&quot;}],&quot;filterPresentType&quot;:&quot;droplist&quot;,&quot;salaryTextColor&quot;:&quot;#989CB2&quot;,&quot;listPresentType&quot;:&quot;list&quot;}}},&quot;jobDetailSettings&quot;:{&quot;moduleIds&quot;:[&quot;1446017701&quot;],&quot;moduleEntries&quot;:{&quot;1446017701&quot;:{&quot;orgInfoTitle&quot;:&quot;公司信息&quot;,&quot;enableDescription&quot;:true,&quot;btnBgColor&quot;:&quot;#0066FF&quot;,&quot;enableInfo&quot;:false,&quot;infoTitle&quot;:&quot;职位信息&quot;,&quot;enableVideoJD&quot;:false,&quot;btnTextColor&quot;:&quot;#FFFFFF&quot;,&quot;descriptionTitle&quot;:&quot;职位描述&quot;,&quot;headerPosition&quot;:&quot;stable&quot;,&quot;enableOrgLogo&quot;:false,&quot;enableOrgInfo&quot;:false,&quot;pageBgColor&quot;:&quot;#F4F6FB&quot;,&quot;type&quot;:&quot;JobDetail&quot;,&quot;title&quot;:&quot;职位详情&quot;,&quot;enableTitlePrefixIcon&quot;:false,&quot;headerEnableFields&quot;:[&quot;title&quot;],&quot;buttonRadius&quot;:300,&quot;enableRecentlyJob&quot;:false,&quot;cardRadius&quot;:16,&quot;infoEnableFields&quot;:[],&quot;salaryTextColor&quot;:&quot;#0066FF&quot;,&quot;descriptionTextAlign&quot;:&quot;left&quot;,&quot;brandBgImg&quot;:{&quot;url&quot;:&quot;https://public-cdn.mokahr.com/default_brand_bg_for_pc.png&quot;,&quot;width&quot;:1834,&quot;height&quot;:1140}}}},&quot;globalConfig&quot;:{},&quot;pages&quot;:[],&quot;recommendationRequiredFields&quot;:{&quot;phone&quot;:{&quot;require&quot;:true,&quot;notNull&quot;:false},&quot;employeeId&quot;:{&quot;require&quot;:false,&quot;notNull&quot;:false},&quot;departmentId&quot;:{&quot;require&quot;:true,&quot;notNull&quot;:true}},&quot;settings&quot;:{&quot;campusSite&quot;:{&quot;enabled&quot;:false},&quot;recommendAuthBeforeWatch&quot;:{&quot;enabled&quot;:false},&quot;campusFirstChoice&quot;:{&quot;enabled&quot;:false},&quot;applyPrivacyStatement&quot;:{&quot;isPre&quot;:false,&quot;campus&quot;:false,&quot;social&quot;:false,&quot;recommendation&quot;:false,&quot;version&quot;:0},&quot;ambassadorSingleRecommendCodeCount&quot;:&quot;5000&quot;,&quot;ambassadorCodeRequiredForApply&quot;:0,&quot;divideRecommendation&quot;:{&quot;enabled&quot;:false,&quot;mappingTo&quot;:1},&quot;allowModifySelfUserinfo&quot;:{&quot;name&quot;:true,&quot;email&quot;:true,&quot;phone&quot;:true},&quot;useAmbassador&quot;:true,&quot;wulaiBotSwitch&quot;:false,&quot;hiddenRecommendPosterFooter&quot;:false,&quot;enableMorePoster&quot;:true,&quot;enableJobCard&quot;:true,&quot;disabledUploadFileTypes&quot;:[],&quot;WLBOT_ATTR_KEY&quot;:{}}},&quot;websiteVersion&quot;:2,&quot;jobs&quot;:[],&quot;jobStats&quot;:{&quot;orgId&quot;:null,&quot;total&quot;:0},&quot;jobsGroupedByLocation&quot;:[],&quot;jobsGroupedByCampusSite&quot;:null,&quot;showCommitmentFilter&quot;:true,&quot;jobsGroupedByProject&quot;:[],&quot;campusSiteGroupByCity&quot;:[],&quot;departmentsStructure&quot;:[],&quot;apolloConfig&quot;:{&quot;disable_apply_micro&quot;:false},&quot;backstageConfigVariables&quot;:{&quot;highestDegreeCheckout&quot;:false,&quot;filecenterUploadActive&quot;:true,&quot;enableAddNewSchoolName&quot;:true,&quot;enableGorgeousWebsite&quot;:false,&quot;filecenterUploadLimit&quot;:300,&quot;enableEvent&quot;:false,&quot;enableWebsiteMultiLanguageSwitch&quot;:false,&quot;usePreVisionStandardResume&quot;:true,&quot;applyFormOmitHiddenMultiBlock&quot;:false,&quot;enableCandidateBot&quot;:true,&quot;enableCandidateAccountCancelAndUnbindWechat&quot;:false},&quot;configVariables&quot;:{&quot;personalCenterShowPipeline&quot;:false,&quot;preferenceOrderModify&quot;:{&quot;enabled&quot;:true},&quot;recommendDisplayFields&quot;:[0],&quot;candidateNotSelfApplyConfirm&quot;:{&quot;isSyncOnlineResumeEnabled&quot;:true},&quot;hideWebsiteOnlineResume&quot;:false,&quot;showRecruitmentPortalPrivacyPolicyMenu&quot;:true,&quot;candidateSecurityConfig&quot;:{&quot;maxLoginTimeLimit&quot;:0},&quot;hideWebsiteDeliveryDetails&quot;:false,&quot;hideWebsiteAttachmentResume&quot;:false,&quot;recommendAwardsDisplaySetting&quot;:[0,1],&quot;enableSocialPosterCustomText&quot;:false,&quot;enableCampusPosterCustomText&quot;:false,&quot;enableRecommendPosterCustomText&quot;:false},&quot;socialConfigVariables&quot;:{&quot;personalCenterShowPipeline&quot;:false},&quot;jobsGroupedByExperience&quot;:[],&quot;jobsGroupedByJobRank&quot;:[],&quot;jobsGroupedByEducation&quot;:[],&quot;jobCustomFields&quot;:[{&quot;createdAt&quot;:&quot;2023-12-28T06:30:41.000Z&quot;,&quot;detail&quot;:[&quot;-&quot;,&quot;测试岗&quot;,&quot;策划岗&quot;,&quot;技术岗&quot;,&quot;美术岗&quot;,&quot;商务岗&quot;,&quot;投放岗&quot;,&quot;运营岗&quot;],&quot;hireMode&quot;:2,&quot;id&quot;:223071,&quot;isApproval&quot;:false,&quot;isBuiltin&quot;:false,&quot;isDefaultBuiltin&quot;:false,&quot;isRequired&quot;:&quot;选填&quot;,&quot;isSyncedUp&quot;:true,&quot;isVisible&quot;:true,&quot;name&quot;:&quot;岗位类别&quot;,&quot;orgId&quot;:&quot;leniu&quot;,&quot;type&quot;:&quot;select_info&quot;,&quot;updatedAt&quot;:&quot;2023-12-28T06:30:41.000Z&quot;}],&quot;jobsGroupedByZhineng&quot;:[],&quot;aesIv&quot;:&quot;de7c21ed8d6f50fe&quot;,&quot;pageTitle&quot;:&quot;校园招聘&quot;,&quot;mode&quot;:&quot;campus&quot;,&quot;siteId&quot;:&quot;36041&quot;,&quot;captchaId&quot;:&quot;09c6c054f9fe48f4b3f78d989b0e4e36&quot;,&quot;isAdmin&quot;:false}"><script>window.TurboApply = window.TurboApply || {};
+var $initData = document.getElementById('init-data');
+window.TurboApply.data = JSON.parse($initData.value);
+$initData.remove && $initData.remove();
+try {
+  localStorage.setItem('TY_DISTINCT_ID', window.TurboApply.data.org.id);
+} catch(e) {}
+
+window.MAGE_PUBLIC_PATH = 'https://static-ats.mokahr.com';
+</script><script crossorigin="anonymous" src="https://static-ats.mokahr.com/recruitment-web-client/javascripts/runtime-51ac41aa79bf755b4f3ce3a0cabc5069.js"></script><script crossorigin="anonymous" src="https://static-ats.mokahr.com/recruitment-web-client/javascripts/vendor-112b3d9cba7673886459eb30128f54a6.js"></script><script crossorigin="anonymous" src="https://static-ats.mokahr.com/recruitment-web-client/javascripts/recruitmentWeb-20261012-1723-f0ef3-release.js"></script><script src="//cstaticdun-v6.126.net/load.min.js"></script></body></html>

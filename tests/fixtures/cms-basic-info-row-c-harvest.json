@@ -1,0 +1,105 @@
+{
+  "purpose": "Sanitized observed metadata only; no captured HTML, user values, option lists, or other rows. Tests build explicitly SYNTHETIC structural simulations from these metadata.",
+  "harvest": "cms-basic-other-harvest-2026-10-24-1001",
+  "baseTip": "640b0511ae1ae8d8fd45780a2d026c1daad09dbb",
+  "sectionId": "11",
+  "neverSave": true,
+  "liveSupportClaimed": false,
+  "optionOpenEvidence": false,
+  "sources": [
+    {
+      "file": "gaps-row-C.json",
+      "sha256": "ba0b22db22d4a1d23b5f24200c4dfea03d07688b9f7a028634495905d1a5e4d6"
+    },
+    {
+      "file": "page-sections-raw.json",
+      "sha256": "5a6c660dcb42542b195fb33fd0fb1556797638f2b2d7a148faa7c12d4c2d3bf8"
+    },
+    {
+      "file": "harvest-summary.json",
+      "sha256": "b65c4e6cf97a8b1f6c0481253600e81156697c2ffa9d1ab0fd6dd20b159ecaec"
+    }
+  ],
+  "fields": [
+    {
+      "label": "性别*",
+      "wrapperId": "11_20_0",
+      "controlKind": "radio-group"
+    },
+    {
+      "label": "出生日期*",
+      "wrapperId": "11_21_0",
+      "controlKind": "ant-calendar-picker",
+      "readonly": true
+    },
+    {
+      "label": "身高*?",
+      "wrapperId": "11_247_0",
+      "controlKind": "input",
+      "type": "text",
+      "placeholder": "（单位：cm）"
+    },
+    {
+      "label": "国籍/地区*",
+      "wrapperId": "11_22_0",
+      "controlKind": "ant-select",
+      "classes": "ant-select ant-select-enabled ant-select-allow-clear"
+    },
+    {
+      "label": "民族*",
+      "wrapperId": "11_23_0",
+      "controlKind": "ant-select",
+      "classes": "ant-select ant-select-enabled ant-select-allow-clear"
+    },
+    {
+      "label": "婚姻状况*",
+      "wrapperId": "11_24_0",
+      "controlKind": "ant-select",
+      "classes": "ant-select ant-select-enabled ant-select-allow-clear"
+    },
+    {
+      "label": "政治面貌*",
+      "wrapperId": "11_25_0",
+      "controlKind": "ant-select",
+      "classes": "ant-select ant-select-enabled ant-select-allow-clear"
+    },
+    {
+      "label": "证件类型*",
+      "wrapperId": "11_28_0",
+      "controlKind": "ant-select",
+      "classes": "ant-select ant-select-enabled ant-select-allow-clear"
+    },
+    {
+      "label": "证件号码*",
+      "wrapperId": "11_29_0",
+      "controlKind": "input",
+      "type": "text",
+      "placeholder": "请填写证件号码"
+    },
+    {
+      "label": "现居住地*",
+      "wrapperId": "11_26_0",
+      "controlKind": "ant-select",
+      "classes": "ant-select ant-select-enabled"
+    },
+    {
+      "label": "联系地址*",
+      "wrapperId": "11_51414234_0",
+      "controlKind": "input",
+      "type": "text",
+      "placeholder": "请填写联系地址"
+    },
+    {
+      "label": "籍贯*",
+      "wrapperId": "11_245_0",
+      "controlKind": "ant-select",
+      "classes": "ant-select ant-select-enabled"
+    },
+    {
+      "label": "期望面试地点（供参考，实际安排将根据笔试通过名单确定）*",
+      "wrapperId": "11_1003214127_0",
+      "controlKind": "ant-select",
+      "classes": "ant-select ant-select-enabled ant-select-allow-clear"
+    }
+  ]
+}

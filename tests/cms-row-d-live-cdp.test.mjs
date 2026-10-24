@@ -10,7 +10,7 @@ import { runCmsRowDLive } from '../scripts/live/cms-row-d-live.mjs';
 
 const PRIVATE = 'OFFLINE_PRIVATE_BODY_QUERY_ERROR_SENTINEL';
 
-async function cdpStub(t, { nonGet = false, blockFails = false } = {}) {
+async function cdpStub(t, { nonGet = false, blockFails = false, visibilityNonGetAt } = {}) {
   const calls = [];
   const server = http.createServer((request, response) => {
     assert.equal(request.method, 'GET');
@@ -22,31 +22,47 @@ async function cdpStub(t, { nonGet = false, blockFails = false } = {}) {
   });
   const wss = new WebSocketServer({ server });
   wss.on('connection', socket => {
+    let focusEnabled = false;
     socket.on('message', raw => {
       const message = JSON.parse(String(raw));
       calls.push(message);
       const reply = result => socket.send(JSON.stringify({ id: message.id, result }));
       const event = (method, params) => socket.send(JSON.stringify({ method, params }));
+      const requestEvents = method => {
+        const request = { method, url: `https://wecruit.hotjob.cn/resume/info/edit?resumeId=${PRIVATE}`,
+          postData: PRIVATE, headers: { 'X-Private': PRIVATE } };
+        event('Network.requestWillBeSent', { requestId: `network-${method}`, request });
+        event('Fetch.requestPaused', { requestId: `paused-${method}`, networkId: `network-${method}`, request });
+      };
+      if (['Target.activateTarget', 'Page.bringToFront', 'Emulation.setFocusEmulationEnabled'].includes(message.method)) {
+        const names = calls.map(call => call.method);
+        assert.ok(names.includes('Network.enable'));
+        assert.ok(names.includes('Fetch.enable'));
+        assert.equal(names.includes('Fetch.disable'), false);
+        if (message.method === 'Emulation.setFocusEmulationEnabled') focusEnabled = message.params.enabled;
+        if (message.method === visibilityNonGetAt && message.params.enabled !== false) requestEvents('POST');
+      }
       if (message.method === 'Runtime.evaluate') {
         const names = calls.map(call => call.method);
         assert.ok(names.indexOf('Network.enable') < names.indexOf('Runtime.evaluate'));
         assert.ok(names.indexOf('Fetch.enable') < names.indexOf('Runtime.evaluate'));
+        assert.ok(names.indexOf('Target.activateTarget') < names.indexOf('Page.bringToFront'));
+        assert.ok(names.indexOf('Page.bringToFront') < names.indexOf('Emulation.setFocusEmulationEnabled'));
+        assert.equal(focusEnabled, true);
         assert.equal(message.params.throwOnSideEffect, true);
         assert.equal(message.params.userGesture, false);
         assert.equal(message.params.awaitPromise, false);
         const methods = nonGet ? ['GET', 'POST', 'HEAD'] : ['GET'];
-        for (const method of methods) {
-          const request = { method, url: `https://wecruit.hotjob.cn/resume/info/edit?resumeId=${PRIVATE}`,
-            postData: PRIVATE, headers: { 'X-Private': PRIVATE } };
-          event('Network.requestWillBeSent', { requestId: `network-${method}`, request });
-          event('Fetch.requestPaused', { requestId: `paused-${method}`, networkId: `network-${method}`, request });
-        }
+        for (const method of methods) requestEvents(method);
         // Executes the real serialized inspector in an empty synthetic realm;
         // no_document is expected and must never become a live PASS.
         reply({ result: { value: vm.runInNewContext(message.params.expression) } });
       } else if (message.method === 'Fetch.failRequest' && blockFails) {
         socket.send(JSON.stringify({ id: message.id, error: { message: PRIVATE } }));
-      } else reply({});
+      } else {
+        if (message.method === 'Fetch.disable') assert.equal(focusEnabled, false);
+        reply({});
+      }
     });
   });
   server.listen(0, '127.0.0.1');
@@ -63,9 +79,11 @@ function safe(result) {
   for (const row of [result, ...result.fields]) {
     assert.equal(row.neverSave, true);
     assert.equal(row.liveSupportClaimed, false);
+    assert.equal(row.livePassClaimed, false);
     assert.equal(row.writeStarted, false);
     assert.equal(row.mutationAllowed, false);
     assert.equal(row.valuesExposed, false);
+    assert.equal(row.probeOnly, true);
   }
   assert.equal(result.livePassClaimed, false);
   assert.equal(result.booked, 53);
@@ -88,7 +106,27 @@ test('actual loopback CDP transport continues GET and returns an honest incomple
   assert.equal(names.includes('Fetch.failRequest'), false);
   assert.ok(names.indexOf('Fetch.continueRequest') < names.indexOf('Fetch.disable'));
   assert.ok(names.indexOf('Fetch.disable') < names.indexOf('Network.disable'));
+  assert.deepEqual(stub.calls.filter(call => call.method === 'Emulation.setFocusEmulationEnabled')
+    .map(call => call.params), [{ enabled: true }, { enabled: false }]);
+  assert.deepEqual(result.visibilityKeeper, { targetActivated: true, pageBroughtToFront: true,
+    focusEmulationEnabled: true, focusEmulationCleared: true });
 });
+
+for (const visibilityNonGetAt of ['Target.activateTarget', 'Emulation.setFocusEmulationEnabled']) {
+  test(`actual CDP transport blocks visibility-triggered POST during ${visibilityNonGetAt} before inspection`, async t => {
+    const stub = await cdpStub(t, { visibilityNonGetAt });
+    const result = await runCmsRowDLive({ port: stub.port, timeoutMs: 1000, wait: async () => {} });
+    safe(result);
+    assert.equal(result.ok, false);
+    assert.equal(result.probeCompleted, false);
+    assert.equal(result.reason, 'non_get_or_guard_failure');
+    assert.equal(result.traffic.observedNonGetCount, 1);
+    assert.equal(result.traffic.blockedNonGetCount, 1);
+    assert.equal(stub.calls.some(call => call.method === 'Runtime.evaluate'), false);
+    const names = stub.calls.map(call => call.method);
+    assert.ok(names.indexOf('Fetch.failRequest') < names.indexOf('Fetch.disable'));
+  });
+}
 
 for (const blockFails of [false, true]) test(`actual CDP transport records info/edit and rejects non-GET (block failure=${blockFails})`, async t => {
   const stub = await cdpStub(t, { nonGet: true, blockFails });

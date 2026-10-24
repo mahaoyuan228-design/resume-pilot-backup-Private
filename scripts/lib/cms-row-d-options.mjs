@@ -214,7 +214,8 @@ const listTokens = text => trimProbeText(String(text ?? '')).split(/\s+/u).filte
  * Visibility here only rejects explicit attribute/inline-style hiding. It
  * cannot verify stylesheet visibility, layout, clipping or on-screen geometry.
  * The result labels this limit; structural observation grants no write/support
- * permission. The calendar remains metadata only.
+ * permission. Calendar structure is inspected, but date/popup behavior remains
+ * unevidenced and cannot pass this preflight.
  */
 export function inspectCmsRowDOptions(doc, requests = {}) {
   const fields = [];
@@ -274,8 +275,9 @@ export function inspectCmsRowDOptions(doc, requests = {}) {
       }
       return null;
     };
+    const collapsed = node => Boolean(closest(node, '.ant-collapse-content-inactive,details:not([open])'));
     const visible = node => {
-      if (!node?.isConnected || closest(node, '[hidden],[aria-hidden="true"],[inert]')) return false;
+      if (!node?.isConnected || closest(node, '[hidden],[aria-hidden="true"],[inert]') || collapsed(node)) return false;
       for (let parent = node; parent; parent = parent.parentElement) {
         // No computed style or geometry calls: those may force layout and
         // getClientRects is rejected by Blink's debug-evaluate guard.
@@ -284,9 +286,10 @@ export function inspectCmsRowDOptions(doc, requests = {}) {
       }
       return true;
     };
-    const available = node => visible(node)
-      && !matches(node, '[disabled],[aria-disabled="true"],.ant-select-disabled,.ant-radio-disabled,.ant-checkbox-disabled')
-      && !closest(node, 'fieldset[disabled],[inert],[aria-disabled="true"],.ant-select-disabled,.ant-radio-disabled,.ant-checkbox-disabled');
+    const enabled = node => Boolean(node)
+      && !matches(node, '[disabled],[aria-disabled="true"],.ant-select-disabled,.ant-radio-disabled,.ant-checkbox-disabled,.ant-calendar-picker-disabled,.ant-picker-disabled,.ant-cascader-picker-disabled')
+      && !closest(node, 'fieldset[disabled],[inert],[aria-disabled="true"],.ant-select-disabled,.ant-radio-disabled,.ant-checkbox-disabled,.ant-calendar-picker-disabled,.ant-picker-disabled,.ant-cascader-picker-disabled');
+    const available = node => visible(node) && enabled(node);
     const allIds = snapshot(doc.querySelectorAll('[id]'));
     const exactIds = id => allIds.filter(node => node.getAttribute('id') === id);
     // Do not consult application-defined IDL accessors on individual elements.
@@ -314,13 +317,13 @@ export function inspectCmsRowDOptions(doc, requests = {}) {
       const field = ROW_D_FIELDS[fieldIndex];
       const hasRequest = Object.hasOwn(requests, field.wrapperId);
       const resolution = hasRequest ? resolveCmsRowDOption(field.wrapperId, requests[field.wrapperId]) : undefined;
+      const observation = {};
       const push = (ok, reason, extra = {}) => fields.push(row(field, ok, reason,
-        mergeProbeData(resolution ? { resolution } : {}, extra)));
-      if (field.controlKind === 'ant-calendar-picker') {
-        push(false, 'calendar_live_evidence_missing');
-        continue;
-      }
+        mergeProbeData(resolution ? { resolution } : {}, observation, extra)));
       const sections = exactIds(field.sectionId);
+      if (sections.length === 1 && collapsed(sections[0])) {
+        push(false, 'control_not_available', { availabilityIssue: 'collapsed_ancestor' }); continue;
+      }
       if (sections.length !== 1 || !matches(sections[0], '.form-cell') || !visible(sections[0])) {
         push(false, 'section_not_unique_or_visible'); continue;
       }
@@ -330,6 +333,9 @@ export function inspectCmsRowDOptions(doc, requests = {}) {
       const wrapper = wrappers[0];
       const candidates = snapshot(wrapper.querySelectorAll('.ant-form-item'));
       const item = candidates.length === 1 ? candidates[0] : null;
+      if (collapsed(wrapper) || (item && collapsed(item))) {
+        push(false, 'control_not_available', { availabilityIssue: 'collapsed_ancestor' }); continue;
+      }
       // Captured scripts resolve a descendant item from the outer wrapper.
       // There is deliberately no ancestor, wrapper-as-item or label fallback.
       if (!item || matches(wrapper, '.ant-form-item') || closest(wrapper, '.form-cell') !== section
@@ -351,10 +357,33 @@ export function inspectCmsRowDOptions(doc, requests = {}) {
         .filter(candidate => closest(candidate, '.form-cell') === section
           && labelsFor(candidate).some(label => normalizeText(label.textContent) === field.label));
       if (peers.length !== 1 || peers[0] !== item) { push(false, 'question_not_unique'); continue; }
-      const controls = snapshot(item.querySelectorAll('.ant-select,.ant-calendar-picker,.ant-picker,.ant-radio-group,.ant-checkbox-group,input,button,textarea,select,[contenteditable="true"],.el-select,.el-date-editor,.ant-upload'));
+      const controls = snapshot(item.querySelectorAll('.ant-select,.ant-calendar-picker,.ant-picker,.ant-cascader-picker,.ant-radio-group,.ant-checkbox-group,input,button,textarea,select,[contenteditable="true"],.el-select,.el-date-editor,.ant-upload'));
       if (controls.some(node => !owns(node))) { push(false, 'control_ownership_mismatch'); continue; }
-      if (owned('.ant-calendar-picker,.ant-picker,button,textarea,select,[contenteditable="true"],.el-select,.el-date-editor,.ant-upload,input[type="file"]').length) {
-        push(false, 'control_kind_mismatch'); continue;
+      if (owned('button,textarea,select,[contenteditable="true"],.el-select,.el-date-editor,.ant-upload,input[type="file"]').length) {
+        push(false, 'control_kind_mismatch', { controlKindIssue: 'unexpected_interactive_control' }); continue;
+      }
+      if (field.controlKind === 'ant-calendar-picker') {
+        const pickers = owned('.ant-calendar-picker,.ant-picker');
+        const inputs = owned('input');
+        if (pickers.length !== 1 || inputs.length !== 1 || !pickers[0].contains(inputs[0])
+          || owned('.ant-select,.ant-cascader-picker,.ant-radio-group,.ant-checkbox-group').length) {
+          push(false, 'control_kind_mismatch'); continue;
+        }
+        if (inputType(inputs[0]) !== 'text') {
+          push(false, 'control_kind_mismatch', { controlKindIssue: 'unexpected_input_kind' }); continue;
+        }
+        if (!available(pickers[0]) || !available(inputs[0])) {
+          push(false, 'control_not_available', { availabilityIssue: !enabled(pickers[0]) || !enabled(inputs[0])
+            ? 'disabled_attribute_or_class' : 'hidden_control' }); continue;
+        }
+        // This establishes a uniquely owned, attribute-available text picker,
+        // without reading its value or assuming calendar/date semantics.
+        push(false, 'calendar_live_evidence_missing', { calendarStructureObserved: true }); continue;
+      }
+      if (owned('.ant-calendar-picker,.ant-picker,.ant-cascader-picker').length) {
+        // The recorded location classifier prioritized any .ant-select and
+        // captured no helper markup. Do not silently whitelist a hybrid.
+        push(false, 'control_kind_mismatch', { controlKindIssue: 'conflicting_picker' }); continue;
       }
       // A reassigned binding captured by later callbacks emits a context-slot
       // store that V8 rejects even on early-return paths. Keep a const local
@@ -362,17 +391,47 @@ export function inspectCmsRowDOptions(doc, requests = {}) {
       const optionLabels = [];
       if (field.controlKind === 'ant-select') {
         const selects = owned('.ant-select');
-        if (selects.length !== 1 || owned('.ant-radio-group,.ant-checkbox-group,input[type="radio"],input[type="checkbox"]').length
-          || owned('input').some(node => !selects[0]?.contains(node) || !['text', 'search'].includes(inputType(node)))) {
-          push(false, 'control_kind_mismatch'); continue;
+        if (selects.length !== 1) {
+          push(false, 'control_kind_mismatch', { controlKindIssue: 'select_not_unique' }); continue;
+        }
+        if (owned('.ant-radio-group,.ant-checkbox-group,input[type="radio"],input[type="checkbox"]').length) {
+          push(false, 'control_kind_mismatch', { controlKindIssue: 'mixed_choice_controls' }); continue;
         }
         const select = selects[0];
+        const inputs = owned('input');
+        if (inputs.some(node => !select.contains(node))) {
+          push(false, 'control_kind_mismatch', { controlKindIssue: 'input_outside_select' }); continue;
+        }
+        if (inputs.some(node => !['text', 'search'].includes(inputType(node)))) {
+          push(false, 'control_kind_mismatch', { controlKindIssue: 'unexpected_input_kind' }); continue;
+        }
         const combos = snapshot(select.querySelectorAll('[role="combobox"]')).filter(owns);
         if (combos.length !== 1 || !matches(combos[0], '.ant-select-selection')) {
           push(false, 'control_not_unique'); continue;
         }
         const combo = combos[0];
-        if (!available(select) || !available(combo) || !owned('input').every(available)) { push(false, 'control_not_available'); continue; }
+        if (collapsed(select) || collapsed(combo)) {
+          push(false, 'control_not_available', { availabilityIssue: 'collapsed_ancestor' }); continue;
+        }
+        if (!enabled(select) || !enabled(combo) || !inputs.every(enabled)) {
+          push(false, 'control_not_available', { availabilityIssue: 'disabled_attribute_or_class' }); continue;
+        }
+        if (!visible(select) || !visible(combo)) {
+          push(false, 'control_not_available', { availabilityIssue: 'hidden_control' }); continue;
+        }
+        // Ant single-selects may retain a hidden search input when closed.
+        // It is not the visible control. Exempt only its exact owned helper
+        // shape; generic/foreign/disabled inputs and hidden hosts still fail.
+        const hiddenInputs = inputs.filter(node => !visible(node));
+        if (hiddenInputs.length > 1 || hiddenInputs.some(node => {
+          const search = closest(node, '.ant-select-search');
+          return !matches(node, '.ant-select-search__field') || !search
+            || !combo.contains(search) || !combo.contains(node) || collapsed(node)
+            || closest(node, '.ant-select') !== select || !owns(search);
+        })) {
+          push(false, 'control_not_available', { availabilityIssue: 'hidden_non_search_input' }); continue;
+        }
+        observation.hiddenSearchInputCount = hiddenInputs.length;
         const references = listTokens(combo.getAttribute('aria-controls'));
         if (references.length !== 1) { push(false, 'dropdown_reference_missing_or_ambiguous'); continue; }
         const reference = references[0];
@@ -441,6 +500,13 @@ export function inspectCmsRowDOptions(doc, requests = {}) {
       }
       if (optionLabels.some((label, index) => !label || optionLabels.indexOf(label) !== index)) {
         push(false, 'option_list_ambiguous'); continue;
+      }
+      observation.observedOptionCount = optionLabels.length;
+      if (!field.optionsComplete) {
+        // A fully enumerated current DOM is not an independently complete
+        // dictionary. Preserve the 25-label/reused evidence limits explicitly.
+        observation.samplePrefixMatched = optionLabels.length >= field.options.length
+          && field.options.every((label, index) => optionLabels[index] === label);
       }
       // Complete dictionaries require exact order and cardinality. A sample
       // requires its evidenced prefix, but never establishes completeness.

@@ -51,9 +51,11 @@ const escape = text => String(text).replace(/[&<>"']/g, char => ({ '&': '&amp;',
 function safety(result) {
   assert.equal(result.neverSave, true);
   assert.equal(result.liveSupportClaimed, false);
+  assert.equal(result.livePassClaimed, false);
   assert.equal(result.writeStarted, false);
   assert.equal(result.mutationAllowed, false);
   assert.equal(result.valuesExposed, false);
+  assert.equal(result.probeOnly, true);
   const walk = node => {
     if (!node || typeof node !== 'object') return;
     for (const [key, value] of Object.entries(node)) {
@@ -70,9 +72,11 @@ function safety(result) {
   for (const row of result.fields || []) {
     assert.equal(row.neverSave, true);
     assert.equal(row.liveSupportClaimed, false);
+    assert.equal(row.livePassClaimed, false);
     assert.equal(row.writeStarted, false);
     assert.equal(row.mutationAllowed, false);
     assert.equal(row.valuesExposed, false);
+    assert.equal(row.probeOnly, true);
   }
 }
 
@@ -160,6 +164,20 @@ function auditedInspect(dom, requests = {}) {
 function withInspection(options, check, requests = {}) {
   const dom = syntheticDom(options);
   try { check(auditedInspect(dom, requests)); } finally { dom.window.close(); }
+}
+
+// This is a SYNTHETIC hypothesis about Ant's search-helper topology, not a
+// captured CMS element or evidence that these fields are live available.
+function hiddenSearchHelper(doc, id = SELECT, type = 'text') {
+  const input = host(doc, id).querySelector('input');
+  const search = doc.createElement('span');
+  search.className = 'ant-select-search';
+  search.setAttribute('style', 'display:none');
+  input.className = 'ant-select-search__field';
+  input.setAttribute('type', type);
+  combo(doc, id).append(search);
+  search.append(input);
+  return { input, search };
 }
 
 for (const style of ['display:none', 'DISPLAY : none ! important', 'display:/* hidden */none',
@@ -409,6 +427,198 @@ test('SYNTHETIC descendant-item structure and hidden dormant portal lists inspec
     const calendar = result.fields.find(row => row.wrapperId === CALENDAR);
     assert.equal(calendar.status, 'skipped');
     assert.equal(calendar.reason, 'calendar_live_evidence_missing');
+  });
+});
+
+for (const type of ['text', 'search']) {
+  test(`SYNTHETIC hypothesis: a uniquely owned hidden Ant ${type} search helper does not hide the select`, () => {
+    withInspection({ mutate: doc => hiddenSearchHelper(doc, SELECT, type) }, result => {
+      const row = result.fields.find(candidate => candidate.wrapperId === SELECT);
+      assert.equal(row.ok, true);
+      assert.equal(row.reason, 'read_only_options_preflight');
+      assert.equal(row.hiddenSearchInputCount, 1);
+      assert.equal('availabilityIssue' in row, false);
+    });
+  });
+}
+
+test('SYNTHETIC ordinary visible select reports zero hidden search helpers', () => {
+  withInspection({}, result => {
+    const row = result.fields.find(candidate => candidate.wrapperId === SELECT);
+    assert.equal(row.ok, true);
+    assert.equal(row.hiddenSearchInputCount, 0);
+  });
+});
+
+for (const [name, mutate, issue] of [
+  ['generic hidden text input', doc => { host(doc, SELECT).querySelector('input').hidden = true; }, 'hidden_non_search_input'],
+  ['helper missing its search-field class', doc => { hiddenSearchHelper(doc).input.className = 'synthetic-generic-input'; }, 'hidden_non_search_input'],
+  ['helper missing its search container', doc => { const { input, search } = hiddenSearchHelper(doc); combo(doc, SELECT).append(input); search.remove(); input.hidden = true; }, 'hidden_non_search_input'],
+  ['helper outside its combobox', doc => { const { search } = hiddenSearchHelper(doc); host(doc, SELECT).querySelector('.ant-select').append(search); }, 'hidden_non_search_input'],
+  ['hidden whole combobox', doc => { hiddenSearchHelper(doc); combo(doc, SELECT).hidden = true; }, 'hidden_control'],
+  ['hidden whole select', doc => { hiddenSearchHelper(doc); host(doc, SELECT).querySelector('.ant-select').hidden = true; }, 'hidden_control'],
+  ['disabled helper input', doc => { hiddenSearchHelper(doc).input.setAttribute('disabled', ''); }, 'disabled_attribute_or_class'],
+  ['aria-disabled helper container', doc => { hiddenSearchHelper(doc).search.setAttribute('aria-disabled', 'true'); }, 'disabled_attribute_or_class'],
+  ['disabled select ancestor', doc => { hiddenSearchHelper(doc); host(doc, SELECT).querySelector('.ant-select').classList.add('ant-select-disabled'); }, 'disabled_attribute_or_class'],
+  ['inert helper container', doc => { hiddenSearchHelper(doc).search.setAttribute('inert', ''); }, 'disabled_attribute_or_class'],
+  ['inert whole select', doc => { hiddenSearchHelper(doc); host(doc, SELECT).querySelector('.ant-select').setAttribute('inert', ''); }, 'disabled_attribute_or_class']
+]) test(`SYNTHETIC hypothesis still rejects ${name}`, () => {
+  withInspection({ mutate }, result => {
+    const row = result.fields.find(candidate => candidate.wrapperId === SELECT);
+    assert.equal(row.ok, false);
+    assert.equal(row.reason, 'control_not_available');
+    assert.equal(row.availabilityIssue, issue);
+  });
+});
+
+test('SYNTHETIC hypothesis rejects two hidden Ant search helpers in one combobox', () => {
+  withInspection({ mutate: doc => {
+    const { search, input } = hiddenSearchHelper(doc);
+    search.append(input.cloneNode(true));
+  } }, result => {
+    const row = result.fields.find(candidate => candidate.wrapperId === SELECT);
+    assert.equal(row.ok, false);
+    assert.equal(row.reason, 'control_not_available');
+  });
+});
+
+for (const [name, mutate] of [
+  ['inactive Ant collapse content', doc => { host(doc, SELECT).classList.add('ant-collapse-content-inactive'); }],
+  ['closed details ancestor', doc => {
+    const details = doc.createElement('details');
+    host(doc, SELECT).append(details);
+    details.append(host(doc, SELECT).querySelector('.ant-select'));
+  }]
+]) test(`SYNTHETIC ${name} is reported without expanding it`, () => {
+  withInspection({ mutate }, result => {
+    const row = result.fields.find(candidate => candidate.wrapperId === SELECT);
+    assert.equal(row.ok, false);
+    assert.equal(row.reason, 'control_not_available');
+    assert.equal(row.availabilityIssue, 'collapsed_ancestor');
+  });
+});
+
+test('SYNTHETIC open details ancestor does not imply a collapsed control', () => {
+  withInspection({ mutate: doc => {
+    const details = doc.createElement('details');
+    details.setAttribute('open', '');
+    host(doc, SELECT).append(details);
+    details.append(host(doc, SELECT).querySelector('.ant-select'));
+  } }, result => {
+    assert.equal(result.fields.find(candidate => candidate.wrapperId === SELECT).reason, 'read_only_options_preflight');
+  });
+});
+
+for (const [name, mutate, issue] of [
+  ['an Ant picker beside the select', doc => { const picker = doc.createElement('span'); picker.className = 'ant-picker'; host(doc, SELECT).append(picker); }, 'conflicting_picker'],
+  ['a button in the field', doc => { host(doc, SELECT).append(doc.createElement('button')); }, 'unexpected_interactive_control'],
+  ['a missing select', doc => { host(doc, SELECT).querySelector('.ant-select').remove(); }, 'select_not_unique'],
+  ['two selects', doc => { host(doc, SELECT).append(host(doc, SELECT).querySelector('.ant-select').cloneNode(true)); }, 'select_not_unique'],
+  ['a radio beside the select', doc => { const input = doc.createElement('input'); input.type = 'radio'; host(doc, SELECT).append(input); }, 'mixed_choice_controls'],
+  ['a text input outside the select', doc => { host(doc, SELECT).append(host(doc, SELECT).querySelector('input').cloneNode(true)); }, 'input_outside_select'],
+  ['a password input inside the select', doc => { host(doc, SELECT).querySelector('input').type = 'password'; }, 'unexpected_input_kind']
+]) test(`SYNTHETIC control-kind diagnosis rejects ${name} without whitelisting the hybrid`, () => {
+  withInspection({ mutate }, result => {
+    const row = result.fields.find(candidate => candidate.wrapperId === SELECT);
+    assert.equal(row.ok, false);
+    assert.equal(row.reason, 'control_kind_mismatch');
+    assert.equal(row.controlKindIssue, issue);
+  });
+});
+
+for (const id of ['13_100701_0', '13_100702_0']) {
+  test(`SYNTHETIC location ${id} picker/select hybrid stays incomplete with a fixed diagnosis`, () => {
+    withInspection({ mutate: doc => {
+      const picker = doc.createElement('span'); picker.className = 'ant-calendar-picker';
+      host(doc, id).append(picker);
+    } }, result => {
+      const row = result.fields.find(candidate => candidate.wrapperId === id);
+      assert.equal(row.ok, false);
+      assert.equal(row.reason, 'control_kind_mismatch');
+      assert.equal(row.controlKindIssue, 'conflicting_picker');
+      assert.equal(row.optionsComplete, false);
+    });
+  });
+}
+
+test('SYNTHETIC research enumeration reports its observed sample while preserving incompleteness', () => {
+  withInspection({}, result => {
+    const row = result.fields.find(candidate => candidate.wrapperId === CHECKBOX);
+    assert.equal(row.ok, false);
+    assert.equal(row.reason, 'option_dictionary_incomplete');
+    assert.equal(row.optionsComplete, false);
+    assert.equal(row.observedOptionCount, 25);
+    assert.equal(row.samplePrefixMatched, true);
+  });
+});
+
+test('SYNTHETIC additional readable research options do not certify the dictionary complete', () => {
+  withInspection({ mutate: doc => {
+    const option = get(doc, CHECKBOX).querySelector('.ant-checkbox-wrapper').cloneNode(true);
+    option.querySelector('span:last-child').textContent = 'SYNTHETIC_UNRECORDED_OPTION';
+    get(doc, CHECKBOX).querySelector('.ant-checkbox-group').append(option);
+  } }, result => {
+    const row = result.fields.find(candidate => candidate.wrapperId === CHECKBOX);
+    assert.equal(row.ok, false);
+    assert.equal(row.reason, 'option_dictionary_incomplete');
+    assert.equal(row.optionsComplete, false);
+    assert.equal(row.observedOptionCount, 26);
+    assert.equal(row.samplePrefixMatched, true);
+    assert.equal(JSON.stringify(row).includes('SYNTHETIC_UNRECORDED_OPTION'), false);
+  });
+});
+
+test('SYNTHETIC research prefix drift reports a mismatch without echoing the changed label', () => {
+  withInspection({ mutate: doc => {
+    get(doc, CHECKBOX).querySelector('.ant-checkbox-wrapper > span:last-child').textContent = PRIVATE;
+  } }, result => {
+    const row = result.fields.find(candidate => candidate.wrapperId === CHECKBOX);
+    assert.equal(row.ok, false);
+    assert.equal(row.reason, 'option_dictionary_mismatch');
+    assert.equal(row.observedOptionCount, 25);
+    assert.equal(row.samplePrefixMatched, false);
+  });
+});
+
+for (const pickerClass of ['ant-calendar-picker', 'ant-picker']) {
+  test(`SYNTHETIC owned ${pickerClass} structure is observed without establishing live calendar evidence`, () => {
+    withInspection({ mutate: doc => { host(doc, CALENDAR).querySelector('.ant-calendar-picker').className = pickerClass; } }, result => {
+      const row = result.fields.find(candidate => candidate.wrapperId === CALENDAR);
+      assert.equal(row.ok, false);
+      assert.equal(row.status, 'skipped');
+      assert.equal(row.reason, 'calendar_live_evidence_missing');
+      assert.equal(row.calendarStructureObserved, true);
+      assert.equal('optionIndex' in row, false);
+    });
+  });
+}
+
+for (const [name, mutate, reason] of [
+  ['missing section', doc => get(doc, '16').removeAttribute('id'), 'section_not_unique_or_visible'],
+  ['missing wrapper', doc => get(doc, CALENDAR).remove(), 'wrapper_not_unique'],
+  ['wrong label', doc => { item(doc, CALENDAR).querySelector('.ant-form-item-label > label').textContent = PRIVATE; }, 'label_mismatch'],
+  ['missing picker', doc => host(doc, CALENDAR).querySelector('.ant-calendar-picker').remove(), 'control_kind_mismatch'],
+  ['duplicate picker', doc => host(doc, CALENDAR).append(host(doc, CALENDAR).querySelector('.ant-calendar-picker').cloneNode(true)), 'control_kind_mismatch'],
+  ['missing calendar input', doc => host(doc, CALENDAR).querySelector('input').remove(), 'control_kind_mismatch'],
+  ['extra calendar input', doc => host(doc, CALENDAR).querySelector('.ant-calendar-picker').append(host(doc, CALENDAR).querySelector('input').cloneNode(true)), 'control_kind_mismatch'],
+  ['date input instead of text', doc => { host(doc, CALENDAR).querySelector('input').type = 'date'; }, 'control_kind_mismatch'],
+  ['calendar input outside picker', doc => host(doc, CALENDAR).append(host(doc, CALENDAR).querySelector('input')), 'control_kind_mismatch'],
+  ['unexpected calendar button', doc => host(doc, CALENDAR).append(doc.createElement('button')), 'control_kind_mismatch'],
+  ['foreign nested picker', doc => {
+    const foreign = doc.createElement('div'); foreign.id = '16_999999_0';
+    host(doc, CALENDAR).append(foreign); foreign.append(host(doc, CALENDAR).querySelector('.ant-calendar-picker'));
+  }, 'control_ownership_mismatch'],
+  ['disabled calendar input', doc => host(doc, CALENDAR).querySelector('input').setAttribute('disabled', ''), 'control_not_available'],
+  ...['ant-calendar-picker-disabled', 'ant-picker-disabled'].map(className => [`disabled calendar class ${className}`, doc => {
+    host(doc, CALENDAR).querySelector('.ant-calendar-picker').classList.add(className);
+  }, 'control_not_available']),
+  ['hidden calendar picker', doc => { host(doc, CALENDAR).querySelector('.ant-calendar-picker').hidden = true; }, 'control_not_available']
+]) test(`SYNTHETIC calendar ownership and availability reject ${name} before live-evidence skip`, () => {
+  withInspection({ mutate }, result => {
+    const row = result.fields.find(candidate => candidate.wrapperId === CALENDAR);
+    assert.equal(row.ok, false);
+    assert.equal(row.reason, reason);
+    assert.notEqual(row.calendarStructureObserved, true);
   });
 });
 

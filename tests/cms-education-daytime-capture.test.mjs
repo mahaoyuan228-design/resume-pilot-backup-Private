@@ -207,6 +207,87 @@ test('raw props with accessors, cycles, or unsupported values fail closed withou
   });
 });
 
+test('standard data-prototype accessors fail closed before inherited metadata getters or body probes execute', async t => {
+  for (const phase of ['initial', 'finish']) for (const [kind, prototypeName, key] of [
+    ['object metadata', 'Object', 'dataSourceMap'],
+    ['array metadata', 'Array', 'dataSourceMap'],
+    ['object symbol', 'Object', Symbol('fictional accessor')],
+    ['array iterator', 'Array', Symbol.iterator],
+    ['array method', 'Array', 'every'],
+    ['module initializer method', 'Array', 'map'],
+    ['object JSON accessor', 'Object', 'toJSON'],
+    ['array JSON accessor', 'Array', 'toJSON'],
+    ['replaced legacy accessor', 'Object', '__proto__']
+  ]) await t.test(`${phase} ${kind}`, tt => {
+    const h = setup(tt), recorder = phase === 'finish' ? h.capture() : null;
+    const prototype = h.window[prototypeName].prototype;
+    const previous = Object.getOwnPropertyDescriptor(prototype, key);
+    let reads = 0;
+    const getter = () => { reads++; return undefined; };
+    Object.defineProperty(prototype, key, { configurable: true, enumerable: false,
+      get: getter });
+    try {
+      assert.throws(() => recorder ? recorder.finish() : h.capture(),
+        error => error.message === 'daytime_capture_accessor_unreadable');
+      assert.equal(reads, 0, 'descriptor inspection must not evaluate the inherited getter');
+      assert.equal(h.probes(), phase === 'finish' ? 1 : 0, 'rejection precedes a new body probe');
+      for (const key of ['adds', 'saves', 'submits', 'textEvents', 'selects']) assert.equal(h.window.fixtureCounts[key], 0);
+      assert.equal(Object.getOwnPropertyDescriptor(prototype, key).get, getter,
+        'capture must leave the rejected accessor installed');
+    } finally {
+      if (previous) Object.defineProperty(prototype, key, previous);
+      else Reflect.deleteProperty(prototype, key);
+    }
+  });
+});
+
+test('extended standard data-prototype chains fail closed without traversing inherited metadata getters', async t => {
+  for (const phase of ['initial', 'finish']) {
+    await t.test(phase, tt => {
+      const h = setup(tt), recorder = phase === 'finish' ? h.capture() : null;
+      const prototype = h.window.Array.prototype, previous = Object.getPrototypeOf(prototype);
+      const extension = h.window.Object.create(previous);
+      let reads = 0;
+      Object.defineProperty(extension, 'dataSourceMap', { get() { reads++; return undefined; } });
+      Object.setPrototypeOf(prototype, extension);
+      try {
+        assert.throws(() => recorder ? recorder.finish() : h.capture(),
+          error => error.message === 'daytime_capture_non_data_value');
+        assert.equal(reads, 0);
+        assert.equal(h.probes(), phase === 'finish' ? 1 : 0);
+      } finally {
+        Object.setPrototypeOf(prototype, previous);
+      }
+    });
+  }
+});
+
+test('a body-probe listener cannot introduce an inherited getter before the second snapshot', async t => {
+  for (const [kind, prototypeName, key] of [
+    ['metadata', 'Object', 'dataSourceMap'], ['iterator', 'Array', Symbol.iterator],
+    ['method', 'Array', 'every'], ['module initializer method', 'Array', 'map'],
+    ['object JSON accessor', 'Object', 'toJSON'], ['array JSON accessor', 'Array', 'toJSON']
+  ]) await t.test(kind, tt => {
+    const h = setup(tt), prototype = h.window[prototypeName].prototype;
+    const previous = Object.getOwnPropertyDescriptor(prototype, key);
+    let reads = 0;
+    const getter = () => { reads++; return undefined; };
+    h.document.addEventListener('click', event => {
+      if (event.target === h.document.body) Object.defineProperty(prototype, key, {
+        configurable: true, get: getter });
+    }, true);
+    try {
+      assert.throws(h.capture, error => error.message === 'daytime_capture_accessor_unreadable');
+      assert.equal(reads, 0);
+      assert.equal(h.probes(), 1, 'only the already-delivered probe ran');
+      assert.equal(Object.getOwnPropertyDescriptor(prototype, key).get, getter);
+    } finally {
+      if (previous) Object.defineProperty(prototype, key, previous);
+      else Reflect.deleteProperty(prototype, key);
+    }
+  });
+});
+
 test('custom array prototypes fail closed before inherited iterators or body probes execute', async t => {
   for (const phase of ['initial', 'finish']) await t.test(phase, tt => {
     const h = setup(tt), recorder = phase === 'finish' ? h.capture() : null;

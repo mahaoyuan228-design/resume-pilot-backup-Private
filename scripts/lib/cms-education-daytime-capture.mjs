@@ -12,7 +12,9 @@ const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../
 export function buildDaytimeCaptureExpression(root = repoRoot) {
   const serialization = fs.readFileSync(path.join(root, 'src/content/cms-education-serialization.mjs'), 'utf8')
     .replace(/^export /gmu, '');
-  return `(() => {\n${serialization}\nreturn (${createDaytimeCapture.toString()})(globalThis, readCmsEducationSerialization);\n})()`;
+  // Defer the module's top-level initializers as well as its reader until the
+  // capture has checked data prototypes. Some initializers use array methods.
+  return `(() => {\nconst readSerialization = () => {\n${serialization}\nreturn readCmsEducationSerialization();\n};\nreturn (${createDaytimeCapture.toString()})(globalThis, readSerialization);\n})()`;
 }
 
 // Self-contained because buildDaytimeCaptureExpression serializes this function.
@@ -62,6 +64,29 @@ export function createDaytimeCapture(view, readSerialization) {
     return left === null || right === null ? left === right
       : left.owner === right.owner && left.ownerDepth === right.ownerDepth
         && sameDescriptor(left.descriptor, right.descriptor);
+  }
+
+  function dataPrototypes() {
+    const objectPrototype = view.Object.prototype, arrayPrototype = view.Array.prototype;
+    if (Object.getPrototypeOf(objectPrototype) !== null
+      || Object.getPrototypeOf(arrayPrototype) !== objectPrototype) fail('daytime_capture_non_data_value');
+    // Own-data encoding alone cannot prevent the unchanged reader from
+    // reaching a missing metadata key through a standard data prototype.
+    // Inspect descriptors without invoking added getters. Ordinary intrinsic
+    // methods remain trusted; this is not a hostile-realm attestation.
+    // Do not use array iterators/methods before their descriptors are checked.
+    for (let index = 0; index < 2; index++) {
+      const prototype = index === 0 ? objectPrototype : arrayPrototype;
+      const keys = Reflect.ownKeys(prototype);
+      for (let keyIndex = 0; keyIndex < keys.length; keyIndex++) {
+        const key = keys[keyIndex], descriptor = Object.getOwnPropertyDescriptor(prototype, key);
+        if (Object.hasOwn(descriptor, 'value')) continue;
+        if (prototype === objectPrototype && key === '__proto__'
+          && Object.hasOwn(descriptor, 'get') && nativeSource.test(source(descriptor.get))
+          && Object.hasOwn(descriptor, 'set') && nativeSource.test(source(descriptor.set))) continue;
+        fail('daytime_capture_accessor_unreadable');
+      }
+    }
   }
 
   // Tagged data preserves every own string key, holes, undefined, null, raw
@@ -207,6 +232,7 @@ export function createDaytimeCapture(view, readSerialization) {
         disabled: option.disabled })) : undefined };
   }
   function snapshots() {
+    dataPrototypes();
     if (!unchangedContext()) fail('daytime_capture_context_changed');
     const { section, props } = propsAndSection();
     // Validate and encode raw props before the shipped reader can access them.
@@ -232,6 +258,7 @@ export function createDaytimeCapture(view, readSerialization) {
     };
   }
   function observe(initial = false) {
+    dataPrototypes();
     const parts = boundaryParts();
     const clean = cleanBoundary(parts.boundary);
     if (initial && !clean) fail('daytime_capture_page_not_clean');
@@ -239,7 +266,8 @@ export function createDaytimeCapture(view, readSerialization) {
     if (clean) {
       const globalsBeforeProbe = globals();
       parts.boundary.bodyClickReached = bodyProbe();
-      if (JSON.stringify(beforeProbe) !== JSON.stringify(snapshots())) fail('daytime_capture_body_probe_changed_state');
+      const afterProbeSnapshots = snapshots();
+      if (JSON.stringify(beforeProbe) !== JSON.stringify(afterProbeSnapshots)) fail('daytime_capture_body_probe_changed_state');
       const afterProbe = boundaryParts(), globalsAfterProbe = globals();
       if (parts.boundary.hasCmsLive !== afterProbe.boundary.hasCmsLive
         || parts.boundary.overlays !== afterProbe.boundary.overlays
@@ -251,6 +279,7 @@ export function createDaytimeCapture(view, readSerialization) {
     return { ...parts, snapshots: beforeProbe.snapshots, rawDom: beforeProbe.rawDom };
   }
 
+  dataPrototypes();
   const initialGlobals = globals();
   const first = observe(true);
   const before = { boundary: first.boundary, snapshots: first.snapshots, rawDom: first.rawDom,

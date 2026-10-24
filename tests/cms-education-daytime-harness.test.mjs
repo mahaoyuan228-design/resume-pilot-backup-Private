@@ -558,6 +558,56 @@ test('actual trial binding and waited duration must agree with the independent r
   });
 });
 
+test('actual prepare identities require nonempty unique strings for every bound row', async t => {
+  const privateMarker = 'fictional-private-prepare-identity-marker';
+  for (const [name, identities] of [
+    ['null selected identity', [null]],
+    ['empty selected identity', ['']],
+    ['numeric selected identity', [14]],
+    ['object selected identity', [{ privateMarker }]],
+    ['null neighboring identity', ['fictional-row', null]],
+    ['empty neighboring identity', ['fictional-row', '']],
+    ['numeric neighboring identity', ['fictional-row', 14]],
+    ['object neighboring identity', ['fictional-row', { privateMarker }]],
+    ['missing neighboring identity', ['fictional-row', , 'fictional-neighbor']],
+    ['duplicate selected identity', ['fictional-row', 'fictional-row']],
+    ['duplicate neighboring identities', ['fictional-row', privateMarker, privateMarker]]
+  ]) await t.test(name, async t => {
+    const collected = await collectFictional(t, replies => {
+      replies.prepare.identities = structuredClone(identities);
+      replies.prepare.identity = replies.prepare.identities[0];
+      replies.prepare.recordCount = replies.run.recordCount = replies.report.finalDetails.recordCount = identities.length;
+    });
+    assertActualSupplementFailure(collected, 'nine_readbacks', 'prepare', 'prepare_mismatch');
+    const prepare = JSON.parse(fs.readFileSync(path.join(collected.outDir, 'prepare.json'), 'utf8'));
+    const observations = JSON.parse(fs.readFileSync(path.join(collected.outDir, 'observations.json'), 'utf8'));
+    assert.deepEqual(prepare, JSON.parse(JSON.stringify(collected.replies.prepare)), 'actual identities are never repaired');
+    assert.deepEqual(observations.prepare, prepare, 'combined observations preserve the same original identities');
+    assert.equal(JSON.stringify(collected.result.diagnostics).includes(privateMarker), false);
+  });
+});
+
+test('actual prepare identities accept unique multirow and whitespace strings without normalization', async t => {
+  for (const [name, identities] of [
+    ['valid multirow identities', ['fictional-row', 'fictional-neighbor', 'fictional-third']],
+    ['whitespace identities', [' ', '\t', '  ']]
+  ]) await t.test(name, async t => {
+    const collected = await collectFictional(t, replies => {
+      replies.prepare.identities = structuredClone(identities);
+      replies.prepare.identity = replies.prepare.identities[0];
+      replies.prepare.recordCount = replies.run.recordCount = replies.report.finalDetails.recordCount = identities.length;
+    });
+    assert.equal(collected.result.actualTrialMatches, true);
+    assert.equal(collected.result.complete, true, 'fictional contract coverage is not live evidence');
+    assert.equal(collected.result.exitCode, 0);
+    assert.deepEqual(collected.result.diagnostics, []);
+    assert.deepEqual(JSON.parse(fs.readFileSync(path.join(collected.outDir, 'prepare.json'), 'utf8')).identities,
+      identities, 'the producer contract does not trim or parse identity strings');
+    assert.equal(collected.result.neverSave, true);
+    assert.equal(collected.result.liveSupportClaimed, false);
+  });
+});
+
 test('missing observed steps cannot be filled from a successful-looking runner report', async t => {
   const collected = await collectFictional(t, () => {}, {}, false);
   assert.equal(collected.result.complete, false);

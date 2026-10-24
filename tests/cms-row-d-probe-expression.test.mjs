@@ -15,6 +15,7 @@ const ERROR = 'cms_row_d_probe_requests_invalid';
 const SELECT = '13_195_0';
 const RADIO = '13_102402_0';
 const CHECKBOX = '13_102501_0';
+const CALENDAR = '16_65_0';
 const spec = id => ROW_D_FIELDS.find(row => row.wrapperId === id);
 const escape = value => String(value).replace(/[&<>"']/g,
   char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]);
@@ -60,11 +61,12 @@ function assertSafety(output) {
   assert.equal(serialized.includes('resumeId='), false);
 }
 
-function auditedResults(requests = {}, url) {
+function auditedResults(requests = {}, url, mutate) {
   const dom = syntheticDom(url);
   const { window } = dom;
   const { document } = window;
   try {
+    mutate?.(document, window);
     const before = document.documentElement.outerHTML;
     const attempts = { reads: 0, writes: 0, interactions: 0, events: 0, network: 0, submits: 0 };
     const forbidden = kind => () => { attempts[kind] += 1; throw new Error(PRIVATE); };
@@ -126,6 +128,103 @@ test('serialized row D probe matches the direct inspector without interaction or
   assert.equal(result.fields.find(row => row.wrapperId === SELECT).reason, 'read_only_options_preflight');
   assert.equal(result.fields.find(row => row.wrapperId === CHECKBOX).reason, 'option_dictionary_incomplete');
   assert.equal(result.fields.find(row => row.wrapperId === '16_65_0').reason, 'calendar_live_evidence_missing');
+});
+
+const host = (doc, id = SELECT) => doc.getElementById(id).querySelector('.ant-form-item-control');
+const combo = (doc, id = SELECT) => host(doc, id).querySelector('[role="combobox"]');
+
+// SYNTHETIC hypothesis only: no captured real CMS markup is represented here.
+function hiddenSearchHelper(doc) {
+  const input = host(doc).querySelector('input');
+  const search = doc.createElement('span');
+  search.className = 'ant-select-search';
+  search.setAttribute('style', 'display:none');
+  input.className = 'ant-select-search__field';
+  combo(doc).append(search);
+  search.append(input);
+  return { search, input };
+}
+
+test('serialized SYNTHETIC hidden-search hypothesis is read only and matches the direct helper exception', () => {
+  const result = auditedResults({}, undefined, doc => hiddenSearchHelper(doc));
+  const row = result.fields.find(candidate => candidate.wrapperId === SELECT);
+  assert.equal(row.reason, 'read_only_options_preflight');
+  assert.equal(row.hiddenSearchInputCount, 1);
+  assert.equal(row.ok, true);
+});
+
+for (const [name, mutate, issue] of [
+  ['hidden generic input', doc => { host(doc).querySelector('input').hidden = true; }, 'hidden_non_search_input'],
+  ['hidden combobox despite a search helper', doc => { hiddenSearchHelper(doc); combo(doc).hidden = true; }, 'hidden_control'],
+  ['disabled search helper', doc => { hiddenSearchHelper(doc).input.setAttribute('disabled', ''); }, 'disabled_attribute_or_class'],
+  ['inert helper container', doc => { hiddenSearchHelper(doc).search.setAttribute('inert', ''); }, 'disabled_attribute_or_class'],
+  ['inactive Ant collapse ancestor', doc => { host(doc).classList.add('ant-collapse-content-inactive'); }, 'collapsed_ancestor'],
+  ['closed details ancestor', doc => {
+    const details = doc.createElement('details'); host(doc).append(details);
+    details.append(host(doc).querySelector('.ant-select'));
+  }, 'collapsed_ancestor']
+]) test(`serialized SYNTHETIC availability diagnosis rejects ${name} under the no-interaction audit`, () => {
+  const result = auditedResults({}, undefined, mutate);
+  const row = result.fields.find(candidate => candidate.wrapperId === SELECT);
+  assert.equal(row.ok, false);
+  assert.equal(row.reason, 'control_not_available');
+  assert.equal(row.availabilityIssue, issue);
+});
+
+test('serialized SYNTHETIC location hybrid is diagnosed instead of being declared supported', () => {
+  const result = auditedResults({}, undefined, doc => {
+    const picker = doc.createElement('span'); picker.className = 'ant-picker';
+    host(doc, '13_100701_0').append(picker);
+  });
+  const row = result.fields.find(candidate => candidate.wrapperId === '13_100701_0');
+  assert.equal(row.ok, false);
+  assert.equal(row.reason, 'control_kind_mismatch');
+  assert.equal(row.controlKindIssue, 'conflicting_picker');
+  assert.equal(row.optionsComplete, false);
+});
+
+test('serialized SYNTHETIC research observation reports counts and prefix truth without promoting completeness', () => {
+  const result = auditedResults();
+  const row = result.fields.find(candidate => candidate.wrapperId === CHECKBOX);
+  assert.equal(row.ok, false);
+  assert.equal(row.reason, 'option_dictionary_incomplete');
+  assert.equal(row.optionsComplete, false);
+  assert.equal(row.observedOptionCount, 25);
+  assert.equal(row.samplePrefixMatched, true);
+});
+
+test('serialized SYNTHETIC research prefix drift is counted without exposing the label', () => {
+  const result = auditedResults({}, undefined, doc => {
+    doc.getElementById(CHECKBOX).querySelector('.ant-checkbox-wrapper > span').textContent = PRIVATE;
+  });
+  const row = result.fields.find(candidate => candidate.wrapperId === CHECKBOX);
+  assert.equal(row.reason, 'option_dictionary_mismatch');
+  assert.equal(row.observedOptionCount, 25);
+  assert.equal(row.samplePrefixMatched, false);
+});
+
+test('serialized SYNTHETIC owned calendar reports only structure and retains missing live evidence', () => {
+  const result = auditedResults();
+  const row = result.fields.find(candidate => candidate.wrapperId === CALENDAR);
+  assert.equal(row.ok, false);
+  assert.equal(row.reason, 'calendar_live_evidence_missing');
+  assert.equal(row.calendarStructureObserved, true);
+});
+
+for (const [name, mutate, reason] of [
+  ['missing wrapper', doc => doc.getElementById(CALENDAR).remove(), 'wrapper_not_unique'],
+  ['duplicate picker', doc => { const picker = host(doc, CALENDAR).querySelector('.ant-calendar-picker'); host(doc, CALENDAR).append(picker.cloneNode(true)); }, 'control_kind_mismatch'],
+  ['foreign named wrapper', doc => {
+    const foreign = doc.createElement('div'); foreign.id = '16_999999_0';
+    host(doc, CALENDAR).append(foreign); foreign.append(host(doc, CALENDAR).querySelector('.ant-calendar-picker'));
+  }, 'control_ownership_mismatch'],
+  ['disabled input', doc => host(doc, CALENDAR).querySelector('input').setAttribute('disabled', ''), 'control_not_available']
+]) test(`serialized SYNTHETIC calendar rejects ${name} before reporting observed structure`, () => {
+  const result = auditedResults({}, undefined, mutate);
+  const row = result.fields.find(candidate => candidate.wrapperId === CALENDAR);
+  assert.equal(row.ok, false);
+  assert.equal(row.reason, reason);
+  assert.notEqual(row.calendarStructureObserved, true);
 });
 
 test('valid requests serialize canonical harvested labels and preserve dictionary limitations', () => {

@@ -130,7 +130,7 @@ const paused = (method, url = `https://example.invalid/private?token=${PRIVATE}`
   ({ method: 'Fetch.requestPaused', params: { requestId, request: { method, url } } });
 
 test('baseline and initial evidence preserve Never-Save, no live PASS, and booked 53', () => {
-  assert.equal(ROW_D_LIVE_BASE_TIP, '53791dfe6da2a6ae2b627b8e9b945ca0d411fefc');
+  assert.equal(ROW_D_LIVE_BASE_TIP, '38d19f749cff17ed311268924f63c9e9444029f8');
   const evidence = rowDProbeEvidence();
   assertSafety(evidence);
   assert.equal(evidence.ok, false);
@@ -207,6 +207,9 @@ for (const failedMethod of ['Network.enable', 'Fetch.enable']) {
     assert.equal(evidence.reason, 'network_guard_failed');
     assert.equal(evidence.probeCompleted, false);
     assert.equal(methods(fake).includes('Runtime.evaluate'), false);
+    assert.equal(methods(fake).includes('Target.activateTarget'), false);
+    assert.equal(methods(fake).includes('Page.bringToFront'), false);
+    assert.equal(methods(fake).includes('Emulation.setFocusEmulationEnabled'), false);
     assert.equal(methods(fake).at(-1), 'close');
     if (failedMethod === 'Network.enable') assert.equal(methods(fake).includes('Fetch.enable'), false);
     else assert.ok(methods(fake).includes('Network.disable'));
@@ -237,6 +240,160 @@ test('GET continues and every non-GET aborts; traffic evidence discards raw URLs
   assert.ok(guard.traffic.records.some(row => row.method === 'UNKNOWN'));
   assert.equal(guard.failed(), true);
   assert.equal(JSON.stringify(guard.traffic).includes(PRIVATE), false);
+});
+
+test('one guarded CDP session retains its visibility keeper through inspection and settlement', async () => {
+  let focusEmulated = false;
+  const fake = fakeCdp({
+    onSend(method, params, { calls }) {
+      if (['Target.activateTarget', 'Page.bringToFront', 'Emulation.setFocusEmulationEnabled'].includes(method)) {
+        assert.ok(calls.some(call => call.method === 'Network.enable'));
+        assert.ok(calls.some(call => call.method === 'Fetch.enable'));
+        assert.equal(calls.some(call => call.method === 'Fetch.disable'), false);
+      }
+      if (method === 'Emulation.setFocusEmulationEnabled') focusEmulated = params.enabled;
+      if (method === 'Runtime.evaluate') {
+        assert.equal(focusEmulated, true);
+        assert.equal(params.throwOnSideEffect, true);
+      }
+    },
+    onWait({ calls }) {
+      const reset = calls.some(call => call.method === 'Emulation.setFocusEmulationEnabled'
+        && call.params.enabled === false);
+      assert.equal(focusEmulated, !reset);
+    }
+  });
+  const evidence = await fake.run();
+  assertSafety(evidence);
+  assert.equal(evidence.reason, 'no_document');
+  assert.equal(evidence.probeCompleted, true);
+  assert.equal(focusEmulated, false);
+  assert.equal(fake.calls.filter(call => call.method === 'connect').length, 1);
+  assert.deepEqual(fake.calls.find(call => call.method === 'Target.activateTarget').params,
+    { targetId: 'synthetic-tab' });
+  assert.deepEqual(fake.calls.filter(call => call.method === 'Emulation.setFocusEmulationEnabled')
+    .map(call => call.params), [{ enabled: true }, { enabled: false }]);
+  assert.deepEqual(evidence.visibilityKeeper, { targetActivated: true, pageBroughtToFront: true,
+    focusEmulationEnabled: true, focusEmulationCleared: true });
+});
+
+for (const failedMethod of ['Target.activateTarget', 'Page.bringToFront', 'Emulation.setFocusEmulationEnabled']) {
+  test(`${failedMethod} failure prevents inspection and still tears down its owned session`, async () => {
+    const fake = fakeCdp({ onSend(method, params) {
+      if (method === failedMethod && params.enabled !== false) throw new Error(PRIVATE);
+    } });
+    const evidence = await fake.run();
+    assertSafety(evidence);
+    assert.equal(evidence.reason, 'visibility_keeper_failed');
+    assert.equal(evidence.probeCompleted, false);
+    assert.equal(methods(fake).includes('Runtime.evaluate'), false);
+    assert.deepEqual(methods(fake).slice(-3), ['Fetch.disable', 'Network.disable', 'close']);
+    const reset = fake.calls.filter(call => call.method === 'Emulation.setFocusEmulationEnabled'
+      && call.params.enabled === false);
+    assert.equal(reset.length, failedMethod === 'Emulation.setFocusEmulationEnabled' ? 1 : 0);
+  });
+}
+
+for (const triggeredMethod of ['Target.activateTarget', 'Page.bringToFront', 'Emulation.setFocusEmulationEnabled']) {
+  test(`non-GET during ${triggeredMethod} is blocked before inspection`, async () => {
+    const fake = fakeCdp({ onSend(method, params, { emit }) {
+      if (method === triggeredMethod && params.enabled !== false) emit(paused('POST'));
+    } });
+    const evidence = await fake.run();
+    assertSafety(evidence);
+    assert.equal(evidence.reason, 'non_get_or_guard_failure');
+    assert.equal(evidence.probeCompleted, false);
+    assert.equal(evidence.traffic.blockedNonGetCount, 1);
+    assert.equal(methods(fake).includes('Runtime.evaluate'), false);
+    if (triggeredMethod === 'Target.activateTarget') assert.equal(methods(fake).includes('Page.bringToFront'), false);
+  });
+}
+
+test('keeper cleanup rejection fails safely and still disables guards and closes', async () => {
+  let cleanupWindows = 0;
+  const fake = fakeCdp({
+    onSend(method, params) {
+      if (method === 'Emulation.setFocusEmulationEnabled' && !params.enabled) throw new Error(PRIVATE);
+    },
+    onWait({ calls }) {
+      if (calls.some(call => call.method === 'Emulation.setFocusEmulationEnabled'
+        && call.params.enabled === false)) cleanupWindows += 1;
+    }
+  });
+  const evidence = await fake.run();
+  assertSafety(evidence);
+  assert.equal(evidence.reason, 'visibility_keeper_cleanup_failed');
+  assert.equal(evidence.probeCompleted, true);
+  assert.equal(evidence.ok, false);
+  assert.equal(evidence.visibilityKeeper.focusEmulationCleared, false);
+  assert.equal(cleanupWindows, 1);
+  assert.deepEqual(methods(fake).slice(-3), ['Fetch.disable', 'Network.disable', 'close']);
+});
+
+test('focus override cleanup remains guarded and a resulting non-GET fails the probe', async () => {
+  const fake = fakeCdp({ onSend(method, params, { emit, calls }) {
+    if (method === 'Emulation.setFocusEmulationEnabled' && !params.enabled) {
+      assert.equal(calls.some(call => call.method === 'Fetch.disable'), false);
+      emit(paused('POST'));
+    }
+  } });
+  const evidence = await fake.run();
+  assertSafety(evidence);
+  assert.equal(evidence.reason, 'non_get_or_guard_failure');
+  assert.equal(evidence.probeCompleted, true);
+  assert.equal(evidence.traffic.blockedNonGetCount, 1);
+  assert.ok(methods(fake).indexOf('Fetch.failRequest') < methods(fake).indexOf('Fetch.disable'));
+});
+
+for (const mode of ['completed', 'inspection_exception', 'focus_enable_failure', 'focus_non_get']) {
+  test(`delayed cleanup POST stays blocked before guard teardown after ${mode}`, async () => {
+    let cleanupWindows = 0;
+    const fake = fakeCdp({
+      onSend(method, params, { emit }) {
+        if (method === 'Runtime.evaluate' && mode === 'inspection_exception') {
+          return { exceptionDetails: { text: PRIVATE } };
+        }
+        if (method === 'Emulation.setFocusEmulationEnabled' && params.enabled) {
+          if (mode === 'focus_enable_failure') throw new Error(PRIVATE);
+          if (mode === 'focus_non_get') emit(paused('POST', undefined, 'focus-request'));
+        }
+      },
+      async onWait({ emit, calls }) {
+        if (!calls.some(call => call.method === 'Emulation.setFocusEmulationEnabled'
+          && call.params.enabled === false)) return;
+        cleanupWindows += 1;
+        assert.equal(calls.at(-1).ms, 250);
+        assert.equal(calls.some(call => call.method === 'Fetch.disable'), false);
+        assert.equal(calls.some(call => call.method === 'Network.disable'), false);
+        await new Promise(resolve => setImmediate(resolve));
+        emit(paused('POST', undefined, 'delayed-cleanup-request'));
+      }
+    });
+    const evidence = await fake.run();
+    assertSafety(evidence);
+    assert.equal(cleanupWindows, 1);
+    assert.equal(evidence.reason, 'non_get_or_guard_failure');
+    assert.equal(evidence.ok, false);
+    assert.equal(evidence.probeCompleted, mode === 'completed');
+    assert.equal(evidence.traffic.blockedNonGetCount, mode === 'focus_non_get' ? 2 : 1);
+    const blockIndex = fake.calls.findIndex(call => call.method === 'Fetch.failRequest'
+      && call.params.requestId === 'delayed-cleanup-request');
+    assert.ok(blockIndex !== -1 && blockIndex < methods(fake).indexOf('Fetch.disable'));
+    assert.equal(methods(fake).at(-1), 'close');
+  });
+}
+
+test('cleanup monitoring-window failure fails the result and still tears down guards', async () => {
+  const fake = fakeCdp({ onWait({ calls }) {
+    if (calls.some(call => call.method === 'Emulation.setFocusEmulationEnabled'
+      && call.params.enabled === false)) throw new Error(PRIVATE);
+  } });
+  const evidence = await fake.run();
+  assertSafety(evidence);
+  assert.equal(evidence.reason, 'visibility_keeper_cleanup_failed');
+  assert.equal(evidence.ok, false);
+  assert.equal(evidence.probeCompleted, true);
+  assert.deepEqual(methods(fake).slice(-3), ['Fetch.disable', 'Network.disable', 'close']);
 });
 
 test('observed info/edit and correlated response remain documented even without an intercepted request', async () => {
@@ -370,7 +527,9 @@ test('real serialized inspector preserves incomplete fields without current-valu
     assert.equal(evaluation.params.userGesture, false);
     assert.equal(evaluation.params.awaitPromise, false);
     assert.deepEqual(methods(fake), ['getTargets', 'connect', 'Network.enable', 'Fetch.enable',
-      'Runtime.evaluate', 'wait', 'Fetch.disable', 'Network.disable', 'close']);
+      'Target.activateTarget', 'Page.bringToFront', 'Emulation.setFocusEmulationEnabled',
+      'Runtime.evaluate', 'wait', 'Emulation.setFocusEmulationEnabled',
+      'wait', 'Fetch.disable', 'Network.disable', 'close']);
     assert.deepEqual(fake.calls.find(row => row.method === 'Fetch.enable').params,
       { patterns: [{ urlPattern: '*', requestStage: 'Request' }] });
   } finally { dom.window.close(); }
@@ -433,6 +592,78 @@ test('Runtime results must retain the attribute-only visibility limit', async ()
   }
 });
 
+test('allowlisted structural diagnostics survive evidence redaction without promoting incomplete fields', async () => {
+  const inspection = noDocumentInspection();
+  inspection.reason = 'row_d_preflight_incomplete';
+  const changes = {
+    '13_43_0': { reason: 'control_not_available', hiddenSearchInputCount: 1,
+      availabilityIssue: 'hidden_non_search_input', observedOptionCount: 2 },
+    '13_100701_0': { reason: 'control_kind_mismatch', controlKindIssue: 'conflicting_picker' },
+    '13_102501_0': { reason: 'option_dictionary_incomplete', observedOptionCount: 28,
+      samplePrefixMatched: true },
+    '16_65_0': { reason: 'calendar_live_evidence_missing', calendarStructureObserved: true }
+  };
+  for (const [id, metadata] of Object.entries(changes)) {
+    Object.assign(inspection.fields.find(row => row.wrapperId === id), metadata, { arbitraryDiagnostic: PRIVATE });
+  }
+  const fake = fakeCdp({ evaluate: () => inspection });
+  const evidence = await fake.run();
+  assertSafety(evidence);
+  assert.equal(evidence.probeCompleted, true);
+  assert.equal(evidence.reason, 'row_d_preflight_incomplete');
+  assert.equal(evidence.ok, false);
+  for (const [id, metadata] of Object.entries(changes)) {
+    const row = evidence.fields.find(field => field.wrapperId === id);
+    assert.equal(row.ok, false);
+    assert.equal(row.status, 'skipped');
+    assert.equal(Object.hasOwn(row, 'arbitraryDiagnostic'), false);
+    for (const [name, expected] of Object.entries(metadata)) assert.equal(row[name], expected);
+  }
+  assert.equal(evidence.fields.find(row => row.wrapperId === '13_102501_0').optionsComplete, false);
+  assert.equal(evidence.fields.find(row => row.wrapperId === '16_65_0').optionsComplete, false);
+});
+
+test('malformed or misplaced structural diagnostics reject Runtime evidence', async () => {
+  const invalid = [
+    ['13_43_0', { hiddenSearchInputCount: -1 }],
+    ['13_43_0', { hiddenSearchInputCount: 2 }],
+    ['13_43_0', { hiddenSearchInputCount: 0.5 }],
+    ['13_43_0', { hiddenSearchInputCount: PRIVATE }],
+    ['13_102402_0', { hiddenSearchInputCount: 0 }],
+    ['16_65_0', { observedOptionCount: 0 }],
+    ['13_102501_0', { observedOptionCount: -1 }],
+    ['13_102501_0', { observedOptionCount: 10001 }],
+    ['13_102501_0', { observedOptionCount: 1.5 }],
+    ['13_102501_0', { observedOptionCount: PRIVATE }],
+    ['13_43_0', { samplePrefixMatched: true }],
+    ['16_65_0', { samplePrefixMatched: true }],
+    ['13_102501_0', { samplePrefixMatched: PRIVATE }],
+    ['13_102501_0', { samplePrefixMatched: true }],
+    ['13_102501_0', { samplePrefixMatched: false }],
+    ['13_102501_0', { observedOptionCount: 24, samplePrefixMatched: true }],
+    ['13_43_0', { calendarStructureObserved: false }],
+    ['16_65_0', { reason: 'control_not_available', calendarStructureObserved: true }],
+    ['16_65_0', { calendarStructureObserved: PRIVATE }],
+    ['13_43_0', { availabilityIssue: 'hidden_control' }],
+    ['13_43_0', { reason: 'control_not_available', availabilityIssue: PRIVATE }],
+    ['13_43_0', { controlKindIssue: 'conflicting_picker' }],
+    ['13_43_0', { reason: 'control_kind_mismatch', controlKindIssue: PRIVATE }],
+    ['13_43_0', { optionsComplete: false }],
+    ['13_102501_0', { optionsComplete: true }],
+    ['13_43_0', { evidenceSource: PRIVATE }]
+  ];
+  for (const [id, changes] of invalid) {
+    const inspection = noDocumentInspection();
+    Object.assign(inspection.fields.find(row => row.wrapperId === id), changes);
+    const fake = fakeCdp({ evaluate: () => inspection });
+    const evidence = await fake.run();
+    assertSafety(evidence);
+    assert.equal(evidence.reason, 'inspection_failed', `${id}: ${Object.keys(changes).join(',')}`);
+    assert.equal(evidence.probeCompleted, false);
+    assert.deepEqual(evidence.fields, []);
+  }
+});
+
 for (const id of ['13_100701_0', '13_100702_0', '13_102501_0', '16_65_0']) {
   test(`forged observed success cannot promote incomplete/reused/calendar field ${id}`, async () => {
     const inspection = noDocumentInspection();
@@ -483,7 +714,10 @@ test('discovery, connection, Runtime command, and settlement failures use fixed 
     [{ discoveryError: true }, 'target_discovery_failed'],
     [{ connectError: true }, 'connect_failed'],
     [{ onSend(method) { if (method === 'Runtime.evaluate') throw new Error(PRIVATE); } }, 'inspection_failed'],
-    [{ onWait() { throw new Error(PRIVATE); } }, 'settlement_failed']
+    [{ onWait({ calls }) {
+      if (!calls.some(call => call.method === 'Emulation.setFocusEmulationEnabled'
+        && call.params.enabled === false)) throw new Error(PRIVATE);
+    } }, 'settlement_failed']
   ]) {
     const fake = fakeCdp(options);
     const evidence = await fake.run();

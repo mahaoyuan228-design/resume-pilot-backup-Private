@@ -15,7 +15,7 @@ import {
   ROW_D_FIELDS, ROW_D_PAGE, buildCmsRowDOptionsProbeExpression
 } from '../lib/cms-row-d-options.mjs';
 
-export const ROW_D_LIVE_BASE_TIP = '53791dfe6da2a6ae2b627b8e9b945ca0d411fefc';
+export const ROW_D_LIVE_BASE_TIP = '38d19f749cff17ed311268924f63c9e9444029f8';
 export const EVIDENCE_NAME = 'cms-row-d-live.json';
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const safety = () => ({ neverSave: true, liveSupportClaimed: false,
@@ -192,6 +192,13 @@ const INSPECTION_TOP_REASONS = new Set([
   'no_document', 'wrong_page', 'page_hidden', 'page_not_ready', 'requests_type_invalid',
   'unknown_request_field', 'read_only_preflight', 'row_d_preflight_incomplete', 'document_read_failed'
 ]);
+const AVAILABILITY_ISSUES = new Set([
+  'collapsed_ancestor', 'disabled_attribute_or_class', 'hidden_control', 'hidden_non_search_input'
+]);
+const CONTROL_KIND_ISSUES = new Set([
+  'conflicting_picker', 'unexpected_interactive_control', 'select_not_unique',
+  'mixed_choice_controls', 'input_outside_select', 'unexpected_input_kind'
+]);
 
 /** Copy allowlisted metadata only; never serialize arbitrary Runtime results. */
 function cleanInspection(value) {
@@ -213,9 +220,31 @@ function cleanInspection(value) {
       || (row.reason === 'calendar_live_evidence_missing' && spec.controlKind !== 'ant-calendar-picker')
       || (row.ok && (!spec.optionsComplete || spec.reusedFrom
         || spec.controlKind === 'ant-calendar-picker'))) throw new TypeError('inspection_invalid');
+    if ((Object.hasOwn(row, 'optionsComplete') && row.optionsComplete !== spec.optionsComplete)
+      || (Object.hasOwn(row, 'evidenceSource') && row.evidenceSource !== spec.evidenceSource)) {
+      throw new TypeError('inspection_invalid');
+    }
+    const metadata = {};
+    const optional = (name, valid) => {
+      if (!Object.hasOwn(row, name)) return;
+      if (!valid(row[name])) throw new TypeError('inspection_invalid');
+      metadata[name] = row[name];
+    };
+    const count = (number, maximum) => Number.isSafeInteger(number) && number >= 0 && number <= maximum;
+    optional('hiddenSearchInputCount', number => spec.controlKind === 'ant-select' && count(number, 1));
+    optional('observedOptionCount', number => spec.controlKind !== 'ant-calendar-picker' && count(number, 10000));
+    optional('samplePrefixMatched', matched => spec.controlKind !== 'ant-calendar-picker'
+      && spec.optionsComplete === false && typeof matched === 'boolean'
+      && Object.hasOwn(row, 'observedOptionCount')
+      && (!matched || row.observedOptionCount >= spec.options.length));
+    optional('calendarStructureObserved', observed => spec.controlKind === 'ant-calendar-picker'
+      && typeof observed === 'boolean' && (!observed || row.reason === 'calendar_live_evidence_missing'));
+    optional('availabilityIssue', issue => row.reason === 'control_not_available' && AVAILABILITY_ISSUES.has(issue));
+    optional('controlKindIssue', issue => row.reason === 'control_kind_mismatch' && CONTROL_KIND_ISSUES.has(issue));
     return { ...safety(), key: spec.key, wrapperId: spec.wrapperId, sectionId: spec.sectionId,
       controlKind: spec.controlKind, ok: row.ok, status: row.status, reason: row.reason,
       optionsComplete: spec.optionsComplete, evidenceSource: spec.evidenceSource,
+      ...metadata,
       ...(spec.reusedFrom ? { independentOptionsEvidence: false, reusedFrom: spec.reusedFrom } : {}) };
   });
   const complete = fields.length === ROW_D_FIELDS.length
@@ -229,6 +258,8 @@ function cleanInspection(value) {
 export function rowDProbeEvidence(reason = 'not_started') {
   return { version: 1, kind: 'cms_row_d_live_never_save_probe', ...safety(),
     baseTip: ROW_D_LIVE_BASE_TIP, booked: 53, visibilityBasis: 'attributes_only',
+    visibilityKeeper: { targetActivated: false, pageBroughtToFront: false,
+      focusEmulationEnabled: false, focusEmulationCleared: false },
     probeCompleted: false, ok: false, reason, restoration: 'not_needed_no_interaction', fields: [] };
 }
 
@@ -246,6 +277,8 @@ export async function runCmsRowDLive({ port = 9242, timeoutMs = 10000, requests 
   let session;
   let fetchEnabled = false;
   let networkEnabled = false;
+  let focusEmulationAttempted = false;
+  let keeperCleanupFailed = false;
   let stage = 'target_discovery';
   const guard = createRowDNetworkGuard((method, params) => session.send(method, params));
   try {
@@ -260,6 +293,22 @@ export async function runCmsRowDLive({ port = 9242, timeoutMs = 10000, requests 
     fetchEnabled = true;
     await guard.drain();
     if (guard.failed()) { evidence.reason = 'non_get_or_guard_failure'; return evidence; }
+    stage = 'visibility_keeper';
+    // The real CMS document can remain hidden without a retained focus-emulated
+    // CDP session. Guard network before activation: visibility/focus listeners
+    // can themselves initiate requests. These are browser commands, not page
+    // clicks, DOM focus calls, popup opens or field/value interactions.
+    for (const [method, params, acknowledgment] of [
+      ['Target.activateTarget', { targetId: choice.target.id }, 'targetActivated'],
+      ['Page.bringToFront', {}, 'pageBroughtToFront'],
+      ['Emulation.setFocusEmulationEnabled', { enabled: true }, 'focusEmulationEnabled']
+    ]) {
+      if (method === 'Emulation.setFocusEmulationEnabled') focusEmulationAttempted = true;
+      await session.send(method, params);
+      evidence.visibilityKeeper[acknowledgment] = true;
+      await guard.drain();
+      if (guard.failed()) { evidence.reason = 'non_get_or_guard_failure'; return evidence; }
+    }
     stage = 'inspection';
     const reply = await session.send('Runtime.evaluate', {
       expression, returnByValue: true, awaitPromise: false, userGesture: false,
@@ -284,8 +333,22 @@ export async function runCmsRowDLive({ port = 9242, timeoutMs = 10000, requests 
   } finally {
     if (session) {
       await guard.drain();
-      // No interaction was induced. Restore only the CDP domains enabled by
-      // this session, after all known paused requests received their decisions.
+      // Keep this session's focus override through evaluate and settlement.
+      // Reset it before removing the guards, including after a rejected enable
+      // whose browser-side outcome is unknown. No page values are restored.
+      if (focusEmulationAttempted) {
+        try {
+          await session.send('Emulation.setFocusEmulationEnabled', { enabled: false });
+          evidence.visibilityKeeper.focusEmulationCleared = true;
+        } catch { keeperCleanupFailed = true; }
+        // Focus/blur handlers may schedule requests after the command reply.
+        // Keep the guards for a bounded window even after a failed reset or an
+        // early stop. This does not isolate all possible later page activity.
+        try { await wait(250); } catch { keeperCleanupFailed = true; }
+      }
+      await guard.drain();
+      // Disable only CDP domains enabled by this session, after all known
+      // paused requests received their decisions.
       if (fetchEnabled) {
         try { await session.send('Fetch.disable'); } catch { guard.traffic.commandFailed = true; }
       }
@@ -297,6 +360,10 @@ export async function runCmsRowDLive({ port = 9242, timeoutMs = 10000, requests 
       try { session.close(); } catch { guard.traffic.commandFailed = true; }
     }
     evidence.traffic = guard.traffic;
+    if (keeperCleanupFailed) {
+      evidence.ok = false;
+      evidence.reason = 'visibility_keeper_cleanup_failed';
+    }
     if (guard.failed()) {
       evidence.ok = false;
       evidence.reason = 'non_get_or_guard_failure';
@@ -310,6 +377,7 @@ Inert Never-Save row D CDP probe. No open/fill/Save/submit, no value reads.
 neverSave=true liveSupportClaimed=false livePassClaimed=false writeStarted=false
 mutationAllowed=false valuesExposed=false probeOnly=true
 Visibility uses attributes only; stylesheet/layout visibility is not verified.
+Guarded CDP activation retains focus emulation through the inspection window.
 No live PASS claimed until parent runs real CDP Never-Save. Booked stays 53.
 PORT defaults to 9242; STEP_TIMEOUT_MS defaults to 10000 (1000..30000).
 OUTDIR defaults to repo/_temp-scripts/cms-row-d-live-never-save.

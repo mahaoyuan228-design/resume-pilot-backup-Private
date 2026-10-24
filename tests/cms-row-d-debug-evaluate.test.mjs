@@ -281,6 +281,61 @@ test('disabled and hidden synthetic controls fail closed after a complete debug-
   assert.equal(result.fields.find(field => field.wrapperId === RADIO).reason, 'wrapper_scope_or_visibility_mismatch');
 });
 
+test('SYNTHETIC hidden Ant search helpers complete under the real V8 guard without upgrading evidence gaps', async () => {
+  const setup = pureDocumentSetup({ hostileCollections: true, hostileProperties: true, hostileTrim: 'global', mutate(document) {
+    // This models a possible cause of VIS control_not_available. The supplied
+    // harvest did not capture this descendant shape; it is not live CMS HTML.
+    for (const input of document.querySelectorAll('.ant-select input')) {
+      const search = document.createElement('span');
+      search.className = 'ant-select-search';
+      search.style.display = 'none';
+      input.className = 'ant-select-search__field';
+      input.parentElement.append(search);
+      search.append(input);
+    }
+  } });
+  const result = valueFrom(await debugEvaluate(buildCmsRowDOptionsProbeExpression(), setup));
+  safety(result);
+  const field = id => result.fields.find(row => row.wrapperId === id);
+  assert.equal(result.reason, 'row_d_preflight_incomplete');
+  assert.equal(result.fields.filter(row => row.ok).length, 12);
+  assert.equal(field(SELECT).hiddenSearchInputCount, 1);
+  assert.equal(field(SELECT).observedOptionCount, 8);
+  assert.equal(field(CHECKBOX).observedOptionCount, 25);
+  assert.equal(field(CHECKBOX).samplePrefixMatched, true);
+  assert.equal(field(CHECKBOX).optionsComplete, false);
+  assert.equal(field('16_65_0').calendarStructureObserved, true);
+  assert.equal(field('16_65_0').ok, false);
+});
+
+test('SYNTHETIC location kind and collapsed/disabled helper diagnostics remain guarded skips', async () => {
+  const setup = pureDocumentSetup({ mutate(document) {
+    const first = document.getElementById('13_100701_0').querySelector('.ant-select');
+    const picker = document.createElement('span');
+    picker.className = 'ant-calendar-picker';
+    first.append(picker);
+    document.getElementById('13_100702_0').querySelector('input').type = 'hidden';
+    const wrapper = document.getElementById(SELECT);
+    const collapsed = document.createElement('div');
+    collapsed.className = 'ant-collapse-content-inactive';
+    wrapper.parentElement.append(collapsed);
+    collapsed.append(wrapper);
+    document.getElementById('16_64_0').querySelector('input').disabled = true;
+    document.getElementById('16_65_0').querySelector('.ant-calendar-picker').classList.add('ant-calendar-picker-disabled');
+  } });
+  const result = valueFrom(await debugEvaluate(buildCmsRowDOptionsProbeExpression(), setup));
+  safety(result);
+  const field = id => result.fields.find(row => row.wrapperId === id);
+  assert.equal(result.reason, 'row_d_preflight_incomplete');
+  assert.equal(field('13_100701_0').controlKindIssue, 'conflicting_picker');
+  assert.equal(field('13_100702_0').controlKindIssue, 'unexpected_input_kind');
+  assert.equal(field(SELECT).availabilityIssue, 'collapsed_ancestor');
+  assert.equal(field('16_64_0').availabilityIssue, 'disabled_attribute_or_class');
+  assert.equal(field('16_65_0').availabilityIssue, 'disabled_attribute_or_class');
+  assert.equal(field('16_65_0').calendarStructureObserved, undefined);
+  for (const id of ['13_100701_0', '13_100702_0', SELECT, '16_64_0']) assert.equal(field(id).ok, false);
+});
+
 for (const [name, fixture, reference] of [
   ['page-owned NodeList iterator', { hostileCollections: true },
     '[...document.querySelectorAll("[id]")].length'],

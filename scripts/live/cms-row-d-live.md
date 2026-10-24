@@ -34,6 +34,16 @@ traffic verdict replaced its reason after an acknowledged info/edit block.
 R5 preserves the inspection verdict for the narrowly correlated keeper blocks
 described below. It makes no new live observation or field-support claim.
 
+R6 starts at `723bee7b368ce8cfab07277aedec603301c24e4c`. R5's positive
+fixtures used the normalized short path as the raw request URL. Recorded CMS
+traffic instead uses `/wecruit/resume/info/edit/<baseline tenant>`, so its
+exact-path eligibility could never recognize that recorded endpoint. R6 derives
+the exact tenant endpoint from `ROW_D_PAGE`; it does not accept the normalized
+short path or arbitrary suffix matches. Full request correlation is still
+mandatory. The supplied R5 report hides IDs and raw paths, so this identifies
+a classifier defect without proving every cause of that particular run.
+See [R6 validation notes](../../tests/cms-row-d-keeper-nongget-r6-notes.md).
+
 `cms-row-d-live.mjs` attaches to an existing CMS resume tab and runs the merged offline options resolver and read-only ownership preflight. This is a probe, not a fill adapter. It never opens a popup, clicks an option or 保存/提交, emits input events, or reads current field values. No originals require restoration because the probe performs no form interactions or value mutations.
 
 Every result keeps `neverSave=true`, `liveSupportClaimed=false`, `livePassClaimed=false`, `writeStarted=false`, `mutationAllowed=false`, `valuesExposed=false`, and `probeOnly=true`. A successful preflight does not grant mutation permission or establish live fill support. Education is outside this probe's scope.
@@ -66,8 +76,9 @@ Requests only exercise dictionary resolution and ownership checks; they never re
 
 Both `Network.enable` and CDP `Fetch.enable` must succeed before the page probe runs. Requests paused by Fetch are continued only for GET; every other method is rejected. Evidence identifies the normalized `/resume/info/edit` endpoint and uses a safe category for other endpoints; it never reads request or response bodies or current field values. Every observed attempt remains recorded even when blocked.
 
-Only an exact CMS-origin `/resume/info/edit` POST can preserve the inspection
-verdict: its Network observation and request-stage Fetch pause must both occur
+Only a POST to the exact CMS-origin `/wecruit/resume/info/edit/<baseline tenant>`
+path derived from `ROW_D_PAGE` can preserve the inspection verdict: its Network
+observation and request-stage Fetch pause must both occur
 during the fully guarded keeper lifetime, match one-to-one by
 `Network.requestId` / `Fetch.networkId` and unique `Fetch.requestId`, and have
 an acknowledged `Fetch.failRequest`. Method and URL identity must agree; a
@@ -76,7 +87,19 @@ during the keeper; it does not prove which command caused the request.
 Missing, duplicate or conflicting correlation, unblocked non-GET, other
 methods/origins/paths, response evidence, guard command failure or truncated
 tracking still hard-fails with `non_get_or_guard_failure`. Equal aggregate
-observed/blocked counts are insufficient.
+observed/blocked counts are insufficient. The normalized `/resume/info/edit`
+label is only a redaction category; it cannot authorize a request. Other tenants,
+path prefixes/suffixes, encoding/case variants, credentials and fragments are
+ineligible. Query identity must agree across both observations; query values are
+never emitted.
+
+`traffic.keeperAssessment` records a fixed status (`no_non_get`,
+`correlated_keeper_blocks`, or `rejected`) and fixed rejection reason enums.
+These diagnose endpoint, lifetime, identity, matching, block-acknowledgment,
+response or guard failures without exposing request IDs, raw URLs, query values,
+bodies or hashes. The assessment is descriptive and supplies no authority to
+bypass the ledger. A correlated block preserves an incomplete inspection; it
+cannot upgrade fields, prove server-write isolation or book D.
 
 The guards also cover browser activation and focus emulation. The runner drains
 request decisions and checks for failure after each keeper command, before

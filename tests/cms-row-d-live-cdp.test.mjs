@@ -292,3 +292,132 @@ test('loopback rejects stale partial research metadata without rewriting histori
   assert.equal(historicalShape.inspection.fields.filter(row => row.ok).length, 12);
   assert.equal(historicalShape.inspection.fields.find(row => row.key === 'researchInterests').optionsComplete, false);
 });
+
+// R8 uses real loopback WebSocket event scheduling, including command replies
+// preceding counterpart events. Nothing connects to a browser or live account.
+async function keeperSettlementStub(t, mode) {
+  const calls = [];
+  const trace = [];
+  const timers = new Set();
+  let networkSeen = false;
+  let pauseSeen = false;
+  let blockAcked = false;
+  let fatalSeen = false;
+  const server = http.createServer((request, response) => {
+    response.setHeader('Content-Type', 'application/json');
+    response.end(JSON.stringify([{ type: 'page', id: 'settlement-tab', url: ROW_D_PAGE,
+      webSocketDebuggerUrl: `ws://127.0.0.1:${server.address().port}/devtools/page/settlement-tab` }]));
+  });
+  const wss = new WebSocketServer({ server });
+  wss.on('connection', socket => {
+    const event = (method, params) => socket.send(JSON.stringify({ method, params }));
+    const request = { method: 'POST', url: `${autosaveUrl}?synthetic=${PRIVATE}` };
+    const network = () => { networkSeen = true; trace.push('network');
+      event('Network.requestWillBeSent', { requestId: 'settle-network', request }); };
+    const pause = (extra = {}, override = request) => { pauseSeen = true; trace.push('pause');
+      event('Fetch.requestPaused', { requestId: 'settle-fetch', networkId: 'settle-network', request: override, ...extra }); };
+    const later = (ms, callback) => { const timer = setTimeout(() => {
+      timers.delete(timer); if (socket.readyState === 1) callback();
+    }, ms); timers.add(timer); };
+    socket.on('message', raw => {
+      const message = JSON.parse(String(raw));
+      calls.push(message);
+      const reply = result => socket.send(JSON.stringify({ id: message.id, result }));
+      if (message.method === 'Emulation.setFocusEmulationEnabled' && message.params.enabled) {
+        if (mode === 'fetch_first') pause();
+        else network();
+        if (['ack_delayed', 'ack_after_deadline'].includes(mode)) pause();
+        trace.push('keeper_reply');
+        reply({});
+        if (mode === 'network_first') later(35, () => pause());
+        if (mode === 'unmatched_id') later(20, () => pause({ networkId: 'unmatched-late-id' }));
+        if (mode === 'block_command_failure') later(20, () => pause());
+        if (mode === 'fetch_first') later(35, network);
+        if (mode === 'response_during_wait') later(20, () => { fatalSeen = true;
+          event('Network.responseReceived', { requestId: 'settle-network', response: { status: 200, body: PRIVATE } }); });
+        if (mode === 'conflict_during_wait') later(20, () => { fatalSeen = true; pause({}, { ...request, url: request.url + '&conflict=1' }); });
+        if (mode === 'duplicate_during_wait') later(20, () => { fatalSeen = true; network(); });
+        if (mode === 'invalid_id_during_wait') later(20, () => { fatalSeen = true; pause({ networkId: undefined }); });
+        if (mode === 'redirect_during_wait') later(20, () => { fatalSeen = true; pause({ redirectedRequestId: PRIVATE }); });
+        return;
+      }
+      if (message.method === 'Fetch.failRequest') {
+        if (mode === 'block_command_failure') { socket.send(JSON.stringify({ id: message.id, error: { message: PRIVATE } })); return; }
+        const acknowledge = () => { blockAcked = true; trace.push('block_ack'); reply({}); };
+        if (mode === 'ack_delayed') later(45, acknowledge);
+        else if (mode === 'ack_after_deadline') later(310, acknowledge);
+        else acknowledge();
+        return;
+      }
+      if (message.method === 'Emulation.setFocusEmulationEnabled' && !message.params.enabled
+        && mode === 'cleanup_pair') pause();
+      if (message.method === 'Fetch.disable' && mode === 'teardown_pair') pause();
+      if (message.method === 'Runtime.evaluate') {
+        trace.push('inspection');
+        assert.equal(networkSeen && pauseSeen && blockAcked && !fatalSeen, true,
+          'inspection cannot start before complete valid correlation and block ACK');
+        assert.equal(message.params.throwOnSideEffect, true);
+        reply({ result: { value: liveShape.inspection } });
+      } else reply({});
+    });
+  });
+  server.listen(0, '127.0.0.1');
+  await once(server, 'listening');
+  t.after(async () => {
+    for (const timer of timers) clearTimeout(timer);
+    for (const socket of wss.clients) socket.terminate();
+    await new Promise(resolve => wss.close(resolve));
+    await new Promise(resolve => server.close(resolve));
+  });
+  return { calls, trace, port: server.address().port };
+}
+
+for (const mode of ['network_first', 'fetch_first', 'ack_delayed']) {
+  test(`R8 loopback settles keeper reply before delayed ${mode} evidence and only then inspects`, async t => {
+    const stub = await keeperSettlementStub(t, mode);
+    const result = await runCmsRowDLive({ port: stub.port, timeoutMs: 1000, wait: async () => {} });
+    safe(result);
+    assert.equal(result.reason, 'row_d_preflight_incomplete');
+    assert.equal(result.probeCompleted, true);
+    assert.equal(result.fields.filter(row => row.ok).length, 13);
+    assert.equal(result.inspectionGate.status, 'allowed');
+    const check = result.inspectionGate.checkpoints.find(row => row.checkpoint === 'focus_emulation');
+    assert.equal(check.status, 'settled');
+    assert.ok(check.pendingAtStart.includes({ network_first: 'fetch_pause_missing', fetch_first: 'network_observation_missing', ack_delayed: 'block_ack_pending' }[mode]));
+    assert.equal(check.initial.status, 'rejected');
+    assert.equal(check.final.status, 'correlated_keeper_blocks');
+    assert.equal(result.traffic.responseToNonGetCount, 0);
+    assert.ok(stub.trace.indexOf('keeper_reply') < stub.trace.indexOf(mode === 'network_first' ? 'pause' : mode === 'fetch_first' ? 'network' : 'block_ack'));
+    assert.ok(stub.trace.indexOf('block_ack') < stub.trace.indexOf('inspection'));
+    assert.doesNotMatch(JSON.stringify(result), /settle-network|settle-fetch|synthetic=|conflict=|wecruit\/resume/);
+  });
+}
+
+for (const mode of ['never_paired', 'unmatched_id', 'cleanup_pair', 'teardown_pair', 'ack_after_deadline', 'block_command_failure',
+  'response_during_wait', 'conflict_during_wait', 'duplicate_during_wait', 'invalid_id_during_wait', 'redirect_during_wait']) {
+  test(`R8 loopback rejects ${mode} without inspection, including later cleanup success`, async t => {
+    const stub = await keeperSettlementStub(t, mode);
+    const result = await runCmsRowDLive({ port: stub.port, timeoutMs: 1000, wait: async () => {} });
+    safe(result);
+    assert.equal(result.reason, 'non_get_or_guard_failure');
+    assert.equal(result.probeCompleted, false);
+    assert.deepEqual(result.fields, []);
+    assert.equal(result.inspectionGate.status, 'blocked');
+    assert.equal(result.inspectionGate.blockedAt, 'focus_emulation');
+    assert.equal(stub.calls.some(call => call.method === 'Runtime.evaluate'), false);
+    const check = result.inspectionGate.checkpoints.at(-1);
+    const permanent = mode.endsWith('_during_wait') || mode === 'block_command_failure';
+    assert.equal(check.status, permanent ? 'permanent_failure' : 'deadline_exceeded');
+    assert.ok(check.waitRounds <= 10);
+    assert.ok(check.eventWakes <= 200);
+    if (['cleanup_pair', 'ack_after_deadline'].includes(mode)) {
+      assert.equal(result.traffic.keeperAssessment.status, 'correlated_keeper_blocks');
+      assert.deepEqual(result.traffic.keeperAssessment.reasons, []);
+      assert.equal(result.traffic.blockedNonGetCount, 1);
+      assert.equal(result.traffic.responseToNonGetCount, 0);
+      assert.equal(result.traffic.commandFailed, false);
+    }
+    if (mode === 'teardown_pair') assert.ok(result.traffic.keeperAssessment.reasons.includes('outside_keeper'));
+    assert.doesNotMatch(JSON.stringify(result), /settle-network|settle-fetch|synthetic=|conflict=|wecruit\/resume/);
+  });
+}

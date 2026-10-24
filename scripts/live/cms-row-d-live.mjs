@@ -17,7 +17,7 @@ import {
   ROW_D_FIELDS, ROW_D_PAGE, buildCmsRowDOptionsProbeExpression
 } from '../lib/cms-row-d-options.mjs';
 
-export const ROW_D_LIVE_BASE_TIP = '723bee7b368ce8cfab07277aedec603301c24e4c';
+export const ROW_D_LIVE_BASE_TIP = '3c5c9d08c78ce0ffc522e69398f815188bbdaaeb';
 // Evidence uses a normalized endpoint label; eligibility uses the recorded
 // tenant endpoint. Never use the redacted label or a suffix match as authority.
 const rowDPage = new URL(ROW_D_PAGE);
@@ -115,6 +115,8 @@ function trafficIdentity(request) {
 export function createRowDNetworkGuard(send) {
   const pending = new Set();
   const observed = new Map();
+  const waiters = new Set();
+  const notify = () => { for (const wake of waiters) wake(); };
   // Internal IDs only: never serialize correlation metadata or raw URLs.
   // Retain the bounded ledger after loadingFailed; failure alone proves no block.
   const requests = new Map();
@@ -122,6 +124,10 @@ export function createRowDNetworkGuard(send) {
   const earlyResponses = new Set();
   let keeperActive = false;
   let correlationFailed = false;
+  let settlementDeadline;
+  let settlementRounds = 0;
+  let settlementEvents = 0;
+  let settlementStopped;
   const rejections = new Set();
   const rejectCorrelation = reason => { correlationFailed = true; rejections.add(reason); };
   const traffic = { observedNonGetCount: 0, interceptedNonGetCount: 0,
@@ -193,7 +199,7 @@ export function createRowDNetworkGuard(send) {
       if (identity) record('block_failed', identity);
     });
     pending.add(task);
-    void task.then(() => pending.delete(task));
+    void task.then(() => { pending.delete(task); notify(); });
   }
   const onEvent = message => {
     try {
@@ -244,6 +250,7 @@ export function createRowDNetworkGuard(send) {
         responseFor(params.requestId);
       }
     } catch { traffic.commandFailed = true; }
+    finally { notify(); }
   };
   function failed() {
     return traffic.commandFailed || traffic.truncated || correlationFailed
@@ -253,13 +260,60 @@ export function createRowDNetworkGuard(send) {
       || [...requests.values()].some(entry => !entry.eligible
         || !entry.observed || !entry.paused || !entry.blocked);
   }
+  const fatal = () => traffic.commandFailed || traffic.truncated || correlationFailed
+    || traffic.responseToNonGetCount > 0 || [...requests.values()].some(entry => !entry.eligible);
+  const pendingKinds = () => {
+    const kinds = [];
+    if ([...requests.values()].some(entry => !entry.observed)) kinds.push('network_observation_missing');
+    if ([...requests.values()].some(entry => !entry.paused)) kinds.push('fetch_pause_missing');
+    if ([...requests.values()].some(entry => entry.paused && !entry.blocked)) kinds.push('block_ack_pending');
+    if (pending.size && !kinds.includes('block_ack_pending')) kinds.push('guard_decision_pending');
+    return kinds;
+  };
   return { onEvent, traffic,
-    setKeeperActive(active) { keeperActive = active === true; },
+    setKeeperActive(active) { keeperActive = active === true; notify(); },
     async drain() {
       for (let round = 0; pending.size && round < 20; round += 1) await Promise.all([...pending]);
       if (pending.size) traffic.commandFailed = true;
     },
     failed,
+    async settleKeeper(wait = delay) {
+      const initial = this.assessment();
+      const pendingAtStart = pendingKinds();
+      const firstRound = settlementRounds;
+      const firstEvent = settlementEvents;
+      const finish = status => {
+        if (['deadline_exceeded', 'event_limit_exceeded'].includes(status)) settlementStopped = status;
+        return { status, ready: ['already_complete', 'settled'].includes(status),
+          waitRounds: settlementRounds - firstRound, eventWakes: settlementEvents - firstEvent, pendingAtStart,
+          initial, final: this.assessment() };
+      };
+      if (!keeperActive) return finish('inactive_keeper');
+      if (fatal()) return finish('permanent_failure');
+      if (settlementStopped) return finish(settlementStopped);
+      if (!failed() && !pending.size) return finish('already_complete');
+      // One total budget for this guard, never renewed by events/checkpoints.
+      settlementDeadline ??= performance.now() + 250;
+      while (settlementRounds < 10 && settlementEvents < 200) {
+        const remaining = settlementDeadline - performance.now();
+        if (remaining <= 0) break;
+        let wake;
+        const changed = new Promise(resolve => { wake = resolve; });
+        waiters.add(wake);
+        try {
+          const tick = await Promise.race([wait(Math.min(25, remaining)).then(() => true), changed.then(() => false)]);
+          if (tick) settlementRounds += 1;
+          else settlementEvents += 1;
+        }
+        finally { waiters.delete(wake); }
+        if (!keeperActive) return finish('inactive_keeper');
+        if (fatal()) return finish('permanent_failure');
+        // Evidence arriving beyond the deadline cannot authorize inspection.
+        if (performance.now() > settlementDeadline) break;
+        if (!failed() && !pending.size) return finish('settled');
+      }
+      return finish(settlementEvents >= 200 ? 'event_limit_exceeded' : 'deadline_exceeded');
+    },
     // Fixed enums only: enough to diagnose redacted live failures without IDs,
     // raw URLs, query values, bodies, or hashes. This never supplies authority.
     assessment() {
@@ -362,6 +416,7 @@ export function rowDProbeEvidence(reason = 'not_started') {
     baseTip: ROW_D_LIVE_BASE_TIP, booked: 53, visibilityBasis: 'attributes_only',
     visibilityKeeper: { targetActivated: false, pageBroughtToFront: false,
       focusEmulationEnabled: false, focusEmulationCleared: false },
+    inspectionGate: { status: 'not_reached', checkpoints: [] },
     probeCompleted: false, ok: false, reason, restoration: 'not_needed_no_interaction', fields: [] };
 }
 
@@ -383,6 +438,17 @@ export async function runCmsRowDLive({ port = 9242, timeoutMs = 10000, requests 
   let keeperCleanupFailed = false;
   let stage = 'target_discovery';
   const guard = createRowDNetworkGuard((method, params) => session.send(method, params));
+  const keeperCheckpoint = async checkpoint => {
+    const settlement = await guard.settleKeeper();
+    evidence.inspectionGate.checkpoints.push({ checkpoint, ...settlement });
+    if (!settlement.ready) {
+      evidence.inspectionGate.status = 'blocked';
+      evidence.inspectionGate.blockedAt = checkpoint;
+      evidence.reason = 'non_get_or_guard_failure';
+      return false;
+    }
+    return true;
+  };
   try {
     const choice = selectRowDTarget(await getTargets(port, '/json/list', { timeoutMs, step: stage }), port);
     if (!choice.ok) { evidence.reason = choice.reason; return evidence; }
@@ -401,17 +467,18 @@ export async function runCmsRowDLive({ port = 9242, timeoutMs = 10000, requests 
     // CDP session. Guard network before activation: visibility/focus listeners
     // can themselves initiate requests. These are browser commands, not page
     // clicks, DOM focus calls, popup opens or field/value interactions.
-    for (const [method, params, acknowledgment] of [
-      ['Target.activateTarget', { targetId: choice.target.id }, 'targetActivated'],
-      ['Page.bringToFront', {}, 'pageBroughtToFront'],
-      ['Emulation.setFocusEmulationEnabled', { enabled: true }, 'focusEmulationEnabled']
+    for (const [method, params, acknowledgment, checkpoint] of [
+      ['Target.activateTarget', { targetId: choice.target.id }, 'targetActivated', 'target_activation'],
+      ['Page.bringToFront', {}, 'pageBroughtToFront', 'bring_to_front'],
+      ['Emulation.setFocusEmulationEnabled', { enabled: true }, 'focusEmulationEnabled', 'focus_emulation']
     ]) {
       if (method === 'Emulation.setFocusEmulationEnabled') focusEmulationAttempted = true;
       await session.send(method, params);
       evidence.visibilityKeeper[acknowledgment] = true;
-      await guard.drain();
-      if (guard.failed()) { evidence.reason = 'non_get_or_guard_failure'; return evidence; }
+      if (!await keeperCheckpoint(checkpoint)) return evidence;
     }
+    if (!await keeperCheckpoint('before_inspection')) return evidence;
+    evidence.inspectionGate.status = 'allowed';
     stage = 'inspection';
     const reply = await session.send('Runtime.evaluate', {
       expression, returnByValue: true, awaitPromise: false, userGesture: false,

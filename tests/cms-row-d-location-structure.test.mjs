@@ -257,7 +257,7 @@ test('new diagnostic has no text/state/content/interaction or page iterator acce
 test('native Blink/V8 strict combined evaluation on an exclusively owned synthetic browser', {timeout:30000},async t=>{
   const chrome=process.env.CHROME_PATH||'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe';assert.ok(fs.existsSync(chrome));
   const profile=fs.mkdtempSync(path.join(os.tmpdir(),'r10-owned-strict-'));let child,session;
-  const requests=[];
+  const requests=[],fixtureUrl=ROW_D_PAGE+'?synthetic=r12-owned-native';
   try{
     child=spawn(chrome,['--headless=new','--disable-gpu','--disable-background-networking','--no-first-run',
       '--no-default-browser-check','--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE localhost',
@@ -272,7 +272,7 @@ test('native Blink/V8 strict combined evaluation on an exclusively owned synthet
       if(event.method==='Page.loadEventFired')loaded();
       if(event.method==='Fetch.requestPaused'){
         requests.push(event.params.request.url);
-        const params=event.params,correct=params.request.url===ROW_D_PAGE&&params.request.method==='GET';
+        const params=event.params,correct=params.request.url===fixtureUrl&&params.request.method==='GET';
         const command=correct?session.send('Fetch.fulfillRequest',{requestId:params.requestId,responseCode:200,
           responseHeaders:[{name:'Content-Type',value:'text/html; charset=utf-8'}],body:Buffer.from(fixture).toString('base64')})
           :session.send('Fetch.failRequest',{requestId:params.requestId,errorReason:'BlockedByClient'});
@@ -280,14 +280,14 @@ test('native Blink/V8 strict combined evaluation on an exclusively owned synthet
       }
     }});
     await session.send('Page.enable');await session.send('Fetch.enable',{patterns:[{urlPattern:'*',requestStage:'Request'}]});
-    await session.send('Page.navigate',{url:ROW_D_PAGE});await ready;
-    const params={expression:buildLocationStructureExpression(),returnByValue:true,awaitPromise:false,userGesture:false,throwOnSideEffect:true,timeout:5000};
+    await session.send('Page.navigate',{url:fixtureUrl});await ready;
+    const params={expression:buildLocationStructureExpression(fixtureUrl),returnByValue:true,awaitPromise:false,userGesture:false,throwOnSideEffect:true,timeout:5000};
     const reply=await session.send('Runtime.evaluate',params);assert.equal(reply.exceptionDetails,undefined,JSON.stringify(reply.exceptionDetails));
     const envelope=reply.result.value;assert.equal(envelope.inspection.reason,'row_d_preflight_incomplete');
     validateStructure(envelope.structure);assert.equal(envelope.structure.locations[0].hosts[0].reason,'linked_structure_observed');safe(envelope.structure);
     const refused=await session.send('Runtime.evaluate',{...params,expression:"document.body.setAttribute('data-r10-side-effect','forbidden')"});
     assert.ok(refused.exceptionDetails,'V8 must reject a deliberate mutation; never retry loosely');
-    assert.ok(requests.includes(ROW_D_PAGE)); // Every navigation request was fulfilled locally before network.
+    assert.ok(requests.includes(fixtureUrl)); // Every navigation request was fulfilled locally before network.
     t.diagnostic('owned synthetic browser only; local Fetch fulfillment; real-site network requests=0; strict combined evaluation accepted; deliberate write rejected');
   }finally{
     session?.close();child?.kill();

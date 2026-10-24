@@ -151,13 +151,11 @@ test('successful official verdict and retained structure stay identical to R10',
   const sidecar=JSON.parse(fs.readFileSync(path.join(written.out,'structure.json'),'utf8'));
   assert.deepEqual(sidecar.diagnostics,result.structure);assert.equal(sidecar.dictionaryComplete,false);assert.equal(sidecar.bookD,false);
 });
-test('DOM function, expression, success schema, final guard and four shared dependencies are byte unchanged',()=>{
+test('success schema, final guard and four shared dependencies remain byte unchanged after R12 provenance binding',()=>{
   const file='scripts/live/cms-row-d-location-structure.mjs',old=execFileSync('git',['show',BASE+':'+file],{cwd:ROOT,encoding:'utf8'}),now=fs.readFileSync(path.join(ROOT,file),'utf8');
-  for(const [start,end] of [['export function inspectLocationStructure','\nconst ROW_REASONS'],
-    ['export function validateStructure','\nexport function buildLocationStructureExpression'],
-    ['export function buildLocationStructureExpression','\nexport function cleanCaptureAllowed'],
-    ['export function cleanCaptureAllowed','\nexport async function runLocationStructure']]){
-    assert.equal(now.slice(now.indexOf(start),now.indexOf(end)),old.slice(old.indexOf(start),old.indexOf(end)));
+  for(const [start,end] of [['export function validateStructure','\nexport function buildLocationStructureExpression'],
+    ['export function cleanCaptureAllowed','\n// getJson owns']]){
+    assert.equal(now.slice(now.indexOf(start),now.indexOf(end)),old.slice(old.indexOf(start),old.indexOf(end==='\n// getJson owns'?'\nexport async function runLocationStructure':end)));
   }
   for(const file of Object.keys(SOURCE_PINS)){
     const base=execFileSync('git',['show',BASE+':'+file],{cwd:ROOT,encoding:'utf8'}).replace(/\r\n/gu,'\n');

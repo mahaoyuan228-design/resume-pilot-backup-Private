@@ -217,6 +217,7 @@ function selectPage({ rows = 1, dedicated = false, duplicateId = '' } = {}) {
     cmsSchoolSearchControl: disabled, cmsBirthDateControl: disabled, cmsEducationDateControl: disabled,
     cmsScopedAcademicSelectSpec: specOf, cmsScopedSimpleInputSpec: () => null,
     cmsAssignmentRadioControl: disabled, cmsCustomSingleSelect: disabled,
+    cmsBasicAddressBinding: () => null, // Unrelated address binding is outside this isolated select scaffold.
     cmsScopedAcademicAnswer: profile => ({ path: 'customAnswers.__cms_basic_education_level',
       value: profile.customAnswers.__cms_basic_education_level }),
     cmsMappedOptionAnswer: (_profile, fact) => fact,

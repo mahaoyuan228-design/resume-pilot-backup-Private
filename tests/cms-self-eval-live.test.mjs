@@ -7,6 +7,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 import { JSDOM } from 'jsdom';
 import {
@@ -43,7 +44,7 @@ import {
   signalsMatch
 } from '../scripts/live/cms-self-eval-live.mjs';
 
-const repoRoot = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..');
+const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const source = fs.readFileSync(new URL('../scripts/live/cms-self-eval-live.mjs', import.meta.url), 'utf8');
 const LIVE_URL = 'https://wecruit.hotjob.cn/SU629dbc0c0dcad452299bc0f7/pb/resumeOperation.html?recruitType=1&resumeId=fixture&tid=fixture&lang=1';
 const ORIGINAL = '甲'.repeat(159);

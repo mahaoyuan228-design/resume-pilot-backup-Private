@@ -25,6 +25,8 @@ const runner = path.join(root, 'scripts/live/cms-row-d-live.mjs');
 const PRIVATE = 'SYNTHETIC_ROW_D_PRIVATE_DO_NOT_SERIALIZE';
 const FLAGS = { neverSave: true, liveSupportClaimed: false, livePassClaimed: false,
   writeStarted: false, mutationAllowed: false, valuesExposed: false, probeOnly: true };
+const autosaveUrl = new URL(`/wecruit/resume/info/edit/${new URL(ROW_D_PAGE).pathname.split('/')[1]}`, ROW_D_PAGE).href;
+const keeperUrl = `${autosaveUrl}?iSaJAx=isAjax&request_locale=zh_CN&synthetic=${PRIVATE}`;
 const exactUrl = `${ROW_D_PAGE}?resumeId=${PRIVATE}&tid=${PRIVATE}#${PRIVATE}`;
 const target = (changes = {}) => ({ id: 'synthetic-tab', type: 'page', url: exactUrl,
   title: PRIVATE, webSocketDebuggerUrl: 'ws://127.0.0.1:9242/devtools/page/synthetic-tab', ...changes });
@@ -128,7 +130,7 @@ function fakeCdp({ targets = [target()], evaluate = () => noDocumentInspection()
 const methods = fake => fake.calls.map(call => call.method);
 const paused = (method, url = `https://example.invalid/private?token=${PRIVATE}`, requestId = 'synthetic-request') =>
   ({ method: 'Fetch.requestPaused', params: { requestId, request: { method, url } } });
-const keeperRequest = (id = 'keeper', method = 'POST', url = `https://wecruit.hotjob.cn/resume/info/edit?resumeId=${PRIVATE}`) => {
+const keeperRequest = (id = 'keeper', method = 'POST', url = keeperUrl) => {
   const request = { method, url, postData: PRIVATE, headers: { private: PRIVATE } };
   return [
     { method: 'Network.requestWillBeSent', params: { requestId: `${PRIVATE}-network-${id}`, request } },
@@ -138,7 +140,7 @@ const keeperRequest = (id = 'keeper', method = 'POST', url = `https://wecruit.ho
 };
 
 test('baseline and initial evidence preserve Never-Save, no live PASS, and booked 53', () => {
-  assert.equal(ROW_D_LIVE_BASE_TIP, '7e8a9e9bb1ad3f54c135f6b00b64fbb51ceda7e9');
+  assert.equal(ROW_D_LIVE_BASE_TIP, '723bee7b368ce8cfab07277aedec603301c24e4c');
   const evidence = rowDProbeEvidence();
   assertSafety(evidence);
   assert.equal(evidence.ok, false);
@@ -260,6 +262,7 @@ for (const reverse of [false, true]) test(`only a correlated acknowledged keeper
   acknowledge({});
   await guard.drain();
   assert.equal(guard.failed(), false);
+  assert.deepEqual(guard.assessment(), { status: 'correlated_keeper_blocks', reasons: [] });
   guard.setKeeperActive(false);
   assert.equal(guard.failed(), false, 'completed proof remains valid after keeper teardown');
   assert.equal(guard.traffic.observedNonGetCount, 1);
@@ -272,7 +275,8 @@ for (const reverse of [false, true]) test(`only a correlated acknowledged keeper
 for (const mode of ['outside_keeper', 'crossed_window', 'observed_only', 'paused_only',
   'different_network_id', 'missing_network_id', 'missing_fetch_id', 'missing_network_request_id',
   'duplicate_observation', 'duplicate_pause', 'reused_fetch_id', 'different_method',
-  'different_query', 'response_stage', 'error_stage', 'untracked_redirect']) {
+  'different_query', 'response_stage', 'error_stage', 'response_headers', 'response_status_text',
+  'fetch_redirect', 'untracked_redirect']) {
   test(`keeper block exception rejects ${mode}`, async () => {
     const guard = createRowDNetworkGuard(() => Promise.resolve({}));
     guard.setKeeperActive(mode !== 'outside_keeper');
@@ -285,6 +289,9 @@ for (const mode of ['outside_keeper', 'crossed_window', 'observed_only', 'paused
     if (mode === 'different_query') fetch.params.request = { ...fetch.params.request, url: `${fetch.params.request.url}&other=1` };
     if (mode === 'response_stage') fetch.params.responseStatusCode = 200;
     if (mode === 'error_stage') fetch.params.responseErrorReason = 'Failed';
+    if (mode === 'response_headers') fetch.params.responseHeaders = [{ name: 'PRIVATE', value: PRIVATE }];
+    if (mode === 'response_status_text') fetch.params.responseStatusText = PRIVATE;
+    if (mode === 'fetch_redirect') fetch.params.redirectedRequestId = PRIVATE;
     if (mode === 'untracked_redirect') network.params.redirectResponse = { status: 307 };
     if (mode !== 'paused_only') guard.onEvent(network);
     if (mode === 'crossed_window') guard.setKeeperActive(false);
@@ -298,7 +305,18 @@ for (const mode of ['outside_keeper', 'crossed_window', 'observed_only', 'paused
     }
     await guard.drain();
     assert.equal(guard.failed(), true);
-    assert.equal(JSON.stringify(guard.traffic).includes(PRIVATE), false);
+    const expectedReason = { outside_keeper: 'outside_keeper', crossed_window: 'outside_keeper',
+      observed_only: 'network_fetch_unmatched', paused_only: 'network_fetch_unmatched',
+      different_network_id: 'network_fetch_unmatched', missing_network_id: 'network_id_missing_or_invalid',
+      missing_fetch_id: 'fetch_id_missing_or_invalid', missing_network_request_id: 'network_id_missing_or_invalid',
+      duplicate_observation: 'duplicate_network_phase', duplicate_pause: 'duplicate_network_phase',
+      reused_fetch_id: 'duplicate_fetch_id', different_method: 'request_identity_conflict',
+      different_query: 'request_identity_conflict', response_stage: 'response_stage_pause',
+      error_stage: 'response_stage_pause', response_headers: 'response_stage_pause',
+      response_status_text: 'response_stage_pause', fetch_redirect: 'redirect_evidence', untracked_redirect: 'unmatched_redirect' }[mode];
+    assert.equal(guard.assessment().status, 'rejected');
+    assert.ok(guard.assessment().reasons.includes(expectedReason), mode);
+    assert.equal(JSON.stringify({ traffic: guard.traffic, assessment: guard.assessment() }).includes(PRIVATE), false);
     if (mode === 'different_network_id') {
       assert.equal(guard.traffic.observedNonGetCount, 1);
       assert.equal(guard.traffic.interceptedNonGetCount, 1);
@@ -308,15 +326,25 @@ for (const mode of ['outside_keeper', 'crossed_window', 'observed_only', 'paused
 }
 
 for (const [method, url] of [
-  ['HEAD', 'https://wecruit.hotjob.cn/resume/info/edit'],
-  ['PUT', 'https://wecruit.hotjob.cn/resume/info/edit'],
-  ['POST', 'https://example.invalid/resume/info/edit'],
-  ['POST', 'http://wecruit.hotjob.cn/resume/info/edit'],
-  ['POST', 'https://wecruit.hotjob.cn:8443/resume/info/edit'],
-  ['POST', 'https://user:secret@wecruit.hotjob.cn/resume/info/edit'],
-  ['POST', 'https://wecruit.hotjob.cn/resume/info/edit/extra'],
+  ['HEAD', keeperUrl],
+  ['PUT', keeperUrl],
+  ['POST', keeperUrl.replace('wecruit.hotjob.cn', 'example.invalid')],
+  ['POST', keeperUrl.replace('https:', 'http:')],
+  ['POST', keeperUrl.replace('wecruit.hotjob.cn', 'wecruit.hotjob.cn:8443')],
+  ['POST', keeperUrl.replace('https://', 'https://user:secret@')],
+  ['POST', 'https://wecruit.hotjob.cn/resume/info/edit'],
   ['POST', 'https://wecruit.hotjob.cn/private/resume/info/edit'],
-  ['POST', 'https://wecruit.hotjob.cn/%72esume/INFO/EdIt']
+  ['POST', autosaveUrl.replace('SU629dbc0c0dcad452299bc0f7', 'SUother')],
+  ['POST', autosaveUrl.replace('SU629dbc0c0dcad452299bc0f7', 'xSU629dbc0c0dcad452299bc0f7')],
+  ['POST', autosaveUrl + 'x'],
+  ['POST', autosaveUrl + '/extra'],
+  ['POST', autosaveUrl + '/'],
+  ['POST', autosaveUrl.replace('/wecruit/', '/private/wecruit/')],
+  ['POST', autosaveUrl.replace('/resume/', '/%72esume/')],
+  ['POST', autosaveUrl.replace('/info/edit/', '/INFO/EdIt/')],
+  ['POST', autosaveUrl.replace('SU629', 'su629')],
+  ['POST', autosaveUrl.replace('SU629', '%53U629')],
+  ['POST', autosaveUrl + '#fragment']
 ]) test(`keeper exception rejects method/origin/path ${method} ${url}`, async () => {
   const guard = createRowDNetworkGuard(() => Promise.resolve({}));
   guard.setKeeperActive(true);
@@ -324,6 +352,8 @@ for (const [method, url] of [
   await guard.drain();
   assert.equal(guard.traffic.blockedNonGetCount, 1);
   assert.equal(guard.failed(), true);
+  assert.equal(guard.assessment().status, 'rejected');
+  assert.ok(guard.assessment().reasons.includes(method === 'POST' ? 'endpoint_ineligible' : 'method_ineligible'));
 });
 
 for (const responseMethod of ['Network.responseReceived', 'Network.responseReceivedExtraInfo',

@@ -17,7 +17,11 @@ import {
   ROW_D_FIELDS, ROW_D_PAGE, buildCmsRowDOptionsProbeExpression
 } from '../lib/cms-row-d-options.mjs';
 
-export const ROW_D_LIVE_BASE_TIP = '7e8a9e9bb1ad3f54c135f6b00b64fbb51ceda7e9';
+export const ROW_D_LIVE_BASE_TIP = '723bee7b368ce8cfab07277aedec603301c24e4c';
+// Evidence uses a normalized endpoint label; eligibility uses the recorded
+// tenant endpoint. Never use the redacted label or a suffix match as authority.
+const rowDPage = new URL(ROW_D_PAGE);
+const rowDInfoEditPath = `/wecruit/resume/info/edit/${rowDPage.pathname.split('/')[1]}`;
 export const EVIDENCE_NAME = 'cms-row-d-live.json';
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const safety = () => ({ neverSave: true, liveSupportClaimed: false,
@@ -118,6 +122,8 @@ export function createRowDNetworkGuard(send) {
   const earlyResponses = new Set();
   let keeperActive = false;
   let correlationFailed = false;
+  const rejections = new Set();
+  const rejectCorrelation = reason => { correlationFailed = true; rejections.add(reason); };
   const traffic = { observedNonGetCount: 0, interceptedNonGetCount: 0,
     blockedNonGetCount: 0, infoEditObservedCount: 0, infoEditBlockedCount: 0,
     responseToNonGetCount: 0, commandFailed: false, truncated: false, records: [] };
@@ -127,23 +133,27 @@ export function createRowDNetworkGuard(send) {
   };
   const validId = id => typeof id === 'string' && id.length > 0 && id.length <= 1024;
   function track(phase, id, request, identity) {
-    if (!validId(id)) { correlationFailed = true; return undefined; }
+    if (!validId(id)) { rejectCorrelation('network_id_missing_or_invalid'); return undefined; }
     let eligible = false;
     let urlHash;
     try {
       const url = new URL(request.url);
       urlHash = createHash('sha256').update(url.href).digest('hex');
-      eligible = keeperActive && identity.method === 'POST'
-        && url.origin === new URL(ROW_D_PAGE).origin
-        && url.pathname === '/resume/info/edit' && !url.username && !url.password;
-    } catch { /* unknown identity never qualifies */ }
+      const exactEndpoint = url.origin === rowDPage.origin
+        && url.pathname === rowDInfoEditPath && !url.username && !url.password && !url.hash;
+      eligible = keeperActive && identity.method === 'POST' && exactEndpoint;
+      if (!keeperActive) rejections.add('outside_keeper');
+      if (identity.method !== 'POST') rejections.add('method_ineligible');
+      if (!exactEndpoint) rejections.add('endpoint_ineligible');
+    } catch { rejections.add('endpoint_ineligible'); }
     let entry = requests.get(id);
     if (!entry) {
       if (requests.size >= 200) { traffic.truncated = true; return undefined; }
       entry = { identity, urlHash, eligible, observed: false, paused: false, blocked: false, responded: false };
       requests.set(id, entry);
     }
-    if (entry[phase] || entry.identity.method !== identity.method || entry.urlHash !== urlHash) correlationFailed = true;
+    if (entry[phase]) rejectCorrelation('duplicate_network_phase');
+    if (entry.identity.method !== identity.method || entry.urlHash !== urlHash) rejectCorrelation('request_identity_conflict');
     entry.eligible &&= eligible;
     entry[phase] = true;
     if (earlyResponses.has(id)) response(entry);
@@ -162,7 +172,7 @@ export function createRowDNetworkGuard(send) {
     // Redirected GET responses must not be attributed to the old POST. Reuse
     // already fails correlation. Retain otherwise unknown IDs for event reordering.
     else if (!requests.has(id)) {
-      if (!validId(id)) correlationFailed = true;
+      if (!validId(id)) rejectCorrelation('network_id_missing_or_invalid');
       else if (earlyResponses.size < 200) earlyResponses.add(id);
       else traffic.truncated = true;
     }
@@ -196,12 +206,15 @@ export function createRowDNetworkGuard(send) {
           record('paused', identity);
           const entry = track('paused', params.networkId, params.request, identity);
           if (entry) observed.set(params.networkId, entry);
-          if (!validId(params.requestId) || fetchIds.has(params.requestId)) correlationFailed = true;
+          if (!validId(params.requestId)) rejectCorrelation('fetch_id_missing_or_invalid');
+          else if (fetchIds.has(params.requestId)) rejectCorrelation('duplicate_fetch_id');
           else if (fetchIds.size < 200) fetchIds.add(params.requestId);
           else traffic.truncated = true;
           // A response-stage pause cannot establish request-stage prevention.
-          if (params.responseStatusCode !== undefined || params.responseErrorReason !== undefined) {
-            correlationFailed = true;
+          if (params.redirectedRequestId !== undefined) rejectCorrelation('redirect_evidence');
+          if (params.responseStatusCode !== undefined || params.responseErrorReason !== undefined
+            || params.responseHeaders !== undefined || params.responseStatusText !== undefined) {
+            rejectCorrelation('response_stage_pause');
             if (params.responseStatusCode !== undefined) response(entry);
           }
           command('Fetch.failRequest', { requestId: params.requestId, errorReason: 'BlockedByClient' }, identity, entry);
@@ -213,10 +226,10 @@ export function createRowDNetworkGuard(send) {
         if (params.redirectResponse) {
           const preceding = observed.get(params.requestId);
           response(preceding);
-          if (!preceding && identity.method !== 'GET') correlationFailed = true;
+          if (!preceding && identity.method !== 'GET') rejectCorrelation('unmatched_redirect');
         }
         const prior = requests.get(params.requestId);
-        if (prior && (prior.observed || identity.method === 'GET')) correlationFailed = true;
+        if (prior && (prior.observed || identity.method === 'GET')) rejectCorrelation('network_id_reused');
         observed.delete(params.requestId);
         if (identity.method !== 'GET') {
           traffic.observedNonGetCount += 1;
@@ -232,18 +245,35 @@ export function createRowDNetworkGuard(send) {
       }
     } catch { traffic.commandFailed = true; }
   };
+  function failed() {
+    return traffic.commandFailed || traffic.truncated || correlationFailed
+      || traffic.responseToNonGetCount > 0
+      || traffic.observedNonGetCount !== requests.size
+      || traffic.interceptedNonGetCount !== requests.size
+      || [...requests.values()].some(entry => !entry.eligible
+        || !entry.observed || !entry.paused || !entry.blocked);
+  }
   return { onEvent, traffic,
     setKeeperActive(active) { keeperActive = active === true; },
     async drain() {
       for (let round = 0; pending.size && round < 20; round += 1) await Promise.all([...pending]);
       if (pending.size) traffic.commandFailed = true;
     },
-    failed: () => traffic.commandFailed || traffic.truncated || correlationFailed
-      || traffic.responseToNonGetCount > 0
-      || traffic.observedNonGetCount !== requests.size
-      || traffic.interceptedNonGetCount !== requests.size
-      || [...requests.values()].some(entry => !entry.eligible
-        || !entry.observed || !entry.paused || !entry.blocked)
+    failed,
+    // Fixed enums only: enough to diagnose redacted live failures without IDs,
+    // raw URLs, query values, bodies, or hashes. This never supplies authority.
+    assessment() {
+      const reasons = new Set(rejections);
+      if (traffic.commandFailed) reasons.add('guard_command_failed');
+      if (traffic.truncated) reasons.add('tracking_truncated');
+      if (traffic.responseToNonGetCount > 0) reasons.add('response_evidence');
+      if (traffic.observedNonGetCount !== requests.size
+        || traffic.interceptedNonGetCount !== requests.size
+        || [...requests.values()].some(entry => !entry.observed || !entry.paused)) reasons.add('network_fetch_unmatched');
+      if ([...requests.values()].some(entry => !entry.blocked)) reasons.add('block_unacknowledged');
+      return { status: failed() ? 'rejected' : requests.size ? 'correlated_keeper_blocks' : 'no_non_get',
+        reasons: [...reasons].sort() };
+    }
   };
 }
 
@@ -433,7 +463,7 @@ export async function runCmsRowDLive({ port = 9242, timeoutMs = 10000, requests 
       await guard.drain();
       try { session.close(); } catch { guard.traffic.commandFailed = true; }
     }
-    evidence.traffic = guard.traffic;
+    evidence.traffic = { ...guard.traffic, keeperAssessment: guard.assessment() };
     if (keeperCleanupFailed) {
       evidence.ok = false;
       evidence.reason = 'visibility_keeper_cleanup_failed';

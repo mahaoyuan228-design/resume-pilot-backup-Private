@@ -4,14 +4,18 @@ import assert from 'node:assert/strict';
 import http from 'node:http';
 import { once } from 'node:events';
 import vm from 'node:vm';
+import fs from 'node:fs';
 import { WebSocketServer } from 'ws';
 import { ROW_D_PAGE, ROW_D_FIELDS } from '../scripts/lib/cms-row-d-options.mjs';
 import { runCmsRowDLive } from '../scripts/live/cms-row-d-live.mjs';
 
 const PRIVATE = 'OFFLINE_PRIVATE_BODY_QUERY_ERROR_SENTINEL';
+const autosaveUrl = new URL(`/wecruit/resume/info/edit/${new URL(ROW_D_PAGE).pathname.split('/')[1]}`, ROW_D_PAGE).href;
+
+const liveShape = JSON.parse(fs.readFileSync(new URL('./fixtures/cms-row-d-keeper-nongget-r6.json', import.meta.url), 'utf8'));
 
 async function cdpStub(t, {
-  nonGet = false, blockFails = false, visibilityNonGetAt, networkCase
+  nonGet = false, blockFails = false, visibilityNonGetAt, networkCase, inspection
 } = {}) {
   const calls = [];
   const server = http.createServer((request, response) => {
@@ -31,7 +35,7 @@ async function cdpStub(t, {
       const reply = result => socket.send(JSON.stringify({ id: message.id, result }));
       const event = (method, params) => socket.send(JSON.stringify({ method, params }));
       const requestEvents = (method, { pause = true, networkId = `network-${method}` } = {}) => {
-        const request = { method, url: `https://wecruit.hotjob.cn/resume/info/edit?resumeId=${PRIVATE}`,
+        const request = { method, url: `${autosaveUrl}?iSaJAx=isAjax&request_locale=zh_CN&synthetic=${PRIVATE}`,
           postData: PRIVATE, headers: { 'X-Private': PRIVATE } };
         event('Network.requestWillBeSent', { requestId: `network-${method}`, request });
         if (pause) event('Fetch.requestPaused', { requestId: `paused-${method}`, networkId, request });
@@ -75,9 +79,9 @@ async function cdpStub(t, {
           });
           event('Network.responseReceived', { requestId: 'network-POST', response: { status: 200, body: PRIVATE } });
         }
-        // Executes the real serialized inspector in an empty synthetic realm;
-        // no_document is expected and must never become a live PASS.
-        reply({ result: { value: vm.runInNewContext(message.params.expression) } });
+        // Default: execute the real inspector in an empty synthetic realm.
+        // An explicit fixture replays sanitized per-field evidence only.
+        reply({ result: { value: inspection ?? vm.runInNewContext(message.params.expression) } });
       } else if (message.method === 'Fetch.failRequest' && blockFails) {
         socket.send(JSON.stringify({ id: message.id, error: { message: PRIVATE } }));
       } else {
@@ -237,3 +241,36 @@ for (const blockFails of [false, true]) test(`actual CDP transport records info/
   ]);
   assert.ok(result.traffic.records.every(record => record.endpoint === '/resume/info/edit'));
 });
+
+for (const networkCase of ['blocked_info_edit', 'mismatched_network_id', 'response', 'late_fetch_disable']) {
+  test(`loopback replays recorded 12/16 fields with tenant traffic: ${networkCase}`, async t => {
+    const stub = await cdpStub(t, { networkCase, inspection: liveShape.inspection });
+    const result = await runCmsRowDLive({ port: stub.port, timeoutMs: 1000, wait: async () => {} });
+    safe(result);
+    assert.equal(result.probeCompleted, true);
+    assert.equal(result.ok, false);
+    assert.equal(result.reason, networkCase === 'blocked_info_edit' ? 'row_d_preflight_incomplete' : 'non_get_or_guard_failure');
+    assert.deepEqual(result.fields, liveShape.inspection.fields);
+    assert.equal(result.fields.filter(row => row.ok).length, 12);
+    assert.equal(result.traffic.observedNonGetCount, 1);
+    assert.equal(result.traffic.interceptedNonGetCount, 1);
+    assert.equal(result.traffic.blockedNonGetCount, 1);
+    assert.equal(result.traffic.infoEditObservedCount, 1);
+    assert.equal(result.traffic.infoEditBlockedCount, 1);
+    assert.equal(result.traffic.commandFailed, false);
+    assert.equal(result.traffic.truncated, false);
+    if (networkCase === 'blocked_info_edit') {
+      const { keeperAssessment, ...redactedTraffic } = result.traffic;
+      assert.deepEqual(redactedTraffic, liveShape.traffic, 'the reported aggregate and phases match the supplied live report');
+      assert.deepEqual(keeperAssessment, { status: 'correlated_keeper_blocks', reasons: [] });
+    } else {
+      const reason = { mismatched_network_id: 'network_fetch_unmatched', response: 'response_evidence',
+        late_fetch_disable: 'outside_keeper' }[networkCase];
+      assert.equal(result.traffic.keeperAssessment.status, 'rejected');
+      assert.ok(result.traffic.keeperAssessment.reasons.includes(reason));
+    }
+    assert.doesNotMatch(JSON.stringify(result), /network-POST|paused-POST|wecruit\/resume|iSaJAx|request_locale/);
+    assert.equal(stub.calls.filter(call => call.method === 'Runtime.evaluate').length, 1);
+    assert.equal(stub.calls.find(call => call.method === 'Runtime.evaluate').params.throwOnSideEffect, true);
+  });
+}

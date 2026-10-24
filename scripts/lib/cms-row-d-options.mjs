@@ -132,8 +132,13 @@ const fieldFor = wrapperId => ROW_D_FIELDS.find(field => field.wrapperId === wra
 // explicitly into a fresh evaluation-local result instead.
 const mergeProbeData = (...sources) => {
   const result = {};
-  for (const source of sources) {
-    for (const key of Object.keys(source)) result[key] = source[key];
+  for (let sourceIndex = 0; sourceIndex < sources.length; sourceIndex += 1) {
+    const source = sources[sourceIndex];
+    const keys = Object.keys(source);
+    for (let keyIndex = 0; keyIndex < keys.length; keyIndex += 1) {
+      const key = keys[keyIndex];
+      result[key] = source[key];
+    }
   }
   return result;
 };
@@ -143,6 +148,11 @@ const identity = field => field ? mergeProbeData({
   optionsComplete: field.optionsComplete, harvestedOptionCount: field.harvestedOptionCount,
 }, field.reusedFrom ? { reusedFrom: field.reusedFrom, independentOptionsEvidence: false,
   dictionaryOptionCount: field.dictionaryOptionCount } : {}) : {};
+
+// The real CMS main-world String.trim path is rejected by debug-evaluate.
+// A page shim can close over a pre-existing RegExp whose state V8 protects.
+// Create the whitespace RegExp inside each call, during this evaluation.
+const trimProbeText = text => text.replace(/^\s+|\s+$/gu, '');
 
 /**
  * Match only literal evidenced labels after trimming the requested strings.
@@ -162,7 +172,7 @@ export function resolveCmsRowDOption(wrapperId, requested) {
   try {
     if (!multiple) {
       if (typeof requested !== 'string') return result(false, 'request_type_invalid');
-      labels.push(requested.trim());
+      labels.push(trimProbeText(requested));
     } else {
       if (!Array.isArray(requested)) return result(false, 'request_type_invalid');
       const length = Object.getOwnPropertyDescriptor(requested, 'length');
@@ -177,12 +187,12 @@ export function resolveCmsRowDOption(wrapperId, requested) {
         if (!entry || !Object.hasOwn(entry, 'value') || typeof entry.value !== 'string') {
           return result(false, 'request_type_invalid');
         }
-        labels.push(entry.value.trim());
+        labels.push(trimProbeText(entry.value));
       }
     }
   } catch { return result(false, 'request_type_invalid'); }
   if (labels.some(value => !value)) return result(false, 'request_empty');
-  if (new Set(labels).size !== labels.length) return result(false, 'duplicate_option');
+  if (labels.some((label, index) => labels.indexOf(label) !== index)) return result(false, 'duplicate_option');
   const indexes = labels.map(value => field.options.indexOf(value));
   if (indexes.some(index => index < 0)) return result(false, 'option_unknown');
   const reason = field.reusedFrom ? 'dictionary_reused_unverified'
@@ -190,8 +200,8 @@ export function resolveCmsRowDOption(wrapperId, requested) {
   return result(true, reason, multiple ? { optionIndexes: indexes } : { optionIndex: indexes[0] });
 }
 
-const normalizeText = text => String(text ?? '').replace(/\s+/gu, ' ').trim();
-const listTokens = text => String(text ?? '').trim().split(/\s+/u).filter(Boolean);
+const normalizeText = text => trimProbeText(String(text ?? '').replace(/\s+/gu, ' '));
+const listTokens = text => trimProbeText(String(text ?? '')).split(/\s+/u).filter(Boolean);
 
 /**
  * Inspect only. requests is an optional plain object keyed by exact allowlisted
@@ -213,7 +223,9 @@ export function inspectCmsRowDOptions(doc, requests = {}) {
   const row = (field, ok, reason, extra = {}) => mergeProbeData(SAFETY, identity(field),
     { ok, status: ok ? 'observed' : 'skipped', reason }, extra);
   const stop = reason => {
-    fields.push(...ROW_D_FIELDS.map(field => row(field, false, reason)));
+    for (let index = 0; index < ROW_D_FIELDS.length; index += 1) {
+      fields.push(row(ROW_D_FIELDS[index], false, reason));
+    }
     return finish(false, reason);
   };
   try {
@@ -236,11 +248,25 @@ export function inspectCmsRowDOptions(doc, requests = {}) {
     // Blink does not mark Element.matches/closest as Affects=Nothing. Use
     // querySelectorAll (which is marked) and tree reads instead. Cache only
     // evaluation-local snapshots; the inspector never changes the DOM.
-    const selectorCache = new Map();
+    // CMS scripts can install stateful collection iterator shims. Consuming
+    // even a freshly returned NodeList through spread/for-of can then write
+    // page-owned shim state, which V8 rejects before our catch can run. Read
+    // only length/indexes and keep the cache in evaluation-local arrays.
+    const snapshot = collection => {
+      const result = [];
+      for (let index = 0; index < collection.length; index += 1) result.push(collection[index]);
+      return result;
+    };
+    const cachedSelectors = [];
+    const cachedMatches = [];
     const matches = (node, selector) => {
       if (!node) return false;
-      if (!selectorCache.has(selector)) selectorCache.set(selector, [...doc.querySelectorAll(selector)]);
-      return selectorCache.get(selector).includes(node);
+      const index = cachedSelectors.indexOf(selector);
+      if (index !== -1) return cachedMatches[index].includes(node);
+      const nodes = snapshot(doc.querySelectorAll(selector));
+      cachedSelectors.push(selector);
+      cachedMatches.push(nodes);
+      return nodes.includes(node);
     };
     const closest = (node, selector) => {
       for (let parent = node; parent; parent = parent.parentElement) {
@@ -258,25 +284,34 @@ export function inspectCmsRowDOptions(doc, requests = {}) {
       }
       return true;
     };
-    const available = node => visible(node) && !node.disabled
+    const available = node => visible(node)
       && !matches(node, '[disabled],[aria-disabled="true"],.ant-select-disabled,.ant-radio-disabled,.ant-checkbox-disabled')
       && !closest(node, 'fieldset[disabled],[inert],[aria-disabled="true"],.ant-select-disabled,.ant-radio-disabled,.ant-checkbox-disabled');
-    const allIds = [...doc.querySelectorAll('[id]')];
-    const exactIds = id => allIds.filter(node => node.id === id);
+    const allIds = snapshot(doc.querySelectorAll('[id]'));
+    const exactIds = id => allIds.filter(node => node.getAttribute('id') === id);
+    // Do not consult application-defined IDL accessors on individual elements.
+    // Type's missing/invalid-value default is text, just like HTMLInputElement.
+    const inputType = node => {
+      const type = (node.getAttribute('type') || '').toLowerCase();
+      return ['hidden', 'text', 'search', 'tel', 'url', 'email', 'password', 'date',
+        'month', 'week', 'time', 'datetime-local', 'number', 'range', 'color',
+        'checkbox', 'radio', 'file', 'submit', 'image', 'reset', 'button'].includes(type) ? type : 'text';
+    };
     const namedWrapper = /^\d+_\d+_\d+$/u;
     const nearestNamedWrapper = node => {
       for (let current = node; current; current = current.parentElement) {
-        if (namedWrapper.test(current.id || '')) return current;
+        if (namedWrapper.test(current.getAttribute('id') || '')) return current;
       }
       return null;
     };
     const ownedByWrapper = (node, wrapper) => {
       for (let current = node; current && current !== wrapper; current = current.parentElement) {
-        if (namedWrapper.test(current.id || '')) return false;
+        if (namedWrapper.test(current.getAttribute('id') || '')) return false;
       }
       return wrapper.contains(node);
     };
-    for (const field of ROW_D_FIELDS) {
+    for (let fieldIndex = 0; fieldIndex < ROW_D_FIELDS.length; fieldIndex += 1) {
+      const field = ROW_D_FIELDS[fieldIndex];
       const hasRequest = Object.hasOwn(requests, field.wrapperId);
       const resolution = hasRequest ? resolveCmsRowDOption(field.wrapperId, requests[field.wrapperId]) : undefined;
       const push = (ok, reason, extra = {}) => fields.push(row(field, ok, reason,
@@ -293,7 +328,7 @@ export function inspectCmsRowDOptions(doc, requests = {}) {
       const wrappers = exactIds(field.wrapperId);
       if (wrappers.length !== 1) { push(false, 'wrapper_not_unique'); continue; }
       const wrapper = wrappers[0];
-      const candidates = [...wrapper.querySelectorAll('.ant-form-item')];
+      const candidates = snapshot(wrapper.querySelectorAll('.ant-form-item'));
       const item = candidates.length === 1 ? candidates[0] : null;
       // Captured scripts resolve a descendant item from the outer wrapper.
       // There is deliberately no ancestor, wrapper-as-item or label fallback.
@@ -304,19 +339,19 @@ export function inspectCmsRowDOptions(doc, requests = {}) {
       }
       const owns = node => closest(node, '.ant-form-item') === item
         && closest(node, '.form-cell') === section && ownedByWrapper(node, wrapper);
-      const owned = selector => [...item.querySelectorAll(selector)].filter(owns);
-      const labelsFor = candidate => [...candidate.querySelectorAll('.ant-form-item-label > label')]
+      const owned = selector => snapshot(item.querySelectorAll(selector)).filter(owns);
+      const labelsFor = candidate => snapshot(candidate.querySelectorAll('.ant-form-item-label > label'))
         .filter(label => closest(label, '.ant-form-item') === candidate && closest(label, '.form-cell') === section);
       const labels = labelsFor(item);
       if (labels.length !== 1 || !owns(labels[0]) || !visible(labels[0])
         || normalizeText(labels[0].textContent) !== field.label) {
         push(false, 'label_mismatch'); continue;
       }
-      const peers = [...section.querySelectorAll('.ant-form-item')]
+      const peers = snapshot(section.querySelectorAll('.ant-form-item'))
         .filter(candidate => closest(candidate, '.form-cell') === section
           && labelsFor(candidate).some(label => normalizeText(label.textContent) === field.label));
       if (peers.length !== 1 || peers[0] !== item) { push(false, 'question_not_unique'); continue; }
-      const controls = [...item.querySelectorAll('.ant-select,.ant-calendar-picker,.ant-picker,.ant-radio-group,.ant-checkbox-group,input,button,textarea,select,[contenteditable="true"],.el-select,.el-date-editor,.ant-upload')];
+      const controls = snapshot(item.querySelectorAll('.ant-select,.ant-calendar-picker,.ant-picker,.ant-radio-group,.ant-checkbox-group,input,button,textarea,select,[contenteditable="true"],.el-select,.el-date-editor,.ant-upload'));
       if (controls.some(node => !owns(node))) { push(false, 'control_ownership_mismatch'); continue; }
       if (owned('.ant-calendar-picker,.ant-picker,button,textarea,select,[contenteditable="true"],.el-select,.el-date-editor,.ant-upload,input[type="file"]').length) {
         push(false, 'control_kind_mismatch'); continue;
@@ -328,20 +363,20 @@ export function inspectCmsRowDOptions(doc, requests = {}) {
       if (field.controlKind === 'ant-select') {
         const selects = owned('.ant-select');
         if (selects.length !== 1 || owned('.ant-radio-group,.ant-checkbox-group,input[type="radio"],input[type="checkbox"]').length
-          || owned('input').some(node => !selects[0]?.contains(node) || !['text', 'search'].includes(node.type))) {
+          || owned('input').some(node => !selects[0]?.contains(node) || !['text', 'search'].includes(inputType(node)))) {
           push(false, 'control_kind_mismatch'); continue;
         }
         const select = selects[0];
-        const combos = [...select.querySelectorAll('[role="combobox"]')].filter(owns);
+        const combos = snapshot(select.querySelectorAll('[role="combobox"]')).filter(owns);
         if (combos.length !== 1 || !matches(combos[0], '.ant-select-selection')) {
           push(false, 'control_not_unique'); continue;
         }
         const combo = combos[0];
-        if (![select, combo, ...owned('input')].every(available)) { push(false, 'control_not_available'); continue; }
+        if (!available(select) || !available(combo) || !owned('input').every(available)) { push(false, 'control_not_available'); continue; }
         const references = listTokens(combo.getAttribute('aria-controls'));
         if (references.length !== 1) { push(false, 'dropdown_reference_missing_or_ambiguous'); continue; }
         const reference = references[0];
-        const owners = [...doc.querySelectorAll('[aria-controls]')]
+        const owners = snapshot(doc.querySelectorAll('[aria-controls]'))
           .filter(node => listTokens(node.getAttribute('aria-controls')).includes(reference));
         if (owners.length !== 1 || owners[0] !== combo) { push(false, 'dropdown_owner_not_unique'); continue; }
         const targets = exactIds(reference);
@@ -361,7 +396,7 @@ export function inspectCmsRowDOptions(doc, requests = {}) {
           || (closest(dropdown, '.form-cell') && closest(dropdown, '.form-cell') !== section)) {
           push(false, 'dropdown_scope_mismatch'); continue;
         }
-        const optionNodes = [...list.querySelectorAll('.ant-select-dropdown-menu-item,.ant-select-item-option,li[role="option"],.ant-select-item,li')];
+        const optionNodes = snapshot(list.querySelectorAll('.ant-select-dropdown-menu-item,.ant-select-item-option,li[role="option"],.ant-select-item,li'));
         if (!optionNodes.length) { push(false, 'current_options_unavailable'); continue; }
         if (optionNodes.some(node => closest(node, '.ant-select-dropdown') !== dropdown
           || closest(node, '.ant-form-item') !== listItem || closest(node, '.form-cell') !== listSection
@@ -373,7 +408,9 @@ export function inspectCmsRowDOptions(doc, requests = {}) {
         if (optionNodes.some(node => matches(node, '[disabled],[aria-disabled="true"],.ant-select-dropdown-menu-item-disabled,.ant-select-item-option-disabled'))) {
           push(false, 'option_not_available'); continue;
         }
-        optionLabels.push(...optionNodes.map(node => normalizeText(node.textContent)));
+        for (let index = 0; index < optionNodes.length; index += 1) {
+          optionLabels.push(normalizeText(optionNodes[index].textContent));
+        }
       } else {
         const radio = field.controlKind === 'radio-group';
         const kind = radio ? 'radio' : 'checkbox';
@@ -383,7 +420,7 @@ export function inspectCmsRowDOptions(doc, requests = {}) {
         const inputs = owned('input');
         if (owned(`.ant-select,.ant-${opposite}-group,input[type="${opposite}"]`).length
           || groups.length > 1 || !optionWrappers.length || inputs.length !== optionWrappers.length
-          || inputs.some(node => node.type !== kind)) {
+          || inputs.some(node => inputType(node) !== kind)) {
           push(false, 'control_kind_mismatch'); continue;
         }
         if (groups.length && optionWrappers.some(node => !groups[0].contains(node))) {
@@ -395,12 +432,14 @@ export function inspectCmsRowDOptions(doc, requests = {}) {
           || inputs.some(input => !optionWrappers.some(option => option.contains(input)))) {
           push(false, 'option_ownership_mismatch'); continue;
         }
-        if (![...groups, ...optionWrappers, ...inputs].every(available)) {
+        if (!groups.every(available) || !optionWrappers.every(available) || !inputs.every(available)) {
           push(false, 'control_not_available'); continue;
         }
-        optionLabels.push(...optionWrappers.map(option => normalizeText(option.textContent)));
+        for (let index = 0; index < optionWrappers.length; index += 1) {
+          optionLabels.push(normalizeText(optionWrappers[index].textContent));
+        }
       }
-      if (optionLabels.some(label => !label) || new Set(optionLabels).size !== optionLabels.length) {
+      if (optionLabels.some((label, index) => !label || optionLabels.indexOf(label) !== index)) {
         push(false, 'option_list_ambiguous'); continue;
       }
       // Complete dictionaries require exact order and cardinality. A sample
@@ -459,6 +498,7 @@ export function buildCmsRowDOptionsProbeExpression(requests = {}) {
     `const fieldFor = ${fieldFor.toString()};`,
     `const mergeProbeData = ${mergeProbeData.toString()};`,
     `const identity = ${identity.toString()};`,
+    `const trimProbeText = ${trimProbeText.toString()};`,
     `const normalizeText = ${normalizeText.toString()};`,
     `const listTokens = ${listTokens.toString()};`,
     `const resolveCmsRowDOption = ${resolveCmsRowDOption.toString()};`,

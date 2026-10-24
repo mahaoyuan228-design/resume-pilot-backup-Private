@@ -44,7 +44,8 @@ function topology() {
 // Selector evaluation belongs to fixture preparation. During debug-evaluate,
 // methods only read precomputed own data, so jsdom's lazy caches cannot obscure
 // the actual expression's JS compatibility with V8's side-effect checker.
-function pureDocumentSetup({ mutate, visibilityState = 'visible', readyState = 'complete', url } = {}) {
+function pureDocumentSetup({ mutate, visibilityState = 'visible', readyState = 'complete', url,
+  hostileCollections = false, hostileProperties = false, hostileArrayIterator = false, hostileTrim = null } = {}) {
   const dom = topology();
   const { document } = dom.window;
   mutate?.(document);
@@ -77,13 +78,14 @@ function pureDocumentSetup({ mutate, visibilityState = 'visible', readyState = '
   dom.window.close();
   return `(() => {
     const rows = ${JSON.stringify(rows)};
+    const hostEffects = { iteratorReads: 0, propertyReads: 0 };
     const nodes = rows.map(row => ({ id: row.id, type: row.type,
       tagName: row.tagName, isConnected: row.isConnected, disabled: row.disabled,
       textContent: row.text, _attributes: row.attributes, _selectors: row.selectors,
       querySelectorAll(selector) {
         const entry = this._selectors[selector];
         if (!entry) throw new Error('synthetic_unknown_selector');
-        return entry.all.map(index => nodes[index]);
+        return entry.collection || entry.all.map(index => nodes[index]);
       },
       querySelector(selector) { return this.querySelectorAll(selector)[0] ?? null; },
       closest(selector) {
@@ -123,6 +125,28 @@ function pureDocumentSetup({ mutate, visibilityState = 'visible', readyState = '
           get() { throw new Error('synthetic_current_value_read'); }
         });
     }
+    if (${JSON.stringify(hostileCollections)}) {
+      // App-installed iterator accessors can write pre-existing closure state.
+      // Match a native NodeList's indexed/length surface without making its
+      // iterator safe merely because a fixture returned a plain array.
+      for (const node of nodes) for (const entry of Object.values(node._selectors)) {
+        const collection = { length: entry.all.length };
+        for (let index = 0; index < entry.all.length; index += 1)
+          collection[index] = nodes[entry.all[index]];
+        Object.defineProperty(collection, Symbol.iterator, {
+          get() { hostEffects.iteratorReads += 1; return Array.prototype.values; }
+        });
+        entry.collection = collection;
+      }
+    }
+    if (${JSON.stringify(hostileProperties)}) {
+      for (const node of nodes) for (const property of ['id', 'type', 'disabled']) {
+        const original = node[property];
+        Object.defineProperty(node, property, {
+          get() { hostEffects.propertyReads += 1; return original; }
+        });
+      }
+    }
     const document = nodes[0];
     document.visibilityState = ${JSON.stringify(visibilityState)};
     document.readyState = ${JSON.stringify(readyState)};
@@ -131,6 +155,25 @@ function pureDocumentSetup({ mutate, visibilityState = 'visible', readyState = '
       getComputedStyle() { throw new Error('synthetic_layout_read_forbidden'); }
     };
     globalThis.document = document;
+    if (${JSON.stringify(hostileTrim)}) {
+      // A library-style trim shim closes over RegExps made before evaluation.
+      // Native replace can touch that shared RegExp state even without an
+      // explicit write or a DOM read in the shim itself.
+      const flags = ${JSON.stringify(hostileTrim)} === 'global' ? 'g' : '';
+      const whitespace = String.fromCharCode(92) + 's+';
+      const leading = new RegExp('^' + whitespace, flags);
+      const trailing = new RegExp(whitespace + '$', flags);
+      Object.defineProperty(String.prototype, 'trim', {
+        configurable: true, writable: true,
+        value() { return String(this).replace(leading, '').replace(trailing, ''); }
+      });
+    }
+    if (${JSON.stringify(hostileArrayIterator)}) {
+      Object.defineProperty(Array.prototype, Symbol.iterator, {
+        configurable: true,
+        get() { hostEffects.iteratorReads += 1; return Array.prototype.values; }
+      });
+    }
   })()`;
 }
 
@@ -237,3 +280,71 @@ test('disabled and hidden synthetic controls fail closed after a complete debug-
   assert.equal(result.fields.find(field => field.wrapperId === SELECT).reason, 'control_not_available');
   assert.equal(result.fields.find(field => field.wrapperId === RADIO).reason, 'wrapper_scope_or_visibility_mismatch');
 });
+
+for (const [name, fixture, reference] of [
+  ['page-owned NodeList iterator', { hostileCollections: true },
+    '[...document.querySelectorAll("[id]")].length'],
+  ['page-owned DOM property accessors', { hostileProperties: true },
+    'document.querySelectorAll("[id]")[0].id'],
+  ['page-owned Array iterator', { hostileArrayIterator: true },
+    '[...[1, 2]].length']
+]) test(`serialized row D avoids ${name} under real V8 debug-evaluate`, async () => {
+  const setup = pureDocumentSetup(fixture);
+  const rejected = await debugEvaluate(reference, setup);
+  assert.equal(rejected.exceptionDetails?.exception?.className, 'EvalError',
+    'the reference read must actually reach an app-owned side effect');
+  assert.match(rejected.exceptionDetails.exception.description, /Possible side-effect in debug-evaluate/);
+  const result = valueFrom(await debugEvaluate(buildCmsRowDOptionsProbeExpression(), setup));
+  safety(result);
+  assert.equal(result.reason, 'row_d_preflight_incomplete');
+  assert.equal(result.fields.length, ROW_D_FIELDS.length);
+  assert.equal(result.fields.find(field => field.wrapperId === SELECT).reason, 'read_only_options_preflight');
+  assert.equal(result.fields.find(field => field.wrapperId === RADIO).reason, 'read_only_options_preflight');
+});
+
+for (const [name, type] of [
+  ['missing', null], ['empty', ''], ['invalid', 'synthetic-invalid-input-type'], ['uppercase', 'SEARCH']
+]) test(`serialized row D preserves native ${name} input-type behavior from attributes`, async () => {
+  const setup = pureDocumentSetup({ mutate(document) {
+    const input = document.getElementById(SELECT).querySelector('input');
+    if (type === null) input.removeAttribute('type');
+    else input.setAttribute('type', type);
+  } });
+  const result = valueFrom(await debugEvaluate(buildCmsRowDOptionsProbeExpression(), setup));
+  safety(result);
+  assert.equal(result.reason, 'row_d_preflight_incomplete');
+  assert.equal(result.fields.find(field => field.wrapperId === SELECT).reason, 'read_only_options_preflight');
+});
+
+for (const flags of ['global', 'non-global']) {
+  test(`serialized row D avoids a shared ${flags} RegExp trim shim under real V8 debug-evaluate`, async () => {
+    const setup = pureDocumentSetup({ hostileTrim: flags });
+    const rejected = await debugEvaluate("' cms '.trim() === 'cms'", setup);
+    assert.equal(rejected.exceptionDetails?.exception?.className, 'EvalError',
+      'a page trim shim with shared RegExps must reproduce the side-effect boundary');
+    assert.match(rejected.exceptionDetails.exception.description, /Possible side-effect in debug-evaluate/);
+    const requests = {
+      [SELECT]: ROW_D_FIELDS.find(field => field.wrapperId === SELECT).options[0],
+      [RADIO]: ROW_D_FIELDS.find(field => field.wrapperId === RADIO).options[0],
+      [CHECKBOX]: [ROW_D_FIELDS.find(field => field.wrapperId === CHECKBOX).options[0]]
+    };
+    for (const requested of [false, true]) {
+      const expression = buildCmsRowDOptionsProbeExpression(requested ? requests : {});
+      const result = valueFrom(await debugEvaluate(expression, setup));
+      safety(result);
+      assert.equal(result.reason, 'row_d_preflight_incomplete');
+      assert.equal(result.fields.length, ROW_D_FIELDS.length);
+      const field = id => result.fields.find(row => row.wrapperId === id);
+      assert.equal(field(SELECT).reason, 'read_only_options_preflight');
+      assert.equal(field(RADIO).reason, 'read_only_options_preflight');
+      assert.equal(field(CHECKBOX).reason, 'option_dictionary_incomplete');
+      if (requested) {
+        assert.equal(field(SELECT).resolution.optionIndex, 0, 'single-value resolver completed');
+        assert.equal(field(RADIO).resolution.optionIndex, 0, 'radio resolver completed');
+        assert.deepEqual(field(CHECKBOX).resolution.optionIndexes, [0], 'array resolver completed');
+      } else {
+        for (const row of result.fields) assert.equal(row.resolution, undefined);
+      }
+    }
+  });
+}

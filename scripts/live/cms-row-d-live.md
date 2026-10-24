@@ -5,8 +5,18 @@ Original runner baseline: `53791dfe6da2a6ae2b627b8e9b945ca0d411fefc` (`codex/cms
 Side-effect R2 starts at `c32f2fda429f8f32ab318e9fdf0c2fe69f52a386` on
 `codex/cms-row-d-probe-side-effect-r2`. The real-page handover reported
 `inspection_exception` with `probeCompleted=false`, rather than a login wall.
-This revision fixes the expression's compatibility with the evaluation guard;
-it does not establish a complete preflight or live fill support.
+R2 passed isolated fixtures, but the subsequent real-page re-probe still failed.
+Neither isolated checks nor a completed inspection establish a complete
+preflight or live fill support.
+
+R3 starts at `2bc7d9e289c5ba1c775decf831fc84dd6d3d40df`, after the
+parent's real CMS re-probe still returned `inspection_exception`. A guarded,
+read-only diagnostic narrowed that failure to the page's `String.trim` path:
+even trimming a constant was rejected. The serialized helpers now trim with a
+fresh whitespace RegExp per call, including option requests and ARIA tokens.
+Collection snapshots use indexed reads rather than page-owned iterators; ID,
+type and disabled checks use attributes rather than element IDL overrides.
+See [R3 validation notes](../../tests/cms-row-d-probe-side-effect-r3-notes.md).
 
 `cms-row-d-live.mjs` attaches to an existing CMS resume tab and runs the merged offline options resolver and read-only ownership preflight. This is a probe, not a fill adapter. It never opens a popup, clicks an option or 保存/提交, emits input events, or reads current field values. No originals require restoration because the probe performs no form interactions or value mutations.
 
@@ -83,6 +93,12 @@ node --test tests/cms-basic-info-row-c-probe.test.mjs tests/cms-basic-info-gaps.
 ```
 
 The first command covers resolver/serialization parity, zero current-value reads or interactions, guard failures and teardown, target/output confinement, redaction, and an actual HTTP/WebSocket transport against a local fake CDP server. It also runs the serialized expression through `node:inspector` with V8's real `throwOnSideEffect=true`, using a synthetic tree with pure selector reads. The V8 test does not substitute for Blink's DOM API checks or a real-page re-run. All DOMs and CDP servers in these tests are synthetic; no live browser session is used. See [R2 validation notes](../../tests/cms-row-d-probe-side-effect-r2-notes.md) for the isolated Edge fixture check.
+
+R3 adds shared-RegExp trim shims, stateful NodeList/Array iterators and element
+IDL accessor regressions. Each hostile fixture first proves that V8 rejects the
+reference operation, then requires the serialized inspection to complete.
+Offline green does not establish a live PASS: the parent must re-run the official
+guarded probe on visible CMS at CDP 9242, and preflight may still be incomplete.
 
 API rationale: Blink's [Element IDL](https://raw.githubusercontent.com/chromium/chromium/main/third_party/blink/renderer/core/dom/element.idl)
 does not annotate `matches`, `closest`, or `getClientRects` with `Affects=Nothing`;

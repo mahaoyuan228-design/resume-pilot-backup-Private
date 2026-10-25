@@ -3,6 +3,27 @@
 # This script never deletes or overwrites an existing build.
 $ErrorActionPreference = 'Stop'
 
+# Windows PowerShell 5.1 can inherit a PowerShell 7 module search path. Recover
+# only a missing command from this engine's installed system Utility module.
+try { $internalHashCommand = Get-Command -Name Get-FileHash -ErrorAction Stop }
+catch [System.Management.Automation.CommandNotFoundException] { $internalHashCommand = $null }
+if ($null -eq $internalHashCommand) {
+  if ($PSVersionTable.PSEdition -ne 'Desktop' -or $PSVersionTable.PSVersion.Major -ne 5 -or $PSVersionTable.PSVersion.Minor -ne 1) {
+    throw 'Get-FileHash is unavailable; system Utility recovery requires Windows PowerShell 5.1.'
+  }
+  $internalUtilityPath = [IO.Path]::Combine($PSHOME, 'Modules\Microsoft.PowerShell.Utility\Microsoft.PowerShell.Utility.psd1')
+  Import-Module -Name $internalUtilityPath -ErrorAction Stop
+  $internalHashCommands = @(Get-Command -Name Get-FileHash -ErrorAction Stop)
+  if ($internalHashCommands.Count -ne 1) { throw 'System Get-FileHash is not unique.' }
+  $internalHashCommand = $internalHashCommands[0]
+  if ($internalHashCommand.Name -cne 'Get-FileHash' -or $internalHashCommand.ModuleName -cne 'Microsoft.PowerShell.Utility' -or [string]$internalHashCommand.Module.Version -cne '3.1.0.0') {
+    throw 'System Get-FileHash module identity did not match.'
+  }
+  if (-not [string]::Equals([IO.Path]::GetFullPath($internalHashCommand.Module.Path), [IO.Path]::GetFullPath($internalUtilityPath), [StringComparison]::OrdinalIgnoreCase)) {
+    throw 'System Get-FileHash module path did not match.'
+  }
+}
+
 $repoRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..')).Path
 $manifestPath = Join-Path $repoRoot 'manifest.json'
 if (-not (Test-Path -LiteralPath $manifestPath -PathType Leaf)) { throw 'manifest.json 不存在。' }

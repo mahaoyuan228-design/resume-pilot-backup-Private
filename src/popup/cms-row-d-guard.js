@@ -6,16 +6,18 @@ const REASONS=new Set(['not_armed','permission_or_api_missing','active_cms_targe
  'rules_changed_or_unknown','worker_context_lost_rules_retained','orphan_rules_unknown','preexisting_rules_conflict',
  'command_timeout_unknown','api_outcome_unknown_retained','lease_expired_retained','rules_installed_no_live_pass',
  'match_owner_conflict','match_schema_invalid','journal_limit','unknown_request_blocked','new_channel_blocked',
- 'target_closed_rules_retained','history_schema_or_limit','remove_not_verified','operation_invalid']);
+ 'target_closed_rules_retained','history_schema_or_limit','remove_not_verified','operation_invalid',
+ 'document_probe_invalid','document_changed_retained']);
 const METHODS=new Set(['GET','POST','PUT','PATCH','DELETE','HEAD','OPTIONS','CONNECT','OTHER']);
 const CATEGORIES=new Set(['other_non_get','new_channel_blocked','cms_info_edit_blocked']);
 const BOOLS=['ruleReadBackVerified','installAttempted','retentionRequested','rulesRemovedAfterTabClosed','tabClosedByBrowserEvent',
- 'commandPending','recordsTruncated','networkEvidenceAvailable'];
+ 'commandPending','recordsTruncated','networkEvidenceAvailable','currentDocumentEvidenceVerified'];
 const COUNTS=['debugMatchCount','historyMatchCount'];
 export function publicGuardEvidence(value){
  if(value?.kind!=='cms_d_network_guard_v1'||!PHASES.has(value.phase)||!STATES.has(value.protectionState)||!REASONS.has(value.reason))throw Error('response_invalid');
  const out={kind:value.kind,phase:value.phase,reason:value.reason,protectionState:value.protectionState};
  for(const key of BOOLS){if(typeof value[key]!=='boolean')throw Error('response_invalid');out[key]=value[key];}
+ if(out.currentDocumentEvidenceVerified&&(out.phase!=='armed_read_only'||!out.ruleReadBackVerified||out.commandPending||out.protectionState!=='readback_verified'))throw Error('response_invalid');
  for(const key of COUNTS){if(!Number.isInteger(value[key])||value[key]<0||value[key]>128)throw Error('response_invalid');out[key]=value[key];}
  if(!Array.isArray(value.records)||value.records.length>128)throw Error('response_invalid');
  out.records=value.records.map(row=>{
@@ -24,7 +26,7 @@ export function publicGuardEvidence(value){
    ||!/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z$/.test(row.observedAtUtc))throw Error('response_invalid');
   return {sequence:row.sequence,observedAtUtc:row.observedAtUtc,source:'rule_match_debug',method:row.method,category:row.category,action:'block'};
  });
- out.coverage='target_tab_network_stack_only';out.currentDocumentEvidenceVerified=false;
+ out.coverage='target_tab_network_stack_only';out.documentIdentityScope='last_top_frame_probe_only';
  out.existingChannelsCovered=false;out.noTabWorkersCovered=false;out.beforeArmRequestsCovered=false;out.getSideEffectsCovered=false;
  out.nativeCancellationAvailable=false;out.interactionAllowed=false;out.liveSupportClaimed=false;out.livePassClaimed=false;out.booked=53;
  return out;

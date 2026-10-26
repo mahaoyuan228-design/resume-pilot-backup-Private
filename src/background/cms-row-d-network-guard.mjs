@@ -22,10 +22,10 @@ const isPage=url=>{try{const v=new URL(url);return !v.username&&!v.password&&v.o
 export function createCmsDNetworkGuard(api=globalThis.chrome,{now=Date.now}={}){
   let phase='idle',reason='not_armed',binding=null,expected=null,readBack=false,attempted=false,removed=false;
   let inflight=false,leaseEnd=0,lastHistory=0,closedByEvent=false,terminal=false,protectionState='not_requested';
-  let debugCount=0,historyCount=0,truncated=false,ordinal=0;
+  let debugCount=0,historyCount=0,truncated=false,ordinal=0,documentVerified=false;
   const pending=new Set(),seen=new Set(),records=[];
   const dnr=api?.declarativeNetRequest;
-  const latch=code=>{if(!terminal)reason=code;terminal=true;phase='stopped_retained';readBack=false;protectionState='unknown';};
+  const latch=code=>{if(!terminal)reason=code;terminal=true;phase='stopped_retained';readBack=false;documentVerified=false;protectionState='unknown';};
   const expire=()=>{if(leaseEnd&&now()>=leaseEnd&&!removed)latch('lease_expired_retained');};
   function snapshot(extra={}){
     expire();return {kind:'cms_d_network_guard_v1',phase,reason,ruleReadBackVerified:readBack,
@@ -34,7 +34,7 @@ export function createCmsDNetworkGuard(api=globalThis.chrome,{now=Date.now}={}){
       networkEvidenceAvailable:debugCount>0||historyCount>0,records:records.map(row=>({...row})),
       coverage:'target_tab_network_stack_only',existingChannelsCovered:false,noTabWorkersCovered:false,
       beforeArmRequestsCovered:false,getSideEffectsCovered:false,nativeCancellationAvailable:false,
-      currentDocumentEvidenceVerified:false,historyScope:binding?.url?'bound_guard_window':'orphan_rules_context_unknown',
+      currentDocumentEvidenceVerified:documentVerified&&!terminal&&pending.size===0,documentIdentityScope:'last_top_frame_probe_only',historyScope:binding?.url?'bound_guard_window':'orphan_rules_context_unknown',
       interactionAllowed:false,writeStarted:false,liveSupportClaimed:false,livePassClaimed:false,booked:53,...extra};
   }
   async function call(task){
@@ -47,32 +47,54 @@ export function createCmsDNetworkGuard(api=globalThis.chrome,{now=Date.now}={}){
   }
   const available=()=>{
     const p=api?.runtime?.getManifest?.().permissions||[];
-    return p.includes('declarativeNetRequest')&&p.includes('declarativeNetRequestFeedback')
+    return p.includes('declarativeNetRequest')&&p.includes('declarativeNetRequestFeedback')&&p.includes('scripting')
+      &&typeof api?.scripting?.executeScript==='function'
       &&['getSessionRules','updateSessionRules','getDynamicRules','getEnabledRulesets','getMatchedRules'].every(k=>typeof dnr?.[k]==='function')
       &&typeof dnr?.onRuleMatchedDebug?.addListener==='function';
   };
-  async function targetStable(){
-    expire();if(terminal||!binding||closedByEvent)return false;
+  async function targetStable(capture=false){
+    documentVerified=false;expire();if(terminal||!binding||closedByEvent)return false;
     const tab=await call(()=>api.tabs.get(binding.id));
     expire();if(terminal||tab.id!==binding.id||tab.url!==binding.url||!tab.active){latch('target_changed_retained');return false;}
-    return true;
+    // Chrome supplies documentId/frameId outside the injected result. The
+    // isolated function reads no fields and returns only exact-URL/top booleans.
+    const results=await call(()=>api.scripting.executeScript({target:{tabId:binding.id,frameIds:[0]},
+      world:'ISOLATED',injectImmediately:true,args:[binding.url],func:function(expectedFullUrl){
+        return {topFrame:window===window.top,urlMatches:location.href===expectedFullUrl};
+      }}));
+    expire();if(terminal)return false;
+    const row=Array.isArray(results)&&results.length===1?results[0]:null;
+    if(!row||row.frameId!==0||typeof row.documentId!=='string'||row.documentId.length<1||row.documentId.length>128
+      ||/[\x00-\x20\x7f]/.test(row.documentId)||!row.result||Object.keys(row.result).sort().join('|')!=='topFrame|urlMatches'
+      ||row.result.topFrame!==true||row.result.urlMatches!==true){latch('document_probe_invalid');return false;}
+    if(capture&&binding.documentId===null)binding.documentId=row.documentId;
+    else if(row.documentId!==binding.documentId){latch('document_changed_retained');return false;}
+    documentVerified=true;return true;
+  }
+  async function boundCall(task){
+    if(!await targetStable())return null;
+    const value=await call(task);
+    if(!await targetStable())return null;
+    return {value};
   }
   async function verify(){
-    const rules=await call(()=>dnr.getSessionRules());
+    const observed=binding?.url?await boundCall(()=>dnr.getSessionRules()):{value:await call(()=>dnr.getSessionRules())};
+    if(!observed)return false;
+    const rules=observed.value;
     if(!binding){
       if(rules.some(rule=>RULE_IDS.includes(rule.id))){
         const ids=rules.find(rule=>rule.id===RULE_IDS[0])?.condition?.tabIds;
         if(Array.isArray(ids)&&ids.length===1&&Number.isInteger(ids[0])&&ids[0]>=0&&sameRules(rules,cmsDSessionRules(ids[0]))){
-          binding={id:ids[0],url:null};expected=cmsDSessionRules(ids[0]);attempted=true;
+          binding={id:ids[0],url:null,documentId:null};expected=cmsDSessionRules(ids[0]);attempted=true;
           phase='orphaned_retained';reason='worker_context_lost_rules_retained';terminal=true;protectionState='orphan_rules_present';
         }else latch('orphan_rules_unknown');
       }
       return false;
     }
     if(!sameRules(rules,expected)){latch('rules_changed_or_unknown');return false;}
-    const dynamic=await call(()=>dnr.getDynamicRules()),statics=await call(()=>dnr.getEnabledRulesets());
-    if(dynamic.length||statics.length){latch('preexisting_rules_conflict');return false;}
-    if(!await targetStable())return false;
+    const dynamic=await boundCall(()=>dnr.getDynamicRules());if(!dynamic)return false;
+    const statics=await boundCall(()=>dnr.getEnabledRulesets());if(!statics)return false;
+    if(dynamic.value.length||statics.value.length){latch('preexisting_rules_conflict');return false;}
     readBack=true;protectionState='readback_verified';return true;
   }
   function match(info){
@@ -96,20 +118,26 @@ export function createCmsDNetworkGuard(api=globalThis.chrome,{now=Date.now}={}){
   api?.tabs?.onRemoved?.addListener?.(id=>{if(binding&&id===binding.id){closedByEvent=true;latch('target_closed_rules_retained');}});
 
   async function arm(){
-    if(phase!=='idle'||binding||attempted)return snapshot({operation:'arm'});
+    if(phase!=='idle'||binding||attempted){
+      if(binding?.url&&!terminal)await verify();
+      return snapshot({operation:'arm'});
+    }
     if(!available()){reason='permission_or_api_missing';return snapshot({operation:'arm'});}
     await verify();if(terminal)return snapshot({operation:'arm'});
     const tabs=await call(()=>api.tabs.query({active:true,currentWindow:true}));
     if(!Array.isArray(tabs)||tabs.length!==1||!Number.isInteger(tabs[0].id)||!isPage(tabs[0].url)){
       reason='active_cms_target_not_unique';return snapshot({operation:'arm'});
     }
-    binding={id:tabs[0].id,url:tabs[0].url};expected=cmsDSessionRules(binding.id);phase='arming';leaseEnd=now()+LEASE_MS;
-    const sessions=await call(()=>dnr.getSessionRules());if(!await targetStable())return snapshot();
-    const dynamic=await call(()=>dnr.getDynamicRules());if(!await targetStable())return snapshot();
-    const statics=await call(()=>dnr.getEnabledRulesets());if(!await targetStable())return snapshot();
-    if(sessions.length||dynamic.length||statics.length){latch('preexisting_rules_conflict');return snapshot();}
+    binding={id:tabs[0].id,url:tabs[0].url,documentId:null};expected=cmsDSessionRules(binding.id);phase='arming';leaseEnd=now()+LEASE_MS;
+    if(!await targetStable(true))return snapshot({operation:'arm'});
+    const sessions=await boundCall(()=>dnr.getSessionRules());if(!sessions)return snapshot();
+    const dynamic=await boundCall(()=>dnr.getDynamicRules());if(!dynamic)return snapshot();
+    const statics=await boundCall(()=>dnr.getEnabledRulesets());if(!statics)return snapshot();
+    if(sessions.value.length||dynamic.value.length||statics.value.length){latch('preexisting_rules_conflict');return snapshot();}
+    if(!await targetStable())return snapshot();
     attempted=true;protectionState='installation_requested';
     await call(()=>dnr.updateSessionRules({addRules:expected,removeRuleIds:[]}));
+    if(!await targetStable())return snapshot();
     if(!terminal)protectionState='installation_acknowledged';
     if(!await verify())return snapshot();
     phase='armed_read_only';reason='rules_installed_no_live_pass';return snapshot({operation:'arm'});
@@ -117,13 +145,19 @@ export function createCmsDNetworkGuard(api=globalThis.chrome,{now=Date.now}={}){
   async function evidence(){
     if(!binding)await verify();
     if(!binding||!expected)return snapshot({operation:'evidence'});
-    if(!terminal)await verify();
-    const currentRules=await call(()=>dnr.getSessionRules());
-    if(!sameRules(currentRules,expected)){latch('rules_changed_or_unknown');return snapshot({operation:'evidence'});}
+    if(!terminal&&!await verify())return snapshot({operation:'evidence'});
+    // Terminal/orphan retrieval remains historical only; it cannot rebind a
+    // document, restore a lease, or regain current-document/action authority.
+    const read=task=>terminal?call(task).then(value=>({value})):boundCall(task);
+    const current=await read(()=>dnr.getSessionRules());if(!current)return snapshot({operation:'evidence'});
+    if(!sameRules(current.value,expected)){latch('rules_changed_or_unknown');return snapshot({operation:'evidence'});}
     if(lastHistory&&now()-lastHistory<31000)return snapshot({operation:'evidence',historyRefresh:'cached_rate_limit'});
     lastHistory=now();
-    const result=await call(()=>dnr.getMatchedRules({tabId:binding.id,minTimeStamp:leaseEnd?leaseEnd-LEASE_MS:0}));
-    if(!sameRules(await call(()=>dnr.getSessionRules()),expected)){latch('rules_changed_or_unknown');return snapshot();}
+    const observed=await read(()=>dnr.getMatchedRules({tabId:binding.id,minTimeStamp:leaseEnd?leaseEnd-LEASE_MS:0}));
+    if(!observed)return snapshot({operation:'evidence'});
+    const after=await read(()=>dnr.getSessionRules());if(!after)return snapshot({operation:'evidence'});
+    if(!sameRules(after.value,expected)){latch('rules_changed_or_unknown');return snapshot();}
+    const result=observed.value;
     if(!Array.isArray(result?.rulesMatchedInfo)||result.rulesMatchedInfo.length>CAP){truncated=true;latch('history_schema_or_limit');return snapshot();}
     let count=0;
     for(const row of result.rulesMatchedInfo){
@@ -144,9 +178,9 @@ export function createCmsDNetworkGuard(api=globalThis.chrome,{now=Date.now}={}){
     removed=true;readBack=false;protectionState='removed_after_tab_closed';phase='closed_tab_rules_removed';return snapshot({operation:'remove_closed',disposal:'not_native_cancel_or_live_pass'});
   }
   return {async request(operation){
-    if(!OPS.has(operation))return snapshot({reason:'operation_invalid'});
+    if(!OPS.has(operation)){documentVerified=false;return snapshot({reason:'operation_invalid'});}
     if(inflight||pending.size)return snapshot({operation,requestState:'busy_or_pending'});
-    inflight=true;
+    documentVerified=false;inflight=true;
     try{
       if(operation==='arm')return await arm();
       if(operation==='remove_closed')return await removeClosed();

@@ -7,11 +7,22 @@ const clone=value=>structuredClone(value);
 function chromeApi(options={}){
  const calls=[],listeners={};let rules=clone(options.rules||[]),time=100000,updates=0;
  const event=name=>({addListener(fn){listeners[name]=fn;}});
- const record=(name,task)=>async(...args)=>{calls.push({name,args:clone(args)});if(options.fail===name)throw Error('PRIVATE_FAILURE');return task(...args);};
+ const record=(name,task)=>async(...args)=>{calls.push({name,args:clone(args)});options.onCall?.(name,args);if(options.fail===name)throw Error('PRIVATE_FAILURE');return task(...args);};
  const api={runtime:{id:'synthetic',getURL:path=>'chrome-extension://synthetic/'+path,
-   getManifest:()=>({permissions:options.permissions||['declarativeNetRequest','declarativeNetRequestFeedback']}),onMessage:event('message')},
+   getManifest:()=>({permissions:options.permissions||['declarativeNetRequest','declarativeNetRequestFeedback','scripting']}),onMessage:event('message')},
   tabs:{query:record('tabs.query',()=>[{id:42,url:options.url||PAGE+'?resumeId=PRIVATE_RECORD',active:true}]),
    get:record('tabs.get',()=>({id:42,url:options.url||PAGE+'?resumeId=PRIVATE_RECORD',active:true})),onUpdated:event('updated'),onRemoved:event('removed')},
+  scripting:{async executeScript(injection){
+   calls.push({name:'scripting.executeScript',args:[{...injection,func:injection.func.toString()}]});
+   options.onProbe?.(injection);
+   if(options.fail==='scripting.executeScript')throw Error('PRIVATE_INJECTION_FAILURE');
+   if(options.holdProbe)await new Promise(resolve=>{options.releaseProbe=resolve;});
+   if(options.probeResults)return clone(options.probeResults);
+   const win={};win.top=options.nestedFrame?{}:win;
+   const result=new Function('window','location','args','return ('+injection.func.toString()+')(...args);')(
+    win,{href:options.pageUrl||options.url||PAGE+'?resumeId=PRIVATE_RECORD'},injection.args);
+   return [{frameId:0,documentId:options.documentId||'PRIVATE_DOCUMENT_A',result}];
+  }},
   declarativeNetRequest:{getSessionRules:record('getSessionRules',()=>clone(options.badReadback&&updates?[]:rules)),
    getDynamicRules:record('getDynamicRules',()=>clone(options.dynamic||[])),getEnabledRulesets:record('getEnabledRulesets',()=>options.statics||[]),
    updateSessionRules:record('updateSessionRules',async update=>{
@@ -40,7 +51,7 @@ test('nonCMS active page is rejected without rule mutation',async()=>{
 test('arm makes real Chrome API calls and only reports readback after ACK and equality',async()=>{
  const {f,result}=await arm();assert.equal(result.phase,'armed_read_only');assert.equal(result.ruleReadBackVerified,true);
  const i=f.calls.findIndex(c=>c.name==='updateSessionRules');assert.ok(i>=0);assert.ok(f.calls.slice(i+1).some(c=>c.name==='getSessionRules'));
- assert.equal(result.networkEvidenceAvailable,false);assert.equal(result.interactionAllowed,false);assert.equal(result.currentDocumentEvidenceVerified,false);
+ assert.equal(result.networkEvidenceAvailable,false);assert.equal(result.interactionAllowed,false);assert.equal(result.currentDocumentEvidenceVerified,true);
  assert.equal(result.nativeCancellationAvailable,false);assert.equal(result.noTabWorkersCovered,false);assert.equal(result.existingChannelsCovered,false);
 });
 test('unknown update failure is unknown, never a retained-guard or cleanup success claim',async()=>{
@@ -181,4 +192,134 @@ test('normal guard UI button traverses its runtime bridge into production rule-i
   assert.equal(dom.window.document.getElementById('result').textContent.includes('PRIVATE'),false);
  }finally{if(oldDocument===undefined)delete globalThis.document;else globalThis.document=oldDocument;
   if(oldChrome===undefined)delete globalThis.chrome;else globalThis.chrome=oldChrome;dom.window.close();}
+});
+
+test('document probe uses only exact bound URL and Chrome top-frame metadata without exporting either',async()=>{
+ const {f,result}=await arm();const probes=f.calls.filter(c=>c.name==='scripting.executeScript');assert.ok(probes.length>4);
+ for(const probe of probes){const p=probe.args[0];assert.deepEqual(p.target,{tabId:42,frameIds:[0]});assert.equal(p.world,'ISOLATED');
+  assert.equal(p.injectImmediately,true);assert.deepEqual(p.args,[PAGE+'?resumeId=PRIVATE_RECORD']);
+  assert.equal(/textContent|\.value|checked|querySelector|fetch|KeyboardEvent|storage/.test(p.func),false);}
+ assert.equal(result.currentDocumentEvidenceVerified,true);assert.equal(result.documentIdentityScope,'last_top_frame_probe_only');
+ assert.equal(JSON.stringify(publicGuardEvidence(result)).includes('PRIVATE'),false);assert.equal(result.interactionAllowed,false);
+});
+
+test('scripting permission/API absence is a stop, with no weaker URL-only fallback',async()=>{
+ for(const mode of ['permission','api']){
+  const f=chromeApi(mode==='permission'?{permissions:['declarativeNetRequest','declarativeNetRequestFeedback']}:{});
+  if(mode==='api')delete f.api.scripting;const result=await createCmsDNetworkGuard(f.api).request('arm');
+  assert.equal(result.reason,'permission_or_api_missing');assert.equal(f.calls.length,0);assert.equal(result.currentDocumentEvidenceVerified,false);
+ }
+});
+
+test('invalid or nonunique browser frame/document metadata never installs rules',async()=>{
+ for(const probeResults of [[],[{frameId:1,documentId:'doc',result:{topFrame:true,urlMatches:true}}],
+  [{frameId:0,result:{topFrame:true,urlMatches:true}}],[{frameId:0,documentId:'',result:{topFrame:true,urlMatches:true}}],
+  [{frameId:0,documentId:'x'.repeat(129),result:{topFrame:true,urlMatches:true}}],
+  [{frameId:0,documentId:'doc',result:{topFrame:true,urlMatches:true,private:'PRIVATE'}}],
+  [{frameId:0,documentId:'A',result:{topFrame:true,urlMatches:true}},{frameId:0,documentId:'B',result:{topFrame:true,urlMatches:true}}]]){
+  const {f,result}=await arm({probeResults});assert.equal(result.reason,'document_probe_invalid');assert.equal(f.rules.length,0);
+  assert.equal(result.currentDocumentEvidenceVerified,false);assert.equal(JSON.stringify(result).includes('PRIVATE'),false);
+ }
+});
+
+test('isolated injected function rejects different full URL and non-top window without reading fields',async()=>{
+ for(const options of [{pageUrl:PAGE+'?resumeId=DIFFERENT'},{nestedFrame:true}]){
+  const {f,result}=await arm(options);assert.equal(result.reason,'document_probe_invalid');assert.equal(f.rules.length,0);
+ }
+});
+
+test('same-URL document replacement during each preinstall rule read stops before mutation',async()=>{
+ for(const name of ['getSessionRules','getDynamicRules','getEnabledRulesets']){
+  const options={};let seen=0;options.onCall=method=>{if(method===name&&++seen===(name==='getSessionRules'?2:1))options.documentId='PRIVATE_DOCUMENT_B';};
+  const {f,result}=await arm(options);assert.equal(result.reason,'document_changed_retained',name);assert.equal(f.rules.length,0,name);
+  assert.equal(result.currentDocumentEvidenceVerified,false);assert.equal(f.calls.some(c=>c.name==='updateSessionRules'),false);
+ }
+});
+
+test('same-URL replacement while install ACK is pending stops with installed rules untouched',async()=>{
+ const options={holdUpdate:true},f=chromeApi(options),guard=createCmsDNetworkGuard(f.api,{now:f.now});
+ const first=guard.request('arm');while(!options.release)await new Promise(resolve=>setImmediate(resolve));
+ options.documentId='PRIVATE_DOCUMENT_B';options.release();const state=await first;
+ assert.equal(state.reason,'document_changed_retained');assert.equal(state.currentDocumentEvidenceVerified,false);
+ assert.equal(state.ruleReadBackVerified,false);assert.equal(f.rules.length,3);assert.equal(state.protectionState,'unknown');
+ assert.equal(f.calls.filter(c=>c.name==='updateSessionRules').length,1);
+});
+
+test('same-URL replacement during postinstall rule verification cannot become ready',async()=>{
+ const options={};let installed=false;options.onCall=name=>{
+  if(name==='updateSessionRules')installed=true;else if(installed&&name==='getSessionRules')options.documentId='PRIVATE_DOCUMENT_B';
+ };
+ const {f,result}=await arm(options);assert.equal(result.reason,'document_changed_retained');assert.equal(f.rules.length,3);
+ assert.equal(result.ruleReadBackVerified,false);assert.equal(result.currentDocumentEvidenceVerified,false);
+});
+
+test('status detects same-URL new document without relying on tabs.onUpdated',async()=>{
+ const {f,guard}=await arm();f.options.documentId='PRIVATE_DOCUMENT_B';
+ const state=await guard.request('status');assert.equal(state.reason,'document_changed_retained');assert.equal(f.rules.length,3);
+ assert.equal(state.currentDocumentEvidenceVerified,false);assert.equal(state.ruleReadBackVerified,false);
+ const after=await guard.request('arm');assert.equal(after.reason,'document_changed_retained');assert.equal(f.calls.filter(c=>c.name==='updateSessionRules').length,1);
+});
+
+test('evidence detects document change during Chrome history query without promoting its result',async()=>{
+ const {f,guard}=await arm({history:[{rule:{ruleId:620201,rulesetId:'_session'},tabId:42,timeStamp:100001}]});
+ f.options.onCall=name=>{if(name==='getMatchedRules')f.options.documentId='PRIVATE_DOCUMENT_B';};
+ const state=await guard.request('evidence');assert.equal(state.reason,'document_changed_retained');
+ assert.equal(state.historyMatchCount,0);assert.equal(state.currentDocumentEvidenceVerified,false);assert.equal(f.rules.length,3);
+});
+
+test('cached evidence still rechecks the document before returning cached history',async()=>{
+ const {f,guard}=await arm();await guard.request('evidence');f.options.documentId='PRIVATE_DOCUMENT_B';
+ const state=await guard.request('evidence');assert.equal(state.reason,'document_changed_retained');assert.equal(state.currentDocumentEvidenceVerified,false);
+ assert.equal(f.calls.filter(c=>c.name==='getMatchedRules').length,1);
+});
+
+test('ordinary rule calls are bracketed by actual executeScript probes',async()=>{
+ const {f}=await arm();const first=f.calls.findIndex(c=>c.name==='scripting.executeScript');
+ const named=new Set(['getSessionRules','getDynamicRules','getEnabledRulesets','updateSessionRules']);
+ for(let i=first+1;i<f.calls.length;i++)if(named.has(f.calls[i].name)){
+  assert.equal(f.calls.slice(first,i).some(c=>c.name==='scripting.executeScript'),true);
+  assert.equal(f.calls.slice(i+1).find(c=>c.name==='scripting.executeScript'||named.has(c.name))?.name,'scripting.executeScript');
+ }
+});
+
+test('failed probe never returns a current document claim and never mutates rules',async()=>{
+ const {f,result}=await arm({fail:'scripting.executeScript'});assert.equal(result.protectionState,'unknown');
+ assert.equal(result.currentDocumentEvidenceVerified,false);assert.equal(f.rules.length,0);assert.equal(JSON.stringify(result).includes('PRIVATE'),false);
+});
+
+test('probe timeout remains pending, and a late result cannot create a document binding or rearm',async()=>{
+ const options={holdProbe:true},f=chromeApi(options),guard=createCmsDNetworkGuard(f.api,{now:f.now});
+ const keepAlive=setTimeout(()=>{},3500);const state=await guard.request('arm');clearTimeout(keepAlive);
+ assert.equal(state.reason,'command_timeout_unknown');assert.equal(state.commandPending,true);assert.equal(state.currentDocumentEvidenceVerified,false);
+ assert.equal((await guard.request('arm')).requestState,'busy_or_pending');
+ options.releaseProbe();await new Promise(resolve=>setImmediate(resolve));
+ const after=await guard.request('status');assert.equal(after.currentDocumentEvidenceVerified,false);assert.equal(after.protectionState,'unknown');
+ assert.equal(f.calls.some(c=>c.name==='updateSessionRules'),false);
+});
+
+test('lease expiration during probe cannot return current-document readiness',async()=>{
+ const options={},f=chromeApi(options),guard=createCmsDNetworkGuard(f.api,{now:f.now});
+ options.onProbe=()=>f.setTime(160001);const state=await guard.request('arm');
+ assert.equal(state.reason,'lease_expired_retained');assert.equal(state.currentDocumentEvidenceVerified,false);assert.equal(f.rules.length,0);
+});
+test('repeated arm verifies the bound document without installing again or renewing the lease',async()=>{
+ const {f,guard}=await arm();f.options.documentId='PRIVATE_DOCUMENT_B';
+ const state=await guard.request('arm');assert.equal(state.reason,'document_changed_retained');
+ assert.equal(state.currentDocumentEvidenceVerified,false);assert.equal(f.calls.filter(c=>c.name==='updateSessionRules').length,1);
+});
+
+test('pending install cannot export a stale pre-command document verification',async()=>{
+ const options={holdUpdate:true},f=chromeApi(options),guard=createCmsDNetworkGuard(f.api,{now:f.now});
+ const first=guard.request('arm');while(!options.release)await new Promise(resolve=>setImmediate(resolve));
+ const pending=await guard.request('status');assert.equal(pending.commandPending,true);assert.equal(pending.currentDocumentEvidenceVerified,false);
+ options.release();assert.equal((await first).currentDocumentEvidenceVerified,true);
+});
+
+test('UI rejects contradictory current-document claims and exports no document ID or URL',async()=>{
+ const {result}=await arm();
+ for(const override of [{phase:'orphaned_retained'},{commandPending:true},{ruleReadBackVerified:false},{protectionState:'unknown'}]){
+  assert.throws(()=>publicGuardEvidence({...result,...override}));
+ }
+ const shown=publicGuardEvidence({...result,documentId:'PRIVATE',url:'PRIVATE'});
+ assert.equal(shown.currentDocumentEvidenceVerified,true);assert.equal(JSON.stringify(shown).includes('PRIVATE'),false);
 });

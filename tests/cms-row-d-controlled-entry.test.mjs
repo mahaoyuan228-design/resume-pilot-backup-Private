@@ -34,6 +34,8 @@ function protocol(options={}){
     }
     if(method==='Runtime.callFunctionOn'){
       callCount++;
+      if(options.holdAt===callCount)await new Promise(resolve=>{options.release=resolve;});
+      if(options.timeoutAt===callCount)throw Error('PRIVATE_TIMEOUT');
       if(options.postAt===callCount)pair();
       if(options.changedAt===callCount)d.window.document.querySelector('.ant-select-selection-selected-value').textContent='PRIVATE_VALUE';
       if(options.openAt===callCount)d.window.document.querySelector('.ant-select').classList.add('ant-select-open');
@@ -42,7 +44,10 @@ function protocol(options={}){
     }
     return {};
   },close(){closed=true;calls.push({method:'session.close'});}};
-  return {d,calls,targets,pair,get closed(){return closed;},dependencies:{getTargets:async()=>targets,
+  return {d,calls,targets,pair,options,emit:message=>event(message),get samples(){return callCount;},
+    restoreFixtureTarget(){for(const n of d.window.document.querySelectorAll('.ant-select'))n.classList.remove('ant-select-open');
+      for(const n of d.window.document.querySelectorAll('.ant-select-selection-selected-value'))n.textContent='';},
+    get closed(){return closed;},dependencies:{getTargets:async()=>targets,
     connect:async(_socket,args)=>{event=args.onEvent;return session;},wait:async()=>{}},dispose(){d.window.close();}};
 }
 test('import provides no automatic connector or UI action',()=>{
@@ -165,8 +170,90 @@ test('total lease expiry during an enable ACK never authorizes another action',a
   assert.equal(out.evidence.reason,'lease_expired');assert.equal(out.evidence.interactionAllowed,false);
   assert.equal(out.evidence.cleanupComplete,false);assert.equal(f.calls.some(x=>x.method==='Target.activateTarget'),false);f.dispose();
 });
-test('failed retention has no public recovery command or clean-teardown promise',async()=>{
+test('nonterminal panel stop exposes a real bounded resampling supervisor',async()=>{
   const f=protocol({openAt:2}),out=await runCmsRowDControlledEntry(f.dependencies);
-  assert.equal(out.recover,null);assert.equal(out.evidence.cleanupComplete,false);
-  assert.equal(f.calls.some(x=>x.method==='Fetch.disable'),false);assert.equal(f.closed,false);f.dispose();
+  assert.equal(typeof out.recover,'function');assert.equal(typeof out.cancel,'function');assert.equal(out.evidence.cleanupComplete,false);
+  assert.equal(f.calls.some(x=>x.method==='Fetch.disable'),false);
+  const before=f.samples;f.restoreFixtureTarget();const recovered=await out.recover();
+  assert.ok(f.samples>=before+3);assert.equal(recovered.cleanupComplete,true);assert.equal(recovered.recoveryVerified,true);
+  assert.equal(recovered.initialStop,'panel_not_closed');assert.ok(recovered.failureHistory.includes('panel_not_closed'));
+  assert.equal(recovered.reason,'restored_after_prior_stop_not_a_live_pass');assert.equal(recovered.livePassClaimed,false);
+  assert.equal(recovered.interactionAllowed,false);assert.equal(recovered.nativeCancellationVerified,false);f.dispose();
+});
+test('one cancellation request rechecks the target but absent native API never triggers UI',async()=>{
+  const f=protocol({openAt:2}),out=await runCmsRowDControlledEntry(f.dependencies);const before=f.samples;
+  const cancel=await out.cancel();assert.equal(f.samples,before+1);assert.equal(cancel.cancelOutcome,'native_action_unavailable');
+  const again=await out.cancel();assert.equal(again.cancelOutcome,'cancel_request_limit');assert.equal(f.samples,before+1);
+  assert.equal(again.cancelRequests,1);assert.equal(again.nativeCancellationVerified,false);
+  assert.equal(f.calls.some(x=>x.method.startsWith('Input.')),false);assert.equal(f.closed,false);f.dispose();
+});
+test('a caller-provided nativeRecovery/coverage callback cannot grant action authority',async()=>{
+  const f=protocol({openAt:2});let actions=0;
+  const out=await runCmsRowDControlledEntry({...f.dependencies,nativeRecovery:true,coverage:true,nativeCancel:()=>{actions++;}});
+  const result=await out.cancel();assert.equal(actions,0);assert.equal(result.nativeActionInterface,'unavailable');
+  assert.equal(result.cancelOutcome,'native_action_unavailable');f.dispose();
+});
+test('unchanged open panel is sampled again but cannot be declared restored',async()=>{
+  const f=protocol({openAt:2}),out=await runCmsRowDControlledEntry(f.dependencies),before=f.samples;
+  const result=await out.recover();assert.equal(f.samples,before+1);assert.equal(result.cleanupComplete,false);
+  assert.equal(result.recoveryVerified,false);assert.equal(f.calls.some(x=>x.method==='Fetch.disable'),false);
+  const exhausted=await out.recover();assert.equal(f.samples,before+1);assert.equal(exhausted.reason,'recovery_limit');f.dispose();
+});
+test('closed panel with changed target values does not authorize cleanup',async()=>{
+  const f=protocol({changedAt:2}),out=await runCmsRowDControlledEntry(f.dependencies);
+  const result=await out.recover();assert.equal(result.reason,'target_values_not_restored');
+  assert.equal(result.cleanupComplete,false);assert.equal(f.calls.some(x=>x.method==='Fetch.disable'),false);f.dispose();
+});
+test('owner replacement during pending recovery is terminal and never disables Fetch',async()=>{
+  const f=protocol({openAt:2}),out=await runCmsRowDControlledEntry(f.dependencies);
+  const n=f.d.window.document.querySelector('.cascader-plugins-wrap');n.replaceWith(n.cloneNode(true));
+  const result=await out.recover();assert.equal(result.protectionState,'unknown');assert.equal(result.cleanupComplete,false);
+  assert.equal(result.recoveryAvailable,false);assert.equal(f.calls.some(x=>x.method==='Fetch.disable'),false);f.dispose();
+});
+test('concurrent recovery calls share one protocol sequence',async()=>{
+  const options={openAt:2,holdAt:3},f=protocol(options),out=await runCmsRowDControlledEntry(f.dependencies);
+  f.restoreFixtureTarget();const first=out.recover(),second=out.recover();
+  assert.equal(first,second);assert.equal(f.samples,3);options.release();
+  const [a,b]=await Promise.all([first,second]);assert.equal(a.cleanupComplete,true);assert.deepEqual(a,b);
+  assert.equal(f.calls.filter(x=>x.method==='Fetch.disable').length,1);f.dispose();
+});
+test('cancel cannot race a pending recovery ACK with another sample',async()=>{
+  const options={openAt:2,holdAt:3},f=protocol(options),out=await runCmsRowDControlledEntry(f.dependencies);
+  f.restoreFixtureTarget();const recovery=out.recover(),cancel=await out.cancel();
+  assert.equal(cancel.cancelOutcome,'supervisor_busy');assert.equal(f.samples,3);options.release();
+  assert.equal((await recovery).cleanupComplete,true);f.dispose();
+});
+test('navigation while waiting for allowed native cancellation forbids recovery sampling',async()=>{
+  const f=protocol({openAt:2}),out=await runCmsRowDControlledEntry(f.dependencies),before=f.samples;
+  f.emit({method:'Page.frameNavigated',params:{}});f.restoreFixtureTarget();const result=await out.recover();
+  assert.equal(result.reason,'document_or_channel_changed');assert.equal(f.samples,before);
+  assert.equal(result.cleanupComplete,false);assert.equal(result.protectionState,'unknown');f.dispose();
+});
+test('guard POST after a nonterminal stop becomes terminal despite later restored DOM',async()=>{
+  const f=protocol({openAt:2}),out=await runCmsRowDControlledEntry(f.dependencies),before=f.samples;
+  f.pair();f.restoreFixtureTarget();const result=await out.recover();
+  assert.equal(result.reason,'non_get_or_guard_failure');assert.equal(f.samples,before);
+  assert.equal(result.cleanupComplete,false);assert.equal(result.protectionState,'unknown');f.dispose();
+});
+test('unknown recovery send or disconnect cannot earn clean or keep an active claim',async()=>{
+  const f=protocol({openAt:2,timeoutAt:3}),out=await runCmsRowDControlledEntry(f.dependencies);
+  f.restoreFixtureTarget();const result=await out.recover();assert.equal(result.protectionState,'unknown');
+  assert.equal(result.cleanupComplete,false);assert.equal(result.recoveryAvailable,false);
+  const before=f.samples;await out.recover();assert.equal(f.samples,before);f.dispose();
+});
+test('the original lease still expires while the supervisor awaits external cancellation',async()=>{
+  const f=protocol({openAt:2}),out=await runCmsRowDControlledEntry({...f.dependencies,leaseMs:1000});
+  const before=f.samples;await new Promise(resolve=>setTimeout(resolve,1050));f.restoreFixtureTarget();
+  const result=await out.recover();assert.equal(result.reason,'lease_expired');assert.equal(f.samples,before);
+  assert.equal(result.cleanupComplete,false);assert.equal(result.protectionState,'unknown');f.dispose();
+});
+
+test('disconnect during the recovery ACK window makes the held sample terminal',async()=>{
+  const options={openAt:2,holdAt:3},f=protocol(options),out=await runCmsRowDControlledEntry(f.dependencies);
+  f.restoreFixtureTarget();const recovery=out.recover();
+  f.emit({method:'Inspector.detached',params:{}});options.release();const result=await recovery;
+  assert.equal(result.reason,'document_or_channel_changed');assert.equal(result.protectionState,'unknown');
+  assert.equal(result.cleanupComplete,false);assert.equal(result.recoveryAvailable,false);
+  assert.equal(f.calls.some(x=>x.method==='Fetch.disable'),false);
+  const before=f.samples;await out.recover();assert.equal(f.samples,before);f.dispose();
 });

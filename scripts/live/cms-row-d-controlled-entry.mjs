@@ -84,46 +84,63 @@ function cleanSample(reply){
 /** Explicit call only: import never discovers/attaches. No FIELD action/fill.
  * Explicit execution does activate the target and change browser focus state.
  * Dependencies support protocol tests; no caller flag can authorize interaction.
- * Failure snapshots do not expose a recovery command or promise safe teardown.
+ * A nonterminal restoration stop exposes bounded resampling supervision.
+ * No native action is synthesized; the missing official action interface stops.
  */
 export async function runCmsRowDControlledEntry({port=9242,timeoutMs=3000,leaseMs=15000,
   getTargets=getJson,connect=connectCdp,wait=ms=>new Promise(resolve=>setTimeout(resolve,ms))}={}){
   const evidence={...flags(),target:TARGET,stages:[],reason:'not_started',guardEnabled:false,
-    keeperClosed:false,recoveryVerified:false,guardRetentionRequested:false,protectionState:'not_started',cleanupComplete:false};
-  let session,remoteId,fetchEnabled=false,fetchAttempted=false,networkEnabled=false,focus=false,fatal=null,timer,recoveryAttempts=0,recovering=false;
-  const latch=reason=>{fatal??=reason;if(['lease_expired','document_or_channel_changed'].includes(reason))evidence.protectionState='unknown';};
+    keeperClosed:false,recoveryVerified:false,guardRetentionRequested:false,protectionState:'not_started',cleanupComplete:false,
+    initialStop:null,failureHistory:[],recoveryAttempts:0,cancelRequests:0,nativeActionInterface:'unavailable',nativeCancellationVerified:false};
+  let session,remoteId,fetchEnabled=false,fetchAttempted=false,networkEnabled=false,focus=false,fatal=null,timer,recoveryAttempts=0;
+  let pendingRestoration=null,recoveryFlight=null,cancelFlight=null,supervisorBusy=false;
+  const remember=reason=>{if(evidence.failureHistory.length<4&&!evidence.failureHistory.includes(reason))evidence.failureHistory.push(reason);};
+  const latch=reason=>{fatal??=reason;remember(reason);if(['lease_expired','document_or_channel_changed'].includes(reason))evidence.protectionState='unknown';};
   const guard=createRowDNetworkGuard((method,params)=>session.send(method,params));
   const stage=name=>evidence.stages.push(name);
-  const snapshot=()=>({...evidence,reason:fatal||(guard.failed()?'non_get_or_guard_failure':evidence.reason),traffic:{...guard.traffic,records:guard.traffic.records.slice()},
+  const snapshot=()=>({...evidence,stages:evidence.stages.slice(),failureHistory:evidence.failureHistory.slice(),
+    recoveryAvailable:!!pendingRestoration&&!fatal&&!guard.failed()&&fetchEnabled&&!!remoteId&&recoveryAttempts<2,
+    reason:fatal||(guard.failed()?'non_get_or_guard_failure':pendingRestoration||evidence.reason),traffic:{...guard.traffic,records:guard.traffic.records.slice()},
     assessment:guard.assessment()});
+  const healthy=()=>{if(guard.failed()){evidence.protectionState='unknown';latch('non_get_or_guard_failure');}return !fatal;};
   const sample=async()=>{
     if(!remoteId)throw Error('target_baseline_missing');
     return cleanSample(await session.send('Runtime.callFunctionOn',{objectId:remoteId,
       functionDeclaration:'function(){return this.sample();}',returnByValue:true,generatePreview:false,
       awaitPromise:false,userGesture:false,throwOnSideEffect:true}));
   };
-  const recover=async()=>{
-    if(recovering)return snapshot();
+  const restorationPending=observed=>{
+    const reason=!observed.valuesUnchanged?'target_values_not_restored':'panel_not_closed';
+    pendingRestoration=reason;evidence.initialStop??=reason;remember(reason);
+    evidence.guardRetentionRequested=true;evidence.recoveryVerified=false;return snapshot();
+  };
+  const assessRecovery=async()=>{
+    if(!healthy()||!fetchEnabled||!remoteId){evidence.guardRetentionRequested=fetchEnabled;return snapshot();}
     if(++recoveryAttempts>2){latch('recovery_limit');return snapshot();}
-    recovering=true;
+    evidence.recoveryAttempts=recoveryAttempts;
     stage('cancel_recovery');
     try{
-      const healthy=()=>{if(guard.failed()){evidence.protectionState='unknown';latch('non_get_or_guard_failure');}return !fatal;};
       if(!healthy()){evidence.guardRetentionRequested=fetchEnabled;return snapshot();}
       const before=await sample();
-      if(!healthy()||!before.closed||!before.valuesUnchanged){latch('restoration_unverified');evidence.guardRetentionRequested=true;return snapshot();}
+      if(!healthy()){evidence.guardRetentionRequested=true;return snapshot();}
+      if(!before.closed||!before.valuesUnchanged)return restorationPending(before);
       await guard.drain();
       if(!healthy()){evidence.guardRetentionRequested=true;return snapshot();}
+      await wait(250);
+      if(!healthy()){evidence.guardRetentionRequested=true;return snapshot();}
       const after=await sample();
-      if(!healthy()||!after.closed||!after.valuesUnchanged){latch('restoration_unverified');evidence.guardRetentionRequested=true;return snapshot();}
+      if(!healthy()){evidence.guardRetentionRequested=true;return snapshot();}
+      if(!after.closed||!after.valuesUnchanged)return restorationPending(after);
       if(focus){await session.send('Emulation.setFocusEmulationEnabled',{enabled:false});focus=false;await wait(250);}
       await guard.drain();
       if(!healthy()){evidence.guardRetentionRequested=true;return snapshot();}
       const final=await sample();
-      if(!healthy()||!final.closed||!final.valuesUnchanged){latch('restoration_unverified');evidence.guardRetentionRequested=true;return snapshot();}
+      if(!healthy()){evidence.guardRetentionRequested=true;return snapshot();}
+      if(!final.closed||!final.valuesUnchanged)return restorationPending(final);
       await guard.drain();
       if(!healthy()){evidence.guardRetentionRequested=true;return snapshot();}
-      evidence.recoveryVerified=true;stage('cleanup');
+      pendingRestoration=null;evidence.recoveryVerified=true;stage('cleanup');
+      if(evidence.initialStop)evidence.reason='restored_after_prior_stop_not_a_live_pass';
       // End of the protection window. ALL DOM observations and drains above
       // occur while Fetch is enabled. Later ACKs cannot prove continued coverage.
       evidence.protectionEndRequested=true;
@@ -139,8 +156,37 @@ export async function runCmsRowDControlledEntry({port=9242,timeoutMs=3000,leaseM
       if(!healthy())throw Error('cleanup_boundary_failed');
       session.close();clearTimeout(timer);evidence.cleanupComplete=true;evidence.guardRetentionRequested=false;
     }catch{latch('cleanup_or_recovery_failed');evidence.guardRetentionRequested=fetchEnabled;evidence.protectionState='unknown';evidence.cleanupComplete=false;evidence.recoveryVerified=false;}
-    finally{recovering=false;}
     return snapshot();
+  };
+  const recover=()=>{
+    if(recoveryFlight)return recoveryFlight;
+    if(supervisorBusy)return Promise.resolve({...snapshot(),supervisorOutcome:'supervisor_busy'});
+    supervisorBusy=true;
+    recoveryFlight=assessRecovery().finally(()=>{recoveryFlight=null;supervisorBusy=false;});return recoveryFlight;
+  };
+  const cancel=()=>{
+    if(cancelFlight)return cancelFlight;
+    if(supervisorBusy)return Promise.resolve({...snapshot(),cancelOutcome:'supervisor_busy'});
+    if(evidence.cancelRequests>=1)return Promise.resolve({...snapshot(),cancelOutcome:'cancel_request_limit'});
+    evidence.cancelRequests=1;supervisorBusy=true;
+    cancelFlight=(async()=>{
+      if(!healthy()||!fetchEnabled||!remoteId)return {...snapshot(),cancelOutcome:'terminal_stop'};
+      try{
+        // This is a real strict target recheck, not a caller-provided assertion.
+        const observed=await sample();
+        if(!healthy())return {...snapshot(),cancelOutcome:'terminal_stop'};
+        if(observed.closed&&observed.valuesUnchanged)return {...snapshot(),cancelOutcome:'already_restored_use_recover'};
+        restorationPending(observed);
+        // No verified native tool adapter is available in this Node interface.
+        // Never replace it with Input.dispatch*, click(), a caller callback or
+        // nativeRecovery/coverage=true. An allowed external native operation may
+        // subsequently be followed by recover(), whose samples decide recovery.
+        return {...snapshot(),cancelOutcome:'native_action_unavailable'};
+      }catch{
+        latch('cancel_observation_failed');evidence.protectionState='unknown';
+        return {...snapshot(),cancelOutcome:'terminal_stop'};
+      }
+    })().finally(()=>{cancelFlight=null;supervisorBusy=false;});return cancelFlight;
   };
   try{
     if(port!==9242||!Number.isInteger(timeoutMs)||timeoutMs<1000||timeoutMs>10000
@@ -149,9 +195,9 @@ export async function runCmsRowDControlledEntry({port=9242,timeoutMs=3000,leaseM
     const targets=await getTargets(port,'/json/list',{timeoutMs,step:'d_entry_target'});
     const extension=Array.isArray(targets)&&targets.some(t=>t?.type==='service_worker'
       &&t.url===`chrome-extension://${INSTALLED_EXTENSION_ID}/src/background/worker.mjs`);
-    if(!extension){evidence.reason='installed_instance_unverified';return {evidence:snapshot(),recover:null};}
+    if(!extension){evidence.reason='installed_instance_unverified';return {evidence:snapshot(),cancel:null,recover:null};}
     const choice=selectRowDTarget(targets,port);
-    if(!choice.ok){evidence.reason=choice.reason;return {evidence:snapshot(),recover:null};}
+    if(!choice.ok){evidence.reason=choice.reason;return {evidence:snapshot(),cancel:null,recover:null};}
     const fullUrl=choice.target.url;
     // This check retains the original complete selected URL; never serialize it.
     if(new URL(fullUrl).origin+new URL(fullUrl).pathname!==ROW_D_PAGE)throw Error('target_invalid');
@@ -199,7 +245,6 @@ export async function runCmsRowDControlledEntry({port=9242,timeoutMs=3000,leaseM
     else if(session){try{session.close();}catch{}clearTimeout(timer);}
   }
   if(guard.failed())latch('non_get_or_guard_failure');
-  // Every retained/unknown path has already failed. Do not return a dead
-  // recovery function and imply that a future call could make it clean.
-  return {evidence:snapshot(),recover:null};
+  const canSupervise=!!pendingRestoration&&healthy()&&fetchEnabled&&!!remoteId&&recoveryAttempts<2;
+  return {evidence:snapshot(),cancel:canSupervise?cancel:null,recover:canSupervise?recover:null};
 }

@@ -26,7 +26,7 @@ requires a newly built complete package and new identity evidence; version
 0.1.4.9 alone is not identity. Internal-builder change is only its three-file
 allowlist; hash logic and original Utility bootstrap are unchanged. WHITELIST
 adds the same three files. SOURCE_INVENTORY is untouched: its base133 rows already
-contain28 stale hashes after prior source changes, so a broad regeneration would
+contain26 stale hashes after prior source changes, so a broad regeneration would
 silently mix unrelated metadata edits. Exact Git/raw/build manifests remain the
 verification source for this candidate.
 

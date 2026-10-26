@@ -323,3 +323,189 @@ test('UI rejects contradictory current-document claims and exports no document I
  const shown=publicGuardEvidence({...result,documentId:'PRIVATE',url:'PRIVATE'});
  assert.equal(shown.currentDocumentEvidenceVerified,true);assert.equal(JSON.stringify(shown).includes('PRIVATE'),false);
 });
+const IDENTITY_PATHS=['manifest.json','src/background/worker.mjs','src/background/cms-row-d-network-guard.mjs','src/popup/cms-row-d-guard.html','src/popup/cms-row-d-guard.js'];
+async function identityFixture(options,run){
+ const f=chromeApi(options),id='abcdefghijklmnopabcdefghijklmnop';f.api.runtime.id=id;
+ f.api.runtime.getURL=path=>'chrome-extension://'+f.api.runtime.id+'/'+path;
+ const original=f.api.runtime.getManifest;
+ f.api.runtime.getManifest=()=>({...original(),name:'Synthetic Extension',version:options.version||'0.1.4.9',manifest_version:3,
+  background:{service_worker:'src/background/worker.mjs',type:'module'},...options.manifest});
+ const oldFetch=Object.getOwnPropertyDescriptor(globalThis,'fetch'),oldLocation=Object.getOwnPropertyDescriptor(globalThis,'location');
+ const bytes=new Map(IDENTITY_PATHS.map(path=>[path,new Uint8Array([0,239,187,191,13,10,...new TextEncoder().encode(path)])]));
+ const fetched=[];let count=0;
+ Object.defineProperty(globalThis,'location',{configurable:true,writable:true,value:{href:options.workerUrl||f.api.runtime.getURL('src/background/worker.mjs')}});
+ Object.defineProperty(globalThis,'fetch',{configurable:true,writable:true,value:async(url,init)=>{
+  const path=new URL(url).pathname.slice(1);fetched.push({url,init});options.onFetch?.(path,++count,f);
+  if(options.holdFetch)await new Promise(resolve=>{options.releaseFetch=resolve;});
+  if(options.fetchError)throw Error('PRIVATE_FETCH_ERROR_URL');
+  const response=new Response(options.largeBytes?new Uint8Array(options.largeBytes):bytes.get(path),{status:options.status||200});
+  Object.defineProperty(response,'url',{value:options.responseUrl||url});
+  if(options.redirected)Object.defineProperty(response,'redirected',{value:true});return response;
+ }});
+ f.api.storage=new Proxy({},{get(){throw Error('PRIVATE_STORAGE_MUST_NOT_BE_READ');}});
+ const controller=installCmsDNetworkGuard(f.api),sender={id,url:f.api.runtime.getURL('src/popup/cms-row-d-guard.html')};
+ const request=operation=>new Promise(resolve=>{assert.equal(f.listeners.message({type:'CMS_ROW_D_NETWORK_GUARD',operation},sender,resolve),true);});
+ try{return await run({f,controller,sender,request,bytes,fetched});}
+ finally{if(oldFetch)Object.defineProperty(globalThis,'fetch',oldFetch);else delete globalThis.fetch;
+  if(oldLocation)Object.defineProperty(globalThis,'location',oldLocation);else delete globalThis.location;}
+}
+
+test('identity normal bridge returns actual runtime metadata and five raw WebCrypto hashes without arming',async()=>{
+ await identityFixture({},async({f,request,bytes,fetched})=>{
+  const state=publicGuardEvidence(await request('identity')),value=state.runtimeIdentity;assert.equal(value.partial,true);
+  assert.equal(value.extensionId,f.api.runtime.id);assert.equal(value.extensionVersion,'0.1.4.9');assert.equal(value.workerType,'module');
+  assert.equal(value.cmsTabId,42);assert.equal(value.guardBinding,'unarmed');assert.equal(state.phase,'idle');
+  const {createHash}=await import('node:crypto');
+  for(const row of value.files){assert.equal(row.bytes,bytes.get(row.path).length);assert.equal(row.sha256,createHash('sha256').update(bytes.get(row.path)).digest('hex'));}
+  assert.deepEqual(fetched.map(r=>new URL(r.url).pathname.slice(1)),IDENTITY_PATHS);
+  assert.ok(fetched.every(r=>r.url.startsWith('chrome-extension://'+f.api.runtime.id+'/')&&r.init.redirect==='error'&&r.init.cache==='no-store'&&r.init.credentials==='omit'));
+  assert.equal(f.calls.some(c=>c.name==='updateSessionRules'),false);assert.equal(f.calls.some(c=>c.name==='scripting.executeScript'),false);
+  const text=JSON.stringify(state);assert.equal(/PRIVATE|resumeId|sourceSha|sameInstance|debugger/.test(text),false);
+  assert.equal(value.loadedModuleBytesVerified,false);assert.equal(value.fullPackageFingerprint,false);assert.equal(value.sourceCommitVerified,false);
+  assert.equal(value.installationPathVerified,false);assert.equal(state.interactionAllowed,false);
+ });
+});
+
+test('identity refuses caller path/tab/hash overrides before own-resource fetch',async()=>{
+ await identityFixture({},async({f,sender,fetched})=>{
+  for(const extra of [{path:'private'},{tabId:42},{url:'https://private.invalid'},{hash:'PRIVATE'},{coverage:true}]){
+   let result;f.listeners.message({type:'CMS_ROW_D_NETWORK_GUARD',operation:'identity',...extra},sender,v=>result=v);
+   assert.equal(result.reason,'sender_or_request_invalid');
+  }
+  assert.equal(fetched.length,0);assert.equal(f.calls.length,0);
+ });
+});
+
+test('identity refuses a worker-context URL or manifest mismatch without weaker fallback',async()=>{
+ for(const options of [{workerUrl:'chrome-extension://other/worker.mjs'},{manifest:{version:'PRIVATE'}},
+  {manifest:{background:{service_worker:'src/license/guard-worker.mjs',type:'module'}}}]){
+  await identityFixture(options,async({request,fetched,f})=>{
+   const state=await request('identity');assert.equal(state.reason,'identity_metadata_invalid');assert.equal(state.runtimeIdentity,undefined);
+   assert.equal(fetched.length,0);assert.equal(f.rules.length,0);
+  });
+ }
+});
+
+test('identity own-resource destination must be the exact same extension and fixed path',async()=>{
+ await identityFixture({},async({f,request,fetched})=>{
+  const ordinary=f.api.runtime.getURL;f.api.runtime.getURL=path=>path==='manifest.json'?'https://elsewhere.invalid/manifest.json':ordinary(path);
+  const result=await request('identity');assert.equal(result.reason,'identity_metadata_invalid');assert.equal(fetched.length,0);
+ });
+});
+
+test('identity rejects missing, redirected or differently addressed resource responses without partial export',async()=>{
+ for(const options of [{status:404},{redirected:true},{responseUrl:'chrome-extension://other/private'}]){
+  await identityFixture(options,async({request})=>{
+   const state=await request('identity');assert.equal(state.reason,'identity_resource_unavailable');assert.equal(state.runtimeIdentity,undefined);
+   assert.equal(JSON.stringify(publicGuardEvidence(state)).includes('private'),false);
+  });
+ }
+});
+
+test('identity limits per-file and whole-receipt raw bytes',async()=>{
+ for(const largeBytes of [262145,200000]){
+  await identityFixture({largeBytes},async({request,fetched})=>{
+   const state=await request('identity');assert.equal(state.reason,'identity_resource_limit');assert.equal(state.runtimeIdentity,undefined);
+   assert.ok(fetched.length<=3);assert.equal(state.interactionAllowed,false);
+  });
+ }
+});
+
+test('identity detects a changed full CMS URL while fingerprinting and discards every partial row',async()=>{
+ const options={onFetch(_path,count,f){if(count===1)f.options.url=PAGE+'?resumeId=OTHER_PRIVATE';}};
+ await identityFixture(options,async({request,fetched})=>{
+  const state=await request('identity');assert.equal(state.reason,'identity_target_changed');assert.equal(state.runtimeIdentity,undefined);
+  assert.equal(fetched.length,1);assert.equal(JSON.stringify(state).includes('PRIVATE'),false);
+ });
+});
+
+test('identity checks an armed document again after fingerprints and cannot rebind a new document',async()=>{
+ const options={};await identityFixture(options,async({request,f})=>{
+  assert.equal((await request('arm')).ruleReadBackVerified,true);
+  options.onFetch=()=>{options.documentId='PRIVATE_NEW_DOCUMENT';};
+  const result=await request('identity');assert.equal(result.reason,'document_changed_retained');assert.equal(result.runtimeIdentity,undefined);
+  assert.equal(result.currentDocumentEvidenceVerified,false);assert.equal(f.rules.length,3);
+  assert.equal(f.calls.filter(c=>c.name==='updateSessionRules').length,1);
+ });
+});
+
+test('identity never grants authority from a terminal guard or existing orphan rules',async()=>{
+ await identityFixture({rules:cmsDSessionRules(42)},async({request,fetched})=>{
+  assert.equal((await request('status')).phase,'orphaned_retained');
+  const result=await request('identity');assert.equal(result.runtimeIdentity,undefined);assert.equal(fetched.length,0);
+  assert.equal(result.interactionAllowed,false);
+ });
+});
+
+test('identity detects runtime-version drift during own-resource reads',async()=>{
+ const options={onFetch(_path,count){if(count===3)options.version='0.1.4.10';}};
+ await identityFixture(options,async({request})=>{
+  const result=await request('identity');assert.equal(result.reason,'identity_metadata_invalid');assert.equal(result.runtimeIdentity,undefined);
+ });
+});
+
+test('identity fetch errors are fixed enums and never expose their URL or exception payload',async()=>{
+ await identityFixture({fetchError:true},async({request})=>{
+  const result=await request('identity');assert.equal(result.reason,'identity_resource_unavailable');
+  assert.equal(result.runtimeIdentity,undefined);assert.equal(JSON.stringify(publicGuardEvidence(result)).includes('PRIVATE'),false);
+ });
+});
+
+test('pending identity fetch serializes arm and a late timeout result cannot create an identity receipt',async()=>{
+ const options={holdFetch:true};await identityFixture(options,async({request,controller,f})=>{
+  const keepAlive=setTimeout(()=>{},3500);const first=request('identity');
+  while(!options.releaseFetch)await new Promise(resolve=>setImmediate(resolve));
+  assert.equal((await controller.request('arm')).requestState,'busy_or_pending');
+  const stopped=await first;clearTimeout(keepAlive);
+  assert.equal(stopped.reason,'command_timeout_unknown');assert.equal(stopped.runtimeIdentity,undefined);assert.equal(stopped.commandPending,true);
+  options.releaseFetch();await new Promise(resolve=>setImmediate(resolve));
+  assert.equal((await controller.request('status')).runtimeIdentity,undefined);assert.equal(f.rules.length,0);
+ });
+});
+
+test('identity projection refuses full-package/path/loaded-code claims and malformed fingerprint rows',async()=>{
+ await identityFixture({},async({request})=>{
+  const state=await request('identity');
+  for(const field of ['partial','externalComparisonRequired'])assert.throws(()=>publicGuardEvidence({...state,runtimeIdentity:{...state.runtimeIdentity,[field]:false}}));
+  for(const field of ['loadedModuleBytesVerified','fullPackageFingerprint','sourceCommitVerified','installationPathVerified','interactionAllowed']){
+   assert.throws(()=>publicGuardEvidence({...state,runtimeIdentity:{...state.runtimeIdentity,[field]:true}}));
+  }
+  const bad=clone(state);bad.runtimeIdentity.files[0].path='https://private.invalid';assert.throws(()=>publicGuardEvidence(bad));
+  const more=clone(state);more.runtimeIdentity.files.push(more.runtimeIdentity.files[0]);assert.throws(()=>publicGuardEvidence(more));
+ });
+});
+
+test('ordinary dedicated identity UI button calls the exact existing runtime bridge and displays only partial receipt',async()=>{
+ await identityFixture({},async({f})=>{
+  const {JSDOM}=await import('jsdom'),{readFile}=await import('node:fs/promises');
+  const dom=new JSDOM(await readFile(new URL('../src/popup/cms-row-d-guard.html',import.meta.url),'utf8'),{url:f.api.runtime.getURL('src/popup/cms-row-d-guard.html')});
+  const previousDocument=globalThis.document,previousChrome=globalThis.chrome,messages=[];
+  f.api.runtime.sendMessage=message=>new Promise(resolve=>{messages.push(clone(message));f.listeners.message(message,
+   {id:f.api.runtime.id,url:f.api.runtime.getURL('src/popup/cms-row-d-guard.html')},resolve);});
+  try{
+   globalThis.document=dom.window.document;globalThis.chrome=f.api;
+   await import(new URL('../src/popup/cms-row-d-guard.js?identity-ui-contract',import.meta.url));
+   dom.window.document.getElementById('identity').click();
+   for(let i=0;i<1000&&!dom.window.document.getElementById('result').textContent;i++)await new Promise(resolve=>setImmediate(resolve));
+   const shown=JSON.parse(dom.window.document.getElementById('result').textContent);
+   assert.equal(shown.runtimeIdentity.partial,true);assert.equal(shown.runtimeIdentity.files.length,5);assert.equal(shown.interactionAllowed,false);
+   assert.deepEqual(messages,[{type:'CMS_ROW_D_NETWORK_GUARD',operation:'identity'}]);assert.equal(JSON.stringify(shown).includes('PRIVATE'),false);
+  }finally{if(previousDocument===undefined)delete globalThis.document;else globalThis.document=previousDocument;
+   if(previousChrome===undefined)delete globalThis.chrome;else globalThis.chrome=previousChrome;dom.window.close();}
+ });
+});
+test('identity final tab-read window cannot return an old armed document receipt',async()=>{
+ let getCount=0;
+ await identityFixture({},async({request,f})=>{
+  await request('arm');f.options.onCall=name=>{if(name==='tabs.get')getCount++;};
+  assert.ok((await request('identity')).runtimeIdentity);
+ });
+ assert.ok(getCount>0);
+ const options={};await identityFixture(options,async({request,f})=>{
+  await request('arm');let count=0;
+  options.onCall=name=>{if(name==='tabs.get'&&++count===getCount)options.documentId='PRIVATE_FINAL_DOCUMENT';};
+  const result=await request('identity');assert.equal(count,getCount);
+  assert.equal(result.reason,'document_changed_retained');assert.equal(result.runtimeIdentity,undefined);
+  assert.equal(result.currentDocumentEvidenceVerified,false);assert.equal(f.rules.length,3);
+ });
+});

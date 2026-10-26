@@ -1,0 +1,184 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {createCmsDNetworkGuard,cmsDSessionRules,installCmsDNetworkGuard} from '../src/background/cms-row-d-network-guard.mjs';
+import {publicGuardEvidence} from '../src/popup/cms-row-d-guard.js';
+const PAGE='https://wecruit.hotjob.cn/SU629dbc0c0dcad452299bc0f7/pb/resumeOperation.html';
+const clone=value=>structuredClone(value);
+function chromeApi(options={}){
+ const calls=[],listeners={};let rules=clone(options.rules||[]),time=100000,updates=0;
+ const event=name=>({addListener(fn){listeners[name]=fn;}});
+ const record=(name,task)=>async(...args)=>{calls.push({name,args:clone(args)});if(options.fail===name)throw Error('PRIVATE_FAILURE');return task(...args);};
+ const api={runtime:{id:'synthetic',getURL:path=>'chrome-extension://synthetic/'+path,
+   getManifest:()=>({permissions:options.permissions||['declarativeNetRequest','declarativeNetRequestFeedback']}),onMessage:event('message')},
+  tabs:{query:record('tabs.query',()=>[{id:42,url:options.url||PAGE+'?resumeId=PRIVATE_RECORD',active:true}]),
+   get:record('tabs.get',()=>({id:42,url:options.url||PAGE+'?resumeId=PRIVATE_RECORD',active:true})),onUpdated:event('updated'),onRemoved:event('removed')},
+  declarativeNetRequest:{getSessionRules:record('getSessionRules',()=>clone(options.badReadback&&updates?[]:rules)),
+   getDynamicRules:record('getDynamicRules',()=>clone(options.dynamic||[])),getEnabledRulesets:record('getEnabledRulesets',()=>options.statics||[]),
+   updateSessionRules:record('updateSessionRules',async update=>{
+    updates++;if(options.holdUpdate)await new Promise(resolve=>{options.release=resolve;});
+    rules=rules.filter(r=>!update.removeRuleIds.includes(r.id));rules.push(...clone(update.addRules));
+   }),getMatchedRules:record('getMatchedRules',()=>({rulesMatchedInfo:clone(options.history||[])})),onRuleMatchedDebug:event('matched')}};
+ const match=(extra={})=>listeners.matched({rule:{ruleId:620201,rulesetId:'_session'},request:{requestId:'request-'+time,tabId:42,
+  method:'POST',url:'https://wecruit.hotjob.cn/wecruit/resume/info/edit/SU629dbc0c0dcad452299bc0f7?PRIVATE_QUERY',...extra}});
+ return {api,calls,listeners,match,options,get rules(){return rules;},setTime(value){time=value;},now:()=>time};
+}
+const arm=async options=>{const f=chromeApi(options),guard=createCmsDNetworkGuard(f.api,{now:f.now});return {f,guard,result:await guard.request('arm')};};
+test('production rule set includes nonGET main-frame coverage, new channels, exact save endpoint',()=>{
+ const rules=cmsDSessionRules(42);assert.equal(rules.length,3);assert.ok(rules.every(r=>r.action.type==='block'&&r.condition.tabIds[0]===42));
+ assert.deepEqual(rules[0].condition.excludedRequestMethods,['get']);assert.deepEqual(rules[0].condition.excludedResourceTypes,[]);
+ assert.deepEqual(rules[1].condition.resourceTypes,['websocket','webtransport']);assert.throws(()=>cmsDSessionRules(-1));
+});
+test('factory import/install without extension API is inert and cannot discover endpoints',()=>{
+ assert.equal(installCmsDNetworkGuard(null),null);assert.equal(typeof createCmsDNetworkGuard,'function');
+});
+test('missing manifest permission never attempts installing rules',async()=>{
+ const {f,result}=await arm({permissions:['activeTab']});assert.equal(result.reason,'permission_or_api_missing');assert.equal(f.calls.length,0);
+});
+test('nonCMS active page is rejected without rule mutation',async()=>{
+ const {f,result}=await arm({url:'https://elsewhere.invalid/'});assert.equal(result.reason,'active_cms_target_not_unique');assert.equal(f.rules.length,0);
+});
+test('arm makes real Chrome API calls and only reports readback after ACK and equality',async()=>{
+ const {f,result}=await arm();assert.equal(result.phase,'armed_read_only');assert.equal(result.ruleReadBackVerified,true);
+ const i=f.calls.findIndex(c=>c.name==='updateSessionRules');assert.ok(i>=0);assert.ok(f.calls.slice(i+1).some(c=>c.name==='getSessionRules'));
+ assert.equal(result.networkEvidenceAvailable,false);assert.equal(result.interactionAllowed,false);assert.equal(result.currentDocumentEvidenceVerified,false);
+ assert.equal(result.nativeCancellationAvailable,false);assert.equal(result.noTabWorkersCovered,false);assert.equal(result.existingChannelsCovered,false);
+});
+test('unknown update failure is unknown, never a retained-guard or cleanup success claim',async()=>{
+ const {result}=await arm({fail:'updateSessionRules'});assert.equal(result.protectionState,'unknown');assert.equal(result.retentionRequested,true);
+ assert.equal(result.ruleReadBackVerified,false);assert.equal(result.rulesRemovedAfterTabClosed,false);
+});
+test('ACK with absent readback never proves installed guard',async()=>{
+ const {f,result}=await arm({badReadback:true});assert.equal(result.protectionState,'unknown');assert.equal(result.ruleReadBackVerified,false);
+ assert.equal(f.calls.filter(c=>c.name==='updateSessionRules').length,1);
+});
+test('preexisting dynamic or static allow rules stop before install',async()=>{
+ for(const options of [{dynamic:[{id:1,action:{type:'allow'}}]},{statics:['other']}]){
+  const {f,result}=await arm(options);assert.equal(result.reason,'preexisting_rules_conflict');assert.equal(f.rules.length,0);
+ }
+});
+test('worker restart detects existing session rules and cannot rearm or claim document context',async()=>{
+ const {f,guard}=await arm();const restarted=createCmsDNetworkGuard(f.api,{now:f.now});
+ const state=await restarted.request('status');assert.equal(state.phase,'orphaned_retained');assert.equal(state.protectionState,'orphan_rules_present');
+ assert.equal(state.currentDocumentEvidenceVerified,false);assert.equal(state.interactionAllowed,false);
+ await restarted.request('arm');assert.equal(f.calls.filter(c=>c.name==='updateSessionRules').length,1);
+});
+test('Chrome-shaped event records a bounded redacted block-rule match',async()=>{
+ const {f,guard}=await arm();f.match();const state=await guard.request('status');
+ assert.equal(state.debugMatchCount,1);assert.equal(state.networkEvidenceAvailable,true);assert.equal(state.records[0].category,'cms_info_edit_blocked');
+ const text=JSON.stringify(state);assert.equal(text.includes('PRIVATE'),false);assert.equal(text.includes('request-'),false);assert.equal(text.includes('wecruit.hotjob.cn'),false);
+ assert.equal(state.livePassClaimed,false);
+});
+test('unknown POST match is sticky stop while block rules remain untouched',async()=>{
+ const {f,guard}=await arm();f.match({url:'https://outside.invalid/private'});const state=await guard.request('status');
+ assert.equal(state.reason,'unknown_request_blocked');assert.equal(state.protectionState,'unknown');assert.equal(state.interactionAllowed,false);
+ assert.equal(f.rules.length,3);assert.equal(f.calls.filter(c=>c.name==='updateSessionRules').length,1);
+});
+test('duplicate event request ID does not multiply actual match count',async()=>{
+ const {f,guard}=await arm();f.match();f.match();assert.equal((await guard.request('status')).debugMatchCount,1);
+});
+test('journal limit is sticky and stops rather than emitting unbounded data',async()=>{
+ const {f,guard}=await arm();for(let i=0;i<129;i++){f.setTime(100000+i);f.match();}
+ const state=await guard.request('status');assert.equal(state.records.length,128);assert.equal(state.recordsTruncated,true);assert.equal(state.reason,'journal_limit');
+});
+test('history is retrieved from Chrome, independently counted, not hypothetical match testing',async()=>{
+ const {f,guard}=await arm({history:[{rule:{ruleId:620201,rulesetId:'_session'},tabId:42,timeStamp:100001,private:'PRIVATE'}]});
+ const state=await guard.request('evidence');assert.equal(state.historyMatchCount,1);assert.equal(state.debugMatchCount,0);
+ assert.equal(state.networkEvidenceAvailable,true);assert.equal(f.calls.some(c=>c.name==='getMatchedRules'),true);
+ assert.equal(JSON.stringify(state).includes('PRIVATE'),false);assert.equal(state.livePassClaimed,false);
+});
+test('history quota cache does not fake a second API request',async()=>{
+ const {f,guard}=await arm();await guard.request('evidence');await guard.request('evidence');
+ assert.equal(f.calls.filter(c=>c.name==='getMatchedRules').length,1);
+});
+test('orphan rule context can retrieve historical counts but never grants interaction',async()=>{
+ const f=chromeApi({rules:cmsDSessionRules(42),history:[{rule:{ruleId:620201,rulesetId:'_session'},tabId:42,timeStamp:90000}]});
+ const guard=createCmsDNetworkGuard(f.api,{now:f.now});const state=await guard.request('evidence');
+ assert.equal(state.historyMatchCount,1);assert.equal(state.historyScope,'orphan_rules_context_unknown');assert.equal(state.currentDocumentEvidenceVerified,false);
+});
+test('navigation notification stops without removing acknowledged rules',async()=>{
+ const {f,guard}=await arm();f.listeners.updated(42,{status:'loading'});const state=await guard.request('status');
+ assert.equal(state.reason,'target_changed_retained');assert.equal(state.protectionState,'unknown');assert.equal(f.rules.length,3);
+});
+test('lease expires without automatic rule removal or renewed action authority',async()=>{
+ const {f,guard}=await arm();f.setTime(160001);const state=await guard.request('status');
+ assert.equal(state.reason,'lease_expired_retained');assert.equal(state.ruleReadBackVerified,false);assert.equal(f.rules.length,3);
+});
+test('alive target cannot be disposed by a caller claim or operation name',async()=>{
+ const {f,guard}=await arm();const state=await guard.request('remove_closed');assert.equal(state.disposal,'tab_close_event_required');assert.equal(f.rules.length,3);
+});
+test('only actual browser tab-removed event enables subsequent owned-rule disposal',async()=>{
+ const {f,guard}=await arm();f.listeners.removed(42);const state=await guard.request('remove_closed');
+ assert.equal(f.rules.length,0);assert.equal(state.rulesRemovedAfterTabClosed,true);assert.equal(state.nativeCancellationAvailable,false);
+ assert.equal(state.livePassClaimed,false);assert.equal(state.protectionState,'removed_after_tab_closed');
+});
+test('held API ACK serializes concurrent callers without a second mutation',async()=>{
+ const options={holdUpdate:true},f=chromeApi(options),guard=createCmsDNetworkGuard(f.api,{now:f.now});
+ const first=guard.request('arm');while(!options.release)await new Promise(resolve=>setImmediate(resolve));
+ const concurrent=await guard.request('arm');assert.equal(concurrent.requestState,'busy_or_pending');options.release();
+ assert.equal((await first).phase,'armed_read_only');assert.equal(f.calls.filter(c=>c.name==='updateSessionRules').length,1);
+});
+test('production runtime bridge rejects caller target/profile/native-coverage override',async()=>{
+ const f=chromeApi();installCmsDNetworkGuard(f.api);let response;
+ f.listeners.message({type:'CMS_ROW_D_NETWORK_GUARD',operation:'arm',profile:{private:'PRIVATE'},tabId:42},
+  {id:'synthetic',url:f.api.runtime.getURL('src/popup/cms-row-d-guard.html')},v=>response=v);
+ assert.equal(response.reason,'sender_or_request_invalid');assert.equal(f.calls.length,0);
+});
+test('web/content sender cannot invoke privileged network bridge',()=>{
+ const f=chromeApi();installCmsDNetworkGuard(f.api);let response;
+ f.listeners.message({type:'CMS_ROW_D_NETWORK_GUARD',operation:'arm'},
+  {id:'synthetic',url:PAGE,tab:{id:42}},v=>response=v);
+ assert.equal(response.reason,'sender_or_request_invalid');assert.equal(f.calls.length,0);
+});
+test('ordinary owned extension UI bridge can call production arm interface',async()=>{
+ const f=chromeApi();installCmsDNetworkGuard(f.api);
+ const response=await new Promise(resolve=>assert.equal(f.listeners.message({type:'CMS_ROW_D_NETWORK_GUARD',operation:'arm'},
+  {id:'synthetic',url:f.api.runtime.getURL('src/popup/cms-row-d-guard.html')},resolve),true));
+ assert.equal(response.ruleReadBackVerified,true);assert.equal(f.rules.length,3);
+});
+test('UI exports only closed redacted evidence, never raw injected fields',async()=>{
+ const {result}=await arm();const projected=publicGuardEvidence({...result,url:'PRIVATE',profile:{private:'PRIVATE'}});
+ assert.equal(JSON.stringify(projected).includes('PRIVATE'),false);assert.equal(projected.interactionAllowed,false);
+ assert.throws(()=>publicGuardEvidence({...result,reason:'PRIVATE'}));
+});
+
+test('actual command deadline leaves pending API unknown and never retries its mutation',async()=>{
+ const options={holdUpdate:true},f=chromeApi(options),guard=createCmsDNetworkGuard(f.api,{now:f.now});
+ const keepAlive=setTimeout(()=>{},3500);
+ const first=await guard.request('arm');clearTimeout(keepAlive);
+ assert.equal(first.protectionState,'unknown');assert.equal(first.reason,'command_timeout_unknown');assert.equal(first.commandPending,true);
+ const busy=await guard.request('arm');assert.equal(busy.requestState,'busy_or_pending');
+ options.release();await new Promise(resolve=>setImmediate(resolve));
+ const after=await guard.request('status');assert.equal(after.protectionState,'unknown');assert.equal(after.ruleReadBackVerified,false);
+ assert.equal(f.calls.filter(c=>c.name==='updateSessionRules').length,1);assert.equal(f.rules.length,3);
+});
+test('failed rule disposal ACK cannot be called removed or clean',async()=>{
+ const {f,guard}=await arm();f.listeners.removed(42);f.options.fail='updateSessionRules';
+ const state=await guard.request('remove_closed');assert.equal(state.protectionState,'unknown');assert.equal(state.rulesRemovedAfterTabClosed,false);
+ assert.equal(f.rules.length,3);assert.equal(state.livePassClaimed,false);
+});
+
+test('UI can export an actual journal-shaped redacted record including its timestamp',async()=>{
+ const {f,guard}=await arm();f.match();const state=publicGuardEvidence(await guard.request('status'));
+ assert.equal(state.records.length,1);assert.equal(state.records[0].observedAtUtc,'1970-01-01T00:01:40.000Z');
+ assert.equal(JSON.stringify(state).includes('PRIVATE'),false);
+});
+test('normal guard UI button traverses its runtime bridge into production rule-install code',async()=>{
+ const {JSDOM}=await import('jsdom'),{readFile}=await import('node:fs/promises');
+ const html=await readFile(new URL('../src/popup/cms-row-d-guard.html',import.meta.url),'utf8');
+ const dom=new JSDOM(html,{url:'chrome-extension://synthetic/src/popup/cms-row-d-guard.html'}),f=chromeApi();
+ installCmsDNetworkGuard(f.api);const messages=[];
+ f.api.runtime.sendMessage=message=>new Promise(resolve=>{messages.push(clone(message));f.listeners.message(message,
+  {id:'synthetic',url:f.api.runtime.getURL('src/popup/cms-row-d-guard.html')},resolve);});
+ const oldDocument=globalThis.document,oldChrome=globalThis.chrome;
+ try{
+  globalThis.document=dom.window.document;globalThis.chrome=f.api;
+  await import(new URL('../src/popup/cms-row-d-guard.js?synthetic-owned-ui',import.meta.url));
+  dom.window.document.getElementById('arm').click();
+  for(let i=0;i<100&&!dom.window.document.getElementById('result').textContent;i++)await new Promise(resolve=>setImmediate(resolve));
+  const shown=JSON.parse(dom.window.document.getElementById('result').textContent);
+  assert.equal(shown.ruleReadBackVerified,true);assert.equal(shown.interactionAllowed,false);assert.equal(shown.networkEvidenceAvailable,false);
+  assert.equal(f.rules.length,3);assert.deepEqual(messages,[{type:'CMS_ROW_D_NETWORK_GUARD',operation:'arm'}]);
+  assert.equal(dom.window.document.getElementById('result').textContent.includes('PRIVATE'),false);
+ }finally{if(oldDocument===undefined)delete globalThis.document;else globalThis.document=oldDocument;
+  if(oldChrome===undefined)delete globalThis.chrome;else globalThis.chrome=oldChrome;dom.window.close();}
+});

@@ -154,7 +154,10 @@
     "tests/gth-intent-auto.test.mjs",
     "tests/gth-intent-fill.test.mjs",
     "tests/gth-open-sections.test.mjs",
-    "tests/gth-work-fill.test.mjs"
+    "tests/gth-work-fill.test.mjs",
+    "src/background/cms-row-d-network-guard.mjs",
+    "src/popup/cms-row-d-guard.html",
+    "src/popup/cms-row-d-guard.js"
   ],
   "productPaths": [
     "manifest.json",
@@ -289,7 +292,10 @@
     "src/content/cmb-basic.js",
     "src/content/cmb-birthdate-picker.mjs",
     "src/content/cmb-profile-map.mjs",
-    "src/content/cmb-gated-dicts.mjs"
+    "src/content/cmb-gated-dicts.mjs",
+    "src/background/cms-row-d-network-guard.mjs",
+    "src/popup/cms-row-d-guard.html",
+    "src/popup/cms-row-d-guard.js"
   ],
   "excluded": [
     "No directory-wide copy of repository/tests/exports/dist.",

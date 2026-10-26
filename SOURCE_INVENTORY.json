@@ -1,6 +1,6 @@
 {
   "version": "0.1.4.9",
-  "sumsSha256": "03d0c9ad78389f96e90aee4409752d10b764d50e20346ac6c83ec88c7b823cd4",
+  "sumsSha256": "3729d67cf276435349ff17397f6787d94fa604831f31ac133095e3f7a4c6ed84",
   "inventory": [
     {
       "path": "manifest.json",
@@ -798,6 +798,24 @@
       "path": "src/content/cmb-gated-dicts.mjs",
       "sha256": "3b86dea695d15992167b59f1fb69ea512f4a39adac91e692a8516eb7094f92ce",
       "sourceSha256": "3b86dea695d15992167b59f1fb69ea512f4a39adac91e692a8516eb7094f92ce",
+      "kind": "frozen-product"
+    },
+    {
+      "path": "src/background/cms-row-d-network-guard.mjs",
+      "sha256": "462356833d229757f3cd386dee44f2ea8f2d91e94a86dde3a85bd73a323a4e6d",
+      "sourceSha256": "462356833d229757f3cd386dee44f2ea8f2d91e94a86dde3a85bd73a323a4e6d",
+      "kind": "frozen-product"
+    },
+    {
+      "path": "src/popup/cms-row-d-guard.html",
+      "sha256": "e21cf3e231ca7a18fb2bb7c506525eb91166ad62f1d97640ff2096be907503d5",
+      "sourceSha256": "e21cf3e231ca7a18fb2bb7c506525eb91166ad62f1d97640ff2096be907503d5",
+      "kind": "frozen-product"
+    },
+    {
+      "path": "src/popup/cms-row-d-guard.js",
+      "sha256": "9726843b1d6f8dc6f0e0ae4c946a841f39ba36475b43adfc7326a86a92d7f59f",
+      "sourceSha256": "9726843b1d6f8dc6f0e0ae4c946a841f39ba36475b43adfc7326a86a92d7f59f",
       "kind": "frozen-product"
     },
     {

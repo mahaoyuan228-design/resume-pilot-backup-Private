@@ -1,6 +1,7 @@
 // bg-ping.mjs must stay the first import. Its listener is registered while that
 // module evaluates, before the auto runners below are installed.
 import './bg-ping.mjs';
+import {installCmsDNetworkGuard} from './cms-row-d-network-guard.mjs';
 
 import {installCmsEducationTaskRunner} from './cms-education-task-runner.mjs';
 import {installProfileBindingBridge} from '../profile/profile-lifecycle.js';
@@ -52,3 +53,5 @@ boot('beisen-2022-basic-auto', installBeisen2022BasicAutoRunner);
 boot('moka-basic-auto', installMokaBasicAutoRunner);
 boot('hotjob-mc-basic-auto', installHotjobMcBasicAutoRunner);
 boot('cmb-basic-auto', installCmbBasicAutoRunner);
+
+boot('cms-row-d-network-guard', installCmsDNetworkGuard);

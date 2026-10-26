@@ -132,3 +132,67 @@ https://developer.chrome.com/docs/extensions/reference/api/scripting
 InjectionResult.documentId and InjectionTarget.documentIds are Chrome106+;
 frameId is Chrome90+, ISOLATED world Chrome95+, injectImmediately Chrome102+.
 Only top frameIds:[0] is used here; no arbitrary documentIds/caller target input.
+
+
+## Partial runtime identity, actualaaab base (offline candidate)
+
+Base aaabdb39418b64e3f0723b8cd465ead98adf0239. The dedicated guard page has
+an explicit identity button using the existing exact two-key runtime bridge.
+No new permissions, dependency, worker boot, main popup, engine, rule definition,
+builder, field action or package-file count changes. The handler/page themselves
+read no profile, storage, resume field or website resource and never arm rules.
+They do not open another page, discover a port, or bypass a refused UI surface.
+
+The response supplies actual runtime.id, allowlisted getManifest metadata and
+manifest-declared guard-permission booleans, the exact sender's same-extension
+guard-page relationship, and the unique active CMS tab ID with allowed-page and
+full-URL-equality booleans. The full URL/query and documentId remain in memory.
+An armed guard is checked before and after resource reads, with the final
+document probe after the final independent tab read. A terminal/orphan guard
+cannot obtain a new identity receipt or regain authority. An unarmed receipt
+claims only sampled tab/URL metadata, not a verified document or session.
+
+Exactly five fixed own resources are fetched through runtime.getURL:
+manifest.json, src/background/worker.mjs,
+src/background/cms-row-d-network-guard.mjs,
+src/popup/cms-row-d-guard.html and src/popup/cms-row-d-guard.js.
+Fetch rejects redirects and uses no-store/omit credentials. The exact returned
+extension URL, status, streamed byte caps (262144 each / 524288 total), command
+timeout and operation budget are checked. WebCrypto hashes the raw bytes, not
+decoded or normalized text. Failure emits only a fixed enum and discards all
+partial rows. No requested path, tab, URL, expected hash or coverage input is
+accepted. The UI uses a bounded explicit projection of the receipt.
+
+This is PARTIAL current-resource-response evidence for external comparison.
+It does not establish already-loaded module bytes, all136 package files, Git
+source SHA, absolute installation path, debugger target, controlled session or
+same-instance provenance. Fetching a current resource cannot prove an existing
+worker loaded those bytes. No sameInstanceVerified or self-certified source SHA
+is returned. Version0.1.4.9 alone is insufficient. The external verified package
+manifest supplies expected hashes; the response must be compared independently.
+All coverage/native-cancel flags and interactionAllowed remain false. Nothing
+here closes a live gap, installs a package, proves a D field write, or changes53.
+
+Entry privacy limitation: the existing ordinary popup starts RESUME_INSPECT
+(popup.js:2399-2400), and its normal CMS send path loads the profile (:965).
+Those pre-existing paths are unchanged. The no-profile statement above applies
+to this handler and dedicated guard page, not to opening the whole old popup or
+all transitive worker imports. Future execution must use a permitted normal UI;
+no internal-URL/raw-CDP/loopback or alternate-surface workaround is authorized.
+
+Offline tests use Chrome API-shaped stubs, real Response streams/WebCrypto and
+JSDOM normal button events. Independent node:crypto hashes check raw bytes with
+NUL/BOM/CRLF sentinels. Tests cover caller overrides, worker/resource identity,
+caps/redirects/errors, full-URL/document/runtime drift, pending timeout and UI
+claim rejection. The final-tab-read race has a separate negative: change the
+same-URL document in the last tabs.get and require the subsequent actual probe
+to discard the receipt. These are not real Chrome/DNR/installed-instance tests.
+The first60-case result remains separately preserved; final fixed-source
+validation is reported outside this historical note. Three runtime files change
+within the existing136 set; the other133 remain raw-identical to actualaaab.
+SOURCE_INVENTORY is deliberately not regenerated and is not MATCH authority;
+Git raw/OID and newly built package manifests supply that proof.
+
+Official primary sources consulted for this implementation:
+https://developer.chrome.com/docs/extensions/reference/api/runtime
+https://developer.chrome.com/docs/extensions/develop/concepts/network-requests

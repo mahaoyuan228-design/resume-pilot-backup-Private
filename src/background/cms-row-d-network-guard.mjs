@@ -3,7 +3,8 @@
 const PAGE='https://wecruit.hotjob.cn/SU629dbc0c0dcad452299bc0f7/pb/resumeOperation.html';
 const RULE_IDS=[620201,620202,620203];
 const METHODS=new Set(['GET','POST','PUT','PATCH','DELETE','HEAD','OPTIONS','CONNECT']);
-const OPS=new Set(['arm','status','evidence','remove_closed']);
+const OPS=new Set(['arm','status','evidence','remove_closed','identity']);
+const IDENTITY_FILES=['manifest.json','src/background/worker.mjs','src/background/cms-row-d-network-guard.mjs','src/popup/cms-row-d-guard.html','src/popup/cms-row-d-guard.js'];
 const LEASE_MS=60000,COMMAND_MS=3000,CAP=128;
 export function cmsDSessionRules(tabId){
   if(!Number.isInteger(tabId)||tabId<0)throw Error('target_invalid');
@@ -166,6 +167,80 @@ export function createCmsDNetworkGuard(api=globalThis.chrome,{now=Date.now}={}){
     }
     historyCount=count;return snapshot({operation:'evidence',historyRefresh:'chrome_matched_rules'});
   }
+  async function identity(sender){
+    // This receipt is partial metadata/resource evidence for external comparison,
+    // never a loaded-code, installation-path, complete-package or session proof.
+    const stopped=()=>snapshot({operation:'identity'});
+    if(terminal)return stopped();
+    const id=api?.runtime?.id,manifest=api?.runtime?.getManifest?.();
+    const ui=api?.runtime?.getURL?.('src/popup/cms-row-d-guard.html');
+    const worker=api?.runtime?.getURL?.('src/background/worker.mjs');
+    if(!/^[a-p]{32}$/.test(id||'')||sender?.id!==id||sender?.url!==ui||sender.tab
+      ||manifest?.manifest_version!==3||!/^\d{1,5}(?:\.\d{1,5}){0,3}$/.test(manifest?.version||'')
+      ||typeof manifest.name!=='string'||!manifest.name.length||manifest.name.length>128||/[\x00-\x1f\x7f]/.test(manifest.name)
+      ||manifest?.background?.service_worker!=='src/background/worker.mjs'||manifest.background.type!=='module'||globalThis.location?.href!==worker
+      ||typeof globalThis.fetch!=='function'||typeof globalThis.crypto?.subtle?.digest!=='function'){
+      latch('identity_metadata_invalid');return stopped();
+    }
+    const deadline=now()+10000;let total=0;
+    const alive=()=>{expire();if(!terminal&&now()>deadline)latch('identity_budget_exceeded');return !terminal;};
+    if(binding&&!await verify())return stopped();
+    const tabs=await call(()=>api.tabs.query({active:true,currentWindow:true}));
+    if(!alive())return stopped();
+    if(!Array.isArray(tabs)||tabs.length!==1||!Number.isInteger(tabs[0].id)||tabs[0].id<0||tabs[0].id>2147483647||!isPage(tabs[0].url)){
+      latch('identity_target_changed');return stopped();
+    }
+    const target={id:tabs[0].id,url:tabs[0].url};
+    const stable=async()=>{
+      const tab=await call(()=>api.tabs.get(target.id));
+      if(!alive())return false;
+      if(tab.id!==target.id||!tab.active||tab.url!==target.url||!isPage(tab.url)
+        ||binding&&(binding.id!==target.id||binding.url!==target.url)){
+        latch('identity_target_changed');return false;
+      }
+      return true;
+    };
+    if(!await stable())return stopped();
+    const files=[];
+    for(const path of IDENTITY_FILES){
+      if(!alive()||!await stable())return stopped();
+      const url=api.runtime.getURL(path),parsed=new URL(url);let limit=false;
+      if(parsed.protocol!=='chrome-extension:'||parsed.hostname!==id||parsed.pathname!=='/'+path
+        ||parsed.username||parsed.password||parsed.search||parsed.hash){latch('identity_metadata_invalid');return stopped();}
+      try{
+        const row=await call(async()=>{
+          const response=await globalThis.fetch(url,{redirect:'error',cache:'no-store',credentials:'omit'});
+          if(response.status!==200||!response.ok||response.redirected||response.url!==url||!response.body?.getReader)throw Error('resource_unavailable');
+          const reader=response.body.getReader(),chunks=[];let bytes=0;
+          try{while(true){const next=await reader.read();if(next.done)break;
+            if(!(next.value instanceof Uint8Array))throw Error('resource_unavailable');
+            bytes+=next.value.byteLength;
+            if(bytes>262144||total+bytes>524288){limit=true;await reader.cancel();throw Error('resource_limit');}
+            chunks.push(next.value);
+          }}finally{reader.releaseLock();}
+          const raw=new Uint8Array(bytes);let offset=0;for(const chunk of chunks){raw.set(chunk,offset);offset+=chunk.byteLength;}
+          const digest=await globalThis.crypto.subtle.digest('SHA-256',raw);
+          return {path,bytes,sha256:Array.from(new Uint8Array(digest),n=>n.toString(16).padStart(2,'0')).join('')};
+        });
+        if(!alive())return stopped();total+=row.bytes;files.push(row);
+      }catch{latch(limit?'identity_resource_limit':'identity_resource_unavailable');return stopped();}
+      if(!await stable())return stopped();
+    }
+    if(!await stable()||!alive())return stopped();
+    if(binding&&!await verify())return stopped();
+    if(!alive())return stopped();
+    if(api.runtime.id!==id||api.runtime.getManifest().version!==manifest.version||globalThis.location?.href!==worker){
+      latch('identity_metadata_invalid');return stopped();
+    }
+    return snapshot({operation:'identity',runtimeIdentity:{kind:'cms_d_partial_runtime_identity_v1',extensionId:id,
+      extensionVersion:manifest.version,extensionName:manifest.name,manifestVersion:3,workerEntry:'src/background/worker.mjs',workerType:'module',
+      declaredGuardPermissions:{scripting:manifest.permissions?.includes('scripting')===true,declarativeNetRequest:manifest.permissions?.includes('declarativeNetRequest')===true,declarativeNetRequestFeedback:manifest.permissions?.includes('declarativeNetRequestFeedback')===true},
+      workerContextUrlMatchesManifest:true,senderSameExtensionGuardUi:true,cmsTabId:target.id,cmsAllowedPage:true,
+      cmsFullUrlSameAtSamples:true,guardBinding:binding?'matches_current_guard':'unarmed',
+      fingerprintScope:'five_fixed_current_extension_resource_responses',partial:true,files,
+      loadedModuleBytesVerified:false,fullPackageFingerprint:false,sourceCommitVerified:false,installationPathVerified:false,
+      externalComparisonRequired:true,interactionAllowed:false,nativeCancellationAvailable:false}});
+  }
   async function removeClosed(){
     // This is network-rule disposal after the browser confirms the tab is gone.
     // It is NOT native cancellation, value restoration, or a clean D outcome.
@@ -177,11 +252,12 @@ export function createCmsDNetworkGuard(api=globalThis.chrome,{now=Date.now}={}){
     if(after.some(rule=>RULE_IDS.includes(rule.id))){latch('remove_not_verified');return snapshot();}
     removed=true;readBack=false;protectionState='removed_after_tab_closed';phase='closed_tab_rules_removed';return snapshot({operation:'remove_closed',disposal:'not_native_cancel_or_live_pass'});
   }
-  return {async request(operation){
+  return {async request(operation,sender){
     if(!OPS.has(operation)){documentVerified=false;return snapshot({reason:'operation_invalid'});}
     if(inflight||pending.size)return snapshot({operation,requestState:'busy_or_pending'});
     documentVerified=false;inflight=true;
     try{
+      if(operation==='identity')return await identity(sender);
       if(operation==='arm')return await arm();
       if(operation==='remove_closed')return await removeClosed();
       if(!available())return snapshot({reason:'permission_or_api_missing',operation});
@@ -203,7 +279,7 @@ export function installCmsDNetworkGuard(api=globalThis.chrome){
       &&OPS.has(props.operation.value)&&sender?.id===api.runtime.id&&!sender.tab
       &&sender.url===api.runtime.getURL('src/popup/cms-row-d-guard.html');
     if(!valid){respond({kind:'cms_d_network_guard_rejected',reason:'sender_or_request_invalid'});return;}
-    controller.request(props.operation.value).then(respond,()=>respond({kind:'cms_d_network_guard_rejected',reason:'operation_failed'}));return true;
+    controller.request(props.operation.value,sender).then(respond,()=>respond({kind:'cms_d_network_guard_rejected',reason:'operation_failed'}));return true;
   });
   return controller;
 }

@@ -24,6 +24,8 @@ No payment provider credentials. No claim of a live license server in this tree.
 
 Signed token shape (v1): `{ v:1, alg:"Ed25519", payload:{ status, installId, profileHash, licenseId, expiresAtMs }, signature:<base64> }`. Dev helper: `node scripts/dev-sign-example-entitlement.mjs` (EXAMPLE keys under `tests/fixtures/license/` only).
 
+Per-seat code: `node scripts/issue-entitlement.mjs --private-key <outside-repo.pem> --install-id <uuid> --license-id <unique-seat-number> --days 365 --code-only` emits `RQF1.<base64url-UTF8-envelope>`. The existing activate panel accepts this code and verifies it locally before storing the same entitlement. Codes require a seat number, device binding and expiry; legacy JSON/Base64 tokens remain compatible. Issuing and installation steps: [offline distribution](../../docs/OFFLINE_DISTRIBUTION.md). No domain, payment gateway or online redemption ledger; `liveSupportClaimed=false`, Never-Save.
+
 ## DEV-ONLY mock verify (local smoke)
 
 `scripts/dev-mock-license-server.mjs` implements a minimal HTTPS `POST /v1/verify` for `client.mjs` smoke. Marked DEV-ONLY; **not** packaged by `build-internal.ps1` / `build-paid.ps1`. See root `LICENSE_STATUS.md` for run steps. No production claims.

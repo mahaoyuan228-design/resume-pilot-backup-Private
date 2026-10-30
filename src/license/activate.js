@@ -57,7 +57,10 @@ function denyReasonZh(error) {
     const base = licenseCodeToZh(error.code);
     const detailMap = {
       token_empty: '请先粘贴授权令牌。',
-      token_unparseable: '令牌无法解析：请粘贴 JSON 或 Base64(JSON)。',
+      token_unparseable: '无法解析：请粘贴完整 RQF1. 激活码、JSON 或 Base64(JSON)。',
+      activation_code_invalid: '激活码格式无效，请完整复制经营者签发的 RQF1. 码。',
+      activation_code_version_unsupported: '此激活码版本不受支持，请联系经营者核对安装包与激活码。',
+      activation_code_seat_invalid: '激活码缺少有效的席位编号、设备绑定或到期时间，请联系经营者重新签发。',
       token_not_object: '令牌格式无效：根节点必须是对象。',
       token_status_missing: '令牌缺少 status 字段。',
       token_expiry_invalid: '令牌到期时间无效。',

@@ -60,17 +60,19 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\install-offline.ps1 `
 ## 私下收款与激活
 
 1. 客户安装付费包，从弹窗“授权激活”复制本机 `installId`，私下交给运营者。
-2. 运营者线下确认付款，在本机使用仓库外的私钥签发有到期时间的授权码：
+2. 运营者线下确认付款，在本机使用仓库外的私钥逐席位签发有到期时间的激活码；`licenseId` 是运营者分配的唯一席位号，一号绑定一个客户 `installId`：
 
 ```powershell
 node scripts/issue-entitlement.mjs `
   --private-key "$env:USERPROFILE\secrets\resume-paid-ed25519\resume-paid-private.pem" `
   --install-id '<客户激活页显示的 UUID>' `
-  --days 365 --license-id 'lic-offline-001' --base64-only
+  --days 365 --license-id 'seat-offline-001' --code-only
 ```
 
-3. 客户在激活页粘贴完整 JSON 或 Base64 授权码。本地验证签名、状态、有效期和设备绑定，成功后开通现有填写开关；每次填写前重新验签。无码、过期、伪造或设备不匹配均拒绝。当前权益只有绑定此 `installId`、在有效期内的付费填写许可，尚无套餐或单功能细分。
+3. 输出为单行 `RQF1.<Base64URL>`，其中是 UTF-8 编码的原 Ed25519 签名 envelope。客户在现有激活页粘贴完整码，`activateLocalToken()` 本地验证格式、签名、状态、有效期和设备绑定，再保存原 entitlement；状态与每次填写前继续重新验签。新码必须有席位号、设备绑定和明确到期时间，无码、过期、伪造、错公钥或设备不匹配均拒绝；无效替换码不会覆盖已有 entitlement。旧 JSON / Base64 令牌及 `--json-only` / `--base64-only` 签发输出仍兼容。当前权益只有绑定此 `installId`、在有效期内的付费填写许可，尚无套餐或单功能细分。
 4. 续期使用同一运营者签名钥重新签发并粘贴。此骨架不含支付回调或在线撤销；纯离线授权的到期判断依赖本机时间，本地代码可被用户修改，不宣称完整 DRM。
+
+席位号唯一性由运营者的仓库外台账管理，签发脚本不建立订单库，也不联网查重；同一席位续期或换机需人工核对后重签。离线码无法远程回收旧机器上的有效码，不提供“一次兑换后全网失效”的承诺。脚本拒绝仓库内 / EXAMPLE 私钥、非 Ed25519 私钥、空席位号和已经过期的签发期限。私钥、收款信息与真实客户激活码均不入仓库。
 
 ## 手工更新约定
 
@@ -95,11 +97,12 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\install-offline.ps1 `
 
 ```powershell
 npm run test:windows-smoke
+node --test tests/license-activation-code.test.mjs
 node --test tests/product-aftercare.test.mjs
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-internal.ps1
 ```
 
-其中 `tests/install-offline.test.mjs` 用临时目录和合成 ZIP 验证安装、原路径更新、备份、旧文件清除及拒绝分支；`tests/build-offline-package.test.mjs` 使用临时公钥实际构建离线包；现有离线激活测试验证本地授权且网络调用为 0。以上均不访问招聘网站，不验证真实业务保存或公开实站支持。
+其中 `tests/install-offline.test.mjs` 用临时目录和合成 ZIP 验证安装、原路径更新、备份、旧文件清除及拒绝分支；`tests/build-offline-package.test.mjs` 使用临时公钥实际构建离线包；`tests/license-activation-code.test.mjs` 用仓库外临时密钥复现 CLI 签发、激活、状态与填写前校验，并覆盖错设备、错公钥、篡改、过期、格式错误及旧输出兼容，网络调用为 0。以上均不访问招聘网站，不验证真实业务保存或公开实站支持。
 
 ## 公开网站接口位
 

@@ -6,7 +6,7 @@
     "zoo:har": "node scripts/zoo-har.mjs",
     "test:paid-qa": "node --test tests/paid-qa-runner.test.mjs",
     "test:paid-rebuild": "node --test tests/build-paid-rebuild.test.mjs tests/guard-worker-auto-runners.test.mjs tests/product-paths-whitelist.test.mjs tests/pack-side-effect-import.test.mjs",
-    "test:windows-smoke": "npm run test:paid-rebuild && node --test tests/install-offline.test.mjs tests/build-offline-package.test.mjs tests/license-offline-activation.test.mjs tests/license-signed-entitlement.test.mjs tests/license-entitlement-helpers.test.mjs tests/license-gate-fail-closed.test.mjs \"tests/l1-*.test.mjs\"",
+    "test:windows-smoke": "npm run test:paid-rebuild && node --test tests/install-offline.test.mjs tests/build-offline-package.test.mjs tests/license-activation-code.test.mjs tests/license-offline-activation.test.mjs tests/license-signed-entitlement.test.mjs tests/license-entitlement-helpers.test.mjs tests/license-gate-fail-closed.test.mjs \"tests/l1-*.test.mjs\"",
     "test:live-harvest": "node --test tests/live-harvest-readonly.test.mjs tests/live-harvest-fixtures.test.mjs tests/live-harvest-timeout.test.mjs"
   },
   "dependencies": {

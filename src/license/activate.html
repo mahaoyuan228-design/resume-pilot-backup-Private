@@ -33,10 +33,10 @@
       </dl>
       <p id="st-message" class="status-msg" role="status">正在读取授权状态…</p>
 
-      <h2>粘贴授权令牌</h2>
-      <p class="hint">支持 JSON 文本，或该 JSON 的 Base64 / Base64URL。令牌由经营者签发；此处只做本机保存与核验，不连接支付接口。</p>
-      <label class="token-label" for="token-input">授权令牌</label>
-      <textarea id="token-input" rows="8" spellcheck="false" placeholder='{"status":"active","licenseId":"…","expiresAtMs":…}'></textarea>
+      <h2>粘贴席位激活码</h2>
+      <p class="hint">粘贴经营者为本机签发的完整 RQF1. 激活码；也兼容原 JSON / Base64 授权令牌。每码绑定一个席位编号、一个 installId 和有效期，仅在本机核验，不连接支付接口。</p>
+      <label class="token-label" for="token-input">激活码或授权令牌</label>
+      <textarea id="token-input" rows="8" spellcheck="false" placeholder="RQF1.…"></textarea>
       <div class="actions">
         <button id="btn-activate" class="button primary" type="button">激活并保存到本机</button>
         <button id="btn-refresh" class="button secondary" type="button">刷新状态</button>

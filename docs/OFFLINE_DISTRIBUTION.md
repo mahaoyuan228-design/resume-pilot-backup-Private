@@ -31,7 +31,31 @@ dist/edge-paid-v<version>-<UTC>/         # 付费
   SHA256SUMS.txt                        # extension 文件与 ZIP 的 SHA256
 ```
 
-ZIP 根层直接含 `manifest.json`；只打包现有产品白名单及付费授权模块。测试、签发脚本、私钥不入包。交付 ZIP 和对应 `SHA256SUMS.txt`，收件方核对 ZIP 哈希后解压，从 Edge 扩展管理页加载含 `manifest.json` 的目录。
+ZIP 根层直接含 `manifest.json`；只打包现有产品白名单及付费授权模块。测试、签发脚本、私钥不入包。
+
+## 私下交付与本地安装
+
+付费包交付目录约定如下；发布方把本仓库的安装脚本和本文复制到本次构建目录外层，与现有 ZIP、校验文件一起交付。安装脚本不进入扩展白名单，不改变内部包。客户只需 Windows PowerShell 5.1/.NET，不需源码、Node、域名或在线下载器。
+
+```text
+delivery-v<version>/
+  resume-autofill-edge-paid-v<version>.zip
+  SHA256SUMS.txt
+  install-offline.ps1                   # scripts/install-offline.ps1
+  OFFLINE_DISTRIBUTION.md               # 本文
+  PRODUCT_AFTERCARE.md                  # docs/PRODUCT_AFTERCARE.md
+```
+
+ZIP、校验文件和脚本均通过可信私下渠道交付；SHA256 校验用于发现损坏或文件错配，不代替发布者身份认证。客户在交付目录执行（版本文件名按实际替换）：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\install-offline.ps1 `
+  -ZipPath .\resume-autofill-edge-paid-v0.1.4.9.zip `
+  -ChecksumPath .\SHA256SUMS.txt `
+  -InstallRoot "$env:LOCALAPPDATA\ResumeQuickFillOffline"
+```
+
+脚本只接受本地磁盘路径，核验 ZIP 哈希后解包到独立 `stage-*`，拒绝路径穿越、重复条目、远端 `update_url` 及非离线付费配置，再安装到固定的 `<InstallRoot>\extension`。首次在 `edge://extensions` 开启开发人员模式，选择“加载解压缩的扩展”，加载此固定 `extension` 目录。首次安装流程止于扩展管理页和授权页，不打开招聘页面。
 
 ## 私下收款与激活
 
@@ -50,8 +74,33 @@ node scripts/issue-entitlement.mjs `
 
 ## 手工更新约定
 
-发布方从已核提交重新构建，私下交付完整新 ZIP 和哈希；客户核验后通过扩展管理页手工加载完整新目录，旧目录留档，不向旧包增量复制文件。更新前按现有资料导出流程备份；不要清空旧实例存储。若扩展身份或 `installId` 改变，应由运营者重新签发。没有域名更新源或自动下载器。
+发布方从已核提交使用同一签发公钥重新构建，按上述目录私下交付完整新包。客户先按现有资料导出流程备份，记下激活页的 `installId`，关闭填写页面，在扩展管理页暂时停用原实例；不要卸载或清空浏览器存储。在新交付目录执行相同命令并加 `-Update`：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\install-offline.ps1 `
+  -ZipPath .\resume-autofill-edge-paid-v0.1.4.9.zip `
+  -ChecksumPath .\SHA256SUMS.txt `
+  -InstallRoot "$env:LOCALAPPDATA\ResumeQuickFillOffline" -Update
+```
+
+更新要求已存在离线安装，拒绝签发公钥或 `manifest.key` 变化；旧树整体移到 `<InstallRoot>\backup-*`，新树移到原 `extension` 路径，移入失败时恢复旧树。没有增量覆盖或域名更新源。校验/解包/身份检查失败不替换原扩展；失败的 `stage-*` 保留供本地排查，不自动删除目录。
+
+随后在**同一浏览器资料、同一扩展实例**点击“重新加载”并启用，核对版本、原 `installId`、授权有效期和资料；本流程不执行填写、保存或提交。固定加载路径与同一身份用于保留浏览器现有存储；安装脚本不读取或搬迁浏览器资料。若换了浏览器资料、加载路径或扩展身份，`installId` 可能变化，需由运营者重签，不能复制别人的授权。回退时使用留存的可信旧 ZIP 和匹配哈希执行同一 `-Update` 流程并 Reload。
+
+激活仍由现有 `activate.js` → `activateLocalToken()` → entitlement 本机验签处理，更新不重签、不迁移授权结构。售后沿用[本地错误报告](PRODUCT_AFTERCARE.md)，无上传接口。
+
+## 本地复现验证
+
+开发者在仓库根目录执行（Node 24、Windows PowerShell 5.1；缺依赖时先执行 `npm ci --ignore-scripts --no-audit --no-fund`，安装脚本本身无需 Node）：
+
+```powershell
+npm run test:windows-smoke
+node --test tests/product-aftercare.test.mjs
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-internal.ps1
+```
+
+其中 `tests/install-offline.test.mjs` 用临时目录和合成 ZIP 验证安装、原路径更新、备份、旧文件清除及拒绝分支；`tests/build-offline-package.test.mjs` 使用临时公钥实际构建离线包；现有离线激活测试验证本地授权且网络调用为 0。以上均不访问招聘网站，不验证真实业务保存或公开实站支持。
 
 ## 公开网站接口位
 
-生成的 `paidConfig.publicWebsite = null` 是预留 stub。未来可在此提供公开下载/购买说明入口；当前没有 URL、HTTP 调用、支付接口或真实站点绑定。该字段不参与本地授权判断，离线流程不依赖它。
+生成的 `paidConfig.publicWebsite = null` 是预留 stub。域名、备案、收款仅留此接口说明，本轮不实现。该字段不参与本地授权判断，离线流程不依赖它。公开宣称保持不变，`liveSupportClaimed=false`，Never-Save。

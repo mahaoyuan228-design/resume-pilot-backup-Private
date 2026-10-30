@@ -114,12 +114,37 @@
   sectionDefinitions.basic.currentCity = ["现居住地", "现居城市", "当前居住城市"];
   sectionDefinitions.intent.availabilityNote = ["到岗说明", "到岗时间说明"];
 
-  function sectionKind(section) {
+  function sectionKind(section, aliases = sectionNames) {
     const token = semanticNormalize(section).replace(/必填$|选填$/u, "");
-    return Object.keys(sectionNames).find(kind => kind === section || sectionNames[kind].some(name => semanticNormalize(name) === token)) || null;
+    return Object.keys(aliases).find(kind => kind === section || aliases[kind].some(name => semanticNormalize(name) === token)) || null;
   }
 
   function semanticNormalize(value) { return normalize(String(value ?? "").normalize("NFKC")); }
+
+  // L3 vocabulary skeletons: a host selects configuration, never a control
+  // adapter or proof of live support. All families start with shared L2
+  // section aliases; field meanings remain in the common schema above.
+  const sharedSectionAliases = Object.freeze(Object.fromEntries(Object.entries(sectionNames)
+    .map(([kind, aliases]) => [kind, Object.freeze([...aliases])])));
+  const atsProfiles = Object.freeze([
+    ["beisen", ["zhiye.com"]],
+    ["moka", ["mokahr.com"]],
+    ["hotjob", ["hotjob.cn"]],
+    ["feishu", ["jobs.feishu.cn", "jobs.bytedance.com", "jobs.f.mioffice.cn"]]
+  ].map(([id, domains]) => Object.freeze({ id, domains: Object.freeze(domains),
+    sectionAliases: sharedSectionAliases, unknownFieldStatus: "manual", liveSupportClaimed: false })));
+
+  function resolveAtsProfile(hostname) {
+    if (typeof hostname !== "string") return null;
+    const host = hostname.toLowerCase();
+    if (!/^[a-z0-9-]+(?:\.[a-z0-9-]+)*$/u.test(host)) return null;
+    return atsProfiles.find(profile => profile.domains.some(domain => host === domain || host.endsWith(`.${domain}`))) || null;
+  }
+
+  function resolveAtsField({ hostname, ...field } = {}) {
+    const profile = resolveAtsProfile(hostname);
+    return { ...resolveField(field, profile?.sectionAliases), atsProfile: profile?.id || null, liveSupportClaimed: false };
+  }
 
   function isProfileKey(path) {
     if (typeof path !== "string") return false;
@@ -128,10 +153,10 @@
     return !!match && Number(match[2]) < 30 && repeatedFields[match[1]].includes(match[3]);
   }
 
-  function resolveField({ labels, section = "", index = null } = {}) {
+  function resolveField({ labels, section = "", index = null } = {}, sectionAliases = sectionNames) {
     const manual = reason => ({ status: "manual", key: null, profileKey: null, reason });
     if (!Array.isArray(labels) || !labels.length || labels.some(label => typeof label !== "string")) return manual("unlabelled_field");
-    const kind = sectionKind(section);
+    const kind = sectionKind(section, sectionAliases);
     if (section && !kind) return manual("section_unconfirmed");
     if (kind === "certificate") return manual("profile_field_unavailable");
     const tables = kind ? [sectionDefinitions[kind]] : [sectionDefinitions.basic, sectionDefinitions.intent];
@@ -172,7 +197,8 @@
     return { valid: true, value };
   }
 
-  const api = { definitions, sectionDefinitions, sectionNames, normalize, classify, sectionKind, resolveField, isProfileKey, selectOption, validValue };
+  const api = { definitions, sectionDefinitions, sectionNames, normalize, classify, sectionKind, resolveField,
+    atsProfiles, resolveAtsProfile, resolveAtsField, isProfileKey, selectOption, validValue };
   root.ResumeMatcher = api;
   if (typeof module !== "undefined" && module.exports) module.exports = api;
 })(typeof globalThis !== "undefined" ? globalThis : this);

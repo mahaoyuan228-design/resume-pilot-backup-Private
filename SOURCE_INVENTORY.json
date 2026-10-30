@@ -1,6 +1,6 @@
 {
   "version": "0.1.4.9",
-  "sumsSha256": "a3ffb699151eabc3db0560f2225720bc5e686bc830eea42577ac9152500c93a6",
+  "sumsSha256": "0018cb46fa639b89a24ea2dff9428625560b89010e4350bc73baa4f76b1a3204",
   "inventory": [
     {
       "path": "manifest.json",
@@ -274,8 +274,8 @@
     },
     {
       "path": "src/content/engine.js",
-      "sha256": "478b2e824685f56c26d6551963dd392654936474341a1dd1b279f1d03e6be872",
-      "sourceSha256": "478b2e824685f56c26d6551963dd392654936474341a1dd1b279f1d03e6be872",
+      "sha256": "f70546699183610fb18cdb240a3dc09424fe3e55236ee12a3f1a6cf75c5a8f9b",
+      "sourceSha256": "f70546699183610fb18cdb240a3dc09424fe3e55236ee12a3f1a6cf75c5a8f9b",
       "kind": "frozen-product"
     },
     {
@@ -352,8 +352,8 @@
     },
     {
       "path": "src/core/matcher.js",
-      "sha256": "9ae5357b8a60c604c6631d6a9c1d90b5b3f6ce6ad56f573c357662d1a34128a4",
-      "sourceSha256": "9ae5357b8a60c604c6631d6a9c1d90b5b3f6ce6ad56f573c357662d1a34128a4",
+      "sha256": "c8d7655324b4f062f7fd12ba4be97f7a646bb230097116df42c7debfe34282b9",
+      "sourceSha256": "c8d7655324b4f062f7fd12ba4be97f7a646bb230097116df42c7debfe34282b9",
       "kind": "frozen-product"
     },
     {
@@ -1192,8 +1192,8 @@
     },
     {
       "path": "tests/zoo/write-route.spec.mjs",
-      "sha256": "2f183d4cf711074b29142b112c5a51bd71e3818222cdc33618f9439f4a18da79",
-      "sourceSha256": "2f183d4cf711074b29142b112c5a51bd71e3818222cdc33618f9439f4a18da79",
+      "sha256": "9560d598c9c74cd86dc038d2cd50b1ce8e404d0d5d402b720644f8a54c7a20c4",
+      "sourceSha256": "9560d598c9c74cd86dc038d2cd50b1ce8e404d0d5d402b720644f8a54c7a20c4",
       "kind": "selected-ats-r2-offline-regression"
     },
     {

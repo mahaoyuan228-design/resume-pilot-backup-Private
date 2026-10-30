@@ -1,4 +1,4 @@
-/* First-party L1 HTML controls. No ATS implementation code is incorporated.
+/* First-party L1 HTML and numeric controls. No ATS implementation code is incorporated.
  * Registration is passive; writes require the registry's explicit write gate.
  */
 (() => {
@@ -7,7 +7,7 @@
   if (!api) throw new Error('control_registry_missing');
   if (api.list?.().some(adapter => adapter.name === 'native-text')) return;
   const { norm, equal, prose, proseEqual, richtextValue, nativeSet, safeClick, tick } = api.helpers;
-  const textTypes = new Set(['text', 'email', 'tel', 'url', 'search', 'number']);
+  const textTypes = new Set(['text', 'email', 'tel', 'url', 'search']);
   const frameworkClass = /(?:^|\s)(?:el|ant|ivu|ud|phoenix|atsx|am)-[^\s]+/u;
   const complexClass = /(?:^|\s)[^\s]*(?:cascader|picker|select-wrap|plugin-dialog)[^\s]*/u;
 
@@ -86,6 +86,136 @@
     api.register({ lib: 'native', priority: 10,
       libVersionProbe: () => ({ lib: 'native', version: 'html' }), ...spec });
   }
+
+  // One numeric contract for HTML, reviewed Vue 2 InputNumbers and explicit
+  // editable ARIA spinbuttons. CSS hints alone only prevent a text downgrade.
+  const numberFlags = { writeStarted: false, liveSupportClaimed: false };
+  const decimalPattern = /^-?(?:\d+(?:\.\d+)?|\.\d+)(?:[eE][+-]?\d+)?$/u;
+  function decimal(value) {
+    const [mantissa, exponent = '0'] = String(value).toLowerCase().split('e');
+    const [whole, fraction = ''] = mantissa.split('.');
+    return { coefficient: BigInt(whole + fraction), exponent: Number(exponent) - fraction.length };
+  }
+  function scaled(value, exponent) {
+    const part = decimal(value);
+    return part.coefficient * 10n ** BigInt(part.exponent - exponent);
+  }
+  function numberValue(value) {
+    if (!['number', 'string'].includes(typeof value) || String(value).length > 128 || !decimalPattern.test(String(value))) return null;
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed) || Math.abs(parsed) > Number.MAX_SAFE_INTEGER) return null;
+    if (Math.abs(decimal(value).exponent) > 324) return null;
+    // Do not silently round supplied decimal strings or underflow them to zero.
+    const exponent = Math.min(decimal(value).exponent, decimal(parsed).exponent);
+    return scaled(value, exponent) === scaled(parsed, exponent) ? parsed : null;
+  }
+  function aligned(value, step, base = 0) {
+    const exponent = Math.min(...[value, step, base].map(part => decimal(part).exponent));
+    return (scaled(value, exponent) - scaled(base, exponent)) % scaled(step, exponent) === 0n;
+  }
+  function numberHint(el) {
+    for (let node = el; node && !node.matches('body,html,form'); node = node.parentElement) {
+      if (node.matches('[role="spinbutton"],input[type="number"]')
+        || [...node.classList].some(token => /(?:^|-)(?:input-number|stepper|spinbutton)(?:-|$)/iu.test(token))) return true;
+    }
+    return false;
+  }
+  function numberModel(el, probe, kind) {
+    const root = kind === 'vue' ? probe.controlRoot : el;
+    const inputs = root ? [...(root.matches('input') ? [root] : []), ...root.querySelectorAll('input:not([type="hidden"])')] : [];
+    const input = inputs.length === 1 ? inputs[0] : null;
+    const props = kind === 'vue' ? globalThis.ResumeControlModel.resolve(el).props : {};
+    const bound = (value, fallback = null) => value == null || value === '' ? fallback : numberValue(value);
+    const rawMin = kind === 'vue' ? props.min === -Infinity ? null : props.min : input?.getAttribute(kind === 'aria' ? 'aria-valuemin' : 'min');
+    const rawMax = kind === 'vue' ? props.max === Infinity ? null : props.max : input?.getAttribute(kind === 'aria' ? 'aria-valuemax' : 'max');
+    const rawStep = kind === 'vue' ? props.step : input?.getAttribute('step');
+    const min = bound(rawMin), max = bound(rawMax), step = rawStep === 'any' && kind !== 'vue' ? 'any' : bound(rawStep, 1);
+    const initial = kind === 'native' ? numberValue(input?.getAttribute('value')) : null;
+    const precision = kind === 'vue' ? props.precision ?? null : null;
+    const constraints = { min, max, step, base: kind === 'vue' ? 0 : min ?? initial ?? 0, precision,
+      strict: kind !== 'vue' || !!props.stepStrictly };
+    const invalid = rawMin != null && rawMin !== '' && min === null || rawMax != null && rawMax !== '' && max === null
+      || min != null && max != null && min > max || step !== 'any' && (step === null || step <= 0)
+      || precision !== null && (!Number.isInteger(precision) || precision < 0 || precision > 15)
+      || !!(props.formatter || props.parser || props.stringMode || props.decimalSeparator || props.cyclic || props.wrap);
+    const rawValue = kind === 'vue' ? probe.value : kind === 'aria' ? input?.getAttribute('aria-valuenow') : input?.value;
+    const value = rawValue == null || rawValue === '' ? null : numberValue(rawValue);
+    const domValue = input?.value === '' ? null : numberValue(input?.value);
+    return { ...probe, ...(kind === 'vue' ? {} : { framework: 'native', lib: kind === 'aria' ? 'aria' : 'native', version: 'html' }),
+      controlRoot: root, numberInput: input, value, domValue, numberConstraints: constraints,
+      available: !!input && ['text', 'number'].includes(input.type) && !invalid
+        && (kind !== 'vue' || probe.available && (probe.value == null || typeof probe.value === 'number'))
+        && (kind !== 'aria' || input.hasAttribute('aria-valuenow'))
+        && (rawValue == null || rawValue === '' || value !== null) && (input.value === '' || domValue !== null)
+        && !input.validity.badInput,
+      disabled: !!probe.disabled || !!input?.disabled || !!input?.matches(':disabled') || !!input?.closest('[aria-disabled="true"],[inert]'),
+      readonly: !!probe.readonly || !!input?.readOnly || !!input?.closest('[aria-readonly="true"]') };
+  }
+  function numberPlan(fact, model) {
+    const fail = reason => ({ status: 'manual', reason, ...numberFlags });
+    if (model.disabled || model.readonly) return fail(model.disabled ? 'disabled' : 'readonly');
+    if (!model.available) return fail('number_contract_unconfirmed');
+    const operation = fact?.operation ?? 'set';
+    if (!['set', 'inc', 'dec'].includes(operation) || operation !== 'set' && fact.value !== undefined) return fail('invalid_number_operation');
+    const { min, max, step, base, precision, strict } = model.numberConstraints;
+    const violation = value => min !== null && value < min || max !== null && value > max ? 'number_out_of_range'
+      : precision !== null && !aligned(value, 10 ** -precision) ? 'number_precision_mismatch'
+        : strict && step !== 'any' && !aligned(value, step, base) ? 'number_step_mismatch' : null;
+    let target = numberValue(fact && typeof fact === 'object' ? fact.value : fact);
+    if (operation !== 'set') {
+      if (model.value === null || model.domValue !== model.value) return fail('number_initial_value_unconfirmed');
+      if (step === 'any') return fail('number_step_unconfirmed');
+      if (violation(model.value)) return fail(violation(model.value));
+      const exponent = Math.min(decimal(model.value).exponent, decimal(step).exponent);
+      target = numberValue(`${scaled(model.value, exponent) + (operation === 'inc' ? 1n : -1n) * scaled(step, exponent)}e${exponent}`);
+    }
+    if (target === null) return fail('invalid_number_value');
+    if (violation(target)) return fail(violation(target));
+    if (operation === 'set' && [model.value, model.domValue].some(value => value !== null && value !== target)) return fail('existing_value');
+    const same = model.value === target && model.domValue === target;
+    return { status: same ? 'success' : 'planned', reason: same ? 'preexisting_same_value' : 'ready',
+      operation, value: target, modelValue: target, domValue: target, ...numberFlags };
+  }
+  async function writeNumber(el, instruction, ctx, kind) {
+    const adapter = api.resolve(el), initial = adapter.readModel(el), root = initial.controlRoot;
+    const input = root.matches('input') ? root : root.querySelector('input:not([type="hidden"])');
+    const keyboard = kind === 'vue' && instruction.operation !== 'set';
+    let stepped = false;
+    const owned = { ...ctx, async check() {
+      await ctx.check();
+      const live = adapter.readModel(el);
+      if (!input.isConnected || live.numberInput !== input || live.disabled || live.readonly || !live.available || !api.helpers.clickAllowed(input)
+        || keyboard && !stepped && (live.value !== initial.value || live.domValue !== initial.domValue)
+        || ![initial.value, instruction.value].includes(live.value)
+        || ![initial.domValue, instruction.value].includes(live.domValue)) throw Error('control_changed');
+    } };
+    if (keyboard) {
+      // Keyboard stepping avoids InputNumber's pointer long-press timers.
+      const key = instruction.operation === 'inc' ? 'ArrowUp' : 'ArrowDown', keyCode = key === 'ArrowUp' ? 38 : 40;
+      await api.helpers.check(owned);
+      stepped = true;
+      input.dispatchEvent(new KeyboardEvent('keydown', { key, code: key, keyCode, which: keyCode, bubbles: true, cancelable: true }));
+      await api.helpers.check(owned);
+      input.dispatchEvent(new KeyboardEvent('keyup', { key, code: key, keyCode, which: keyCode, bubbles: true, cancelable: true }));
+    } else await nativeSet(input, String(instruction.value), owned);
+    await tick();
+    return { strategy: keyboard ? 'keyboard' : 'native', attempts: 1 };
+  }
+  for (const [name, lib, kind, componentName, major] of [
+    ['native-number', 'native', 'native'], ['aria-number', 'aria', 'aria'],
+    ['el-number', 'element-ui', 'vue', 'ElInputNumber', 2], ['antdv1-number', 'ant-design-vue', 'vue', 'AInputNumber', 1]
+  ]) api.register({ name, lib, type: 'number', priority: 500,
+    libVersionProbe: (_el, probe) => kind !== 'vue' ? { lib, version: 'html' }
+      : probe.lib === lib && probe.major === major ? { lib, version: probe.version } : null,
+    matches: (el, probe) => kind === 'vue' ? probe.framework === 'vue2' && probe.componentName === componentName
+      : plain(el, probe) && el.matches(kind === 'native' ? 'input[type="number"]:not([role]),input[type="number"][role="spinbutton"]' : 'input[type="text"][role="spinbutton"],input:not([type])[role="spinbutton"]'),
+    readModel: (el, probe) => numberModel(el, probe, kind), plan: numberPlan,
+    performWrite: (el, instruction, ctx) => writeNumber(el, instruction, ctx, kind)
+  });
+  api.register({ name: 'number-unknown', lib: 'number', type: 'number', priority: 18,
+    matches: el => numberHint(el), libVersionProbe: () => ({ lib: 'number', version: 'unknown' }),
+    readModel: (el, probe) => ({ ...probe, available: false, controlRoot: el }),
+    plan: () => ({ status: 'manual', reason: 'number_contract_unconfirmed', ...numberFlags }) });
 
   const shown = node => {
     if (!node?.isConnected || !node.getClientRects().length || node.closest('[hidden],[aria-hidden="true"]')) return false;
@@ -246,7 +376,7 @@
   });
 
   register({ name: 'native-text', type: 'text',
-    matches: (el, probe) => plain(el, probe) && el.tagName === 'INPUT' && textTypes.has(el.type),
+    matches: (el, probe) => plain(el, probe) && !numberHint(el) && el.tagName === 'INPUT' && textTypes.has(el.type),
     readModel: (el, probe) => base(el, probe, el.value),
     async performWrite(el, instruction, ctx) {
       const reason = guards(el);

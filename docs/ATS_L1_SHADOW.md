@@ -18,9 +18,9 @@ The MAIN inspector reads Vue 2 reactive props normally, including getters, and p
 
 | Family | Entries | Evidence boundary |
 | --- | --- | --- |
-| HTML | text, textarea, select, radio, checkbox; upload always manual | Native value/checked is the HTML control model; select/radio codes are separate from display labels. |
-| Element UI 2 | input, textarea, select, radio, checkbox, date, month, two-editor month range, cascader | Requires Vue 2 component identity and an observed library version export. Zoo uses 2.15.14; the live GTH version is unverified. |
-| ant-design-vue 1 | input, textarea, flat select, search select, radio, checkbox group, date, month, cascader | Requires Vue 2 component identity and an observed library version export. Zoo uses 1.7.8. |
+| HTML | text, textarea, number, explicit ARIA spinbutton, select, radio, checkbox; upload always manual | Native value/checked is the HTML control model; select/radio codes are separate from display labels. |
+| Element UI 2 | input, textarea, InputNumber, select, radio, checkbox, date, month, two-editor month range, cascader | Requires Vue 2 component identity and an observed library version export. Zoo uses 2.15.14; the live GTH version is unverified. |
+| ant-design-vue 1 | input, textarea, InputNumber, flat select, search select, radio, checkbox group, date, month, cascader | Requires Vue 2 component identity and an observed library version export. Zoo uses 1.7.8. |
 | hotjob pair | Two dependent ant-design-vue selects | Each child is independently probed. The second select's initial dependency-disabled state is distinguished from a site-disabled field. |
 | GTH plugin-dialog | No generic claim | Retained in the unchanged legacy writer; its site contract belongs to L3. |
 | iView/ViewUI, ud/Formily, phoenix, antd-mobile | Pending samples; no claimed adapter | No selectors, versions, or internal handlers are guessed. AntD React v4 is a later slice. |
@@ -28,6 +28,16 @@ The MAIN inspector reads Vue 2 reactive props normally, including getters, and p
 Version exports can be absent in real bundled sites. Those controls return `unsupported` even if their classes look familiar. Element Plus, ant-design-vue 3/4 and unknown versions are not accepted by these Vue 2 adapters.
 
 Search and dependent-select plans explicitly mark unresolved options. A requested label is never reported as an observed backend ID. UI execution must find a unique enabled exact option, and final component/DOM verification still applies. Unsupported date formats, invalid precision, ambiguous options, different existing values and unavailable models fail closed. Dates currently accept explicit `YYYY-MM`/`yyyy-MM` or `YYYY-MM-DD`/`yyyy-MM-dd` value formats. Display formats with different text require further evidence. Internal date fallback refuses custom `disabledDate` constraints when they cannot be checked through the UI.
+
+## Number and stepper controls
+
+`native.js` registers `native-number`, `el-number`, `antdv1-number` and `aria-number` with the shared registry. Native inputs require `type="number"`; Vue controls require the owning `ElInputNumber` / `AInputNumber` model and an observed Element UI 2 / ant-design-vue 1 version. React AntD and Element Plus are not claimed. A stepper-like control requires an editable `input[role="spinbutton"]` with `aria-valuenow` agreeing with the visible input value. An explicit empty `aria-valuenow=""` permits an absolute write; a missing attribute stays manual. CSS resemblance alone grants no numeric writer. InputNumber ownership takes priority over its internal Input component.
+
+`ResumeControls.plan(el, { value: 2.5 })` accepts a finite number or strict decimal string within `±Number.MAX_SAFE_INTEGER` and preserves a different existing value. Exponents are accepted; implicit decimal rounding, hexadecimal, NaN, Infinity and units are rejected. `{ operation: 'inc' }` and `{ operation: 'dec' }` explicitly request one step from an existing, consistent DOM/model value. BigInt decimal arithmetic avoids accumulated `0.1` step errors. Empty step origins, invalid numbers, unsupported constraints, step or precision mismatches and out-of-range results stay manual; operations do not clamp or wrap. Native step alignment uses the minimum, otherwise the initial value attribute, otherwise zero. `step="any"` permits absolute writes only. Custom formatter/parser, string-mode and cyclic contracts remain manual.
+
+Writes require `allowWrite: true` and a per-effect `check()`. Absolute writes and native/ARIA stepping use checked native input/change/blur events. Vue stepping dispatches one ArrowUp/ArrowDown keydown/keyup pair on the owned input, avoiding pointer long-press timers. Plans are privately bound to their original model owner and constraints; serialized, modified or cross-widget plans grant no write authority. Verification requires numeric DOM and authoritative model agreement and a second sample to detect reversion. Never-Save remains in force; this is offline support only: `liveSupportClaimed=false`.
+
+Run the focused checks with Node 24: `node --test tests/l1-number-controls.test.mjs`. Regression verification includes the existing L1, product-whitelist and guard tests, then `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-internal.ps1` and `npm run test:zoo`. Build before the zoo so its packaged-byte checks use the current controls. No product path or site-specific selector is added for this family.
 
 ## Effect boundary
 

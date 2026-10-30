@@ -5,7 +5,7 @@
   'use strict';
   // Rebuild old registries so reinjection installs current dropdown readback
   // contracts as well as the current model resolver.
-  if (globalThis.ResumeControls?.version === 1 && globalThis.ResumeControls.revision === 13) return;
+  if (globalThis.ResumeControls?.version === 1 && globalThis.ResumeControls.revision === 14) return;
   const adapters = new Map();
   // Executable dropdown/choice plans stay bound to their original widget in MAIN.
   // Serialized shadow observations carry no authority to write another root.
@@ -194,7 +194,7 @@
     if (Array.isArray(value)) return value.slice(0, 1000).map(v => clean(v, depth + 1));
     if (typeof value !== 'object' || value.nodeType || value instanceof Map) return null;
     const out = {};
-    for (const [key, val] of Object.entries(value)) if (!['controlRoot', 'vm', 'props'].includes(key) && typeof val !== 'function') out[key] = clean(val, depth + 1);
+    for (const [key, val] of Object.entries(value)) if (!['controlRoot', 'numberInput', 'vm', 'props'].includes(key) && typeof val !== 'function') out[key] = clean(val, depth + 1);
     if (selectBindings.has(value)) selectBindings.set(out, selectBindings.get(value));
     if (choiceBindings.has(value)) choiceBindings.set(out, choiceBindings.get(value));
     if (searchSelections.has(value)) searchSelections.set(out, searchSelections.get(value));
@@ -203,13 +203,17 @@
   function createAdapter(spec) {
     const readModel = spec.readModel || ((el, probe) => ({ ...probe }));
     const multiline = ['textarea', 'richtext'].includes(spec.type);
+    const numeric = spec.type === 'number';
     const multi = spec.type === 'multi-select';
-    const boundControl = multiline || ['select', 'select-search', 'multi-select', 'cascader', 'radio', 'checkbox', 'checkbox-group', 'switch'].includes(spec.type);
+    const boundControl = numeric || multiline || ['select', 'select-search', 'multi-select', 'cascader', 'radio', 'checkbox', 'checkbox-group', 'switch'].includes(spec.type);
     const choice = ['radio', 'checkbox', 'checkbox-group', 'switch'].includes(spec.type);
-    const ownerBound = multiline || choice || ['select-search', 'multi-select'].includes(spec.type);
+    const ownerBound = numeric || multiline || choice || ['select-search', 'multi-select'].includes(spec.type);
     const valueEqual = multiline ? proseEqual : ownerBound ? choiceEqual : equal;
-    const domEqual = multiline ? proseEqual : equal;
+    const domEqual = numeric ? choiceEqual : multiline ? proseEqual : equal;
     const validInstruction = instruction => ['planned', 'success'].includes(instruction?.status) && instruction.adapter === spec.name
+      && (!numeric || instruction.type === 'number' && Number.isFinite(instruction.value)
+        && instruction.value === instruction.modelValue && instruction.value === instruction.domValue
+        && ['set', 'inc', 'dec'].includes(instruction.operation))
       && (!multi || instruction.type === spec.type && Array.isArray(instruction.value)
         && choiceEqual(instruction.value, instruction.modelValue) && equal(instruction.labels, instruction.domValue))
       && (!multiline || instruction.type === spec.type && proseEqual(instruction.value, instruction.modelValue)
@@ -218,6 +222,9 @@
       if (!ownerBound) return true;
       const owner = choiceBindings.get(instruction), ref = globalThis.ResumeControlModel.resolve(el);
       return !!owner && owner.root === model.controlRoot && owner.vm === ref.vm && owner.version === model.version
+        && (!numeric || owner.numberPlan === JSON.stringify(clean(instruction))
+          && owner.numberInput === model.numberInput
+          && owner.numberConstraints === JSON.stringify(clean(model.numberConstraints)))
         && (!multiline || owner.framework === ref.framework && owner.componentType === ref.componentType);
     };
     const adapter = { ...spec,
@@ -233,7 +240,8 @@
         if (ownerBound && model.controlRoot) {
           const ref = globalThis.ResumeControlModel.resolve(model.controlRoot);
           choiceBindings.set(plan, { root: model.controlRoot, vm: ref.vm, framework: ref.framework,
-            componentType: ref.componentType, version: model.version });
+            componentType: ref.componentType, version: model.version,
+            ...(numeric ? { numberInput: model.numberInput, numberPlan: JSON.stringify(clean(plan)), numberConstraints: JSON.stringify(clean(model.numberConstraints)) } : {}) });
         }
         if (spec.type === 'select-search') searchSelections.set(plan, {
           required: !!(plan.requiresOptionResolution || plan.requiresOptionClick), deferred: !!plan.requiresOptionResolution,
@@ -249,7 +257,11 @@
         if (resolve(el)?.name !== spec.name) return { status: 'unsupported', reason: 'control_or_version_changed', strategy: 'none', attempts: 0 };
         const model = adapter.readModel(el);
         if (boundControl && (!model.controlRoot || selectBindings.get(instruction) !== model.controlRoot || !sameOwner(el, instruction, model))) return { status: 'unsupported', reason: 'control_target_changed', strategy: 'none', attempts: 0 };
-        const current = adapter.plan({ value: instruction.value }, model, { modelValue: true });
+        if (numeric && model.available && !model.disabled && !model.readonly
+          && model.value === instruction.value && model.domValue === instruction.domValue)
+          return { status: 'success', reason: 'preexisting_same_value', strategy: 'none', attempts: 0 };
+        const current = adapter.plan(numeric && instruction.operation !== 'set'
+          ? { operation: instruction.operation } : { value: instruction.value }, model, { modelValue: true });
         if (!['planned', 'success'].includes(current.status)) return { status: 'unsupported', reason: current.reason, strategy: 'none', attempts: 0 };
         if (!valueEqual(current.value, instruction.value) || !domEqual(current.domValue, instruction.domValue)) return { status: 'unsupported', reason: 'instruction_stale', strategy: 'none', attempts: 0 };
         if (current.status === 'success') return { status: 'success', reason: 'preexisting_same_value', strategy: 'none', attempts: 0 };
@@ -267,7 +279,7 @@
         const sample = () => {
           if (!el?.isConnected) return { ok: false, unsupported: true, reason: 'target_detached' };
           const model = adapter.readModel(el);
-          if (multiline && (model.disabled || model.readonly)) return { ok: false, unsupported: true, reason: 'control_not_writable' };
+          if ((numeric || multiline) && (model.disabled || model.readonly)) return { ok: false, unsupported: true, reason: 'control_not_writable' };
           if (boundControl && (resolve(el)?.name !== spec.name || !model.controlRoot
             || selectBindings.get(instruction) !== model.controlRoot || !sameOwner(el, instruction, model))) return { ok: false, unsupported: true, reason: 'control_target_changed' };
           const search = searchSelections.get(instruction), selection = search?.selection;
@@ -322,7 +334,7 @@
     } catch { return { ...manual('component_probe_failed'), adapter: null }; }
   }
   const helpers = Object.freeze({ norm, equal, prose, proseEqual, richtextValue, empty, tick, makePlan, safeClick, nativeSet, confirmSearchOption, check, clickAllowed, clean, validDate });
-  globalThis.ResumeControls = Object.freeze({ version: 1, revision: 13, mode: 'shadow', liveSupportClaimed: false,
+  globalThis.ResumeControls = Object.freeze({ version: 1, revision: 14, mode: 'shadow', liveSupportClaimed: false,
     register, createAdapter, resolve, inspect, plan, helpers, list: () => ordered().map(a => ({ name: a.name, lib: a.lib, type: a.type, priority: a.priority || 0 })),
     verify: (el, instruction, ctx) => resolve(el)?.verify(el, instruction, ctx) || Promise.resolve({ status: 'unsupported', reason: 'control_or_version_unconfirmed' }) });
 })();

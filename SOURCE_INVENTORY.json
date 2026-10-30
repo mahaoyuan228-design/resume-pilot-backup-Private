@@ -1,6 +1,6 @@
 {
   "version": "0.1.4.9",
-  "sumsSha256": "0018cb46fa639b89a24ea2dff9428625560b89010e4350bc73baa4f76b1a3204",
+  "sumsSha256": "2d7c6716a23d40c15a0cace7308adcb6bc208e3c08a26b566d514aa981e1e1c8",
   "inventory": [
     {
       "path": "manifest.json",
@@ -826,14 +826,14 @@
     },
     {
       "path": "src/content/controls/model.js",
-      "sha256": "9bfbfe76587c33e115357265af22be5778c09687915df7c26eb1c87375015ee4",
-      "sourceSha256": "9bfbfe76587c33e115357265af22be5778c09687915df7c26eb1c87375015ee4",
+      "sha256": "14aba84aa1d78b38ab4bc96184b704591e673764b817da46ee1c85f3ae7cc5ae",
+      "sourceSha256": "14aba84aa1d78b38ab4bc96184b704591e673764b817da46ee1c85f3ae7cc5ae",
       "kind": "frozen-product"
     },
     {
       "path": "src/content/controls/registry.js",
-      "sha256": "8ed09c7f812d1aa97fa9a6a85725bd5a5a18a34e23df4229a89d797ac5a23493",
-      "sourceSha256": "8ed09c7f812d1aa97fa9a6a85725bd5a5a18a34e23df4229a89d797ac5a23493",
+      "sha256": "54a56877581c632d13dea47a00ff914ad6861a19ec86e73012b16c19142153ef",
+      "sourceSha256": "54a56877581c632d13dea47a00ff914ad6861a19ec86e73012b16c19142153ef",
       "kind": "frozen-product"
     },
     {
@@ -844,8 +844,8 @@
     },
     {
       "path": "src/content/controls/native.js",
-      "sha256": "f339a486a39d29db4dd67f20312a4e58f9b38435c4522f15455a227582470e98",
-      "sourceSha256": "f339a486a39d29db4dd67f20312a4e58f9b38435c4522f15455a227582470e98",
+      "sha256": "1f6c954ed6f758372857fc7f1f15da71b9fac4064a1e269066d28d51713b580a",
+      "sourceSha256": "1f6c954ed6f758372857fc7f1f15da71b9fac4064a1e269066d28d51713b580a",
       "kind": "frozen-product"
     },
     {
@@ -862,8 +862,8 @@
     },
     {
       "path": "src/background/controls-write.mjs",
-      "sha256": "4228174b6fdd00d2e5f4da7f786f96d41448e9f3fdae9d658895e1671254dd10",
-      "sourceSha256": "4228174b6fdd00d2e5f4da7f786f96d41448e9f3fdae9d658895e1671254dd10",
+      "sha256": "f416a529c7a748dc222e21befe124a064c2987a56f849b7847ed9285166c6e3f",
+      "sourceSha256": "f416a529c7a748dc222e21befe124a064c2987a56f849b7847ed9285166c6e3f",
       "kind": "frozen-product"
     },
     {

@@ -104,3 +104,37 @@ export function recentResultText(record) {
     ? "本次在写入前停止" : "本次读回已完成";
   return `${status} · 读回一致 ${correct} · 未填 ${unfilled} · 读回不符 ${wrong} · 仍待核对 ${uncertain}。这是上次操作的记录；刷新后请重新识别并核对当前网页。网站保存状态需另行检查。`;
 }
+
+// Aftercare uses the current popup result only, never the persisted receipt.
+export function manualFields(fields, filled = false) {
+  return (Array.isArray(fields) ? fields : []).flatMap((field, index) =>
+    field && (field.semanticStatus === "manual"
+      || ["failed", "skipped", "manual", "unsupported"].includes(field.status)
+      || (field.status !== "verified" && (filled || field.reason !== "ready")))
+      ? [{ position: index + 1, field }] : []);
+}
+
+const REPORT_REASONS = new Set([
+  "unknown_question", "unlabelled_field", "ambiguous_label", "section_unconfirmed",
+  "profile_field_unavailable", "missing_profile_value", "unconfirmed_profile_value",
+  "invalid_profile_value", "multiple_profile_values", "ambiguous_repeat_group",
+  "iframe_or_captcha_manual", "control_not_supported", "custom_control_not_supported",
+  "custom_select_not_supported", "readonly_control", "existing_value", "field_changed",
+  "form_changed", "page_changed", "readback_mismatch", "unexpected_value",
+  "browser_validation_failed", "control_error", "option_not_found", "ambiguous_option",
+  "file_requires_user_selection", "blocked_by_open_menu", "blocked_by_open_calendar"
+]);
+
+export function createLocalErrorReport(fields, filled = false, operationFailed = false) {
+  const manual = manualFields(fields, filled).map(({ position, field }) => ({
+    position,
+    outcome: ["failed", "skipped", "manual", "unsupported"].includes(field.status)
+      ? field.status : "unverified",
+    reason: REPORT_REASONS.has(field.reason) ? field.reason : "unclassified"
+  }));
+  // Explicit projection: no labels, IDs, answers, URLs, DOM or raw exceptions.
+  return { schemaVersion: 1, localOnly: true, liveSupportClaimed: false, neverSave: true,
+    stage: filled ? "fill_readback" : "inspect",
+    result: operationFailed ? "operation_failed" : "fields_returned",
+    fieldCount: Array.isArray(fields) ? fields.length : 0, manualCount: manual.length, manual };
+}

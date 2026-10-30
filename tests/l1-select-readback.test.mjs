@@ -167,7 +167,7 @@ test('reinjection replaces revision 6 select contracts before reading a date-par
   f.window.ResumeControls = { version: 1, revision: 6, list: () => [{ name: 'native-text' }] };
   for (const source of sources) f.window.eval(source);
   const R = f.window.ResumeControls;
-  assert.equal(R.revision, 8);
+  assert.equal(R.revision, 9);
   assert.equal(R.inspect(f.get('year')).model.value, '');
   assert.equal(R.plan(f.get('year'), { value: '2000' }).status, 'planned');
   assert.deepEqual(f.effects, []);

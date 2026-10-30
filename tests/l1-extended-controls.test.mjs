@@ -29,7 +29,10 @@ function boot([name, lib, componentName, fact], { legacy = false } = {}) {
   const update = value => {
     effects.push(copy(value)); props.value = value;
     input.value = type === 'select' ? props.options.find(option => option.value === value)?.label || value
-      : type === 'cascader' ? '中国 / 北京' : value;
+      : type === 'cascader' ? (() => {
+        let options = props.options;
+        return value.map(code => { const option = options.find(item => item.value === code); options = option.children || []; return option.label; }).join(props.separator);
+      })() : value;
     portal.hidden = true;
   };
   if (lib === 'iview') {
@@ -53,11 +56,15 @@ function boot([name, lib, componentName, fact], { legacy = false } = {}) {
       const cell = w.document.createElement('button'); cell.type = 'button'; cell.setAttribute('role', 'gridcell');
       cell.setAttribute('aria-label', '2023-01-02'); cell.addEventListener('click', () => update('2023-01-02')); portal.append(cell);
     } else if (type === 'cascader') {
-      const first = w.document.createElement('div'); first.setAttribute('role', 'group');
-      first.append(choice('中国', () => {
-        const second = w.document.createElement('div'); second.setAttribute('role', 'group');
-        second.append(choice('北京', () => update(['cn', 'bj']))); portal.append(second);
-      })); portal.append(first);
+      const column = (options, path = []) => {
+        const group = w.document.createElement('div'); group.setAttribute('role', 'group');
+        for (const option of options) group.append(choice(option.label, () => {
+          const next = [...path, option.value];
+          if (option.children?.length) column(option.children, next); else update(next);
+        }));
+        portal.append(group);
+      };
+      column(props.options);
     } else portal.append(choice('本科', () => update('UG')));
   }
   if (legacy) {
@@ -171,6 +178,94 @@ test('component version changes or disabling while opening stop before the optio
   }
 });
 
+test('ARIA cascaders traverse three exact levels and read model codes separately from display labels', async t => {
+  for (const contract of [contracts[4], contracts[6]]) {
+    const f = boot(contract); t.after(() => f.dom.window.close());
+    f.props.options[0].children[0].children = [{ value: 'school', label: '离线学校' }];
+    const fact = { value: ['中国', '北京', '离线学校'] }, plan = f.R.plan(f.el, fact);
+    assert.deepEqual(copy(plan.value), ['cn', 'bj', 'school']);
+    assert.equal(plan.domValue, '中国 / 北京 / 离线学校');
+    const clicked = [];
+    f.portal.addEventListener('click', event => clicked.push(event.target.textContent));
+    const result = await f.R.resolve(f.el).write(f.el, plan, { allowWrite: true, check: async () => {} });
+    assert.equal(result.attempts, 3);
+    assert.deepEqual(clicked, ['中国', '北京', '离线学校']);
+    assert.deepEqual(copy((await f.R.verify(f.el, plan, { settleMs: 0 })).modelReadback), ['cn', 'bj', 'school']);
+    assert.equal(f.portal.hidden, true);
+    assert.equal(f.R.liveSupportClaimed, false);
+    assert.equal(wValue(f, '#neighbor'), 'KEEP');
+  }
+});
+
+test('ARIA cascader plans preserve pending display and decline multiple paths', t => {
+  const f = boot(contracts[4]); t.after(() => f.dom.window.close());
+  f.input.value = '尚未确认的选择';
+  assert.equal(f.R.plan(f.el, f.fact).reason, 'existing_value');
+  f.input.value = ''; f.props.multiple = true;
+  assert.equal(f.R.plan(f.el, f.fact).reason, 'multiple_cascader_unconfirmed');
+  assert.deepEqual(f.effects, []);
+});
+
+test('ARIA cascaders recheck portal, column and exact option before each pointer effect', async t => {
+  for (const mutation of ['owner', 'hidden-column', 'reordered-column', 'label', 'duplicate', 'disabled', 'model-option', 'multiple']) {
+    const f = boot(contracts[4]); t.after(() => f.dom.window.close());
+    const plan = f.R.plan(f.el, f.fact), adapter = f.R.resolve(f.el);
+    let clicks = 0, pointerdowns = 0;
+    const option = f.portal.querySelector('[role="option"]');
+    option.addEventListener('click', () => { clicks++; });
+    option.addEventListener('pointerdown', () => {
+      pointerdowns++;
+      if (mutation === 'owner') f.input.setAttribute('aria-controls', 'missing');
+      if (mutation === 'hidden-column') option.parentElement.style.display = 'none';
+      if (mutation === 'reordered-column') {
+        const column = f.w.document.createElement('div'); column.setAttribute('role', 'group'); f.portal.prepend(column);
+      }
+      if (mutation === 'label') option.textContent = '其他';
+      if (mutation === 'duplicate') option.parentElement.append(option.cloneNode(true));
+      if (mutation === 'disabled') f.props.disabled = true;
+      if (mutation === 'model-option') f.props.options[0].children[0].value = 'foreign';
+      if (mutation === 'multiple') f.props.multiple = true;
+    });
+    await assert.rejects(adapter.write(f.el, plan, { allowWrite: true, check: async () => {} }),
+      /overlay_ownership_changed|cascader_option_changed|cascader_contract_changed|control_or_version_changed/u, mutation);
+    assert.equal(pointerdowns, 1, mutation);
+    assert.equal(clicks, 0, mutation);
+    assert.deepEqual(f.effects, [], mutation);
+    assert.equal(wValue(f, '#neighbor'), 'KEEP');
+  }
+});
+
+test('ARIA cascader plans cannot be copied or replayed on another matching widget', async t => {
+  const f = boot(contracts[4]); t.after(() => f.dom.window.close());
+  const plan = f.R.plan(f.el, f.fact), adapter = f.R.resolve(f.el);
+  assert.equal((await adapter.write(f.el, copy(plan), { allowWrite: true, check: async () => {} })).reason, 'control_target_changed');
+  const sibling = f.el.cloneNode(true); sibling.id = 'sibling';
+  const source = f.el.__reactFiber$fixture, host = { type: 'div', stateNode: sibling, memoizedProps: {} };
+  sibling.__reactFiber$fixture = { type: source.type, memoizedProps: { ...f.props }, child: host, return: null };
+  host.return = sibling.__reactFiber$fixture;
+  f.w.document.body.append(sibling);
+  assert.equal((await adapter.write(sibling, plan, { allowWrite: true, check: async () => {} })).reason, 'control_target_changed');
+  assert.equal((await adapter.verify(sibling, plan, { settleMs: 0 })).status, 'unsupported');
+  assert.deepEqual(f.effects, []);
+  assert.equal(f.portal.hidden, true);
+});
+
+test('ARIA cascaders stop if an earlier column is hidden during the next pointerdown', async t => {
+  const f = boot(contracts[4]); t.after(() => f.dom.window.close());
+  const plan = f.R.plan(f.el, f.fact), adapter = f.R.resolve(f.el);
+  let clicks = 0, hidden = false;
+  f.portal.addEventListener('click', () => { clicks++; });
+  f.portal.addEventListener('pointerdown', () => {
+    if (clicks !== 1) return;
+    f.portal.querySelector('[role="group"]').hidden = true;
+    hidden = true;
+  });
+  await assert.rejects(adapter.write(f.el, plan, { allowWrite: true, check: async () => {} }), /cascader_option_changed/u);
+  assert.equal(hidden, true); assert.equal(clicks, 1);
+  assert.deepEqual(f.effects, []);
+  assert.equal(wValue(f, '#neighbor'), 'KEEP');
+});
+
 test('object-valued models and option codes cannot be flattened into empty values or authorize overwrites', async t => {
   for (const contract of contracts.filter(row => row[1] !== 'iview')) {
     const f = boot(contract); t.after(() => f.dom.window.close());
@@ -198,9 +293,9 @@ test('object-valued models and option codes cannot be flattened into empty value
 test('reinjection upgrades an old v1 MAIN model/registry and restores every adapter family', t => {
   const f = boot(contracts[2], { legacy: true }); t.after(() => f.dom.window.close());
   assert.equal(f.w.ResumeControlModel.version, 1);
-  assert.equal(f.w.ResumeControlModel.revision, 5);
+  assert.equal(f.w.ResumeControlModel.revision, 6);
   assert.equal(f.R.version, 1);
-  assert.equal(f.R.revision, 8);
+  assert.equal(f.R.revision, 9);
   const names = new Set(f.R.list().map(adapter => adapter.name));
   for (const name of ['native-text', 'native-select', 'native-date', 'native-month', 'el-select', 'antdv1-month', ...contracts.map(row => row[0])]) {
     assert.equal(names.has(name), true, name);
@@ -213,8 +308,8 @@ test('reinjection upgrades an old v1 MAIN model/registry and restores every adap
 
 test('revision 2 reinjection replaces captured models and adapters before a guarded UI write', async t => {
   const f = boot(contracts[2], { legacy: 2 }); t.after(() => f.dom.window.close());
-  assert.equal(f.w.ResumeControlModel.revision, 5);
-  assert.equal(f.R.revision, 8);
+  assert.equal(f.w.ResumeControlModel.revision, 6);
+  assert.equal(f.R.revision, 9);
   assert.equal(f.R.list().some(adapter => adapter.name === 'old_adapter'), false);
   for (const name of ['native-text', 'el-select', 'antdv1-month', ...contracts.map(row => row[0])]) {
     assert.equal(f.R.list().some(adapter => adapter.name === name), true, name);

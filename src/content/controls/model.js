@@ -2,7 +2,7 @@
 // instances or handlers to the extension. No events, setters or network calls.
 (() => {
   'use strict';
-  if (globalThis.ResumeControlModel?.version === 1 && globalThis.ResumeControlModel.revision === 5) return;
+  if (globalThis.ResumeControlModel?.version === 1 && globalThis.ResumeControlModel.revision === 6) return;
   const norm = value => String(value ?? '').normalize('NFKC').replace(/\s+/gu, ' ').trim();
   function serial(value, depth = 0) {
     if (value == null || ['string', 'number', 'boolean'].includes(typeof value)) return value ?? null;
@@ -22,7 +22,7 @@
   }
   const optionValueSupported = value => value === null || ['string', 'boolean'].includes(typeof value)
     || typeof value === 'number' && Number.isFinite(value);
-  function optionsOf(raw, depth = 0) {
+  function optionsOf(raw, depth = 0, cascader = null) {
     if (!Array.isArray(raw) || depth > 6) return [];
     return raw.slice(0, 1000).map(option => {
       const props = option?.componentOptions?.propsData || option?.props || option;
@@ -35,7 +35,9 @@
       const optionValue = props.value;
       const rawValue = optionValue !== undefined ? optionValue : props.key;
       return { value: serial(rawValue), valueSupported: optionValueSupported(rawValue), label: norm(props.label ?? props.title ?? (slotText || props.value)),
-        disabled: props.disabled === '' || !!props.disabled, children: optionsOf(props.children, depth + 1) };
+        disabled: props.disabled === '' || !!props.disabled, children: optionsOf(props.children, depth + 1, cascader),
+        leaf: !(Array.isArray(props.children) && props.children.length)
+          && (cascader?.element ? cascader.lazy ? props.leaf === true : !Array.isArray(props.children) : props.isLeaf !== false) };
     });
   }
   function modelValue(value, valueFormat) {
@@ -74,6 +76,12 @@
     return valueControls(root).every(input => input.matches('input')
       && ['text', 'search'].includes(input.type)
       && input.closest('.el-select,.ant-select,.ivu-select') === root);
+  }
+  function ownsCascader(root, el, name) {
+    const selector = name === 'ElCascader' ? '.el-cascader' : '.ant-cascader-picker';
+    return root?.matches?.(selector) && ownsControl(root, el, true)
+      && valueControls(root).every(input => input.matches('input') && ['text', 'search'].includes(input.type)
+        && input.closest('.el-cascader,.ant-cascader-picker') === root);
   }
   function fiberRoots(fiber) {
     if (fiber?.stateNode?.nodeType === 1) return [fiber.stateNode];
@@ -120,7 +128,8 @@
         frameworkFallback ||= { element: el, framework: 'vue2', props: {} };
         const multiple = /(?:Select|DatePicker|MonthPicker|CalendarPicker|Cascader|RadioGroup|CheckboxGroup)$/u.test(name);
         const owns = /^(?:ElSelect|ASelect|iSelect)$/u.test(name)
-          ? ownsSelect(vm.$el, el, name) : ownsControl(vm.$el, el, multiple);
+          ? ownsSelect(vm.$el, el, name) : /^(?:ElCascader|ACascader)$/u.test(name)
+            ? ownsCascader(vm.$el, el, name) : ownsControl(vm.$el, el, multiple);
         if (knownVue.test(name) && owns) {
           const owner = name === 'AMonthPicker' ? monthOwner(vm) : { vm };
           const found = { ...owner, props: owner.vm.$props || {}, element: owner.vm.$el, componentName: name, framework: 'vue2' };
@@ -129,7 +138,7 @@
           if (/^(?:ElInput|AInput|ATextarea)$/u.test(name)) inputFallback ||= found;
           else return found;
         }
-        if (!/^(?:ElSelect|ASelect|iSelect)$/u.test(name) && ownsControl(vm.$el, el)) vueFallback ||= {
+        if (!/^(?:ElSelect|ASelect|iSelect|ElCascader|ACascader)$/u.test(name) && ownsControl(vm.$el, el)) vueFallback ||= {
           vm, props: vm.$props || {}, element: vm.$el, componentName: name, framework: 'vue2'
         };
       }
@@ -218,19 +227,28 @@
       : defaultMonthFormat ? 'YYYY-MM' : props.valueFormat;
     const value = valueKey ? modelValue(props[valueKey], valueFormat) : null;
     const input = root?.matches?.('input,textarea,select') ? root : root?.querySelector?.('input,textarea,select');
+    const cascader = /^(?:ElCascader|ACascader)$/u.test(componentName);
+    const lazy = !!(props.lazy || props.loadData || props.props?.lazy);
+    const config = componentName === 'ElCascader' ? props.props || {} : props.fieldNames || {};
+    const customFields = ['value', 'label', 'children', 'disabled', 'leaf'].some(key => config[key] != null && config[key] !== key);
     return { framework: ref.framework || 'native', lib, version, major: version ? Number(version.split('.')[0]) : null,
       componentName, available: !!valueKey && readableValue(props[valueKey]) && monthModelConfirmed, value,
-      options: optionsOf(rawOptions), valueFormat: valueFormat || null,
+      options: optionsOf(rawOptions, 0, cascader ? { element: componentName === 'ElCascader', lazy } : null), valueFormat: valueFormat || null,
       format: antMonth ? ref.displayFormat ?? props.format ?? 'YYYY-MM' : props.format || null,
       ...(antMonth ? { valueFormatEvidence: defaultMonthFormat ? 'component_default' : 'explicit_prop',
         modelKind: defaultMonthFormat ? 'moment' : 'formatted',
         modelReason: monthModelConfirmed ? null : 'month_model_unconfirmed' } : {}),
       type: props.type || null, filterable: !!(props.filterable || props.showSearch),
       remote: !!(props.remote || (props.showSearch && props.filterOption === false)),
-      lazy: !!(props.lazy || props.loadData || props.props?.lazy), disabled: !!(props.disabled || vm?.disabled || input?.disabled),
+      lazy, disabled: !!(props.disabled || vm?.disabled || input?.disabled),
       readonly: !!props.readonly, controlRoot: root,
       multiple: !!props.multiple, separator: typeof props.separator === 'string' ? props.separator : null,
+      ...(cascader ? { separator: componentName === 'ElCascader' ? props.separator ?? ' / ' : ' / ',
+        showAllLevels: props.showAllLevels !== false,
+        cascaderUnsupported: !!(props.multiple || config.multiple || config.emitPath === false || config.checkStrictly
+          || props.changeOnSelect || props.expandTrigger === 'hover' || config.expandTrigger === 'hover'
+          || props.displayRender || vm?.$scopedSlots?.displayRender || vm?.$scopedSlots?.default || customFields) } : {}),
       versionEvidence: version ? 'page_library_export' : 'version_unconfirmed' };
   }
-  globalThis.ResumeControlModel = Object.freeze({ version: 1, revision: 5, inspect, resolve, serial, optionsOf });
+  globalThis.ResumeControlModel = Object.freeze({ version: 1, revision: 6, inspect, resolve, serial, optionsOf });
 })();

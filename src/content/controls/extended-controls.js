@@ -10,9 +10,14 @@
   const H = R.helpers, M = globalThis.ResumeControlModel;
   const unsupported = reason => ({ status: 'unsupported', reason });
   const all = (node, selector) => [...node.querySelectorAll(selector)];
-  const shown = node => !!node?.isConnected && !!node.getClientRects().length
-    && !node.closest('[hidden],[aria-hidden="true"]')
-    && getComputedStyle(node).display !== 'none' && getComputedStyle(node).visibility !== 'hidden';
+  const shown = node => {
+    if (!node?.isConnected || !node.getClientRects().length || node.closest('[hidden],[aria-hidden="true"]')) return false;
+    for (let parent = node; parent; parent = parent.parentElement) {
+      const style = getComputedStyle(parent);
+      if (style.display === 'none' || ['hidden', 'collapse'].includes(style.visibility)) return false;
+    }
+    return true;
+  };
   const inputOf = root => root.matches?.('input') ? root : root.querySelector('input:not([type="hidden"])');
   const reviewed = Object.freeze({ ud: ['fixture-contract-1'], phoenix: ['fixture-contract-1'] });
 
@@ -38,6 +43,8 @@
     return H.makePlan(fact, model, { type: 'date' });
   }
   function cascaderPlan(fact, model) {
+    if (model.multiple || Array.isArray(model.value) && model.value.some(Array.isArray)) return unsupported('multiple_cascader_unconfirmed');
+    if (H.empty(model.value) && !H.empty(model.domValue)) return unsupported('existing_value');
     if (typeof model.separator !== 'string' || !model.separator.length) return unsupported('separator_unconfirmed');
     const plan = H.makePlan(fact, model, { type: 'cascader' });
     if (!['planned', 'success'].includes(plan.status)) return plan;
@@ -91,17 +98,36 @@
     return closing || { strategy: 'ui', attempts: 1 };
   }
   async function writeAriaCascader(el, instruction, ctx) {
-    const opened = await openAria(el, ctx);
+    const initial = M.inspect(el), root = initial.controlRoot || el, portal = ariaPortal(root);
+    if (!portal) return unsupported('overlay_ownership_unconfirmed');
+    const owned = { ...ctx, async check() {
+      await ctx.check();
+      if (ariaPortal(root) !== portal) throw Error('overlay_ownership_changed');
+      const model = modelFor(el), plan = cascaderPlan({ value: instruction.value }, { ...model, value: [], domValue: '' });
+      if (model.multiple || model.separator !== initial.separator || !['planned', 'success'].includes(plan.status)
+        || !H.equal(plan.value, instruction.value) || !H.equal(plan.labels, instruction.labels)) throw Error('cascader_contract_changed');
+      if (!H.empty(model.value) && (!Array.isArray(model.value) || model.value.length > instruction.value.length
+        || model.value.some((part, i) => !H.equal(part, instruction.value[i])))) throw Error('cascader_contract_changed');
+    } };
+    const opened = await openAria(el, owned);
     if (opened.error) return unsupported(opened.error);
-    const { portal } = opened;
+    const groups = () => all(portal, '[role="group"]').filter(group => group.closest('[role="listbox"],[role="dialog"]') === portal
+      && !group.parentElement.closest('[role="group"]'));
+    const selected = [];
     for (let level = 0; level < instruction.labels.length; level++) {
-      const group = await waitFor(() => shown(portal) && all(portal, '[role="group"]')[level], ctx);
+      const group = await waitFor(() => shown(portal) && shown(groups()[level]) && groups()[level], owned);
       if (!group) return unsupported('cascader_column_missing');
-      const hits = exactOptions(group, instruction.labels[level]);
+      const options = () => exactOptions(group, instruction.labels[level]).filter(option => option.closest('[role="group"]') === group);
+      const hits = options();
       if (hits.length !== 1) return unsupported(hits.length ? 'option_ambiguous' : 'option_not_found');
-      await H.safeClick(hits[0], ctx);
+      selected.push(group);
+      await H.safeClick(hits[0], { ...owned, async check() {
+        await owned.check();
+        if (!shown(portal) || !shown(group) || selected.some((column, i) => groups()[i] !== column || !shown(column))
+          || options().length !== 1 || options()[0] !== hits[0]) throw Error('cascader_option_changed');
+      } });
     }
-    const closing = await waitClosed(portal, ctx);
+    const closing = await waitClosed(portal, owned);
     return closing || { strategy: 'ui', attempts: instruction.labels.length };
   }
   async function writeAriaDate(el, instruction, ctx) {

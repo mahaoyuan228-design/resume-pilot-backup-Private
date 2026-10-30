@@ -5,7 +5,7 @@
   'use strict';
   // Rebuild old registries so reinjection installs the upload-aware native
   // adapter as well as the current model resolver.
-  if (globalThis.ResumeControls?.version === 1 && globalThis.ResumeControls.revision === 4) return;
+  if (globalThis.ResumeControls?.version === 1 && globalThis.ResumeControls.revision === 5) return;
   const adapters = new Map();
   const norm = value => String(value ?? '').normalize('NFKC').replace(/\s+/gu, ' ').trim();
   const equal = (a, b) => Array.isArray(a) || Array.isArray(b)
@@ -203,7 +203,7 @@
     return clean({ probe, adapter: adapter?.name || null, model: adapter ? adapter.readModel(el, probe) : probe });
   }
   const helpers = Object.freeze({ norm, equal, empty, tick, makePlan, safeClick, nativeSet, check, clickAllowed, clean, validDate });
-  globalThis.ResumeControls = Object.freeze({ version: 1, revision: 4, mode: 'shadow', liveSupportClaimed: false,
+  globalThis.ResumeControls = Object.freeze({ version: 1, revision: 5, mode: 'shadow', liveSupportClaimed: false,
     register, createAdapter, resolve, inspect, plan, helpers, list: () => ordered().map(a => ({ name: a.name, lib: a.lib, type: a.type, priority: a.priority || 0 })),
     verify: (el, instruction, ctx) => resolve(el)?.verify(el, instruction, ctx) || Promise.resolve({ status: 'unsupported', reason: 'control_or_version_unconfirmed' }) });
 })();

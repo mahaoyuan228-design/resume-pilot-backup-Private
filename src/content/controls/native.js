@@ -20,6 +20,10 @@
     for (let node = el; node && node !== document.body; node = node.parentElement) {
       const classes = typeof node.className === 'string' ? node.className : '';
       if (frameworkClass.test(classes) || complexClass.test(classes)) return false;
+      // My97 owns these text inputs even when its script/configuration cannot
+      // be confirmed. Never silently downgrade an unknown calendar to text.
+      if (/(?:^|\s)Wdate(?:\s|$)/iu.test(classes)
+        || ['onfocus', 'onclick'].some(name => /\bWdatePicker\b/u.test(node.getAttribute(name) || ''))) return false;
       if (node !== el && node.matches?.('[role="combobox"],[role="listbox"],[role="tree"]')) return false;
     }
     return true;
@@ -57,6 +61,55 @@
     api.register({ lib: 'native', priority: 10,
       libVersionProbe: () => ({ lib: 'native', version: 'html' }), ...spec });
   }
+
+  function dateModel(el, probe, type) {
+    return { ...base(el, probe, el.value), valueFormat: type === 'month' ? 'YYYY-MM' : 'YYYY-MM-DD',
+      datePrecision: type, detectionEvidence: 'html_input_type', readbackSource: 'html_input_value',
+      dateConstraints: { min: el.getAttribute('min'), max: el.getAttribute('max'),
+        step: el.getAttribute('step'), initialValue: el.getAttribute('value') } };
+  }
+  function dateNumber(value, type) {
+    const [year, month, day = 1] = value.split('-').map(Number);
+    return type === 'month' ? (year - 1970) * 12 + month - 1 : Date.UTC(year, month - 1, day) / 86400000;
+  }
+  function datePlan(fact, model, type) {
+    const value = fact && typeof fact === 'object' ? fact.value : fact;
+    const manual = reason => ({ status: 'manual', reason, writeStarted: false, liveSupportClaimed: false });
+    if (model.disabled || model.readonly) return manual(model.disabled ? 'disabled' : 'readonly');
+    if (value == null || value === '') return { status: 'unsupported', reason: 'no_fact' };
+    if (!api.helpers.validDate(value, type)) return manual('invalid_date_precision');
+    const { min, max, step, initialValue } = model.dateConstraints;
+    if ([min, max].some(bound => bound != null && bound !== '' && !api.helpers.validDate(bound, type))
+      || min && max && min > max) return manual('date_constraint_unconfirmed');
+    if (min && value < min || max && value > max) return manual('date_out_of_range');
+    if (step !== 'any') {
+      // HTML date steps use days; month steps use months. The initial value
+      // attribute is a step base only when no minimum is present.
+      const size = step == null || step === '' ? 1 : Number(step);
+      if (!Number.isFinite(size) || size <= 0 || step != null && step !== '' && !/^(?:\d+(?:\.\d+)?|\.\d+)(?:[eE][+-]?\d+)?$/u.test(step))
+        return manual('date_constraint_unconfirmed');
+      const baseValue = min || (api.helpers.validDate(initialValue, type) ? initialValue : type === 'month' ? '1970-01' : '1970-01-01');
+      const steps = (dateNumber(value, type) - dateNumber(baseValue, type)) / size;
+      if (!Number.isFinite(steps) || Math.abs(steps - Math.round(steps)) > 1e-8) return manual('date_step_mismatch');
+    }
+    return api.helpers.makePlan(fact, model, { type });
+  }
+  for (const type of ['date', 'month']) register({ name: `native-${type}`, type, priority: 20,
+    matches: (el, probe) => plain(el, probe) && el.tagName === 'INPUT' && el.type === type
+      && el.getAttribute('type')?.toLowerCase() === type,
+    readModel: (el, probe) => dateModel(el, probe, type),
+    plan: (fact, model) => datePlan(fact, model, type),
+    async performWrite(el, instruction, ctx) {
+      const reason = guards(el);
+      if (reason) return noWrite(reason);
+      const checked = datePlan({ value: targetValue(instruction) }, dateModel(el, {}, type), type);
+      if (!['planned', 'success'].includes(checked.status)) return { ...noWrite(checked.reason), status: checked.status };
+      if (checked.status === 'success') return { strategy: 'native', attempts: 0 };
+      await nativeSet(el, checked.value, ctx);
+      await tick();
+      return { strategy: 'native', attempts: 1 };
+    }
+  });
 
   register({ name: 'native-text', type: 'text',
     matches: (el, probe) => plain(el, probe) && el.tagName === 'INPUT' && textTypes.has(el.type),

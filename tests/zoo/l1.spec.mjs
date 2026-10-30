@@ -122,7 +122,7 @@ test('L1 shadow reads component models only in MAIN and rejects an unknown libra
       window.antd = { ...window.antd, version: '9.0.0-unverified' };
     });
     const unknown = await zoo.shadow([{ selector: '.ant-calendar-picker', fact: { value: '2023-01' } }]);
-    expect(unknown.plans[0].status, JSON.stringify(unknown)).toBe('unsupported');
+    expect(unknown.plans[0], JSON.stringify(unknown)).toMatchObject({ adapter: 'date-unknown', status: 'manual' });
     await zoo.page.evaluate(() => { window.antd = window.__zooSavedAntd; delete window.__zooSavedAntd; });
     expect(await zoo.readback()).toEqual(before);
     await record(testInfo, zoo, { isolated, main, first, unknown });

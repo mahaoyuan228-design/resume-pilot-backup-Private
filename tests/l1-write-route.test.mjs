@@ -82,6 +82,44 @@ test('ordinary RESUME_FILL opt-in executes the actual MAIN registry plan/write/d
   assert.equal(h.locks[0].options.mode, 'exclusive');
 });
 
+test('ordinary opt-in route discovers generic native and My97 dates and uses the confirmed fact unchanged', async t => {
+  for (const [attributes, value, adapter, display] of [
+    ['type="date"', '2024-02-29', 'native-date', '2024-02-29'],
+    ['type="month"', '2024-02', 'native-month', '2024-02'],
+    ['class="Wdate" onfocus="WdatePicker({dateFmt:\'yyyy-MM-dd\'})"', '2024-02-29', 'my97-date', '2024-02-29'],
+  ]) {
+    const h = await harness({ enabled: true, html: `<form><label for="date">出生日期</label><input id="date" ${attributes}></form>` });
+    t.after(() => h.dom.window.close());
+    h.data.resumeProfile = { schemaVersion: 1, birthDate: value, confirmedFields: ['birthDate'] };
+    let pickerCalls = 0;
+    h.window.WdatePicker = () => { pickerCalls++; };
+    const result = await h.fill(), row = result.data.fields[0];
+    assert.equal(row.adapter, adapter, JSON.stringify(result));
+    assert.equal(row.status, 'verified', JSON.stringify(result));
+    assert.equal(row.adapterStatus, 'success');
+    assert.equal(h.window.document.getElementById('date').value, display);
+    assert.equal(pickerCalls, 0);
+    const write = h.calls.find(call => call.func?.name === 'writeControlInPage');
+    assert.equal(write.args[0].value, value);
+    assert.equal(h.calls.some(call => call.func?.name === 'readControlCandidatesInPage'), true);
+  }
+});
+
+test('ordinary opt-in route leaves unknown My97 configuration manual without legacy fallback', async t => {
+  const h = await harness({ enabled: true,
+    html: '<form><label for="date">出生日期</label><input id="date" class="Wdate" onfocus="WdatePicker({dateFmt:dynamicFormat})"></form>' });
+  t.after(() => h.dom.window.close());
+  h.window.WdatePicker = () => { throw Error('picker_must_not_run'); };
+  h.data.resumeProfile = { schemaVersion: 1, birthDate: '2024-02-29', confirmedFields: ['birthDate'] };
+  let events = 0;
+  h.window.document.getElementById('date').addEventListener('input', () => events++);
+  const result = await h.fill(), row = result.data.fields[0];
+  assert.equal(row.adapter, 'date-unknown', JSON.stringify(result));
+  assert.equal(row.adapterStatus, 'manual', JSON.stringify(result));
+  assert.equal(h.window.document.getElementById('date').value, '');
+  assert.equal(events, 0);
+});
+
 test('enabled route fails closed without falling back to the legacy native setter', async t => {
   const h = await harness({ enabled: true, html: '<form><div class="phoenix-select"><label for="name">姓名</label><input id="name"></div></form>' });
   t.after(() => h.dom.window.close());

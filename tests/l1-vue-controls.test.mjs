@@ -57,6 +57,65 @@ test('readonly date face is a normal UI contract; text readonly is manual', () =
   assert.equal(R.plan(el, { value: 'text' }).status, 'manual');
 });
 
+test('Ant month defaults require a Moment model and verify the actual display format', t => {
+  const { dom, el, component, R } = boot(); t.after(() => dom.window.close());
+  const props = { value: null };
+  component(el, 'AMonthPicker', props);
+  assert.equal(R.plan(el, { value: '2024-02' }).status, 'planned');
+  el.querySelector('input').value = '2022-04';
+  assert.equal(R.plan(el, { value: '2024-02' }).reason, 'existing_value', 'pending display text is preserved');
+  el.querySelector('input').value = '';
+  for (const format of ['YYYY/MM', 'YYYY-MM-DD', ['YYYY-MM'], () => 'YYYY-MM']) {
+    props.format = format;
+    assert.deepEqual(json(R.plan(el, { value: '2024-02' })), {
+      adapter: 'antdv1-month', lib: 'ant-design-vue', type: 'month',
+      status: 'manual', reason: 'display_format_unverified'
+    });
+  }
+  delete props.format;
+  for (const value of ['2024-02', new Date('2024-02-01'), ['2024-02'],
+    { _isAMomentObject: true, format: () => '2024-02', isValid: () => false }]) {
+    props.value = value;
+    assert.equal(R.resolve(el), null, 'unconfirmed default model cannot claim the picker');
+  }
+  props.valueFormat = 'YYYY-MM';
+  for (const value of [new Date('2024-02-01'), ['2024-02'],
+    { _isAMomentObject: true, format: () => '2024-02', isValid: () => true }]) {
+    props.value = value;
+    assert.equal(R.resolve(el), null, 'formatted model cannot silently accept Moment/Date/array values');
+  }
+  props.value = '';
+  assert.equal(R.plan(el, { value: '2024-02' }).status, 'planned');
+  props.valueFormat = 'yyyy-MM';
+  assert.equal(R.plan(el, { value: '2024-02' }).status, 'manual');
+});
+
+test('Ant month calendar rechecks its owner and disabled state before each UI effect', async t => {
+  const { dom, w, el, component, R } = boot(); t.after(() => dom.window.close());
+  const props = { value: null };
+  component(el, 'AMonthPicker', props);
+  let navigations = 0, selections = 0, pointerdowns = 0;
+  el.querySelector('input').addEventListener('click', () => {
+    const panel = w.document.createElement('div');
+    panel.className = 'ant-calendar-picker-container';
+    panel.innerHTML = '<span class="ant-calendar-month-panel-year-select-content">2023</span><a class="ant-calendar-month-panel-next-year-btn">›</a><table><tbody><tr>'
+      + Array.from({ length: 12 }, () => '<td class="ant-calendar-month-panel-cell"><a>Month</a></td>').join('')
+      + '</tr></tbody></table>';
+    panel.querySelector('.ant-calendar-month-panel-next-year-btn').addEventListener('pointerdown', () => {
+      pointerdowns++; props.disabled = true;
+    });
+    panel.querySelector('.ant-calendar-month-panel-next-year-btn').addEventListener('click', () => { navigations++; });
+    panel.querySelectorAll('td').forEach(cell => cell.addEventListener('click', () => { selections++; }));
+    w.document.body.append(panel);
+  });
+  const instruction = R.plan(el, { value: '2024-02' });
+  await assert.rejects(R.resolve(el).write(el, instruction, { allowWrite: true, check: async () => {} }), /control_changed/u);
+  assert.equal(pointerdowns, 1);
+  assert.equal(navigations, 0);
+  assert.equal(selections, 0);
+  assert.equal(el.querySelector('input').value, '');
+});
+
 test('remote school options are deferred, never invented as observed options', () => {
   const { el, component, R } = boot('<div id="control" class="ant-select"><div class="ant-select-selection"><input></div></div>');
   component(el, 'ASelect', { value: undefined, showSearch: true, filterOption: false }, { $slots: { default: [] } });

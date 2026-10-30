@@ -54,6 +54,72 @@ for (const scenario of ['legacy', 'native', 'ud-select']) {
   });
 }
 
+for (const drift of ['none', 'model', 'display', 'both', 'option-remap', 'replacement']) {
+  test(`ordinary batch checks original model and display after later writes: ${drift}`, async ({}, testInfo) => {
+    const zoo = await startZoo('write-route');
+    try {
+      await zoo.page.evaluate(drift => {
+        const form = document.querySelector('form');
+        form.innerHTML = `<label for="fullName">姓名</label><input id="fullName" type="search" readonly role="combobox" aria-controls="batch-options">
+          <label for="phone">手机号</label><input id="phone" type="tel"><input id="neighbor" value="ZOO_NEIGHBOR_KEEP">
+          <input id="disabled-neighbor" value="ZOO_DISABLED_KEEP" disabled>
+          <button type="submit">提交</button><button type="button">保存</button>`;
+        const input = form.querySelector('#fullName');
+        window.UD = { version: 'fixture-contract-1' };
+        const portal = document.createElement('div'); portal.id = 'batch-options';
+        portal.setAttribute('role', 'listbox'); portal.hidden = true;
+        const option = document.createElement('div'); option.setAttribute('role', 'option'); option.textContent = '离线姓名';
+        portal.append(option); document.body.append(portal);
+        const props = { value: '', options: [{ value: 'original-code', label: '离线姓名' }] };
+        const host = { type: 'input', stateNode: input };
+        const owner = { type: { displayName: 'UdSelect', library: { name: 'ud', version: 'fixture-contract-1' } },
+          memoizedProps: props, child: host, return: null };
+        host.return = owner; input.__reactFiber$batch = host;
+        const effects = { selections: 0, phoneInputs: 0 };
+        input.addEventListener('click', () => { portal.hidden = false; });
+        option.addEventListener('click', () => {
+          effects.selections++; props.value = 'original-code'; input.value = '离线姓名'; portal.hidden = true;
+        });
+        form.querySelector('#phone').addEventListener('input', () => {
+          effects.phoneInputs++;
+          if (['model', 'both'].includes(drift)) props.value = '';
+          if (['display', 'both'].includes(drift)) input.value = '';
+          if (drift === 'option-remap') {
+            props.value = 'changed-code'; props.options = [{ value: 'changed-code', label: '离线姓名' }];
+          }
+          if (drift === 'replacement') {
+            const replacement = input.cloneNode(); replacement.value = '离线姓名';
+            const newHost = { type: 'input', stateNode: replacement, return: owner };
+            owner.child = newHost; replacement.__reactFiber$batch = newHost; input.replaceWith(replacement);
+          }
+        });
+        window.__batchReadback = { props, effects };
+      }, drift);
+      const profile = { schemaVersion: 1, fullName: '离线姓名', phone: '13800138000', confirmedFields: ['fullName', 'phone'] };
+      const profileBinding = await zoo.bind(profile);
+      await zoo.worker.evaluate(() => chrome.storage.local.set({ resumeAtsEngineWriteEnabled: true }));
+      await zoo.inject(['src/core/matcher.js', 'src/core/domain-memory.js', 'src/content/engine.js']);
+      const result = await zoo.worker.evaluate(async ({ tabId, profile, profileBinding }) =>
+        chrome.tabs.sendMessage(tabId, { type: 'RESUME_FILL', profile, profileBinding }), { tabId: zoo.tabId, profile, profileBinding });
+      expect(result.ok, JSON.stringify(result)).toBe(true);
+      expect(result.data.liveSupportClaimed).toBe(false);
+      const name = result.data.fields.find(row => row.path === 'fullName');
+      expect(name.status, JSON.stringify(result)).toBe(drift === 'none' ? 'verified' : 'failed');
+      if (drift === 'replacement') expect(name.reason).toBe('field_changed');
+      else expect(name.adapterStatus).toBe(drift === 'none' ? 'success' : 'reverted');
+      expect(result.data.fields.find(row => row.path === 'phone').status).toBe('verified');
+      const state = await zoo.page.evaluate(() => ({ model: window.__batchReadback.props.value, effects: window.__batchReadback.effects }));
+      expect(state.effects).toEqual({ selections: 1, phoneInputs: 1 });
+      expect(await zoo.page.locator('#neighbor').inputValue()).toBe('ZOO_NEIGHBOR_KEEP');
+      const evidence = await zoo.evidence();
+      expect(evidence).toMatchObject({ neverSave: true, liveSupportClaimed: false, nonGetObserved: 0,
+        responseToNonGet: 0, nonGetBlocked: 0, blacklistClickAttempts: 0, blacklistClicks: 0, guardFailed: false });
+      expect(evidence.routing).toMatchObject({ rejected: [], nonGetReachedRoute: 0 });
+      await fs.writeFile(testInfo.outputPath('batch-readback-evidence.json'), JSON.stringify({ drift, result, state, evidence }, null, 2));
+    } finally { await zoo.close(); }
+  });
+}
+
 for (const enabled of [false, true]) for (const preselected of [false, true]) {
   test(`ordinary select readback: enabled=${enabled}, preselected=${preselected}`, async ({}, testInfo) => {
     const zoo = await startZoo('write-route');

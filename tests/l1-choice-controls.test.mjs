@@ -55,7 +55,7 @@ async function writeAndVerify(f, el, value, adapterName) {
 }
 
 for (const kind of ['checkbox', 'switch']) {
-  test(`native ${kind}: strict boolean fact, click, readback and add-only preservation`, async t => {
+  test(`native ${kind}: strict boolean fact, click, readback and family-specific preservation`, async t => {
     const f = boot(t, `<input id="target" type="checkbox"${kind === 'switch' ? ' role="switch"' : ''}>`);
     const el = f.get('target');
     let clicks = 0;
@@ -64,7 +64,8 @@ for (const kind of ['checkbox', 'switch']) {
     assert.equal(f.R.plan(el, { value: 'true' }).status, 'unsupported');
     await writeAndVerify(f, el, true, `native-${kind}`);
     assert.equal(el.checked, true); assert.equal(clicks, 1);
-    assert.equal(f.R.plan(el, { value: false }).reason, 'existing_value');
+    if (kind === 'checkbox') assert.equal(f.R.plan(el, { value: false }).reason, 'existing_value');
+    else assert.equal(f.R.plan(el, { value: false }).status, 'planned');
     assert.equal(f.R.plan(el, { value: true }).status, 'success');
     assert.equal(clicks, 1);
   });
@@ -200,7 +201,7 @@ for (const lib of libraries) {
     assert.equal((await f.R.verify(el, plan, { settleMs: 20 })).status, 'reverted');
   });
 
-  test(`${adapterPrefix} switch: false is a no-op, click turns on, checked values are preserved`, async t => {
+  test(`${adapterPrefix} switch: false is a no-op and explicit boolean facts click in both directions`, async t => {
     const isElement = lib.prefix === 'el';
     const f = boot(t, isElement
       ? '<div id="target" class="el-switch" role="switch" aria-checked="false"><input type="checkbox"></div>'
@@ -220,7 +221,8 @@ for (const lib of libraries) {
     assert.equal(clicks, 0);
     await writeAndVerify(f, el, true, `${adapterPrefix}-switch`);
     assert.equal(clicks, 1);
-    assert.equal(f.R.plan(el, { value: false }).reason, 'existing_value');
+    await writeAndVerify(f, el, false, `${adapterPrefix}-switch`);
+    assert.equal(clicks, 2);
     assert.equal(f.R.plan(el, { value: 'true' }).status, 'unsupported');
   });
 }
@@ -235,7 +237,9 @@ test('Element custom active/inactive values map boolean facts without losing mod
   const plan = await writeAndVerify(f, el, true, 'el-switch');
   assert.equal(plan.value, 7);
   assert.equal(plan.domValue, true);
-  assert.equal(f.R.plan(el, { value: 0 }).reason, 'existing_value');
+  assert.equal(f.R.plan(el, { value: 0 }).status, 'unsupported');
+  const off = f.R.plan(el, { value: false });
+  assert.equal(off.status, 'planned'); assert.equal(off.value, 0); assert.equal(off.domValue, false);
 });
 
 test('Element checkbox custom true/false labels map boolean facts to exact model codes', async t => {
@@ -259,7 +263,8 @@ test('Element switch inverted boolean model codes do not invert again during wri
   const plan = await writeAndVerify(f, el, true, 'el-switch');
   assert.equal(plan.value, false); assert.equal(plan.domValue, true);
   assert.equal(props.value, false);
-  assert.equal(f.R.plan(el, { value: false }).reason, 'existing_value');
+  const off = f.R.plan(el, { value: false });
+  assert.equal(off.status, 'planned'); assert.equal(off.value, true); assert.equal(off.domValue, false);
 });
 
 test('choice instructions cannot be replayed on another owning root', async t => {

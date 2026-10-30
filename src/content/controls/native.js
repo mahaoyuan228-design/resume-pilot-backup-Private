@@ -13,8 +13,8 @@
 
   // A class-only or unrecognised framework widget must not become native text.
   // That includes its readonly display input and its hidden search input.
-  function plain(el, probe, searchable = false) {
-    if (!el || !el.matches?.('input,textarea,select,[contenteditable]')) return false;
+  function plain(el, probe, searchable = false, switchRole = false) {
+    if (!el || !el.matches?.('input,textarea,select,[contenteditable]') && !(switchRole && el.matches?.('[role="switch"]'))) return false;
     if (probe?.lib && probe.lib !== 'native') return false;
     if (probe?.framework && probe.framework !== 'native') return false;
     for (let node = el; node && node !== document.body; node = node.parentElement) {
@@ -541,16 +541,25 @@
       return { strategy: 'ui', attempts: 1 };
     }
   });
+  function switchModel(el, probe, aria = false) {
+    const state = el.getAttribute('aria-checked'), checked = aria ? state === 'true' ? true : state === 'false' ? false : null : el.checked;
+    return { ...base(el, probe, checked), ...(aria ? { lib: 'aria' } : {}),
+      checkedValue: true, uncheckedValue: false, switchTarget: el, switchInput: aria ? null : el,
+      available: typeof checked === 'boolean' && (aria ? !el.querySelector('input,textarea,select,button,a[href],[role="switch"],[role="button"],[contenteditable]') : !el.indeterminate),
+      choiceConsistent: aria || state == null || state === String(checked),
+      disabled: disabled(el) || !!el.closest('[aria-disabled="true"],[inert]'),
+      readonly: !!el.readOnly || !!el.closest('[aria-readonly="true"]') };
+  }
   for (const type of ['checkbox', 'switch']) register({ name: `native-${type}`, type,
     matches: (el, probe) => plain(el, probe) && el.tagName === 'INPUT' && el.type === 'checkbox'
       && (el.getAttribute('role') === 'switch') === (type === 'switch'),
-    readModel: (el, probe) => base(el, probe, !!el.checked),
+    readModel: (el, probe) => type === 'switch' ? switchModel(el, probe) : base(el, probe, !!el.checked),
     async performWrite(el, instruction, ctx) {
       const reason = guards(el);
       if (reason) return noWrite(reason);
       const value = targetValue(instruction);
       if (typeof value !== 'boolean') return noWrite(`invalid_${type}_value`);
-      if (el.checked && !value) return noWrite('existing_value');
+      if (type === 'checkbox' && el.checked && !value) return noWrite('existing_value');
       if (el.checked === value) return { strategy: 'ui', attempts: 0 };
       const checked = el.checked, role = el.getAttribute('role');
       await safeClick(el, { ...ctx, async check() {
@@ -559,6 +568,22 @@
           throw Error('control_changed');
       } });
       await tick();
+      return { strategy: 'ui', attempts: 1 };
+    }
+  });
+  register({ name: 'aria-switch', lib: 'aria', type: 'switch',
+    libVersionProbe: () => ({ lib: 'aria', version: 'html' }),
+    matches: (el, probe) => plain(el, probe, false, true) && el.matches('[role="switch"]')
+      && !el.matches('input,textarea,select,a,[contenteditable]'),
+    readModel: (el, probe) => switchModel(el, probe, true),
+    async performWrite(el, instruction, ctx) {
+      const adapter = api.resolve(el), initial = adapter?.readModel(el);
+      if (!initial?.available || !api.helpers.clickAllowed(el)) return noWrite('switch_contract_unconfirmed');
+      await safeClick(el, { ...ctx, async check() {
+        await ctx.check();
+        const live = adapter.readModel(el);
+        if (!live.available || live.disabled || live.readonly || live.value !== initial.value || guards(el)) throw Error('control_changed');
+      } });
       return { strategy: 'ui', attempts: 1 };
     }
   });

@@ -50,7 +50,7 @@
     const { vm } = resolve(el);
     const disabled = !!(vm?.disabled || vm?.$props?.disabled || root.matches?.(':disabled')
       || root.closest('[aria-disabled="true"],[inert]')) || (!group && !!records[0]?.disabled);
-    const readonly = p.readonly || root.getAttribute('aria-readonly') === 'true'
+    const readonly = p.readonly || root.getAttribute('aria-readonly') === 'true' || toggle && !!root.closest('[aria-readonly="true"]')
       || records.some(record => (!toggle && record.input.readOnly) || record.input.getAttribute('aria-readonly') === 'true');
     if (toggle || !group && !radio) {
       const role = root.matches?.('[role="switch"]') ? root : root.querySelector('[role="switch"]');
@@ -62,10 +62,12 @@
             ? records[0].input.checked : null : records[0]?.input.checked;
       const active = p.checkedValue, inactive = p.uncheckedValue;
       return { ...p, disabled, readonly, domValue: checked, choiceKind: 'boolean',
+        ...(toggle ? { switchTarget: role, switchInput: records[0]?.input || null } : {}),
         available: p.available && p.choiceValuesSupported && !sameValue(active, inactive)
           && typeof checked === 'boolean' && (toggle || records.length === 1)
           && (sameValue(p.value, active) || sameValue(p.value, inactive)),
-        choiceConsistent: checked === sameValue(p.value, active) };
+        choiceConsistent: checked === sameValue(p.value, active) && (!toggle
+          || records.every(record => record.owned && !record.input.indeterminate && record.input.checked === checked)) };
     }
     const options = records.map(({ input, click, ...option }) => option), selected = records.filter(record => record.input.checked);
     const raw = p.componentName === 'ARadio' ? p.value ? p.optionValue : '' : radio ? p.value ?? '' : p.value;
@@ -777,7 +779,7 @@
         : type === 'select-search' ? { plan: searchPlan }
           : type === 'multi-select' ? { plan: multiPlan }
           : type === 'cascader' ? { plan: cascaderPlan }
-            : ['radio', 'checkbox', 'switch'].includes(type) ? { plan: (fact, model, ctx) => choicePlan(fact, model, type, ctx) } : {}),
+            : ['radio', 'checkbox'].includes(type) ? { plan: (fact, model, ctx) => choicePlan(fact, model, type, ctx) } : {}),
       performWrite,
     });
   }

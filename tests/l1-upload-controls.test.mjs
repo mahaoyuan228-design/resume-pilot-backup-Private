@@ -106,14 +106,15 @@ test('reinjection replaces a revision 3 registry and re-registers upload surface
   const before = h.document.body.innerHTML;
   // Recreate the previous registry identity while keeping the old observer
   // global alive, as an already-open page would during extension reinjection.
-  const previousRegistrySource = sources[1].replace('revision === 15', 'revision === 3').replace('revision: 15', 'revision: 3');
+  const expectedRevision = h.window.ResumeControls.revision;
+  const previousRegistrySource = sources[1].replace(/revision === \d+/u, 'revision === 3').replace(/revision: \d+/u, 'revision: 3');
   h.window.eval(previousRegistrySource);
   assert.equal(h.window.ResumeControls.revision, 3);
   const previousRegistry = h.window.ResumeControls;
   h.window.eval(sources[3]);
   for (const source of sources) h.window.eval(source);
   const current = h.window.ResumeControls;
-  assert.equal(current.revision, 15); assert.notEqual(current, previousRegistry);
+  assert.equal(current.revision, expectedRevision); assert.notEqual(current, previousRegistry);
   assert.equal(current.resolve(h.get('target')).name, 'upload');
   assert.equal(current.resolve(h.get('display')).name, 'upload-surface');
   assert.equal(current.plan(h.get('display'), { value: 'replacement' }).reason, 'upload_manual');

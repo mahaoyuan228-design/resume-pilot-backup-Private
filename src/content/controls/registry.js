@@ -5,7 +5,7 @@
   'use strict';
   // Rebuild old registries so reinjection installs current dropdown readback
   // contracts as well as the current model resolver.
-  if (globalThis.ResumeControls?.version === 1 && globalThis.ResumeControls.revision === 15) return;
+  if (globalThis.ResumeControls?.version === 1 && globalThis.ResumeControls.revision === 16) return;
   const adapters = new Map();
   // Executable dropdown/choice plans stay bound to their original widget in MAIN.
   // Serialized shadow observations carry no authority to write another root.
@@ -57,7 +57,32 @@
     const [year, mon, day = 1] = value.split('-').map(Number), date = new Date(Date.UTC(year, mon - 1, day));
     return year >= 1900 && year <= 2100 && date.getUTCFullYear() === year && date.getUTCMonth() + 1 === mon && date.getUTCDate() === day;
   }
+  // Switch facts describe the visible boolean state. Component codes are only
+  // accepted by the private execution replan, never inferred from a label.
+  const switchLabelSafe = target => !target?.closest('label') || target.closest('label').control === target;
+  function switchPlan(fact, model, ctx) {
+    const fail = reason => ({ status: 'unsupported', reason, writeStarted: false, liveSupportClaimed: false });
+    if (model.disabled || model.readonly) return manual(model.disabled ? 'disabled' : 'readonly');
+    if (!model.available) return fail('model_unavailable');
+    // A click on a non-labelable descendant can activate an unrelated control
+    // through its label, including an external submit button.
+    if (!switchLabelSafe(model.switchTarget || model.controlRoot)) return fail('label_activation_unconfirmed');
+    const active = model.checkedValue ?? true, inactive = model.uncheckedValue ?? false;
+    if (typeof model.domValue !== 'boolean' || choiceEqual(active, inactive)
+      || ![active, inactive].some(value => choiceEqual(model.value, value))) return fail('switch_model_unconfirmed');
+    if (model.domValue !== choiceEqual(model.value, active) || model.choiceConsistent === false) return fail('choice_readback_mismatch');
+    const operation = fact?.operation ?? 'set';
+    if (!['set', 'toggle'].includes(operation) || operation === 'toggle' && fact.value !== undefined) return fail('invalid_switch_operation');
+    const value = fact && typeof fact === 'object' ? fact.value : fact;
+    const checked = operation === 'toggle' ? !model.domValue : ctx?.modelValue
+      ? choiceEqual(value, active) ? true : choiceEqual(value, inactive) ? false : null : value;
+    if (typeof checked !== 'boolean') return fail('invalid_switch_value');
+    const target = checked ? active : inactive, same = choiceEqual(model.value, target) && model.domValue === checked;
+    return { status: same ? 'success' : 'planned', reason: same ? 'preexisting_same_value' : 'ready',
+      operation, value: target, modelValue: target, domValue: checked, labels: [], writeStarted: false, liveSupportClaimed: false };
+  }
   function makePlan(fact, model, { type = 'text' } = {}) {
+    if (type === 'switch') return switchPlan(fact, model);
     const value = fact && typeof fact === 'object' && !Array.isArray(fact) ? fact.value : fact;
     if (value == null || value === '' || (Array.isArray(value) && value.length === 0)) return { status: 'unsupported', reason: 'no_fact' };
     if (model.disabled || model.readonly) return { status: 'manual', reason: model.disabled ? 'disabled' : 'readonly' };
@@ -72,7 +97,7 @@
       return { status: same ? 'success' : 'planned', reason: same ? 'preexisting_same_value' : 'ready',
         value: target, modelValue: target, domValue: target, labels: [], writeStarted: false, liveSupportClaimed: false };
     }
-    if (['checkbox', 'switch'].includes(type) && !Array.isArray(value) && typeof value !== 'boolean')
+    if (type === 'checkbox' && !Array.isArray(value) && typeof value !== 'boolean')
       return { status: 'unsupported', reason: `invalid_${type}_value` };
     if (type === 'checkbox' && Array.isArray(value) && !Array.isArray(model.value))
       return { status: 'unsupported', reason: 'invalid_checkbox_value' };
@@ -120,7 +145,7 @@
       target = path; labels = pathLabels; domValue = pathLabels;
     }
     // A checkbox group only adds; every other control preserves existing data.
-    if (['checkbox', 'switch'].includes(type) && typeof target === 'boolean' && typeof model.value === 'boolean') {
+    if (type === 'checkbox' && typeof target === 'boolean' && typeof model.value === 'boolean') {
       if (model.value && !target) return { status: 'unsupported', reason: 'existing_value' };
     } else if (!empty(model.value) && !equal(model.value, target) && !(Array.isArray(target) && ['checkbox', 'checkbox-group'].includes(type))) {
       return { status: 'unsupported', reason: 'existing_value' };
@@ -205,6 +230,7 @@
     const multiline = ['textarea', 'richtext'].includes(spec.type);
     const numeric = spec.type === 'number';
     const time = spec.type === 'time';
+    const toggle = spec.type === 'switch';
     const multi = spec.type === 'multi-select';
     const boundControl = time || numeric || multiline || ['select', 'select-search', 'multi-select', 'cascader', 'radio', 'checkbox', 'checkbox-group', 'switch'].includes(spec.type);
     const choice = ['radio', 'checkbox', 'checkbox-group', 'switch'].includes(spec.type);
@@ -220,7 +246,9 @@
       && (!multiline || instruction.type === spec.type && proseEqual(instruction.value, instruction.modelValue)
         && proseEqual(instruction.value, instruction.domValue))
       && (!time || instruction.type === 'time' && typeof instruction.value === 'string'
-        && instruction.value === instruction.modelValue && instruction.value === instruction.domValue);
+        && instruction.value === instruction.modelValue && instruction.value === instruction.domValue)
+      && (!toggle || instruction.type === 'switch' && typeof instruction.domValue === 'boolean'
+        && choiceEqual(instruction.value, instruction.modelValue) && ['set', 'toggle'].includes(instruction.operation));
     const sameOwner = (el, instruction, model) => {
       if (!ownerBound) return true;
       const owner = choiceBindings.get(instruction), ref = globalThis.ResumeControlModel.resolve(el);
@@ -230,6 +258,10 @@
         && (!numeric || owner.numberPlan === JSON.stringify(clean(instruction))
           && owner.numberInput === model.numberInput
           && owner.numberConstraints === JSON.stringify(clean(model.numberConstraints)))
+        && (!toggle || owner.switchPlan === JSON.stringify(clean(instruction))
+          && owner.framework === ref.framework && owner.componentType === ref.componentType
+          && owner.switchTarget === model.switchTarget && owner.switchInput === model.switchInput
+          && owner.switchContract === JSON.stringify([model.checkedValue ?? true, model.uncheckedValue ?? false]))
         && (!multiline || owner.framework === ref.framework && owner.componentType === ref.componentType);
     };
     const adapter = { ...spec,
@@ -239,7 +271,7 @@
       readOptions(el, probe) { return spec.readOptions ? spec.readOptions(el, probe) : adapter.readModel(el, probe).options || []; },
       plan(fact, model, ctx) {
         const plan = { adapter: spec.name, lib: spec.lib, type: spec.type,
-          ...(spec.plan ? spec.plan(fact, model, ctx) : makePlan(fact, model, { type: spec.type })),
+          ...(toggle ? switchPlan(fact, model, ctx) : spec.plan ? spec.plan(fact, model, ctx) : makePlan(fact, model, { type: spec.type })),
           ...(multiline ? { writeStarted: false, liveSupportClaimed: false } : {}) };
         if (boundControl && model.controlRoot) selectBindings.set(plan, model.controlRoot);
         if (ownerBound && model.controlRoot) {
@@ -248,6 +280,9 @@
             componentType: ref.componentType, version: model.version,
             ...(time ? { timePlan: JSON.stringify(clean(plan)),
               timeContract: JSON.stringify([model.format, model.valueFormat, model.modelKind, model.timeConstraints]) } : {}),
+            ...(toggle ? { switchPlan: JSON.stringify(clean(plan)), switchTarget: model.switchTarget, switchInput: model.switchInput,
+              switchOrigin: [model.value, model.domValue],
+              switchContract: JSON.stringify([model.checkedValue ?? true, model.uncheckedValue ?? false]) } : {}),
             ...(numeric ? { numberInput: model.numberInput, numberPlan: JSON.stringify(clean(plan)), numberConstraints: JSON.stringify(clean(model.numberConstraints)) } : {}) });
         }
         if (spec.type === 'select-search') searchSelections.set(plan, {
@@ -264,10 +299,12 @@
         if (resolve(el)?.name !== spec.name) return { status: 'unsupported', reason: 'control_or_version_changed', strategy: 'none', attempts: 0 };
         const model = adapter.readModel(el);
         if (boundControl && (!model.controlRoot || selectBindings.get(instruction) !== model.controlRoot || !sameOwner(el, instruction, model))) return { status: 'unsupported', reason: 'control_target_changed', strategy: 'none', attempts: 0 };
-        if (numeric && model.available && !model.disabled && !model.readonly
+        if ((numeric || toggle) && model.available && model.choiceConsistent !== false && !model.disabled && !model.readonly
           && model.value === instruction.value && model.domValue === instruction.domValue)
           return { status: 'success', reason: 'preexisting_same_value', strategy: 'none', attempts: 0 };
-        const current = adapter.plan(numeric && instruction.operation !== 'set'
+        if (toggle && !choiceEqual(choiceBindings.get(instruction).switchOrigin, [model.value, model.domValue]))
+          return { status: 'unsupported', reason: 'instruction_stale', strategy: 'none', attempts: 0 };
+        const current = adapter.plan((numeric || toggle) && instruction.operation !== 'set'
           ? { operation: instruction.operation } : { value: instruction.value }, model, { modelValue: true });
         if (!['planned', 'success'].includes(current.status)) return { status: 'unsupported', reason: current.reason, strategy: 'none', attempts: 0 };
         if (!valueEqual(current.value, instruction.value) || !domEqual(current.domValue, instruction.domValue)) return { status: 'unsupported', reason: 'instruction_stale', strategy: 'none', attempts: 0 };
@@ -278,6 +315,8 @@
           if (resolve(el)?.name !== spec.name) throw Error('control_or_version_changed');
           const live = adapter.readModel(el);
           if (live.controlRoot !== selectBindings.get(instruction) || !sameOwner(el, instruction, live)) throw Error('control_target_changed');
+          if (toggle && (!live.available || live.choiceConsistent === false || live.disabled || live.readonly
+            || !switchLabelSafe(live.switchTarget || live.controlRoot))) throw Error('control_changed');
         } };
         return spec.performWrite(el, instruction, ownedCtx);
       },
@@ -286,12 +325,12 @@
         const sample = () => {
           if (!el?.isConnected) return { ok: false, unsupported: true, reason: 'target_detached' };
           const model = adapter.readModel(el);
-          if ((time || numeric || multiline) && (model.disabled || model.readonly)) return { ok: false, unsupported: true, reason: 'control_not_writable' };
+          if ((time || numeric || multiline || toggle) && (model.disabled || model.readonly)) return { ok: false, unsupported: true, reason: 'control_not_writable' };
           if (boundControl && (resolve(el)?.name !== spec.name || !model.controlRoot
             || selectBindings.get(instruction) !== model.controlRoot || !sameOwner(el, instruction, model))) return { ok: false, unsupported: true, reason: 'control_target_changed' };
           const search = searchSelections.get(instruction), selection = search?.selection;
           const clicked = !search?.required || !!selection;
-          return { ok: model.available && clicked && valueEqual(model.value, selection ? selection.value : search ? search.value : instruction.modelValue ?? instruction.value)
+          return { ok: model.available && (!toggle || model.choiceConsistent !== false) && clicked && valueEqual(model.value, selection ? selection.value : search ? search.value : instruction.modelValue ?? instruction.value)
               && domEqual(model.domValue, selection ? selection.domValue : search ? search.domValue : instruction.domValue ?? instruction.value),
             unsupported: !model.available, domReadback: clean(model.domValue), modelReadback: clean(model.value) };
         };
@@ -340,8 +379,8 @@
         probe, adapter: adapter?.name || null, model: adapter ? adapter.readModel(el, probe) : probe });
     } catch { return { ...manual('component_probe_failed'), adapter: null }; }
   }
-  const helpers = Object.freeze({ norm, equal, prose, proseEqual, richtextValue, empty, tick, makePlan, safeClick, nativeSet, confirmSearchOption, check, clickAllowed, clean, validDate });
-  globalThis.ResumeControls = Object.freeze({ version: 1, revision: 15, mode: 'shadow', liveSupportClaimed: false,
+  const helpers = Object.freeze({ norm, equal, prose, proseEqual, richtextValue, empty, tick, makePlan, switchPlan, safeClick, nativeSet, confirmSearchOption, check, clickAllowed, clean, validDate });
+  globalThis.ResumeControls = Object.freeze({ version: 1, revision: 16, mode: 'shadow', liveSupportClaimed: false,
     register, createAdapter, resolve, inspect, plan, helpers, list: () => ordered().map(a => ({ name: a.name, lib: a.lib, type: a.type, priority: a.priority || 0 })),
     verify: (el, instruction, ctx) => resolve(el)?.verify(el, instruction, ctx) || Promise.resolve({ status: 'unsupported', reason: 'control_or_version_unconfirmed' }) });
 })();

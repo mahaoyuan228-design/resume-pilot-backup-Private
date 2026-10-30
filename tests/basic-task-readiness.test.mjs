@@ -25,6 +25,7 @@ async function harness(t, formReadiness) {
   const sender = { id: 'offline-extension', url: 'chrome-extension://offline-extension/src/popup/popup.html' };
   const tab = { id: tabId, url: BASIC_PAGE, active: true };
   const api = {
+    permissions: { getAll: async () => ({ origins: ['https://*/*'] }), contains: async () => true },
     storage: { local },
     runtime: { id: sender.id, getURL: path => `chrome-extension://offline-extension/${path}`,
       getManifest: () => ({ background: { service_worker: 'src/background/worker.mjs' } }) },

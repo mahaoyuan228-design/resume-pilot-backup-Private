@@ -2,6 +2,48 @@ import { test, expect } from '@playwright/test';
 import fs from 'node:fs/promises';
 import { startZoo } from './support.mjs';
 
+test('packaged host permission gate stops an unknown origin without injection or requests', async ({}, testInfo) => {
+  const zoo = await startZoo('batchb-navigation');
+  try {
+    const before = await zoo.readback(), markup = await zoo.page.content();
+    const bridge = await zoo.page.context().newPage();
+    await bridge.goto(new URL('/manifest.json', zoo.worker.url()).href);
+    await zoo.page.bringToFront();
+    const result = await bridge.evaluate(async tabId => {
+      const gate = await import(chrome.runtime.getURL('src/background/auto-form-readiness.mjs'));
+      const inspected = await gate.inspectHostPermissions(chrome, tabId);
+      let injections = 0, requests = 0, failure;
+      const api = { tabs: chrome.tabs, permissions: {
+        getAll: () => chrome.permissions.getAll(),
+        contains: permission => chrome.permissions.contains(permission),
+        request: () => { requests++; throw Error('unexpected_permission_request'); }
+      }, scripting: { executeScript: () => { injections++; throw Error('unexpected_injection'); } } };
+      try { await gate.requireAutoFormReady(api, tabId); }
+      catch (error) { failure = { reason: error.message, ...gate.autoFormReadinessFailure(error) }; }
+      const optional = await gate.requestHostPermission(api, (await chrome.tabs.get(tabId)).url);
+      return { inspected, failure, optional, injections, requests,
+        optionalOrigins: chrome.runtime.getManifest().optional_host_permissions };
+    }, zoo.tabId);
+    expect(result.optionalOrigins).toContain('http://*/*');
+    expect(result.inspected).toMatchObject({ status: 'no_permission', reason: 'host_permission_missing',
+      origin: new URL(zoo.page.url()).origin, originPattern: 'http://127.0.0.1/*', hasHostPermission: false });
+    expect(result.inspected.grantedOrigins).not.toContain('http://*/*');
+    expect(result.failure).toMatchObject({ status: 'no_permission', reason: 'host_permission_missing',
+      fillNotStarted: true, writeStarted: false, writeAttempted: false, saveAttempted: false, liveSupportClaimed: false });
+    expect(result.optional).toMatchObject({ status: 'manual', reason: 'host_permission_user_gesture_required',
+      requestAttempted: false, writeStarted: false, liveSupportClaimed: false });
+    expect(result.injections).toBe(0);
+    expect(result.requests).toBe(0);
+    expect(await zoo.readback()).toEqual(before);
+    expect(await zoo.page.content()).toBe(markup);
+    const evidence = await zoo.evidence();
+    expect(evidence).toMatchObject({ neverSave: true, liveSupportClaimed: false, nonGetObserved: 0,
+      responseToNonGet: 0, nonGetBlocked: 0, blacklistClickAttempts: 0, blacklistClicks: 0, guardFailed: false });
+    expect(evidence.routing).toMatchObject({ rejected: [], nonGetReachedRoute: 0 });
+    await fs.writeFile(testInfo.outputPath('host-permission-evidence.json'), JSON.stringify({ result, evidence }, null, 2));
+  } finally { await zoo.close(); }
+});
+
 test('packaged auto readiness gate preserves page state and Never-Save for every status', async ({}, testInfo) => {
   const zoo = await startZoo('write-route');
   try {

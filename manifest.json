@@ -23,6 +23,7 @@
     "https://*.mokahr.com/*",
     "https://career.cmbchina.com/*"
   ],
+  "optional_host_permissions": ["http://*/*", "https://*/*"],
   "background": {
     "service_worker": "src/background/worker.mjs",
     "type": "module"

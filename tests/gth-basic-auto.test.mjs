@@ -98,6 +98,7 @@ async function harness({ trialResponse, statusOutcome = 'verified_preexisting', 
     { key: 'workStart', question: '参加工作时间', path: 'workStart', supported: true, status: 'verified', reason: 'preexisting_same_value' },
   ];
   const api = {
+    permissions: { getAll: async () => ({ origins: ['https://*/*'] }), contains: async () => true },
     storage: { local: storage },
     runtime: {
       id: autoSender.id,

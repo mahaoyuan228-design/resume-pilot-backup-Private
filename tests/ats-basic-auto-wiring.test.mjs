@@ -80,7 +80,7 @@ test('resolveMokaTarget: sample default + host accept/refuse', () => {
 
 function makeHarness({
   createRunner, autoHtml, messageType, tabUrl, probeReason, probeOk = true,
-  formReadiness = { status: 'ready', reason: 'visible_editable_form' }, formReadinessSequence = null,
+  formReadiness = { status: 'ready', reason: 'visible_editable_form' }, formReadinessSequence = null, permission = true,
   preparation = { ok: true, status: 'ready', reason: 'form_ready', entryAttempted: false, writeAttempted: false }, foundLabels = ['姓名', '手机号码', '邮箱']
 }) {
   const data = {
@@ -120,6 +120,7 @@ function makeHarness({
       if (handled === false) resolve({ ok: false, reason: 'listener_ignored' });
     });
   const api = {
+    permissions: { getAll: async () => ({ origins: permission ? ['https://*/*'] : [] }), contains: async () => permission },
     storage: { local: storage },
     runtime: {
       id: autoSender.id,
@@ -349,6 +350,26 @@ const stoppedStates = [
 ];
 
 for (const scenario of autoScenarios) {
+  test(`${scenario.messageType}: missing host permission stops before any injection or write`, async () => {
+    for (const mode of ['readiness', 'fill']) {
+      const h = makeHarness({ ...scenario, permission: false });
+      const result = await h.invoke({ type: scenario.messageType, mode, openIfMissing: false });
+      assert.equal(result.ok, false);
+      assert.equal(result.status, 'no_permission');
+      assert.equal(result.reason, 'host_permission_missing');
+      assert.equal(result.formReadiness.reason, result.reason);
+      assert.equal(result.fillNotStarted, true);
+      assert.equal(result.writeStarted, false);
+      assert.equal(result.writeAttempted, false);
+      assert.equal(result.saveAttempted, false);
+      assert.equal(result.skippedSave, true);
+      assert.equal(result.liveSupportClaimed, false);
+      assert.deepEqual(h.stats, { fill: 0, inject: 0, prepare: 0, probe: 0, readiness: 0, readinessInject: 0 });
+      assert.equal(h.data[scenario.storageKey].reason, 'host_permission_missing');
+      assert.equal(h.data[scenario.storageKey].writeStarted, false);
+    }
+  });
+
   test(`${scenario.messageType}: ready is checked before probe and again before writing`, async () => {
     const h = makeHarness(scenario);
     const result = await h.invoke({ type: scenario.messageType, mode: 'fill', openIfMissing: false });

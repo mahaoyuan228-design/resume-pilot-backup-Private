@@ -1,4 +1,5 @@
 "use strict";
+import {requireHostPermission} from "../background/auto-form-readiness.mjs";
 import {captureProfileBinding,assertProfileBinding,withProfileBinding,dispatchBoundSource} from "../profile/profile-lifecycle.js";
 import {isCmb,cmbBasicInjectFiles} from "../content/cmb-profile-map.mjs";
 import {isCmbResumeEditPage} from "../content/cmb-profile-map.mjs";
@@ -1007,6 +1008,16 @@ async function sendCmb(type, tab, selectedOwnerToken) {
 async function send(type) {
   await attachmentReady;
   const tab = await getTab();
+  try { await requireHostPermission(chrome, tab.id); }
+  catch (error) {
+    await chrome.storage.local.set({ resumeHostPermissionStop: {
+      status: error.status, reason: error.reason, origin: error.formReadiness?.origin || null,
+      fillNotStarted: true, writeStarted: false, writeAttempted: false,
+      saveAttempted: false, neverSave: true, liveSupportClaimed: false
+    } });
+    error.message = `当前网站未取得扩展访问权限，已停止识别和填写，请手动处理（${error.formReadiness?.reason || error.message}）。`;
+    throw error;
+  }
   const selectedOwnerToken=await popupFileOwner.ensure();
   if (isGthSite(tab.url)) {
     if (type === "RESUME_FILL")

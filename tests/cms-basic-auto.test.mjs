@@ -103,6 +103,7 @@ async function harness({ fillResponse, patchFill, formReadiness = [{ status: 're
     },
   };
   const api = {
+    permissions: { getAll: async () => ({ origins: ['https://*/*'] }), contains: async () => true },
     storage: { local: storage },
     runtime: {
       id: autoSender.id,

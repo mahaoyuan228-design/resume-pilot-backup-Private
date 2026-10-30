@@ -1174,6 +1174,7 @@ async function render(data, filled = false) {
     status.textContent = data.gthReadOnly && field.reason === "ready"
       ? "资料已对应，暂不可自动填写"
       : reasons[field.reason] || field.reason || "待处理";
+    if (field.semanticStatus === "manual") status.textContent = `手动 · ${status.textContent}`;
     row.append(main, status);
     elements.list.append(row);
   }

@@ -1,5 +1,6 @@
 import { normalizeProfile } from '../profile/store.js';
 import { detectWorkRecords, mergeWorkRecord } from './work-records.mjs';
+import '../core/matcher.js';
 
 const EDU_KEYS=['school','degree','major','startDate','endDate','majorDescription'];
 const EDU_ID=['school','degree','major','startDate','endDate'];
@@ -91,15 +92,20 @@ function mergeEducationRecord(profile,candidate,added,conflicts){
 }
 
 const LABELS = [
-  { path: 'fullName', label: '姓名', pattern: /^(?:姓名|姓\s*名|Name)\s*[:：]\s*(.+)$/i, valid: (v) => /^(?:[\p{Script=Han}·]{2,12}|[A-Za-z][A-Za-z .'-]{1,59})$/u.test(v) },
-  { path: 'desiredRoles.0', label: '求职岗位', pattern: /^(?:求职意向|期望岗位|目标岗位)\s*[:：]\s*(.+)$/, valid: (v) => v.length <= 80 && !/[、,，;；/]/.test(v) },
-  { path: 'desiredCities.0', label: '期望城市', pattern: /^(?:意向城市|期望城市|期望工作地点)\s*[:：]\s*(.+)$/, valid: (v) => v.length <= 40 && !/[、,，;；/]/.test(v) }
+  { key: 'fullName', path: 'fullName', label: '姓名', valid: (v) => /^(?:[\p{Script=Han}·]{2,12}|[A-Za-z][A-Za-z .'-]{1,59})$/u.test(v) },
+  { key: 'desiredRoles', path: 'desiredRoles.0', label: '求职岗位', valid: (v) => v.length <= 80 && !/[、,，;；/]/.test(v) },
+  { key: 'desiredCities', path: 'desiredCities.0', label: '期望城市', valid: (v) => v.length <= 40 && !/[、,，;；/]/.test(v) }
 ];
 
+// Keep the two historical import labels; all other aliases and field meanings
+// come from the engine's shared resolver, without a hostname or inferred ID.
+const IMPORT_LABELS = new Map([['name', '姓名'], ['求职意向', '期望岗位']]);
+const matcher = globalThis.ResumeMatcher;
+const inlineLabels = [...Object.values(matcher.definitions).flat(), ...IMPORT_LABELS.keys(), 'Email'];
+const inlineFields = new RegExp(`\\s+(?=(?:${inlineLabels.map(label => label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})\\s*[:：])`, 'i');
+
 function cleanValue(value) {
-  // A contact field on the same line must not become part of a person's name.
-  return value.split(/\s+(?=(?:手机|电话|邮箱|Email|学校|学历|专业)\s*[:：])/i)[0]
-    .replace(/[\s\u00a0]+/g, ' ').replace(/[。；;，,]+$/, '').trim();
+  return value.replace(/[\s\u00a0]+/g, ' ').replace(/[。；;，,]+$/, '').trim();
 }
 
 function uniqueMatches(text, pattern) {
@@ -109,13 +115,26 @@ function uniqueMatches(text, pattern) {
 export function detectResumeCandidates(text) {
   const candidates = [];
   const warnings = [];
-  const lines = String(text || '').replace(/\r\n?/g, '\n').split('\n').map((line) => line.trim()).filter(Boolean);
-  for (const rule of LABELS) {
-    const matches = lines.flatMap((line) => {
-      const match = line.match(rule.pattern);
+  // Split explicit inline labels before resolving so contacts stay separate
+  // and conflicting aliases on one line cannot silently hide each other.
+  let section = '';
+  const fields = String(text || '').replace(/\r\n?/g, '\n').split('\n').flatMap((raw) => {
+    const line = raw.trim(), heading = line.replace(/[:：]\s*$/u, '');
+    if (!/[:：]/u.test(heading) && (matcher.sectionKind(heading) || eduHeading.test(heading) || nextSection.test(heading))) {
+      section = heading;
+      return [];
+    }
+    return line.split(inlineFields).flatMap((fragment) => {
+      const match = fragment.trim().match(/^([^:：]+)\s*[:：]\s*(.+)$/u);
       if (!match) return [];
-      const value = cleanValue(match[1]);
-      return rule.valid(value) ? [{ value, evidence: line.slice(0, 180) }] : [];
+      const label = IMPORT_LABELS.get(matcher.normalize(match[1])) || match[1];
+      return [{ mapped: matcher.resolveField({ labels: [label], section }), value: cleanValue(match[2]), evidence: fragment.slice(0, 180) }];
+    });
+  });
+  for (const rule of LABELS) {
+    const matches = fields.flatMap(({ mapped, value, evidence }) => {
+      if (mapped.status !== 'mapped' || mapped.profileKey !== rule.key) return [];
+      return rule.valid(value) ? [{ value, evidence }] : [];
     });
     const unique = [...new Set(matches.map((match) => match.value))];
     if (unique.length === 1) {

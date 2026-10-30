@@ -1,4 +1,6 @@
 // Local-only text extraction. Results are evidence for review, never confirmed facts.
+import { detectResumeCandidates, mergeResumeCandidates } from './candidates.mjs';
+
 export const MAX_FILE_BYTES = 10 * 1024 * 1024;
 const MAX_TEXT_CHARS = 200_000;
 const MAX_PDF_PAGES = 20;
@@ -123,4 +125,21 @@ export async function extractResumeText(file) {
   if (extension === 'pdf') return { ...(await extractPdf(bytes)), format: 'PDF' };
   if (extension === 'docx') return { ...(await extractDocx(bytes)), format: 'DOCX' };
   return { ...extractTxt(bytes), format: 'TXT' };
+}
+
+// Pure local-file -> schema-shaped draft hook. Parsing neither persists facts
+// nor confirms them; the review UI still merges only the user's selection.
+export async function parseResumeProfile(file) {
+  const extracted = await extractResumeText(file);
+  const analysis = detectResumeCandidates(extracted.text);
+  const { profile, conflicts } = mergeResumeCandidates({}, analysis.candidates);
+  return {
+    ...extracted,
+    candidates: analysis.candidates,
+    warnings: [...extracted.warnings, ...analysis.warnings],
+    profile,
+    conflicts,
+    neverSave: true,
+    liveSupportClaimed: false
+  };
 }

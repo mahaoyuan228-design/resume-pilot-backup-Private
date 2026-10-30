@@ -193,9 +193,12 @@ $productFiles = @(
   'src/profile/profile-lifecycle.js',
   'src/profile/site-question-templates.js',
   'src/profile/store.js',
-  'src/styles/profile.css'
+  'src/styles/profile.css',
+  'src/background/controls-write.mjs',
+  'src/content/controls/extended-controls.js',
+  'src/core/domain-memory.js',
+  'src/popup/field-memory.js'
 )
-
 $licenseFiles = @(
   'src/license/flavor.mjs',
   'src/license/errors.mjs',

@@ -8,13 +8,33 @@
   if(nativeMessages.hasListeners?.()===false)globalThis.__resumeNativeListenersResetObserved=true;
   if(globalThis.__resumeQuickFillInstalled){
     existingListenerAlive=!!ownedListener&&nativeMessages.hasListener?.(ownedListener)===true;
-    if(existingListenerAlive&&globalThis.__resumeQuickFillEngineRevision===9&&typeof globalThis.ResumeQuickFillGthInspect==='function')return;
+    if(existingListenerAlive&&globalThis.__resumeQuickFillEngineRevision===10&&typeof globalThis.ResumeQuickFillGthInspect==='function')return;
     if(existingListenerAlive){if(fillState.pending)throw Error('profile_write_context_busy');nativeMessages.removeListener(ownedListener);existingListenerAlive=false;}
     else if(!ownedListener&&nativeMessages.hasListeners?.()===true&&!globalThis.__resumeNativeListenersResetObserved)throw Error('extension_reload_required');
   }
 
   async function checkProfileWrite(){const context=globalThis.ResumeProfileWriteContext;if(context)await context.check();}
   const M = globalThis.ResumeMatcher;
+  let atsControlTargets = new Map();
+  async function loadAtsControlTargets(enabled = null) {
+    atsControlTargets = new Map();
+    if (enabled === null) enabled = typeof globalThis.chrome?.storage?.local?.get === 'function'
+      && (await chrome.storage.local.get('resumeAtsEngineWriteEnabled')).resumeAtsEngineWriteEnabled === true;
+    if (!enabled) return;
+    const response = await chrome.runtime.sendMessage({ type: 'RESUME_ATS_CONTROL_CANDIDATES', timeOrigin: performance.timeOrigin });
+    if (response?.ok !== true || response.mode !== 'candidates' || response.writeStarted !== false || response.liveSupportClaimed !== false) throw Error('control_candidates_unavailable');
+    for (const candidate of response.candidates || []) {
+      const nodes = document.querySelectorAll(candidate.selector);
+      if (nodes.length === 1 && nodes[0].matches('input,textarea')) atsControlTargets.set(nodes[0], candidate);
+    }
+  }
+  let fieldMemorySnapshot = null;
+  async function loadFieldMemory() {
+    fieldMemorySnapshot = null;
+    if (!globalThis.ResumeDomainMemory || !chrome.storage?.local) return;
+    try { fieldMemorySnapshot = await globalThis.ResumeDomainMemory.load(chrome.storage.local, location.href); }
+    catch { /* Unavailable or invalid memory leaves the field manual. */ }
+  }
   const RESERVED_TYPES = new Set(["hidden", "password", "search", "submit", "reset", "button", "image", "checkbox"]);
   const PAGE_HIDDEN_DURING_FILL = "fill_interrupted_page_hidden";
   const CMS_PHOTO_PAGE = "https://wecruit.hotjob.cn/SU629dbc0c0dcad452299bc0f7/pb/resumeOperation.html";
@@ -55,9 +75,10 @@
     return String(value ?? "").normalize("NFKC").replace(/\s+/g, "").trim();
   }
 
-  function visible(control) {
+  function visible(control, confirmedWidget = false) {
     if (control.disabled || control.closest('[hidden],[aria-hidden="true"]')) return false;
-    if (control instanceof HTMLInputElement && RESERVED_TYPES.has(control.type) && !antSelectControl(control)) return false;
+    if (control instanceof HTMLInputElement && RESERVED_TYPES.has(control.type) && !antSelectControl(control)
+      && !(confirmedWidget && control.type === 'search')) return false;
     const style = getComputedStyle(control);
     return style.display !== "none" && style.visibility !== "hidden" && control.getClientRects().length > 0;
   }
@@ -738,6 +759,26 @@
     return validation.valid ? { value: validation.value, path } : { reason: validation.reason, path };
   }
 
+  function semanticProfileValue(profile, path, context) {
+    if (!M.isProfileKey(path)) return { reason: "unmapped_repeat_field" };
+    if (path === "desiredRoles" || path === "desiredCities") return profileValue(profile, path);
+    const parts = path.split(".");
+    if (context && ["work", "internship"].includes(context.kind)) {
+      const actual = M.normalize(profile.experience?.[context.index]?.type);
+      const accepted = context.kind === "work" ? ["work", "工作", "工作经历"] : ["internship", "实习", "实习经历"];
+      if (!accepted.includes(actual)) return { reason: "section_requires_mapping" };
+    }
+    let value = profile;
+    for (const part of parts) {
+      if (!value || !Object.hasOwn(value, part)) return { reason: "missing_profile_value" };
+      value = value[part];
+    }
+    if (value == null || value === "") return { reason: "missing_profile_value" };
+    if (!(profile.confirmedFields || []).includes(path)) return { reason: "unconfirmed_profile_value" };
+    const checked = M.validValue(parts.at(-1), value);
+    return checked.valid ? { value: checked.value } : { reason: checked.reason };
+  }
+
   function fieldId(control, position) {
     return control.id || control.name || `${control.tagName.toLowerCase()}-${position}`;
   }
@@ -824,8 +865,12 @@
       : !!type && type === token);
   }
 
-  function controlConstraint(control, answer) {
+  function controlConstraint(control, answer, confirmedWidget = false) {
     if (!(control instanceof HTMLInputElement || control instanceof HTMLTextAreaElement)) return null;
+    // A readonly widget display is eligible only after MAIN has confirmed the
+    // registered component version and a writable model. Its adapter owns all
+    // effects; it never reaches the native setter in the opt-in route.
+    if (confirmedWidget) return null;
     if (cmsBirthDateControl(control) || cmsEducationDateControl(control)) {
       // Once this unique CMS date control already contains a value, it is a
       // readback target rather than a date-entry target. Ant may remove its
@@ -868,7 +913,7 @@
       : [...document.querySelectorAll(selector)];
     const radioGroups = new Set();
     const controls = query("input,select,textarea").filter((control) => {
-      if (!visible(control)) return false;
+      if (!visible(control, atsControlTargets.has(control))) return false;
       // An opened but unsupported Ant v3 select exposes its inner text input.
       // It is never a standalone answer field, even when this select itself
       // cannot yet be mapped safely.
@@ -892,7 +937,22 @@
       const radioOptions = group?.options || null;
       const labels = radio ? group.labels : labelTexts(control);
       const section = namedSection(control);
-      const match = M.classify(labels);
+      const legacyMatch = M.classify(labels);
+      const explicitRepeat = repeatContext(control);
+      const questionScope = customQuestionScope(control);
+      const semanticSection = questionScope.sectionName.startsWith("form:") ? "" : questionScope.sectionName;
+      const semantic = M.resolveField({ labels, section: semanticSection || explicitRepeat?.kind || "", index: explicitRepeat?.index ?? null });
+      let mappingContext = null;
+      try {
+        mappingContext = globalThis.ResumeDomainMemory?.fieldMetadata({ labels, section: semanticSection,
+          index: explicitRepeat?.index ?? null, kind: radio ? "radio" : control.tagName.toLowerCase(),
+          options: radio ? radioOptions.map(item => radioOptionLabel(item, !!group?.antUnnamed))
+            : control instanceof HTMLSelectElement ? [...control.options].map(option => option.textContent) : [] });
+      } catch { /* Oversized or absent labels are not eligible for memory. */ }
+      const remembered = semantic.status === "manual" && semantic.reason !== "ambiguous_label"
+        && mappingContext ? globalThis.ResumeDomainMemory?.lookup(fieldMemorySnapshot, mappingContext) : null;
+      const match = legacyMatch.key ? legacyMatch : semantic.status === "mapped"
+        ? { key: semantic.key, reason: semantic.reason } : legacyMatch;
       const dedicatedRecordKind = cmsDedicatedRecordKind(control);
       const cms = cmsDecision(control, match.key, cmsSection(control));
       const cmsRegion=cmsRegionControl(control);
@@ -912,7 +972,11 @@
       const cmsBasicAddress = cmsBasicAddressBinding(control);
       // Repeated unbound selects (e.g. education 学历 behind a row gate) must
       // not share a label-only ID. Confirmed paths still drive collision checks.
-      const result = { id: cmsSimple ? `cms-scoped-input-${cmsSimple.alias}` : cmsCheckbox ? 'cms-checkbox-research-scoped' : cmsAcademic ? `cms-academic-${cmsAcademic.alias}` : cmsSelect ? (control.id || `cms-ant-v3-${M.normalize(labels[0])}-${position}`) : fieldId(control, position), labels, kind: cmsCheckbox?'cms_checkbox_group':cmsRegion?'cms_region':radio ? "radio" : degreeSelect ? "ant_degree_select" : cmbSelect ? "cmb_ant_v4_select" : cmsSchool ? "cms_school_search" : cmsSelect ? "cms_ant_v3_select" : cmsBirthDate ? "cms_birth_date" : cmsEducationDate ? "cms_education_date" : antSelectControl(control) ? "ant_select" : control.tagName.toLowerCase(), key, context, scope: customQuestionScope(control), control, radioOptions, antUnnamedRadio: !!group?.antUnnamed };
+      const result = { id: cmsSimple ? `cms-scoped-input-${cmsSimple.alias}` : cmsCheckbox ? 'cms-checkbox-research-scoped' : cmsAcademic ? `cms-academic-${cmsAcademic.alias}` : cmsSelect ? (control.id || `cms-ant-v3-${M.normalize(labels[0])}-${position}`) : fieldId(control, position), labels, kind: cmsCheckbox?'cms_checkbox_group':cmsRegion?'cms_region':radio ? "radio" : degreeSelect ? "ant_degree_select" : cmbSelect ? "cmb_ant_v4_select" : cmsSchool ? "cms_school_search" : cmsSelect ? "cms_ant_v3_select" : cmsBirthDate ? "cms_birth_date" : cmsEducationDate ? "cms_education_date" : antSelectControl(control) ? "ant_select" : control.tagName.toLowerCase(), key, context, scope: questionScope, control, radioOptions, antUnnamedRadio: !!group?.antUnnamed };
+      // Only ordinary controls offer a manual mapping; dedicated record flows
+      // retain their source binding and never learn from their fill results.
+      if (!dedicatedRecordKind && !cmsSection(control) && !degreeSelect && !cmbSelect && !antSelectControl(control)
+        && !cmsSelect && !cmsRegion && !cmsCheckbox && mappingContext && control.type !== "file") result.mappingContext = mappingContext;
       if (cmsBasicAddress) {
         result.cmsBasicAddress = true;
         const value = cmsBasicAddressAnswer(profile, control, cmsBasicAddress);
@@ -965,11 +1029,24 @@
           : acceptsAttachment(control, attachment) ? "ready" : "attachment_type_not_accepted";
       } else if (!labels.length) {
         result.reason = "unlabelled_field";
+      } else if (legacyMatch.reason === "ambiguous_label"
+        || (semanticSection && !cmsSection(control) && semantic.status === "manual" && !remembered)) {
+        result.reason = legacyMatch.reason === "ambiguous_label" ? "ambiguous_label" : semantic.reason;
+        result.semanticStatus = "manual";
+      } else if ((semantic.status === "mapped" && (!legacyMatch.key || semantic.context)) || remembered) {
+        const path = remembered?.profileKey || semantic.profileKey;
+        const rememberedKind = remembered ? M.sectionKind(mappingContext.section) : null;
+        const semanticContext = remembered && ["work", "internship", "education", "project"].includes(rememberedKind)
+          ? { kind: rememberedKind, index: mappingContext.index } : semantic.context;
+        const value = semanticProfileValue(profile, path, semanticContext);
+        result.path = path; result.answer = value.value; result.reason = value.reason || "ready";
+        result.semanticSource = remembered ? "confirmed_domain_mapping" : semantic.reason;
       } else if (!key) {
         const custom = customValue(profile, labels, control);
         result.path = custom?.path;
         result.answer = custom?.value;
         result.reason = custom?.reason || (custom ? "ready" : match.reason);
+        if (!custom) result.semanticStatus = "manual";
       } else {
         let value = profileValue(profile, key, context);
         if (value.reason === "missing_profile_value") value = customValue(profile, labels, control) || value;
@@ -991,7 +1068,7 @@
         result.optionIndex = selection.index;
         if (selection.index < 0) result.reason = selection.reason;
       }
-      if (result.reason === "ready") result.reason = controlConstraint(control, result.answer) || "ready";
+      if (result.reason === "ready") result.reason = controlConstraint(control, result.answer, atsControlTargets.has(control)) || "ready";
       return result;
     });
     markDuplicateTargets(entries);
@@ -1810,8 +1887,48 @@
     for(const type of ['input','change','blur']){await checkProfileWrite();requireVisibleFillPage();verifyTarget?.(true);control.dispatchEvent(new Event(type,{bubbles:true}));}
   }
 
+  function atsControlSelector(control) {
+    if (!control?.isConnected || control.getRootNode() !== document) throw Error('control_target_changed');
+    if (control.id) {
+      const selector = `#${CSS.escape(control.id)}`;
+      if (document.querySelectorAll(selector).length === 1) return selector;
+    }
+    const parts = [];
+    for (let node = control; node && node !== document.documentElement; node = node.parentElement) {
+      const parent = node.parentElement;
+      if (!parent) throw Error('control_target_changed');
+      parts.unshift(`${node.tagName.toLowerCase()}:nth-child(${[...parent.children].indexOf(node) + 1})`);
+    }
+    const selector = ['html', ...parts].join(' > ');
+    if (selector.length > 2048 || document.querySelectorAll(selector).length !== 1) throw Error('control_target_ambiguous');
+    return selector;
+  }
+
+  async function fillAtsControl(entry, result) {
+    const context = globalThis.ResumeProfileWriteContext;
+    await context.check(false);
+    const response = await chrome.runtime.sendMessage({ type: 'RESUME_ATS_CONTROL_WRITE',
+      selector: atsControlSelector(entry.control), path: entry.path, value: entry.answer,
+      profileBinding: context.profileBinding, timeOrigin: performance.timeOrigin });
+    if (response?.writeStarted === true) context.writeStarted = true;
+    await context.check(false);
+    if (!response || response.liveSupportClaimed !== false) throw Error('control_result_invalid');
+    result.adapter = response.adapter || null;
+    result.adapterStatus = response.ok === true ? response.status : 'unsupported';
+    result.status = response.ok === true && response.status === 'success' ? 'verified'
+      : response.writeStarted === true || ['mismatch', 'reverted'].includes(response.status) ? 'failed' : 'skipped';
+    result.reason = response.reason || 'control_write_failed';
+    result.currentValue = meaningfulCurrent(entry.control, entry.radioOptions, entry.antUnnamedRadio);
+  }
+
   async function fillOwnedContent(profile, attachment, photoUploads = null) {
     requireVisibleFillPage();
+    // Absent/false is the legacy path. Enabling the experiment never turns an
+    // unsupported L1 outcome into a second attempt through the old writer.
+    const atsEngineWriteEnabled = typeof globalThis.chrome?.storage?.local?.get === 'function'
+      && (await chrome.storage.local.get('resumeAtsEngineWriteEnabled')).resumeAtsEngineWriteEnabled === true;
+    if (atsEngineWriteEnabled) await loadAtsControlTargets(true);
+    else if (typeof atsControlTargets !== 'undefined') atsControlTargets.clear();
     if (location.origin + location.pathname === CMS_PHOTO_PAGE) {
       const session = typeof globalThis.ResumeCmsSession?.check === "function"
         ? await globalThis.ResumeCmsSession.check() : null;
@@ -1824,15 +1941,21 @@
     const formFlow = globalThis.ResumeFormFlow;
     const formReady = () => collect(profile, attachment).some(entry => entry.reason === 'ready'
       && entry.path && entry.path !== 'sessionAttachment' && entry.answer != null
-      && !entry.control.readOnly && !entry.control.disabled && visible(entry.control)
+      && (!entry.control.readOnly || atsControlTargets.has(entry.control)) && !entry.control.disabled
+      && visible(entry.control, atsControlTargets.has(entry.control))
       && !entry.control.closest('[aria-busy="true"],[aria-readonly="true"],[inert]'));
     if (formFlow && !formReady() && formFlow.inspect().entryCount > 0) {
-      const readiness = await formFlow.ensure({ ready: formReady,
+      const readiness = await formFlow.ensure({ ready: async () => {
+        // Revealing an editor replaces the inspected control roots. Refresh the
+        // read-only candidate scan so opt-in widgets retain their MAIN evidence.
+        if (atsEngineWriteEnabled) await loadAtsControlTargets(true);
+        return formReady();
+      },
         allowEntry: true, check: () => globalThis.ResumeProfileWriteContext.check(false) });
       if (!readiness.ok) throw Object.assign(Error(readiness.reason), {
         fillNotStarted: true, writeStarted: false, readiness });
     }
-    const results = await ensureRepeatRows(profile);
+    const results = atsEngineWriteEnabled ? [] : await ensureRepeatRows(profile);
     let decodedAttachment = null;
     const processed = new Set();
     const records = new Map();
@@ -1976,7 +2099,7 @@
           result.reason = "blocked_by_open_calendar";
           continue;
         }
-        if (answerMatches(entry, attachment)) {
+        if (!atsEngineWriteEnabled && answerMatches(entry, attachment)) {
           result.status = "verified";
           // This value was already on the page when this field was reached.
           // A prior software write to the same logical field keeps its
@@ -1988,7 +2111,10 @@
         try {
           requireVisibleFillPage();
           const answer = Array.isArray(entry.answer) ? entry.answer[0] : entry.answer;
-          if (entry.kind === "ant_degree_select") {
+          if (atsEngineWriteEnabled) {
+            await fillAtsControl(entry, result);
+            continue;
+          } else if (entry.kind === "ant_degree_select") {
             Object.assign(result, await fillAntDegreeSelect(entry, answer));
             const live = currentDegreeControl(control);
             result.currentValue = live ? meaningfulCurrent(live) : "";
@@ -2151,7 +2277,7 @@
     }
     // Page scripts may autosave or submit after input/change events. The extension
     // cannot infer the remote site's final state from local DOM readback alone.
-    const photoRows = await fillCmsPhotos(photoUploads);
+    const photoRows = atsEngineWriteEnabled ? [] : await fillCmsPhotos(photoUploads);
     const validationGaps = currentValidationGaps();
     return { url: location.href, title: document.title,
       fields: [...results, ...cmsUncollectedQuestions(finalEntries, photoRows), ...photoRows],
@@ -2398,11 +2524,15 @@
       }
     }
     Promise.resolve()
-      .then(() => message.type === "RESUME_FILL"
+      .then(async () => {
+        await loadFieldMemory();
+        if (message.type === 'RESUME_INSPECT') await loadAtsControlTargets();
+        return message.type === "RESUME_FILL"
         ? fill(message.profile || {}, message.attachment || null, message.photoUploads || null, message.profileBinding)
         : message.type === "GTH_SALARY_TRIAL"
           ? runBoundGthTrial(message,()=>gthSalaryTrial(message.profile || {}, message.requestId))
-          : inspect(message.profile || {}, message.attachment || null))
+          : inspect(message.profile || {}, message.attachment || null);
+      })
       .then((data) => ({ ok: true, data }),
         (error) => ({ ok: false, error: String(error?.message || error),
           ...(error?.fillNotStarted === true ? { fillNotStarted: true, writeStarted: false } : {}),
@@ -2423,7 +2553,7 @@
         sendResponse(reply);
       });
     return true;
-  };chrome.runtime.onMessage.addListener(engineListener);globalThis.__resumeQuickFillEngineListener=engineListener;globalThis.__resumeQuickFillEngineRevision=9;}
+  };chrome.runtime.onMessage.addListener(engineListener);globalThis.__resumeQuickFillEngineListener=engineListener;globalThis.__resumeQuickFillEngineRevision=10;}
   globalThis.ResumeQuickFillGthInspect = (profile) => {
     if (`${location.origin}${location.pathname}` !== "https://hr.gtht.com/resume/edit/")
       throw new Error("gth_inspect_wrong_page");

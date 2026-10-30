@@ -11,6 +11,7 @@ import { beginRecentRequest, loadRecentResult, recentResultText, saveRecentResul
 import { createGthBasicActions } from "./gth-basic-actions.js";
 import {createSelectionOwner} from "../import/selection-owner.mjs";
 import { fullEducationCandidates, readEducationTargets, createGthEducationDraftActions, gthDraftMessage } from "./gth-education-actions.js";
+import { appendFieldMemoryControl, confirmFieldMapping } from "./field-memory.js";
 
 const elements = {
   title: document.getElementById("site-title"),
@@ -99,6 +100,8 @@ const reasons = {
   missing_profile_value: "尚无已确认的对应答案", unconfirmed_profile_value: "资料尚未核对",
   invalid_profile_value: "资料格式需检查", multiple_profile_values: "有多个备选值",
   ambiguous_label: "问题含义不明确", unknown_question: "题目尚未建立资料对应",
+  section_unconfirmed: "分区含义尚未确认，需手动填写",
+  profile_field_unavailable: "尚无对应资料项，需手动填写",
   question_scope_unconfirmed: "旧答案未核对网站与分区",
   question_scope_mismatch: "答案属于其他网站或分区",
   unlabelled_field: "网站字段无标签", ambiguous_option: "多个相似选项",
@@ -807,7 +810,7 @@ async function inspectGth(tab, profile) {
   if (!isGthResumePage(tab.url)) throw new Error("请先进入国泰海通的简历编辑页。该站自动填写尚未验收。");
   await boundedChromeCall(() => chrome.scripting.executeScript({
     target: { tabId: tab.id },
-    files: ["src/core/matcher.js", "src/content/engine.js", "src/content/gth-section-discovery.js"]
+    files: ["src/core/matcher.js", "src/core/domain-memory.js", "src/content/engine.js", "src/content/gth-section-discovery.js"]
   }), SCRIPT_TIMEOUT_MS, "script");
   const replies = await boundedChromeCall(() => chrome.scripting.executeScript({
     target: { tabId: tab.id },
@@ -963,7 +966,7 @@ async function send(type) {
     }
   }
   let profile = await loadProfile();
-  const files = ["src/core/matcher.js", "src/content/controls/resume-form.js", "src/content/cms-date-picker.js"];
+  const files = ["src/core/matcher.js", "src/core/domain-memory.js", "src/content/controls/resume-form.js", "src/content/cms-date-picker.js"];
   if (isCmsResumePage(tab.url)) files.push("src/content/cms-validation-gaps.js");
   if (isCmsPhotoResumePage(tab.url)) files.push("src/content/cms-session.js", "src/content/cms-school-search.js", "src/content/cms-region.js", "src/content/cms-education-dates.js", "src/content/cms-checkboxes.js");
   files.push("src/content/engine.js");
@@ -1151,6 +1154,8 @@ async function render(data, filled = false) {
     detail.className = "field-detail";
     detail.textContent = field.path?.startsWith('customScopedAnswers.')?'资料：当前网站分区的补充答案':field.path ? `资料：${field.path}` : `网站字段：${field.id}`;
     main.append(name, detail);
+    appendFieldMemoryControl(main, { field, profile, confirm: profileKey => confirmFieldMapping(chrome,
+      { tabId: activeTab?.id, url: data.url, field, profileKey }) });
     if (["unknown_question", "missing_profile_value", "unconfirmed_profile_value", "question_scope_unconfirmed", "question_scope_mismatch"].includes(field.reason) && field.labels?.[0]) {
       const section = sectionForPath(field.path);
       const existingCustomQuestion = !section && (profile.customFacts || []).some((item) =>
@@ -1360,7 +1365,7 @@ async function performGthSalaryTrial() {
       await withProfileBinding(chrome.storage.local,profileBinding,()=>chrome.storage.local.set({ resumeTrustedOrigins: [...trusted, origin].slice(-100) }));
     }
     await ownedGthResult(profileBinding,boundedChromeCall(() => dispatchBoundSource(chrome.storage.local,profileBinding,()=>chrome.scripting.executeScript({
-      target: { tabId: tab.id }, files: ["src/core/matcher.js", "src/content/engine.js"]
+      target: { tabId: tab.id }, files: ["src/core/matcher.js", "src/core/domain-memory.js", "src/content/engine.js"]
     })), SCRIPT_TIMEOUT_MS, "script"));
     const [stillActive] = await chrome.tabs.query({ active: true, currentWindow: true });
     if (stillActive?.id !== tab.id || stillActive.url !== tab.url)

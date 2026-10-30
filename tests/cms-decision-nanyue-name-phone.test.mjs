@@ -208,7 +208,7 @@ function selectPage({ rows = 1, dedicated = false, duplicateId = '' } = {}) {
   const names = ['collect', 'formItemQuestion', 'labelTexts', 'fieldId', 'profileValue', 'cmsAntV3Answer', 'logicalEntryKey',
     'entrySignature', 'entryScope', 'publicEntry', 'meaningfulCurrent', 'exactOptionText', 'settleUnresolvedEntry', 'fillOwnedContent'];
   const deps = {
-    M, cmsDecision, markDuplicateTargets,
+    M, cmsDecision, markDuplicateTargets, atsControlTargets: new Map(),
     visible: () => true, cmsAntV3InnerSearch: disabled, cmsRegionControl: disabled,
     cmsCheckboxControl: disabled, namedSection: () => null, cmsSection: sectionOf,
     cmsDedicatedRecordKind: control => control.closest('.form-cell')?.dedicated ? 'education' : null,

@@ -1,9 +1,11 @@
-// First-party ordered L1 registry. The background API only calls plan/read.
-// Writers are unconnected to customer flows in PR-2 and require an explicit
-// effect guard. No implementation source from the ATS research repos is used.
+// First-party ordered L1 registry. Shadow inspection only calls plan/read.
+// The separate default-OFF write bridge supplies an explicit per-effect guard.
+// No implementation source from the ATS research repos is used.
 (() => {
   'use strict';
-  if (globalThis.ResumeControls?.version === 1) return;
+  // Rebuild the adapter registry with the model upgrade: adapters may capture
+  // ResumeControlModel, so retaining revision 2 would retain its old resolver.
+  if (globalThis.ResumeControls?.version === 1 && globalThis.ResumeControls.revision === 3) return;
   const adapters = new Map();
   const norm = value => String(value ?? '').normalize('NFKC').replace(/\s+/gu, ' ').trim();
   const equal = (a, b) => Array.isArray(a) || Array.isArray(b)
@@ -43,6 +45,7 @@
           value, modelValue: value, labels, domValue: norm(value), requiresSearch: true };
         return { status: 'unsupported', reason: hits.length > 1 ? 'option_ambiguous' : 'option_missing' };
       }
+      if (hits[0].valueSupported === false) return { status: 'unsupported', reason: 'option_value_unavailable' };
       target = hits[0].value; labels = [hits[0].label]; domValue = hits[0].label;
     }
     if (['checkbox', 'checkbox-group'].includes(type) && Array.isArray(value)) {
@@ -51,6 +54,7 @@
       for (const choice of value) {
         const hits = (model.options || []).filter(o => !o.disabled && (equal(o.value, choice) || equal(o.label, choice)));
         if (hits.length !== 1) return { status: 'unsupported', reason: 'option_missing_or_ambiguous' };
+        if (hits[0].valueSupported === false) return { status: 'unsupported', reason: 'option_value_unavailable' };
         if (!target.some(v => equal(v, hits[0].value))) target.push(hits[0].value);
       }
       labels = target.map(v => (model.options || []).find(o => equal(o.value, v))?.label || norm(v));
@@ -62,6 +66,7 @@
       for (const part of value) {
         const hits = options.filter(o => !o.disabled && (equal(o.value, part) || equal(o.label, part)));
         if (hits.length !== 1) return { status: 'unsupported', reason: model.lazy ? 'lazy_options_pending' : 'path_unconfirmed' };
+        if (hits[0].valueSupported === false) return { status: 'unsupported', reason: 'option_value_unavailable' };
         path.push(hits[0].value); pathLabels.push(hits[0].label); options = hits[0].children || [];
       }
       target = path; labels = pathLabels; domValue = pathLabels;
@@ -198,7 +203,7 @@
     return clean({ probe, adapter: adapter?.name || null, model: adapter ? adapter.readModel(el, probe) : probe });
   }
   const helpers = Object.freeze({ norm, equal, empty, tick, makePlan, safeClick, nativeSet, check, clickAllowed, clean, validDate });
-  globalThis.ResumeControls = Object.freeze({ version: 1, mode: 'shadow', liveSupportClaimed: false,
+  globalThis.ResumeControls = Object.freeze({ version: 1, revision: 3, mode: 'shadow', liveSupportClaimed: false,
     register, createAdapter, resolve, inspect, plan, helpers, list: () => ordered().map(a => ({ name: a.name, lib: a.lib, type: a.type, priority: a.priority || 0 })),
     verify: (el, instruction, ctx) => resolve(el)?.verify(el, instruction, ctx) || Promise.resolve({ status: 'unsupported', reason: 'control_or_version_unconfirmed' }) });
 })();

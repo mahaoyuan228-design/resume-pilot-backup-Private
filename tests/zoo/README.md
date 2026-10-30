@@ -1,6 +1,10 @@
-# Offline ATS control zoo (legacy baseline and L1 shadow)
+# Offline ATS control zoo
 
-The legacy suite records existing adapter behavior at base `f07879e1caa24e6f7f09bf6c59e30b7098d89b6b` (#226). PR-2 starts from `8dcd68619cdad860f1402e56196fc61aefd881f0` (#227) and adds L1 shadow planning and disposable offline writer checks. It does not implement L2 semantics, L3 profiles or the live batch runner.
+R2 adds eight per-adapter checks in `extended.spec.mjs` and the ordinary production message route in `write-route.spec.mjs`; see [the R2 contract](../../docs/ATS_ENGINE_R2.md). The original legacy baseline and five shadow comparisons remain intact. iView uses actual pinned 3.5.4 components. Ud/phoenix use explicitly synthetic contract replays, with production versions still pending samples. `liveSupportClaimed=false`.
+
+The combined suite contains 44 tests: 21 original legacy/L1 checks, eight extended-adapter checks, three ordinary-route checks and twelve Batch B control-pattern checks. The ordinary-route checks exercise the flag-absent legacy path plus explicit opt-in native and synthetic Ud-select writers. `resumeAtsEngineWriteEnabled` remains absent by default; no UI turns it on automatically.
+
+The legacy suite records existing adapter behavior at base `f07879e1caa24e6f7f09bf6c59e30b7098d89b6b` (#226). PR-2 started from `8dcd68619cdad860f1402e56196fc61aefd881f0` (#227) and added L1 shadow planning and disposable offline writer checks. That original slice did not implement L2 semantics, L3 profiles or the live batch runner; R2's L2 and opt-in route are documented separately.
 
 ## Run
 
@@ -17,7 +21,7 @@ The runner selects the newest internal build under `dist`; set `ZOO_EXTENSION` t
 
 ## Fixtures and interpretation
 
-The suite loads the unchanged built extension and executes its shipped adapter files through `chrome.scripting.executeScript`. Exact CMS/GTH HTTPS URLs preserve production host and page checks. Every web request is fulfilled from a fixed local asset map or aborted; there is no network fallback to a recruiting server.
+The legacy, L1, extended and ordinary-route suites load the unchanged built extension and execute its shipped adapter files through `chrome.scripting.executeScript`. Exact CMS/GTH HTTPS URLs preserve production host and page checks; the ordinary-route fixture uses an offline synthetic host. Batch B uses loopback and separate browser worlds as described below. Every web request is fulfilled from a fixed local asset map or aborted; there is no network fallback to a recruiting server.
 
 | Required scenario | Fixture | Evidence and limits |
 | --- | --- | --- |
@@ -27,7 +31,7 @@ The suite loads the unchanged built extension and executes its shipped adapter f
 | GTH employment month range | Two actual Element month controls | Existing work-editor contract and `gth-open-fill.js`; both model and visible dates are checked. |
 | GTH plugin-dialog picker | Minimal custom DOM replay | Repository census and existing picker contract; synthetic category path. This is a GTH-specific replay, not a generic cascader. |
 
-Vue 2.7.16 and Ant Design Vue 1.7.8 match the handover. Element UI 2.15.14 is a selected offline fixture version; GTH's live version remains unverified. iView, antd-mobile, Moka and Feishu require further samples and are outside these five cases. Exact dependency versions and integrity hashes are in `package-lock.json`; copyright notices and upstream commits are in `THIRD_PARTY_NOTICES.md`.
+Vue 2.7.16 and Ant Design Vue 1.7.8 match the handover. Element UI 2.15.14 is a selected offline fixture version; GTH's live version remains unverified. The original five cases exclude iView, antd-mobile, Moka and Feishu. R2 adds actual iView 3.5.4 and synthetic ud/phoenix cases; their live samples remain pending. Exact dependency versions and integrity hashes are in `package-lock.json`; copyright notices and upstream commits are in `THIRD_PARTY_NOTICES.md`.
 
 The checked-in legacy baseline is an expectation, not a support matrix. A green suite means the existing result, visible DOM, MAIN-world fixture model, neighboring fields and safety evidence match that expectation. Known unsupported or fail-closed behavior must remain explicit. Future adapter work must explain each intentional baseline change instead of silently accepting new output.
 
@@ -45,7 +49,7 @@ The five shadow cases require the fixture model, effects, application DOM and cl
 | CMS month | Intentional difference: L1 plans the synthetic month component; the old birthdate writer still rejects month-only precision. |
 | GTH plugin-dialog picker | Intentional difference: L1 returns unsupported; the existing GTH-specific writer remains available to its old flow. This picker belongs in L3. |
 
-Additional checks prove MAIN/ISOLATED separation, unknown-version rejection, existing-value preservation, disabled/readonly/upload manual outcomes and a default write gate that refuses effects. Separate offline writer checks execute the new adapters against actual Ant Design Vue school search, paired selects and month controls, plus the Element month range. They require UI strategy and agreement between visible DOM and fixture model. Changing only the month DOM produces mismatch, and a later change produces reverted. Native text, textarea, select, radio and additive checkbox writers run only against disposable controls in the offline page. No customer entry point is routed to these writers.
+Additional checks prove MAIN/ISOLATED separation, unknown-version rejection, existing-value preservation, disabled/readonly/upload manual outcomes and a default write gate that refuses effects. Separate offline writer checks execute the new adapters against actual Ant Design Vue school search, paired selects and month controls, plus the Element month range. They require UI strategy and agreement between visible DOM and fixture model. Changing only the month DOM produces mismatch, and a later change produces reverted. Native text, textarea, select, radio and additive checkbox checks use disposable controls in the offline page. The original shadow entry remains read-only; R2's ordinary route is checked separately with its default-off opt-in flag.
 
 ## Batch B control patterns
 

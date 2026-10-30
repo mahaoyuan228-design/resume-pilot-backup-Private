@@ -140,7 +140,7 @@ test('React fibers provide read-only diagnostics and cannot fall through to nati
   const f = boot(); t.after(() => f.close());
   const el = f.get('target'); let called = 0;
   function FormilyField() {} FormilyField.displayName = 'FixtureFormilyField';
-  const host = { stateNode: el, memoizedProps: {} };
+  const host = { type: 'input', stateNode: el, memoizedProps: { value: 'host-display' } };
   el.__reactFiber$fixture = host;
   host.return = {
     type: FormilyField,
@@ -201,6 +201,11 @@ test('React values without a provable owning DOM root remain unavailable', t => 
   assert.equal(model.available, false);
   assert.equal(model.value, null);
   assert.equal(f.R.plan(input, { value: 'replacement' }).status, 'unsupported');
+  const component = { displayName: 'UdSelect', library: { name: 'ud', version: 'fixture-contract-1' } };
+  f.window.UD = { version: 'fixture-contract-1' };
+  input.__reactFiber$fixture = { type: component, memoizedProps: { value: 'named-but-unowned' } };
+  assert.equal(f.M.inspect(input).available, false, 'a reviewed component name alone cannot prove model ownership');
+  assert.equal(f.M.inspect(input).value, null);
 });
 
 test('Vue ancestor models spanning sibling text controls cannot pollute readback', t => {
@@ -244,6 +249,17 @@ test('model option normalization handles value-only entries and bounds nested da
   const options = f.M.optionsOf([{ value: 'value-only' }, { value: 'parent', label: '父', children: [{ value: 'child', label: '子' }] }]);
   assert.equal(options[0].label, 'value-only');
   assert.equal(options[1].children[0].label, '子');
+  const inherited = Object.create({ value: 'inherited-code' });
+  const [inheritedOption, keyedOption, nullOption, opaqueOption] = f.M.optionsOf([
+    inherited, { value: undefined, key: 'vnode-code' }, { value: null, key: 'different-code' }, { value: { id: 'opaque' }, label: 'Opaque' }
+  ]);
+  assert.equal(inheritedOption.value, 'inherited-code');
+  assert.equal(inheritedOption.valueSupported, true);
+  assert.equal(keyedOption.value, 'vnode-code');
+  assert.equal(keyedOption.valueSupported, true);
+  assert.equal(nullOption.value, null);
+  assert.equal(nullOption.valueSupported, true);
+  assert.equal(opaqueOption.valueSupported, false);
   const cyclic = { value: 'loop', label: 'loop' }; cyclic.children = [cyclic];
   assert.doesNotThrow(() => JSON.stringify(f.M.optionsOf([cyclic])));
   assert.equal(f.M.optionsOf(Array.from({ length: 1005 }, (_, i) => ({ value: i }))).length, 1000);

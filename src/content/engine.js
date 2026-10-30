@@ -8,7 +8,7 @@
   if(nativeMessages.hasListeners?.()===false)globalThis.__resumeNativeListenersResetObserved=true;
   if(globalThis.__resumeQuickFillInstalled){
     existingListenerAlive=!!ownedListener&&nativeMessages.hasListener?.(ownedListener)===true;
-    if(existingListenerAlive&&globalThis.__resumeQuickFillEngineRevision===10&&typeof globalThis.ResumeQuickFillGthInspect==='function')return;
+    if(existingListenerAlive&&globalThis.__resumeQuickFillEngineRevision===11&&typeof globalThis.ResumeQuickFillGthInspect==='function')return;
     if(existingListenerAlive){if(fillState.pending)throw Error('profile_write_context_busy');nativeMessages.removeListener(ownedListener);existingListenerAlive=false;}
     else if(!ownedListener&&nativeMessages.hasListeners?.()===true&&!globalThis.__resumeNativeListenersResetObserved)throw Error('extension_reload_required');
   }
@@ -36,6 +36,16 @@
     catch { /* Unavailable or invalid memory leaves the field manual. */ }
   }
   const RESERVED_TYPES = new Set(["hidden", "password", "search", "submit", "reset", "button", "image", "checkbox"]);
+  const MANUAL_CONTROL_SELECTOR = 'iframe,[data-captcha],[class*="captcha" i],[id*="captcha" i],[name*="captcha" i],input[autocomplete="one-time-code"]';
+  const manualControlReason = control => control.closest(MANUAL_CONTROL_SELECTOR) ? "iframe_or_captcha_manual" : null;
+  function requireWritableControl(control, writeStarted = false) {
+    const reason = manualControlReason(control);
+    if (reason) throw Object.assign(Error(reason), { writeStarted });
+  }
+  function manualControlEntry(control, position) {
+    return { id: fieldId(control, position), labels: labelTexts(control), kind: control.tagName.toLowerCase(),
+      key: null, control, semanticStatus: "manual", reason: "iframe_or_captcha_manual" };
+  }
   const PAGE_HIDDEN_DURING_FILL = "fill_interrupted_page_hidden";
   const CMS_PHOTO_PAGE = "https://wecruit.hotjob.cn/SU629dbc0c0dcad452299bc0f7/pb/resumeOperation.html";
   function requireVisibleFillPage() {
@@ -912,7 +922,7 @@
       ? [...(trialScope.wrapper.matches(selector) ? [trialScope.wrapper] : []), ...trialScope.wrapper.querySelectorAll(selector)]
       : [...document.querySelectorAll(selector)];
     const radioGroups = new Set();
-    const controls = query("input,select,textarea").filter((control) => {
+    const controls = query("input,select,textarea,iframe").filter((control) => {
       if (!visible(control, atsControlTargets.has(control))) return false;
       // An opened but unsupported Ant v3 select exposes its inner text input.
       // It is never a standalone answer field, even when this select itself
@@ -927,11 +937,17 @@
       }
       return true;
     });
+    // Observe only the top-level surface; never read a frame's document/window.
+    // A challenge without a visible input still needs a manual placeholder.
+    controls.push(...query(MANUAL_CONTROL_SELECTOR).filter(control => visible(control)
+      && !controls.some(candidate => control.contains(candidate))
+      && !control.parentElement?.closest(MANUAL_CONTROL_SELECTOR)));
     const cmsControls = query(".ant-form-item .ant-select-selection--single")
       .filter(cmsAntV3Control);
     const regionControls=query('.cascader-plugins-wrap').filter(cmsRegionControl);
     const checkboxControls=query('.ant-checkbox-group').filter(cmsCheckboxControl);
     const entries = [...controls, ...cmsControls,...regionControls,...checkboxControls].map((control, position) => {
+      if (manualControlReason(control)) return manualControlEntry(control, position);
       const radio = control instanceof HTMLInputElement && control.type === "radio";
       const group = radio ? radioGroup(control) : null;
       const radioOptions = group?.options || null;
@@ -1090,6 +1106,10 @@
   }
 
   function publicEntry(entry) {
+    if (manualControlReason(entry.control)) {
+      const { control, ...manual } = manualControlEntry(entry.control, 0);
+      return { ...manual, id: entry.id, currentValue: "" };
+    }
     const { control, answer, radioOptions, antUnnamedRadio,regionFact,checkboxFact,cmsBasicAddress, ...plain } = entry;
     plain.currentValue = meaningfulCurrent(control, radioOptions, antUnnamedRadio);
     if(entry.kind==='cms_checkbox_group') {
@@ -1883,8 +1903,8 @@
   }
   async function setBoundNativeValue(control,value,verifyTarget=null){
     const proto=control instanceof HTMLTextAreaElement?HTMLTextAreaElement.prototype:HTMLInputElement.prototype,setter=Object.getOwnPropertyDescriptor(proto,'value')?.set;
-    await checkProfileWrite();requireVisibleFillPage();verifyTarget?.(false);if(setter)setter.call(control,value);else control.value=value;
-    for(const type of ['input','change','blur']){await checkProfileWrite();requireVisibleFillPage();verifyTarget?.(true);control.dispatchEvent(new Event(type,{bubbles:true}));}
+    await checkProfileWrite();requireVisibleFillPage();verifyTarget?.(false);requireWritableControl(control);if(setter)setter.call(control,value);else control.value=value;
+    for(const type of ['input','change','blur']){await checkProfileWrite();requireVisibleFillPage();verifyTarget?.(true);requireWritableControl(control,true);control.dispatchEvent(new Event(type,{bubbles:true}));}
   }
 
   function atsControlSelector(control) {
@@ -2108,6 +2128,7 @@
           continue;
         }
         const control = entry.control;
+        let genericWriteStarted = false;
         try {
           requireVisibleFillPage();
           const answer = Array.isArray(entry.answer) ? entry.answer[0] : entry.answer;
@@ -2176,25 +2197,25 @@
             const transfer = new DataTransfer();
             transfer.items.add(file);
             requireVisibleFillPage();
-            await checkProfileWrite(); control.files = transfer.files;
+            await checkProfileWrite(); requireWritableControl(control); control.files = transfer.files; genericWriteStarted = true;
             requireVisibleFillPage();
-            await checkProfileWrite(); control.dispatchEvent(new Event("input", { bubbles: true }));
+            await checkProfileWrite(); requireWritableControl(control,genericWriteStarted); control.dispatchEvent(new Event("input", { bubbles: true }));
             requireVisibleFillPage();
-            await checkProfileWrite(); control.dispatchEvent(new Event("change", { bubbles: true }));
+            await checkProfileWrite(); requireWritableControl(control,genericWriteStarted); control.dispatchEvent(new Event("change", { bubbles: true }));
             const selected = control.files?.[0];
             result.status = selected?.name === file.name && selected?.size === file.size ? "verified" : "failed";
           } else if (entry.kind === "radio") {
             const selected = entry.radioOptions[entry.optionIndex];
             requireVisibleFillPage();
-            await checkProfileWrite(); selected.click();
+            await checkProfileWrite(); requireWritableControl(selected); selected.click();
             result.status = selected.checked ? "verified" : "failed";
           } else if (control instanceof HTMLSelectElement) {
             requireVisibleFillPage();
-            await checkProfileWrite(); control.selectedIndex = entry.optionIndex;
+            await checkProfileWrite(); requireWritableControl(control); control.selectedIndex = entry.optionIndex; genericWriteStarted = true;
             requireVisibleFillPage();
-            await checkProfileWrite(); control.dispatchEvent(new Event("input", { bubbles: true }));
+            await checkProfileWrite(); requireWritableControl(control,genericWriteStarted); control.dispatchEvent(new Event("input", { bubbles: true }));
             requireVisibleFillPage();
-            await checkProfileWrite(); control.dispatchEvent(new Event("change", { bubbles: true }));
+            await checkProfileWrite(); requireWritableControl(control,genericWriteStarted); control.dispatchEvent(new Event("change", { bubbles: true }));
             const chosen = control.selectedOptions[0];
             result.status = chosen && M.selectOption([chosen], entry.answer).index === 0 ? "verified" : "failed";
           } else {
@@ -2214,6 +2235,13 @@
           result.currentValue = meaningfulCurrent(control, entry.radioOptions, entry.antUnnamedRadio);
         } catch (error) { if(/^profile_[a-z_]+$/u.test(error?.message||''))throw error;
           if (error?.message === PAGE_HIDDEN_DURING_FILL) throw error;
+          if (error?.message === "iframe_or_captcha_manual") {
+            Object.assign(result, { status: error.writeStarted ? "failed" : "skipped", semanticStatus: "manual",
+              reason: error.message, writeStarted: error.writeStarted === true,
+              currentValue: error.writeStarted ? meaningfulCurrent(control, entry.radioOptions, entry.antUnnamedRadio) : "" });
+            delete result.mappingContext;
+            continue;
+          }
           result.status = "failed";
           result.reason = entry.cmsBasicAddress && ["field_changed", "question_scope_mismatch", "ambiguous_repeat_group",
             "duplicate_target", "custom_control_not_supported", "ambiguous_profile_fact", "missing_profile_value",
@@ -2553,7 +2581,7 @@
         sendResponse(reply);
       });
     return true;
-  };chrome.runtime.onMessage.addListener(engineListener);globalThis.__resumeQuickFillEngineListener=engineListener;globalThis.__resumeQuickFillEngineRevision=10;}
+  };chrome.runtime.onMessage.addListener(engineListener);globalThis.__resumeQuickFillEngineListener=engineListener;globalThis.__resumeQuickFillEngineRevision=11;}
   globalThis.ResumeQuickFillGthInspect = (profile) => {
     if (`${location.origin}${location.pathname}` !== "https://hr.gtht.com/resume/edit/")
       throw new Error("gth_inspect_wrong_page");

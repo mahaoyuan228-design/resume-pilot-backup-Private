@@ -26,7 +26,7 @@ export function readShadowRequests(requests, expectedUrl) {
       try {
         const plan = registry.plan(element, fact);
         return { selector, field, ...plan, inspection: registry.inspect(element) };
-      } catch { return { selector, field, status: 'unsupported', reason: 'component_probe_failed' }; }
+      } catch { return { selector, field, status: 'manual', reason: 'component_probe_failed', writeStarted: false, liveSupportClaimed: false }; }
     }) };
 }
 

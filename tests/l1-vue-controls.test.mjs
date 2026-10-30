@@ -29,9 +29,9 @@ test('Vue month claims are versioned and more specific than plain inputs', () =>
   assert.equal(planned.status, 'planned');
   assert.equal(planned.value, '2023-01');
   w.ELEMENT.version = '3.0.0';
-  assert.equal(R.plan(el, { value: '2023-01' }).status, 'unsupported');
+  assert.equal(R.plan(el, { value: '2023-01' }).status, 'manual');
   delete w.ELEMENT;
-  assert.equal(R.plan(el, { value: '2023-01' }).status, 'unsupported');
+  assert.equal(R.plan(el, { value: '2023-01' }).status, 'manual');
 });
 
 test('date plans require proven precision and format, preserving existing values', () => {
@@ -141,7 +141,7 @@ test('dependent pair uses both component probes and allows initially disabled ci
   // The child option's ID remains unknown until the dependency has loaded.
   assert.equal(plan.value[1], '北京市');
   w.antd.version = '4.0.0';
-  assert.equal(R.plan(el, { value: ['北京市', '北京市'] }).status, 'unsupported');
+  assert.equal(R.plan(el, { value: ['北京市', '北京市'] }).status, 'manual');
 });
 
 test('month range preserves an existing different endpoint and rejects reversed dates', () => {

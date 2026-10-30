@@ -17,8 +17,8 @@ export function readControlCandidatesInPage(expectedUrl, timeOrigin) {
   for (const element of [...document.querySelectorAll('input,textarea')].slice(0, 300)) {
     if (['hidden', 'password', 'file', 'submit', 'button', 'reset', 'image'].includes(element.type)
       || element.disabled || element.getRootNode() !== document) continue;
-    const adapter = registry.resolve(element), model = adapter?.readModel(element);
-    if (!names.has(adapter?.name) || !model.available || model.disabled || model.readonly) continue;
+    const inspection = registry.inspect(element), model = inspection.model;
+    if (inspection.status === 'manual' || !names.has(inspection.adapter) || !model?.available || model.disabled || model.readonly) continue;
     const parts = [];
     for (let node = element; node && node !== document.documentElement; node = node.parentElement) {
       const parent = node.parentElement;
@@ -26,7 +26,7 @@ export function readControlCandidatesInPage(expectedUrl, timeOrigin) {
       parts.unshift(`${node.tagName.toLowerCase()}:nth-child(${[...parent.children].indexOf(node) + 1})`);
     }
     const selector = ['html', ...parts].join(' > ');
-    if (selector.length <= 2048 && document.querySelectorAll(selector).length === 1) candidates.push({ selector, adapter: adapter.name, type: adapter.type });
+    if (selector.length <= 2048 && document.querySelectorAll(selector).length === 1) candidates.push({ selector, adapter: inspection.adapter, type: registry.list().find(row => row.name === inspection.adapter).type });
   }
   return { mode: 'candidates', candidates, writeStarted: false, liveSupportClaimed: false };
 }

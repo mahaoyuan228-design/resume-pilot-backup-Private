@@ -8,7 +8,7 @@
   if(nativeMessages.hasListeners?.()===false)globalThis.__resumeNativeListenersResetObserved=true;
   if(globalThis.__resumeQuickFillInstalled){
     existingListenerAlive=!!ownedListener&&nativeMessages.hasListener?.(ownedListener)===true;
-    if(existingListenerAlive&&globalThis.__resumeQuickFillEngineRevision===14&&typeof globalThis.ResumeQuickFillGthInspect==='function')return;
+    if(existingListenerAlive&&globalThis.__resumeQuickFillEngineRevision===15&&typeof globalThis.ResumeQuickFillGthInspect==='function')return;
     if(existingListenerAlive){if(fillState.pending)throw Error('profile_write_context_busy');nativeMessages.removeListener(ownedListener);existingListenerAlive=false;}
     else if(!ownedListener&&nativeMessages.hasListeners?.()===true&&!globalThis.__resumeNativeListenersResetObserved)throw Error('extension_reload_required');
   }
@@ -1373,6 +1373,7 @@
     const validationGaps = currentValidationGaps();
     return { url: location.href, title: document.title,
       fields: [...entries.map(publicEntry), ...cmsUncollectedQuestions(entries)],
+      navigation: globalThis.ResumeFormFlow?.navigation?.inspect() || null,
       ...(validationGaps ? { validationGaps } : {}) };
   }
 
@@ -2608,7 +2609,7 @@
         sendResponse(reply);
       });
     return true;
-  };chrome.runtime.onMessage.addListener(engineListener);globalThis.__resumeQuickFillEngineListener=engineListener;globalThis.__resumeQuickFillEngineRevision=14;}
+  };chrome.runtime.onMessage.addListener(engineListener);globalThis.__resumeQuickFillEngineListener=engineListener;globalThis.__resumeQuickFillEngineRevision=15;}
   globalThis.ResumeQuickFillGthInspect = (profile) => {
     if (`${location.origin}${location.pathname}` !== "https://hr.gtht.com/resume/edit/")
       throw new Error("gth_inspect_wrong_page");

@@ -39,7 +39,7 @@ function assertSafety(evidence) {
     for (const [key, expected] of Object.entries(FLAGS)) assert.equal(row[key], expected, key);
   }
   assert.equal(evidence.livePassClaimed, false);
-  assert.equal(evidence.booked, 53);
+  assert.equal(evidence.booked, 58);
   assert.equal(evidence.probeOnly, true);
   assert.equal(evidence.visibilityBasis, 'attributes_only');
   assert.equal(evidence.restoration, 'not_needed_no_interaction');
@@ -138,9 +138,27 @@ const keeperRequest = (id = 'keeper', method = 'POST', url = keeperUrl) => {
       networkId: `${PRIVATE}-network-${id}`, request } }
   ];
 };
+const unlinkedKeeperRequest = (id = 'unlinked', method = 'POST', url = keeperUrl) => {
+  const events = keeperRequest(id, method, url);
+  delete events[1].params.networkId;
+  return events;
+};
 
-test('baseline and initial evidence preserve Never-Save, no live PASS, and booked 53', () => {
-  assert.equal(ROW_D_LIVE_BASE_TIP, '3c5c9d08c78ce0ffc522e69398f815188bbdaaeb');
+// Keep the recorded 12 successful fields and four skips, but adapt only the
+// research metadata to the current reviewed complete dictionary. This models
+// an incomplete current probe; it is not a replay or new live field verdict.
+function modeledTwelveFieldInspection() {
+  const fixture = JSON.parse(fs.readFileSync(new URL('./fixtures/cms-row-d-keeper-nongget-r6.json', import.meta.url), 'utf8'));
+  const inspection = fixture.inspection;
+  const research = inspection.fields.find(row => row.key === 'researchInterests');
+  research.optionsComplete = true;
+  research.reason = 'option_dictionary_mismatch';
+  delete research.samplePrefixMatched;
+  return inspection;
+}
+
+test('baseline and initial evidence preserve Never-Save, no live PASS, and booked 58 with D unbooked', () => {
+  assert.equal(ROW_D_LIVE_BASE_TIP, '23c0ce54b759aa1fc42516ecaf7c851bd63e785c');
   const evidence = rowDProbeEvidence();
   assertSafety(evidence);
   assert.equal(evidence.ok, false);
@@ -272,8 +290,176 @@ for (const reverse of [false, true]) test(`only a correlated acknowledged keeper
   assert.equal(JSON.stringify(guard.traffic).includes(PRIVATE), false);
 });
 
+for (const reverse of [false, true]) test(`R7 uniquely pairs a missing Fetch networkId in either event order (reverse=${reverse})`, async () => {
+  let acknowledge;
+  const commands = [];
+  const guard = createRowDNetworkGuard((method, params) => {
+    commands.push({ method, params });
+    return new Promise(resolve => { acknowledge = resolve; });
+  });
+  guard.setKeeperActive(true);
+  const events = unlinkedKeeperRequest();
+  guard.onEvent(reverse ? events[1] : events[0]);
+  if (reverse) assert.equal(commands[0].method, 'Fetch.failRequest', 'abort before any Network counterpart arrives');
+  assert.equal(guard.failed(), true);
+  guard.onEvent(reverse ? events[0] : events[1]);
+  assert.equal(guard.failed(), true, 'a missing block acknowledgement cannot preserve');
+  acknowledge({});
+  await guard.drain();
+  assert.equal(guard.failed(), false);
+  assert.deepEqual(guard.assessment(), { status: 'correlated_keeper_blocks', reasons: [],
+    correlationMode: 'unique_identity_missing_fetch_network_id' });
+  assert.equal(guard.traffic.observedNonGetCount, 1);
+  assert.equal(guard.traffic.interceptedNonGetCount, 1);
+  assert.equal(guard.traffic.blockedNonGetCount, 1);
+  assert.equal(guard.traffic.responseToNonGetCount, 0);
+  guard.setKeeperActive(false);
+  assert.equal(guard.failed(), false, 'completed proof survives final cleanup');
+  assert.equal(commands.filter(row => row.method === 'Fetch.continueRequest').length, 0);
+  assert.equal(JSON.stringify({ traffic: guard.traffic, assessment: guard.assessment() }).includes(PRIVATE), false);
+});
+
 for (const mode of ['outside_keeper', 'crossed_window', 'observed_only', 'paused_only',
-  'different_network_id', 'missing_network_id', 'missing_fetch_id', 'missing_network_request_id',
+  'different_query', 'different_endpoint', 'different_method', 'duplicate_observation', 'duplicate_pause',
+  'second_paired_request_before', 'second_paired_request_after', 'second_unlinked_request',
+  'missing_fetch_id', 'missing_network_request_id', 'response_stage', 'redirect', 'failed_block']) {
+  test(`R7 missing Fetch networkId cannot exempt ${mode}`, async () => {
+    const commands = [];
+    const guard = createRowDNetworkGuard((method, params) => {
+      commands.push({ method, params });
+      return mode === 'failed_block' ? Promise.reject(new Error(PRIVATE)) : Promise.resolve({});
+    });
+    guard.setKeeperActive(mode !== 'outside_keeper');
+    const [network, fetch] = unlinkedKeeperRequest();
+    if (mode === 'different_query') fetch.params.request = { ...fetch.params.request, url: keeperUrl + '&other=1' };
+    if (mode === 'different_endpoint') fetch.params.request = { ...fetch.params.request, url: 'https://example.invalid/resume/info/edit' };
+    if (mode === 'different_method') fetch.params.request = { ...fetch.params.request, method: 'PUT' };
+    if (mode === 'missing_fetch_id') delete fetch.params.requestId;
+    if (mode === 'missing_network_request_id') delete network.params.requestId;
+    if (mode === 'response_stage') fetch.params.responseStatusCode = 200;
+    if (mode === 'redirect') fetch.params.redirectedRequestId = PRIVATE;
+    if (mode === 'second_paired_request_before') keeperRequest('other').forEach(guard.onEvent);
+    if (mode !== 'paused_only') guard.onEvent(network);
+    if (mode === 'crossed_window') guard.setKeeperActive(false);
+    if (mode !== 'observed_only') guard.onEvent(fetch);
+    if (mode === 'duplicate_observation') guard.onEvent(network);
+    if (mode === 'duplicate_pause') guard.onEvent(fetch);
+    if (mode === 'second_paired_request_after') keeperRequest('other').forEach(guard.onEvent);
+    if (mode === 'second_unlinked_request') unlinkedKeeperRequest('other').forEach(guard.onEvent);
+    await guard.drain();
+    assert.equal(guard.failed(), true, mode);
+    assert.equal(guard.assessment().status, 'rejected');
+    assert.equal(commands.filter(row => row.method === 'Fetch.continueRequest').length, 0);
+    assert.equal(JSON.stringify({ traffic: guard.traffic, assessment: guard.assessment() }).includes(PRIVATE), false);
+  });
+}
+
+for (const networkId of [null, '', 0, {}, 'x'.repeat(1025)]) test(`R7 never treats a malformed supplied Fetch networkId as absent (${typeof networkId})`, async () => {
+  const guard = createRowDNetworkGuard(() => Promise.resolve({}));
+  guard.setKeeperActive(true);
+  const events = keeperRequest();
+  events[1].params.networkId = networkId;
+  events.forEach(guard.onEvent);
+  await guard.drain();
+  assert.equal(guard.failed(), true);
+  assert.ok(guard.assessment().reasons.includes('network_id_missing_or_invalid'));
+});
+
+test('R7 a second non-GET after successful missing-ID settlement permanently invalidates the fallback', async () => {
+  const guard = createRowDNetworkGuard(() => Promise.resolve({}));
+  guard.setKeeperActive(true);
+  unlinkedKeeperRequest().forEach(guard.onEvent);
+  await guard.drain();
+  assert.equal((await guard.settleKeeper()).ready, true);
+  keeperRequest('later').forEach(guard.onEvent);
+  await guard.drain();
+  assert.equal(guard.failed(), true);
+  const stop = await guard.settleKeeper();
+  assert.equal(stop.status, 'permanent_failure');
+  assert.equal(stop.ready, false);
+  guard.setKeeperActive(false);
+  assert.equal(guard.failed(), true, 'a prior successful checkpoint is no authority to preserve later ambiguity');
+});
+
+for (const responseMethod of ['Network.responseReceived', 'Network.responseReceivedExtraInfo',
+  'Network.responseReceivedEarlyHints', 'Network.dataReceived', 'Network.loadingFinished']) {
+  for (const early of [false, true]) test(`R7 missing-ID pair still rejects ${responseMethod} (early=${early})`, async () => {
+    const guard = createRowDNetworkGuard(() => Promise.resolve({}));
+    guard.setKeeperActive(true);
+    const events = unlinkedKeeperRequest();
+    const response = { method: responseMethod, params: { requestId: events[0].params.requestId } };
+    if (early) guard.onEvent(response);
+    events.toReversed().forEach(guard.onEvent);
+    await guard.drain();
+    if (!early) {
+      assert.equal(guard.failed(), false);
+      guard.onEvent({ method: 'Network.loadingFailed', params: { requestId: events[0].params.requestId } });
+      guard.onEvent(response);
+    }
+    assert.equal(guard.failed(), true);
+    assert.equal(guard.traffic.responseToNonGetCount, 1);
+  });
+}
+
+for (const phase of ['activate', 'inspection', 'reset', 'cleanup']) {
+  for (const reverse of [false, true]) test(`R7 blocked-only missing-ID keeper traffic preserves modeled 12/16 through finally (${phase}, reverse=${reverse})`, async () => {
+    const inspection = modeledTwelveFieldInspection();
+    assert.equal(inspection.fields.filter(row => row.ok).length, 12);
+    let emitted = false;
+    const emitBlock = emit => {
+      if (emitted) return;
+      emitted = true;
+      const events = unlinkedKeeperRequest();
+      (reverse ? events.toReversed() : events).forEach(emit);
+    };
+    const fake = fakeCdp({ evaluate: () => inspection,
+      onSend(method, params, { emit }) {
+        if ((phase === 'activate' && method === 'Target.activateTarget')
+          || (phase === 'inspection' && method === 'Runtime.evaluate')
+          || (phase === 'reset' && method === 'Emulation.setFocusEmulationEnabled' && !params.enabled)) emitBlock(emit);
+      },
+      onWait({ emit, calls }) {
+        if (phase === 'cleanup' && calls.some(call => call.method === 'Emulation.setFocusEmulationEnabled' && !call.params.enabled)) emitBlock(emit);
+      }
+    });
+    const evidence = await fake.run();
+    assertSafety(evidence);
+    assert.equal(emitted, true);
+    assert.equal(evidence.probeCompleted, true);
+    assert.equal(evidence.ok, false);
+    assert.equal(evidence.reason, 'row_d_preflight_incomplete');
+    assert.deepEqual(evidence.fields, inspection.fields);
+    assert.equal(evidence.fields.filter(row => row.ok).length, 12);
+    assert.equal(evidence.traffic.observedNonGetCount, 1);
+    assert.equal(evidence.traffic.interceptedNonGetCount, 1);
+    assert.equal(evidence.traffic.blockedNonGetCount, 1);
+    assert.equal(evidence.traffic.infoEditObservedCount, 1);
+    assert.equal(evidence.traffic.infoEditBlockedCount, 1);
+    assert.equal(evidence.traffic.responseToNonGetCount, 0);
+    assert.equal(evidence.traffic.commandFailed, false);
+    assert.equal(evidence.traffic.truncated, false);
+    assert.equal(evidence.traffic.keeperAssessment.correlationMode, 'unique_identity_missing_fetch_network_id');
+    const evaluation = fake.calls.find(call => call.method === 'Runtime.evaluate');
+    assert.equal(evaluation.params.throwOnSideEffect, true);
+    assert.deepEqual(methods(fake).slice(-3), ['Fetch.disable', 'Network.disable', 'close']);
+    assert.doesNotMatch(JSON.stringify(evidence), /networkId|requestId|wecruit\/resume|iSaJAx|request_locale/);
+  });
+}
+
+for (const teardown of ['Fetch.disable', 'Network.disable']) test(`R7 missing-ID traffic first seen during ${teardown} remains fatal`, async () => {
+  const fake = fakeCdp({ evaluate: modeledTwelveFieldInspection,
+    onSend(method, params, { emit }) { if (method === teardown) unlinkedKeeperRequest().forEach(emit); }
+  });
+  const evidence = await fake.run();
+  assertSafety(evidence);
+  assert.equal(evidence.probeCompleted, true);
+  assert.equal(evidence.fields.filter(row => row.ok).length, 12);
+  assert.equal(evidence.reason, 'non_get_or_guard_failure');
+  assert.equal(evidence.traffic.blockedNonGetCount, 1);
+});
+
+for (const mode of ['outside_keeper', 'crossed_window', 'observed_only', 'paused_only',
+  'different_network_id', 'invalid_network_id', 'missing_fetch_id', 'missing_network_request_id',
   'duplicate_observation', 'duplicate_pause', 'reused_fetch_id', 'different_method',
   'different_query', 'response_stage', 'error_stage', 'response_headers', 'response_status_text',
   'fetch_redirect', 'untracked_redirect']) {
@@ -282,7 +468,7 @@ for (const mode of ['outside_keeper', 'crossed_window', 'observed_only', 'paused
     guard.setKeeperActive(mode !== 'outside_keeper');
     const [network, fetch] = keeperRequest();
     if (mode === 'different_network_id') fetch.params.networkId = 'other-network';
-    if (mode === 'missing_network_id') delete fetch.params.networkId;
+    if (mode === 'invalid_network_id') fetch.params.networkId = null;
     if (mode === 'missing_fetch_id') delete fetch.params.requestId;
     if (mode === 'missing_network_request_id') delete network.params.requestId;
     if (mode === 'different_method') fetch.params.request = { ...fetch.params.request, method: 'HEAD' };
@@ -307,7 +493,7 @@ for (const mode of ['outside_keeper', 'crossed_window', 'observed_only', 'paused
     assert.equal(guard.failed(), true);
     const expectedReason = { outside_keeper: 'outside_keeper', crossed_window: 'outside_keeper',
       observed_only: 'network_fetch_unmatched', paused_only: 'network_fetch_unmatched',
-      different_network_id: 'network_fetch_unmatched', missing_network_id: 'network_id_missing_or_invalid',
+      different_network_id: 'network_fetch_unmatched', invalid_network_id: 'network_id_missing_or_invalid',
       missing_fetch_id: 'fetch_id_missing_or_invalid', missing_network_request_id: 'network_id_missing_or_invalid',
       duplicate_observation: 'duplicate_network_phase', duplicate_pause: 'duplicate_network_phase',
       reused_fetch_id: 'duplicate_fetch_id', different_method: 'request_identity_conflict',
@@ -1101,7 +1287,7 @@ test('--help and unknown CLI arguments cannot attach or write evidence', t => {
     assert.equal(child.stderr, '');
     assert.equal(child.stdout, HELP);
     assert.match(child.stdout, /No live PASS claimed/);
-    assert.match(child.stdout, /Booked stays 53/);
+    assert.match(child.stdout, /Booked stays 58/);
   }
   for (const args of [['--unknown'], ['--help', '--unknown']]) {
     const child = spawnSync(process.execPath, ['--import', pathToFileURL(preload).href, runner, ...args], { cwd: root, env, encoding: 'utf8', timeout: 10000 });
@@ -1148,7 +1334,7 @@ for (const mode of ['invalid_network_id', 'invalid_fetch_id', 'duplicate', 'conf
     const guard = createRowDNetworkGuard(() => Promise.resolve({}));
     guard.setKeeperActive(mode !== 'outside_keeper');
     const [network, fetch] = keeperRequest('fatal');
-    if (mode === 'invalid_network_id') delete fetch.params.networkId;
+    if (mode === 'invalid_network_id') fetch.params.networkId = null;
     if (mode === 'invalid_fetch_id') delete fetch.params.requestId;
     if (mode === 'conflict') fetch.params.request = { ...fetch.params.request, url: fetch.params.request.url + '&conflict=1' };
     if (mode === 'ineligible') network.params.request = fetch.params.request = { method: 'POST', url: 'https://example.invalid/other' };

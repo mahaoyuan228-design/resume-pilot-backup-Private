@@ -21,6 +21,14 @@ const researchProjection = liveShape.inspection.fields.find(row => row.key === '
 Object.assign(researchProjection, { optionsComplete: true, ok: true, status: 'observed', reason: 'read_only_options_preflight' });
 delete researchProjection.samplePrefixMatched;
 
+// Adapt only stale dictionary metadata while retaining the recorded twelve
+// successful fields and four skips. This models a current incomplete probe,
+// not a new observation or replay of the historical research verdict.
+const twelveFieldShape = structuredClone(historicalShape);
+const incompleteResearch = twelveFieldShape.inspection.fields.find(row => row.key === 'researchInterests');
+Object.assign(incompleteResearch, { optionsComplete: true, reason: 'option_dictionary_mismatch' });
+delete incompleteResearch.samplePrefixMatched;
+
 async function cdpStub(t, {
   nonGet = false, blockFails = false, visibilityNonGetAt, networkCase, inspection
 } = {}) {
@@ -41,11 +49,15 @@ async function cdpStub(t, {
       calls.push(message);
       const reply = result => socket.send(JSON.stringify({ id: message.id, result }));
       const event = (method, params) => socket.send(JSON.stringify({ method, params }));
-      const requestEvents = (method, { pause = true, networkId = `network-${method}` } = {}) => {
+      const requestEvents = (method, { pause = true, networkId = `network-${method}`,
+        missingNetworkId = false, reverse = false, tag = method } = {}) => {
         const request = { method, url: `${autosaveUrl}?iSaJAx=isAjax&request_locale=zh_CN&synthetic=${PRIVATE}`,
           postData: PRIVATE, headers: { 'X-Private': PRIVATE } };
-        event('Network.requestWillBeSent', { requestId: `network-${method}`, request });
-        if (pause) event('Fetch.requestPaused', { requestId: `paused-${method}`, networkId, request });
+        const observed = () => event('Network.requestWillBeSent', { requestId: `network-${tag}`, request });
+        const intercepted = () => { if (pause) event('Fetch.requestPaused', { requestId: `paused-${tag}`,
+          ...(missingNetworkId ? {} : { networkId }), request }); };
+        if (reverse) { intercepted(); observed(); }
+        else { observed(); intercepted(); }
         return request;
       };
       if (message.method === 'Fetch.enable' && networkCase === 'guard_enable') requestEvents('POST');
@@ -75,6 +87,12 @@ async function cdpStub(t, {
         if (['blocked_info_edit', 'response', 'early_response', 'redirect'].includes(networkCase)) requestEvents('POST');
         if (networkCase === 'unmatched_observation') requestEvents('POST', { pause: false });
         if (networkCase === 'mismatched_network_id') requestEvents('POST', { networkId: 'unmatched-network' });
+        if (networkCase === 'r7_missing_early_response') event('Network.responseReceived', { requestId: 'network-POST' });
+        if (networkCase?.startsWith('r7_missing') && networkCase !== 'r7_missing_late') {
+          requestEvents('POST', { missingNetworkId: true, reverse: networkCase === 'r7_missing_reverse' });
+          if (networkCase === 'r7_missing_response') event('Network.responseReceived', { requestId: 'network-POST' });
+          if (networkCase === 'r7_missing_second') requestEvents('POST', { missingNetworkId: true, tag: 'second' });
+        }
         if (networkCase === 'response') event('Network.responseReceived', {
           requestId: 'network-POST', response: { status: 200, body: PRIVATE }
         });
@@ -95,6 +113,7 @@ async function cdpStub(t, {
         if (message.method === 'Fetch.disable') {
           assert.equal(focusEnabled, false);
           if (networkCase === 'late_fetch_disable') requestEvents('POST');
+          if (networkCase === 'r7_missing_late') requestEvents('POST', { missingNetworkId: true });
         }
         reply({});
       }
@@ -121,7 +140,7 @@ function safe(result) {
     assert.equal(row.probeOnly, true);
   }
   assert.equal(result.livePassClaimed, false);
-  assert.equal(result.booked, 53);
+  assert.equal(result.booked, 58);
   assert.equal(result.restoration, 'not_needed_no_interaction');
   assert.equal(JSON.stringify(result).includes(PRIVATE), false);
 }
@@ -293,6 +312,59 @@ test('loopback rejects stale partial research metadata without rewriting histori
   assert.equal(historicalShape.inspection.fields.find(row => row.key === 'researchInterests').optionsComplete, false);
 });
 
+for (const networkCase of ['r7_missing', 'r7_missing_reverse', 'r7_missing_response',
+  'r7_missing_early_response', 'r7_missing_second', 'r7_missing_late']) {
+  test(`R7 loopback preserves modeled 12/16 only for a unique blocked missing-ID keeper pair: ${networkCase}`, async t => {
+    const stub = await cdpStub(t, { networkCase, inspection: twelveFieldShape.inspection });
+    const result = await runCmsRowDLive({ port: stub.port, timeoutMs: 1000, wait: async () => {} });
+    safe(result);
+    const preserved = ['r7_missing', 'r7_missing_reverse'].includes(networkCase);
+    assert.equal(result.reason, preserved ? 'row_d_preflight_incomplete' : 'non_get_or_guard_failure');
+    assert.equal(result.ok, false);
+    assert.equal(result.probeCompleted, true);
+    assert.deepEqual(result.fields, twelveFieldShape.inspection.fields);
+    assert.equal(result.fields.filter(row => row.ok).length, 12);
+    assert.equal(result.traffic.observedNonGetCount, networkCase === 'r7_missing_second' ? 2 : 1);
+    assert.equal(result.traffic.interceptedNonGetCount, networkCase === 'r7_missing_second' ? 2 : 1);
+    assert.equal(result.traffic.blockedNonGetCount, networkCase === 'r7_missing_second' ? 2 : 1);
+    assert.equal(result.traffic.commandFailed, false);
+    if (preserved) {
+      const { keeperAssessment, ...traffic } = result.traffic;
+      // The sanitized observed -> paused -> blocked shape carries no raw IDs.
+      // Fetch-first naturally records its first two phases in reverse order.
+      assert.deepEqual({ ...traffic, records: historicalShape.traffic.records }, historicalShape.traffic);
+      assert.deepEqual(traffic.records.map(row => row.phase), networkCase === 'r7_missing_reverse'
+        ? ['paused', 'observed', 'blocked'] : ['observed', 'paused', 'blocked']);
+      assert.deepEqual(keeperAssessment, { status: 'correlated_keeper_blocks', reasons: [],
+        correlationMode: 'unique_identity_missing_fetch_network_id' });
+    } else assert.equal(result.traffic.keeperAssessment.status, 'rejected');
+    assert.doesNotMatch(JSON.stringify(result), /network-POST|paused-POST|requestId|networkId|wecruit\/resume|iSaJAx|request_locale/);
+    const decisions = stub.calls.filter(call => call.method === 'Fetch.failRequest');
+    assert.ok(decisions.every(call => call.params.errorReason === 'BlockedByClient'));
+    assert.equal(stub.calls.filter(call => call.method === 'Runtime.evaluate').length, 1);
+    assert.equal(stub.calls.find(call => call.method === 'Runtime.evaluate').params.throwOnSideEffect, true);
+  });
+}
+
+test('R7 loopback fallback also preserves the current 13/16 dictionary projection', async t => {
+  const stub = await cdpStub(t, { networkCase: 'r7_missing', inspection: liveShape.inspection });
+  const result = await runCmsRowDLive({ port: stub.port, timeoutMs: 1000, wait: async () => {} });
+  safe(result);
+  assert.equal(result.reason, 'row_d_preflight_incomplete');
+  assert.equal(result.fields.filter(row => row.ok).length, 13);
+  assert.equal(result.traffic.keeperAssessment.correlationMode, 'unique_identity_missing_fetch_network_id');
+});
+
+test('R7 loopback missing-ID abort rejection still overrides completed inspection', async t => {
+  const stub = await cdpStub(t, { networkCase: 'r7_missing', inspection: twelveFieldShape.inspection, blockFails: true });
+  const result = await runCmsRowDLive({ port: stub.port, timeoutMs: 1000, wait: async () => {} });
+  safe(result);
+  assert.equal(result.probeCompleted, true);
+  assert.equal(result.reason, 'non_get_or_guard_failure');
+  assert.equal(result.traffic.commandFailed, true);
+  assert.equal(result.traffic.blockedNonGetCount, 0);
+});
+
 // R8 uses real loopback WebSocket event scheduling, including command replies
 // preceding counterpart events. Nothing connects to a browser or live account.
 async function keeperSettlementStub(t, mode) {
@@ -324,27 +396,28 @@ async function keeperSettlementStub(t, mode) {
       calls.push(message);
       const reply = result => socket.send(JSON.stringify({ id: message.id, result }));
       if (message.method === 'Emulation.setFocusEmulationEnabled' && message.params.enabled) {
-        if (mode === 'fetch_first') pause();
+        if (['fetch_first', 'missing_fetch_first', 'missing_fetch_first_ack_delayed'].includes(mode)) pause({ ...(mode.startsWith('missing_') ? { networkId: undefined } : {}) });
         else network();
-        if (['ack_delayed', 'ack_after_deadline'].includes(mode)) pause();
+        if (['ack_delayed', 'ack_after_deadline', 'missing_ack_delayed'].includes(mode)) pause({ ...(mode.startsWith('missing_') ? { networkId: undefined } : {}) });
         trace.push('keeper_reply');
         reply({});
         if (mode === 'network_first') later(35, () => pause());
+        if (mode === 'missing_network_first') later(35, () => pause({ networkId: undefined }));
         if (mode === 'unmatched_id') later(20, () => pause({ networkId: 'unmatched-late-id' }));
         if (mode === 'block_command_failure') later(20, () => pause());
-        if (mode === 'fetch_first') later(35, network);
+        if (['fetch_first', 'missing_fetch_first', 'missing_fetch_first_ack_delayed'].includes(mode)) later(35, network);
         if (mode === 'response_during_wait') later(20, () => { fatalSeen = true;
           event('Network.responseReceived', { requestId: 'settle-network', response: { status: 200, body: PRIVATE } }); });
         if (mode === 'conflict_during_wait') later(20, () => { fatalSeen = true; pause({}, { ...request, url: request.url + '&conflict=1' }); });
         if (mode === 'duplicate_during_wait') later(20, () => { fatalSeen = true; network(); });
-        if (mode === 'invalid_id_during_wait') later(20, () => { fatalSeen = true; pause({ networkId: undefined }); });
+        if (mode === 'invalid_id_during_wait') later(20, () => { fatalSeen = true; pause({ networkId: null }); });
         if (mode === 'redirect_during_wait') later(20, () => { fatalSeen = true; pause({ redirectedRequestId: PRIVATE }); });
         return;
       }
       if (message.method === 'Fetch.failRequest') {
         if (mode === 'block_command_failure') { socket.send(JSON.stringify({ id: message.id, error: { message: PRIVATE } })); return; }
         const acknowledge = () => { blockAcked = true; trace.push('block_ack'); reply({}); };
-        if (mode === 'ack_delayed') later(45, acknowledge);
+        if (['ack_delayed', 'missing_ack_delayed', 'missing_fetch_first_ack_delayed'].includes(mode)) later(45, acknowledge);
         else if (mode === 'ack_after_deadline') later(310, acknowledge);
         else acknowledge();
         return;
@@ -390,6 +463,27 @@ for (const mode of ['network_first', 'fetch_first', 'ack_delayed']) {
     assert.ok(stub.trace.indexOf('keeper_reply') < stub.trace.indexOf(mode === 'network_first' ? 'pause' : mode === 'fetch_first' ? 'network' : 'block_ack'));
     assert.ok(stub.trace.indexOf('block_ack') < stub.trace.indexOf('inspection'));
     assert.doesNotMatch(JSON.stringify(result), /settle-network|settle-fetch|synthetic=|conflict=|wecruit\/resume/);
+  });
+}
+
+for (const mode of ['missing_network_first', 'missing_fetch_first', 'missing_ack_delayed', 'missing_fetch_first_ack_delayed']) {
+  test(`R7 loopback settles missing-ID ${mode} before inspection and preserves through teardown`, async t => {
+    const stub = await keeperSettlementStub(t, mode);
+    const result = await runCmsRowDLive({ port: stub.port, timeoutMs: 1000, wait: async () => {} });
+    safe(result);
+    assert.equal(result.reason, 'row_d_preflight_incomplete');
+    assert.equal(result.probeCompleted, true);
+    assert.equal(result.fields.filter(row => row.ok).length, 13);
+    assert.equal(result.inspectionGate.status, 'allowed');
+    const check = result.inspectionGate.checkpoints.find(row => row.checkpoint === 'focus_emulation');
+    assert.equal(check.status, 'settled');
+    assert.equal(check.ready, true);
+    assert.equal(result.traffic.keeperAssessment.correlationMode, 'unique_identity_missing_fetch_network_id');
+    assert.equal(result.traffic.responseToNonGetCount, 0);
+    assert.ok(stub.trace.indexOf('block_ack') < stub.trace.indexOf('inspection'));
+    assert.ok(stub.trace.indexOf('network') < stub.trace.indexOf('inspection'));
+    assert.ok(stub.trace.indexOf('pause') < stub.trace.indexOf('inspection'));
+    assert.doesNotMatch(JSON.stringify(result), /settle-network|settle-fetch|requestId|networkId|synthetic=|wecruit\/resume/);
   });
 }
 

@@ -256,7 +256,7 @@ test('new diagnostic has no text/state/content/interaction or page iterator acce
 
 test('native Blink/V8 strict combined evaluation on an exclusively owned synthetic browser', {timeout:30000},async t=>{
   const chrome=process.env.CHROME_PATH||'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe';assert.ok(fs.existsSync(chrome));
-  const profile=fs.mkdtempSync(path.join(os.tmpdir(),'r10-owned-strict-'));let child,session;
+  const profile=fs.mkdtempSync(path.join(os.tmpdir(),'r10-owned-strict-'));let child,session,testFailed=false;
   const requests=[],fixtureUrl=ROW_D_PAGE+'?synthetic=r12-owned-native';
   try{
     child=spawn(chrome,['--headless=new','--disable-gpu','--disable-background-networking','--no-first-run',
@@ -289,10 +289,25 @@ test('native Blink/V8 strict combined evaluation on an exclusively owned synthet
     assert.ok(refused.exceptionDetails,'V8 must reject a deliberate mutation; never retry loosely');
     assert.ok(requests.includes(fixtureUrl)); // Every navigation request was fulfilled locally before network.
     t.diagnostic('owned synthetic browser only; local Fetch fulfillment; real-site network requests=0; strict combined evaluation accepted; deliberate write rejected');
+  }catch(error){
+    testFailed=true;throw error;
   }finally{
-    session?.close();child?.kill();
-    if(child&&child.exitCode===null)await Promise.race([new Promise(resolve=>child.once('exit',resolve)),pause(2000)]);
-    const relative=path.relative(os.tmpdir(),profile);assert.ok(relative.startsWith('r10-owned-strict-')&&!path.isAbsolute(relative));
-    fs.rmSync(profile,{recursive:true,force:true});
+    try{
+      // Close only the browser launched above, allowing its profile owners to
+      // finish before removing the verified, exclusively owned directory.
+      try{await session?.send('Browser.close');}catch{}
+      session?.close();
+      const waitForExit=async()=>{
+        if(child&&child.exitCode===null&&child.signalCode===null)
+          await Promise.race([new Promise(resolve=>child.once('exit',resolve)),pause(2000)]);
+      };
+      await waitForExit();
+      if(child&&child.exitCode===null&&child.signalCode===null){child.kill();await waitForExit();}
+      const relative=path.relative(os.tmpdir(),profile);assert.ok(relative.startsWith('r10-owned-strict-')&&!path.isAbsolute(relative));
+      fs.rmSync(profile,{recursive:true,force:true,maxRetries:8,retryDelay:100});
+    }catch(error){
+      if(!testFailed)throw error;
+      t.diagnostic('owned synthetic browser cleanup also failed; original test failure retained');
+    }
   }
 });

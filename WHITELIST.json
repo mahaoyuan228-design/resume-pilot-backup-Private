@@ -168,7 +168,22 @@
     "tests/zoo/legacy-baseline.json",
     "tests/zoo/legacy.spec.mjs",
     "tests/zoo/playwright.config.mjs",
-    "tests/zoo/support.mjs"
+    "tests/zoo/support.mjs",
+    "src/background/controls-shadow.mjs",
+    "src/content/controls/model.js",
+    "src/content/controls/registry.js",
+    "src/content/controls/native.js",
+    "src/content/controls/vue-controls.js",
+    "docs/ATS_L1_SHADOW.md",
+    "tests/l1-model.test.mjs",
+    "tests/l1-native-controls.test.mjs",
+    "tests/l1-registry.test.mjs",
+    "tests/l1-shadow-bridge.test.mjs",
+    "tests/l1-vue-controls.test.mjs",
+    "tests/zoo/l1-shadow-expectations.json",
+    "tests/zoo/l1.spec.mjs",
+    "tests/product-paths-whitelist.test.mjs",
+    "scripts/build-paid.ps1"
   ],
   "productPaths": [
     "manifest.json",
@@ -306,7 +321,12 @@
     "src/content/cmb-gated-dicts.mjs",
     "src/background/cms-row-d-network-guard.mjs",
     "src/popup/cms-row-d-guard.html",
-    "src/popup/cms-row-d-guard.js"
+    "src/popup/cms-row-d-guard.js",
+    "src/background/controls-shadow.mjs",
+    "src/content/controls/model.js",
+    "src/content/controls/registry.js",
+    "src/content/controls/native.js",
+    "src/content/controls/vue-controls.js"
   ],
   "excluded": [
     "No directory-wide copy of repository/tests/exports/dist.",

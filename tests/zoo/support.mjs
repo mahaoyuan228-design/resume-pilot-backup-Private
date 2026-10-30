@@ -23,7 +23,8 @@ const assets = {
   '/fixtures/zoo.js': 'tests/zoo/fixtures/zoo.js',
   '/fixtures/zoo.css': 'tests/zoo/fixtures/zoo.css',
 };
-const contentType = file => file.endsWith('.js') ? 'text/javascript; charset=utf-8'
+const contentType = file => /\.(?:js|mjs)$/u.test(file) ? 'text/javascript; charset=utf-8'
+  : file.endsWith('.json') ? 'application/json; charset=utf-8'
   : file.endsWith('.css') ? 'text/css; charset=utf-8' : file.endsWith('.woff') ? 'font/woff'
     : file.endsWith('.ttf') ? 'font/ttf' : 'text/html; charset=utf-8';
 
@@ -64,6 +65,7 @@ export async function startZoo(caseName, variant = '') {
         '--host-resolver-rules=MAP * ~NOTFOUND', '--no-proxy-server', '--disable-background-networking'],
     });
     const routing = { fulfilled: 0, rejected: [], nonGetReachedRoute: 0 };
+    let extensionHost = '';
     // Every web request is fulfilled from this fixed map or aborted. There is no
     // fallback continue(), so fixture hostnames can never reach recruiting hosts.
     await context.route('**/*', async route => {
@@ -71,6 +73,12 @@ export async function startZoo(caseName, variant = '') {
       if (request.method() !== 'GET') {
         routing.nonGetReachedRoute++;
         await route.abort('blockedbyclient'); return;
+      }
+      if (url.protocol === 'chrome-extension:' && url.hostname === extensionHost && productPaths.includes(url.pathname.slice(1))) {
+        const file = url.pathname.slice(1);
+        routing.fulfilled++;
+        await route.fulfill({ status: 200, contentType: contentType(file), body: fs.readFileSync(path.join(extension, file)) });
+        return;
       }
       if (![new URL(CMS).origin, new URL(GTH).origin].includes(url.origin)) {
         routing.rejected.push(`${url.origin}${url.pathname}`); await route.abort('blockedbyclient'); return;
@@ -85,6 +93,7 @@ export async function startZoo(caseName, variant = '') {
       await route.fulfill({ status: 200, contentType: contentType(file), body: fs.readFileSync(path.join(root, file)) });
     });
     const worker = context.serviceWorkers()[0] || await context.waitForEvent('serviceworker');
+    extensionHost = new URL(worker.url()).hostname;
     const page = await context.newPage();
     await page.addInitScript(({ caseName, variant }) => {
       window.__ZOO_CASE__ = caseName; window.__ZOO_VARIANT__ = variant;
@@ -126,6 +135,32 @@ export async function startZoo(caseName, variant = '') {
       }
       return worker.evaluate(async ({ tabId, files }) => chrome.scripting.executeScript({ target: { tabId }, files, world: 'ISOLATED' }), { tabId, files });
     }
+    let bridgeDocument;
+    async function shadow(requests) {
+      const bridge = 'src/background/controls-shadow.mjs';
+      // MV3 service workers reject dynamic import(). A script-free packaged
+      // manifest document supplies a normal extension module context instead.
+      if (!bridgeDocument) {
+        bridgeDocument = await context.newPage();
+        await bridgeDocument.goto(new URL('/manifest.json', worker.url()).href);
+        await page.bringToFront();
+      }
+      const files = await bridgeDocument.evaluate(async bridge => {
+        const module = await import(chrome.runtime.getURL(bridge));
+        return module.CONTROL_FILES;
+      }, bridge);
+      if (!Array.isArray(files) || !files.length) throw Error('zoo_controls_inventory_missing');
+      for (const file of [bridge, ...files]) {
+        const built = fs.readFileSync(path.join(extension, file));
+        const source = fs.readFileSync(path.join(root, file));
+        if (!built.equals(source)) throw Error(`stale_extension:${file}`);
+        fileHashes[file] = createHash('sha256').update(built).digest('hex');
+      }
+      return bridgeDocument.evaluate(async ({ tabId, bridge, requests }) => {
+        const module = await import(chrome.runtime.getURL(bridge));
+        return module.inspectControls(chrome, tabId, requests);
+      }, { tabId, bridge, requests });
+    }
     async function execute(func, args = [], world = 'ISOLATED') {
       // Function source is serialized by Playwright into extension scope; all
       // production writes below come from the injected built-extension modules.
@@ -148,7 +183,7 @@ export async function startZoo(caseName, variant = '') {
         responseToNonGet: guard.traffic.responseToNonGetCount, guardFailed: guard.failed(),
         guardAssessment: guard.assessment(), adapterHashes: fileHashes };
     }
-    return { page, worker, tabId, inject, execute, readback, bind, evidence, close: cleanup };
+    return { page, worker, tabId, inject, shadow, execute, readback, bind, evidence, close: cleanup };
   } catch (error) { await cleanup(); throw error; }
 }
 

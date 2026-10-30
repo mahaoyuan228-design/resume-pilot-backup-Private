@@ -17,6 +17,7 @@ export function readControlCandidatesInPage(expectedUrl, timeOrigin) {
     'native-time', 'el-time', 'antdv1-time',
     'native-date-range', 'el-date-range', 'antdv1-date-range', 'date-range-pair',
     'native-number', 'aria-number', 'el-number', 'antdv1-number',
+    'native-input-mask', 'el-input-mask', 'antdv1-input-mask', 'input-mask-unknown',
     'native-slider', 'el-slider', 'antdv1-slider',
     'el-rate', 'elplus-rate', 'antdv1-rate', 'aria-rate',
     'native-combobox-search', 'el-autocomplete', 'antdv1-autocomplete', 'el-select-search', 'antdv1-select-search',
@@ -44,8 +45,11 @@ export function readControlCandidatesInPage(expectedUrl, timeOrigin) {
     if (['hidden', 'password', 'file', 'submit', 'button', 'reset', 'image'].includes(element.type)
       || element.disabled || element.getRootNode() !== document) continue;
     const inspection = registry.inspect(element), model = inspection.model;
-    if (inspection.status === 'manual' || !names.has(inspection.adapter) || !model?.available || model.disabled || model.readonly) continue;
-    const type = registry.list().find(row => row.name === inspection.adapter).type;
+    const type = registry.list().find(row => row.name === inspection.adapter)?.type;
+    // An explicit mask also claims unsupported contracts, keeping them on the
+    // manual L1 path instead of letting the ordinary text writer fill them.
+    if (inspection.status === 'manual' || !names.has(inspection.adapter) || !model
+      || type !== 'input-mask' && !model.available || model.disabled || model.readonly) continue;
     // Some TreeSelects render a focusable combobox root and create their
     // query input only inside the popup. The root is their answer target.
     if (!element.matches('input,textarea,[contenteditable]') && !['tree-select', 'slider', 'rate', 'transfer'].includes(type)) continue;
@@ -94,7 +98,7 @@ export async function writeControlInPage(payload) {
     // Existing intent facts are a list of individually confirmed answers. A
     // single-choice control may consume only an exactly-one projection.
     const value = Array.isArray(payload.value) && payload.value.length === 1
-      && ['text', 'textarea', 'richtext', 'select', 'select-search', 'radio'].includes(selectedAdapter?.type)
+      && ['text', 'input-mask', 'textarea', 'richtext', 'select', 'select-search', 'radio'].includes(selectedAdapter?.type)
       ? payload.value[0] : payload.value;
     const plan = registry.plan(element, { value });
     if (!['planned', 'success'].includes(plan.status)) return { ...plan, writeStarted: false, liveSupportClaimed: false };

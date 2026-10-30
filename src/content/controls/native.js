@@ -87,6 +87,102 @@
       libVersionProbe: () => ({ lib: 'native', version: 'html' }), ...spec });
   }
 
+  // Explicit, fixed digit masks only. Never execute a page formatter/parser or
+  // infer a country code. Keep identifiers as strings (including leading zero).
+  const maskFlags = { writeStarted: false, liveSupportClaimed: false };
+  const maskAttributes = ['mask', 'format', 'data-mask', 'data-format', 'data-inputmask'];
+  function maskEvidence(el, probe) {
+    const root = probe.controlRoot || el;
+    const ref = globalThis.ResumeControlModel?.resolve(el);
+    const props = ref?.props || {};
+    const evidence = [...new Set([el, root])].flatMap(node => maskAttributes
+      .filter(key => node.hasAttribute?.(key)).map(key => [key, node.getAttribute(key)]));
+    for (const key of ['mask', 'format']) if (props[key] != null) evidence.push([`prop:${key}`, props[key]]);
+    return { root, props, evidence };
+  }
+  function maskHint(el, probe) {
+    return el.matches?.('input') && ['text', 'tel'].includes(el.type)
+      && !/Picker|Select|Cascader|Autocomplete|AutoComplete|InputNumber/u.test(probe.componentName || '')
+      && !el.matches('.Wdate') && !['onfocus', 'onclick'].some(key => /\bWdatePicker\b/u.test(el.getAttribute(key) || ''))
+      && maskEvidence(el, probe).evidence.length > 0;
+  }
+  function maskModel(el, probe, kind) {
+    const { root, props, evidence } = maskEvidence(el, probe);
+    const inputs = root?.matches?.('input') ? [root] : [...(root?.querySelectorAll('input:not([type="hidden"])') || [])];
+    const hints = [el.type, el.autocomplete, el.name, el.id, el.getAttribute('aria-label'),
+      ...[...(el.labels || [])].map(node => node.textContent)].join(' ').normalize('NFKC').toLowerCase();
+    const semantic = /cc-number|bank|card.?number|银行卡/u.test(hints) ? 'bank'
+      : /id.?card|identity|national.?id|身份证|证件/u.test(hints) ? 'identity'
+        : /phone|mobile|tel|手机|电话/u.test(hints) ? 'phone' : null;
+    const masks = evidence.map(([, value]) => typeof value === 'string' ? value.normalize('NFKC').trim() : null);
+    const mask = masks[0];
+    const tokens = typeof mask === 'string' ? mask.match(/[#90X]/gu) || [] : [];
+    const digitTokens = new Set(tokens.filter(token => token !== 'X'));
+    const count = tokens.length;
+    const plus = mask?.startsWith('+');
+    const checksum = tokens.at(-1) === 'X';
+    const valid = masks.length > 0 && masks.every(value => value === mask) && typeof mask === 'string'
+      && mask.length <= 80 && /^\+?[#90X() -]+$/u.test(mask) && digitTokens.size === 1
+      && tokens.filter(token => token === 'X').length === (checksum ? 1 : 0)
+      && (!checksum || semantic === 'identity') && (!plus || semantic === 'phone')
+      && (semantic === 'phone' ? count >= 7 && count <= 15 : semantic === 'bank' ? count >= 12 && count <= 19
+        : semantic === 'identity' && [15, 18].includes(count));
+    const canonical = value => {
+      if (value == null || value === '') return '';
+      if (typeof value !== 'string' || !valid || value.length > 128) return null;
+      let text = value.normalize('NFKC').trim();
+      for (const separator of [' ', '-', '(', ')']) if (mask.includes(separator)) text = text.split(separator).join('');
+      if (plus && text.startsWith('+')) text = text.slice(1);
+      const pattern = checksum ? new RegExp(`^\\d{${count - 1}}[\\dXx]$`, 'u') : new RegExp(`^\\d{${count}}$`, 'u');
+      return pattern.test(text) ? (plus ? '+' : '') + text.toUpperCase() : null;
+    };
+    const value = canonical(kind === 'vue' ? probe.value : el.value), domValue = canonical(el.value);
+    return { ...probe, ...(kind === 'native' ? { framework: 'native', lib: 'native', version: 'html' } : {}),
+      controlRoot: root, maskInput: el, maskContract: JSON.stringify([evidence, semantic, el.type, el.maxLength]),
+      mask, maskKind: semantic, value, domValue, canonical,
+      available: valid && inputs.length === 1 && inputs[0] === el && ['text', 'tel'].includes(el.type)
+        && !el.hasAttribute('role') && (kind !== 'vue' || probe.available) && value !== null && domValue !== null
+        && !props.formatter && !props.parser && !props.multiple,
+      disabled: !!probe.disabled || disabled(el) || !!el.closest('[aria-disabled="true"],[inert]'),
+      readonly: !!probe.readonly || el.readOnly || !!el.closest('[aria-readonly="true"]') };
+  }
+  function maskPlan(fact, model) {
+    const fail = reason => ({ status: 'manual', reason, ...maskFlags });
+    if (model.disabled || model.readonly) return fail(model.disabled ? 'disabled' : 'readonly');
+    if (!model.available) return fail('input_mask_contract_unconfirmed');
+    const value = model.canonical(fact && typeof fact === 'object' ? fact.value : fact);
+    if (!value) return fail('invalid_input_mask_value');
+    if (model.maskInput.maxLength >= 0 && value.length > model.maskInput.maxLength) return fail('value_too_long');
+    if ([model.value, model.domValue].some(current => current !== '' && current !== value)) return fail('existing_value');
+    const same = model.value === value && model.domValue === value;
+    return { status: same ? 'success' : 'planned', reason: same ? 'preexisting_same_value' : 'ready',
+      value, modelValue: value, domValue: value, ...maskFlags };
+  }
+  for (const [name, lib, kind, component, major] of [
+    ['native-input-mask', 'native', 'native'], ['el-input-mask', 'element-ui', 'vue', 'ElInput', 2],
+    ['antdv1-input-mask', 'ant-design-vue', 'vue', 'AInput', 1]
+  ]) api.register({ name, lib, type: 'input-mask', priority: 510,
+    matches: (el, probe) => maskHint(el, probe) && (kind === 'native' ? plain(el, probe)
+      : probe.framework === 'vue2' && probe.componentName === component),
+    libVersionProbe: (_el, probe) => kind === 'native' ? { lib, version: 'html' }
+      : probe.lib === lib && probe.major === major ? { lib, version: probe.version } : null,
+    readModel: (el, probe) => maskModel(el, probe, kind), plan: maskPlan,
+    async performWrite(el, instruction, ctx) {
+      const adapter = api.resolve(el);
+      await nativeSet(el, instruction.value, { ...ctx, async check() {
+        await ctx.check();
+        const live = adapter.readModel(el);
+        if (!live.available || live.disabled || live.readonly) throw Error('control_changed');
+        if ([live.value, live.domValue].some(value => value !== '' && value !== instruction.value)) throw Error('control_changed');
+      } });
+      return { strategy: 'native', attempts: 1 };
+    }
+  });
+  api.register({ name: 'input-mask-unknown', lib: 'input-mask', type: 'input-mask', priority: 505,
+    matches: maskHint, libVersionProbe: () => ({ lib: 'input-mask', version: 'unknown' }),
+    readModel: (el, probe) => ({ ...probe, available: false, controlRoot: el }),
+    plan: () => ({ status: 'manual', reason: 'input_mask_contract_unconfirmed', ...maskFlags }) });
+
   // One numeric contract for HTML, reviewed Vue 2 InputNumbers and explicit
   // editable ARIA spinbuttons. CSS hints alone only prevent a text downgrade.
   const numberFlags = { writeStarted: false, liveSupportClaimed: false };

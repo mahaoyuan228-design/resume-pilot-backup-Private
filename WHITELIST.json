@@ -221,13 +221,22 @@
     "tests/zoo/fixtures/time.js",
     "docs/ATS_TIME_CONTROLS.md",
     "src/content/controls/date-range-controls.js",
+    "src/content/controls/tree-select-controls.js",
     "tests/l1-date-range-controls.test.mjs",
     "tests/zoo/date-range.spec.mjs",
     "tests/zoo/fixtures/date-range.html",
     "tests/zoo/fixtures/date-range.js",
     "docs/ATS_DATE_RANGE_CONTROLS.md",
     "tests/l1-select-readback.test.mjs",
-    "tests/l1-textarea-richtext.test.mjs"
+    "tests/l1-textarea-richtext.test.mjs",
+    ".npmrc",
+    "docs/ATS_TREE_SELECT_CONTROLS.md",
+    "tests/l1-tree-select-controls.test.mjs",
+    "tests/l1-tree-select-write-route.test.mjs",
+    "tests/fixtures/tree-select-harness.mjs",
+    "tests/zoo/tree-select.spec.mjs",
+    "tests/zoo/fixtures/tree-select.html",
+    "tests/zoo/fixtures/tree-select.js"
   ],
   "productPaths": [
     "manifest.json",
@@ -379,7 +388,8 @@
     "src/popup/field-memory.js",
     "src/content/controls/date-controls.js",
     "src/content/controls/time-controls.js",
-    "src/content/controls/date-range-controls.js"
+    "src/content/controls/date-range-controls.js",
+    "src/content/controls/tree-select-controls.js"
   ],
   "excluded": [
     "No directory-wide copy of repository/tests/exports/dist.",

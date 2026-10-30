@@ -19,6 +19,7 @@ export function readControlCandidatesInPage(expectedUrl, timeOrigin) {
     'native-number', 'aria-number', 'el-number', 'antdv1-number',
     'native-combobox-search', 'el-autocomplete', 'antdv1-autocomplete', 'el-select-search', 'antdv1-select-search',
     'el-select-multiple', 'antdv1-select-multiple',
+    'antdv1-tree-select', 'el-tree-select', 'el-search-tree-select',
     'native-textarea', 'el-textarea', 'antdv1-textarea', 'native-richtext']);
   const candidates = [], roots = new Set();
   const selectorOf = element => {
@@ -31,22 +32,25 @@ export function readControlCandidatesInPage(expectedUrl, timeOrigin) {
     const selector = ['html', ...parts].join(' > ');
     return selector.length <= 2048 && document.querySelectorAll(selector).length === 1 ? selector : null;
   };
-  for (const element of [...document.querySelectorAll('input,textarea,[contenteditable]')].slice(0, 300)) {
+  for (const element of [...document.querySelectorAll('input,textarea,[contenteditable],[role="combobox"]')].slice(0, 300)) {
     if (['hidden', 'password', 'file', 'submit', 'button', 'reset', 'image'].includes(element.type)
       || element.disabled || element.getRootNode() !== document) continue;
     const inspection = registry.inspect(element), model = inspection.model;
     if (inspection.status === 'manual' || !names.has(inspection.adapter) || !model?.available || model.disabled || model.readonly) continue;
     const type = registry.list().find(row => row.name === inspection.adapter).type;
+    // Some TreeSelects render a focusable combobox root and create their
+    // query input only inside the popup. The root is their answer target.
+    if (!element.matches('input,textarea,[contenteditable]') && type !== 'tree-select') continue;
     // A multiple select can own both display and search inputs. Expose one
     // answer target and its root so ISOLATED cannot collect the peer as a field.
-    const root = ['multi-select', 'date-range'].includes(type) ? registry.resolve(element)?.readModel(element).controlRoot : null;
+    const root = ['multi-select', 'date-range', 'tree-select'].includes(type) ? registry.resolve(element)?.readModel(element).controlRoot : null;
     if (root && roots.has(root)) continue;
     const rootSelector = root && selectorOf(root);
     // Chips may be inserted before a search input's containing li. A unique
     // input under the confirmed root survives that harmless index change.
     const selector = rootSelector && root.querySelectorAll('input:not([type="hidden"])').length === 1
       ? `${rootSelector} input:not([type="hidden"])` : selectorOf(element);
-    if (!selector || ['multi-select', 'date-range'].includes(type) && !rootSelector) continue;
+    if (!selector || ['multi-select', 'date-range', 'tree-select'].includes(type) && !rootSelector) continue;
     if (root) roots.add(root);
     candidates.push({ selector, adapter: inspection.adapter, type, ...(rootSelector ? { rootSelector } : {}) });
   }

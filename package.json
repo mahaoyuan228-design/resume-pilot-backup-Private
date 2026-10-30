@@ -15,9 +15,11 @@
   "devDependencies": {
     "@playwright/test": "1.64.1",
     "ant-design-vue": "1.7.8",
+    "element-plus": "2.14.7",
     "element-ui": "2.15.14",
     "iview": "3.5.4",
     "jsdom": "^26.1.0",
-    "vue": "2.7.16"
+    "vue": "2.7.16",
+    "vue3": "npm:vue@3.5.44"
   }
 }

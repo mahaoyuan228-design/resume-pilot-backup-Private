@@ -5,13 +5,14 @@
   'use strict';
   // Rebuild old registries so reinjection installs current dropdown readback
   // contracts as well as the current model resolver.
-  if (globalThis.ResumeControls?.version === 1 && globalThis.ResumeControls.revision === 17) return;
+  if (globalThis.ResumeControls?.version === 1 && globalThis.ResumeControls.revision === 18) return;
   const adapters = new Map();
   // Executable dropdown/choice plans stay bound to their original widget in MAIN.
   // Serialized shadow observations carry no authority to write another root.
   const selectBindings = new WeakMap();
   const choiceBindings = new WeakMap();
   const searchSelections = new WeakMap();
+  const treeSelections = new WeakMap();
   const norm = value => String(value ?? '').normalize('NFKC').replace(/\s+/gu, ' ').trim();
   // Prose keeps line breaks, spacing and Unicode; HTML only normalises CR/LF.
   const prose = value => String(value ?? '').replace(/\r\n?/gu, '\n');
@@ -213,16 +214,24 @@
     if (hits.length !== 1) throw Error('option_ambiguous');
     search.selection = { value: option.value, domValue: option.label };
   }
+  function confirmTreeNode(instruction, model) {
+    const selection = treeSelections.get(instruction);
+    if (!selection || selectBindings.get(instruction) !== model.controlRoot
+      || !choiceEqual(instruction.value, model.value) || !equal(instruction.domValue, model.domValue)
+      || !model.available) throw Error('tree_readback_unconfirmed');
+    selection.clicked = true;
+  }
   function clean(value, depth = 0) {
     if (depth > 8) return null;
     if (value == null || ['string', 'number', 'boolean'].includes(typeof value)) return value ?? null;
     if (Array.isArray(value)) return value.slice(0, 1000).map(v => clean(v, depth + 1));
     if (typeof value !== 'object' || value.nodeType || value instanceof Map) return null;
     const out = {};
-    for (const [key, val] of Object.entries(value)) if (!['controlRoot', 'numberInput', 'vm', 'props', 'rangeInputs', 'rangeRoots', 'rangeOwners'].includes(key) && typeof val !== 'function') out[key] = clean(val, depth + 1);
+    for (const [key, val] of Object.entries(value)) if (!['controlRoot', 'numberInput', 'vm', 'props', 'rangeInputs', 'rangeRoots', 'rangeOwners', 'treeOwners'].includes(key) && typeof val !== 'function') out[key] = clean(val, depth + 1);
     if (selectBindings.has(value)) selectBindings.set(out, selectBindings.get(value));
     if (choiceBindings.has(value)) choiceBindings.set(out, choiceBindings.get(value));
     if (searchSelections.has(value)) searchSelections.set(out, searchSelections.get(value));
+    if (treeSelections.has(value)) treeSelections.set(out, treeSelections.get(value));
     return out;
   }
   function createAdapter(spec) {
@@ -231,11 +240,12 @@
     const numeric = spec.type === 'number';
     const time = spec.type === 'time';
     const range = spec.type === 'date-range';
+    const tree = spec.type === 'tree-select';
     const toggle = spec.type === 'switch';
     const multi = spec.type === 'multi-select';
-    const boundControl = range || time || numeric || multiline || ['select', 'select-search', 'multi-select', 'cascader', 'radio', 'checkbox', 'checkbox-group', 'switch'].includes(spec.type);
+    const boundControl = tree || range || time || numeric || multiline || ['select', 'select-search', 'multi-select', 'cascader', 'radio', 'checkbox', 'checkbox-group', 'switch'].includes(spec.type);
     const choice = ['radio', 'checkbox', 'checkbox-group', 'switch'].includes(spec.type);
-    const ownerBound = range || time || numeric || multiline || choice || ['select-search', 'multi-select'].includes(spec.type);
+    const ownerBound = tree || range || time || numeric || multiline || choice || ['select-search', 'multi-select'].includes(spec.type);
     const valueEqual = multiline ? proseEqual : ownerBound ? choiceEqual : equal;
     const domEqual = numeric ? choiceEqual : multiline ? proseEqual : equal;
     const validInstruction = instruction => ['planned', 'success'].includes(instruction?.status) && instruction.adapter === spec.name
@@ -251,11 +261,20 @@
       && (!range || instruction.type === 'date-range' && Array.isArray(instruction.value) && instruction.value.length === 2
         && instruction.value.every(value => validDate(value, 'date')) && instruction.value[0] <= instruction.value[1]
         && choiceEqual(instruction.value, instruction.modelValue) && choiceEqual(instruction.value, instruction.domValue))
+      && (!tree || instruction.type === 'tree-select' && ['string', 'number'].includes(typeof instruction.value)
+        && choiceEqual(instruction.value, instruction.modelValue) && typeof instruction.domValue === 'string'
+        && Array.isArray(instruction.labels) && instruction.labels.length > 0 && Array.isArray(instruction.path)
+        && instruction.path.length === instruction.labels.length)
       && (!toggle || instruction.type === 'switch' && typeof instruction.domValue === 'boolean'
         && choiceEqual(instruction.value, instruction.modelValue) && ['set', 'toggle'].includes(instruction.operation));
     const sameOwner = (el, instruction, model) => {
       if (!ownerBound) return true;
       const owner = choiceBindings.get(instruction), ref = globalThis.ResumeControlModel.resolve(el);
+      if (tree) return !!owner && owner.root === model.controlRoot && owner.version === model.version
+        && owner.treePlan === JSON.stringify(clean(instruction)) && owner.treeContract === model.treeContract
+        && Array.isArray(model.treeOwners) && owner.treeOwners.length === model.treeOwners.length
+        && owner.treeOwners.every((part, index) => part === model.treeOwners[index])
+        && model.treeOwners.every(vm => !vm?._isDestroyed && !vm?._isBeingDestroyed && !vm?.isUnmounted);
       if (range) return !!owner && owner.root === model.controlRoot && owner.version === model.version
         && owner.rangePlan === JSON.stringify(clean(instruction)) && owner.rangeContract === model.rangeContract
         && ['rangeInputs', 'rangeRoots', 'rangeOwners'].every(key => Array.isArray(model[key])
@@ -287,6 +306,8 @@
           const ref = globalThis.ResumeControlModel.resolve(model.controlRoot);
           choiceBindings.set(plan, { root: model.controlRoot, vm: ref.vm, framework: ref.framework,
             componentType: ref.componentType, version: model.version,
+            ...(tree ? { treePlan: JSON.stringify(clean(plan)), treeContract: model.treeContract,
+              treeOwners: model.treeOwners.slice() } : {}),
             ...(range ? { rangePlan: JSON.stringify(clean(plan)), rangeContract: model.rangeContract,
               rangeInputs: model.rangeInputs.slice(), rangeRoots: model.rangeRoots.slice(), rangeOwners: model.rangeOwners.slice() } : {}),
             ...(time ? { timePlan: JSON.stringify(clean(plan)),
@@ -299,6 +320,7 @@
         if (spec.type === 'select-search') searchSelections.set(plan, {
           required: !!(plan.requiresOptionResolution || plan.requiresOptionClick), deferred: !!plan.requiresOptionResolution,
           value: plan.modelValue ?? plan.value, domValue: plan.domValue ?? plan.value, selection: null });
+        if (tree) treeSelections.set(plan, { clicked: plan.status === 'success' });
         return plan;
       },
       async write(el, instruction, ctx) {
@@ -336,11 +358,11 @@
         const sample = () => {
           if (!el?.isConnected) return { ok: false, unsupported: true, reason: 'target_detached' };
           const model = adapter.readModel(el);
-          if ((range || time || numeric || multiline || toggle) && (model.disabled || model.readonly)) return { ok: false, unsupported: true, reason: 'control_not_writable' };
+          if ((tree || range || time || numeric || multiline || toggle) && (model.disabled || model.readonly)) return { ok: false, unsupported: true, reason: 'control_not_writable' };
           if (boundControl && (resolve(el)?.name !== spec.name || !model.controlRoot
             || selectBindings.get(instruction) !== model.controlRoot || !sameOwner(el, instruction, model))) return { ok: false, unsupported: true, reason: 'control_target_changed' };
           const search = searchSelections.get(instruction), selection = search?.selection;
-          const clicked = !search?.required || !!selection;
+          const clicked = (!search?.required || !!selection) && (!tree || treeSelections.get(instruction)?.clicked === true);
           return { ok: model.available && (!toggle || model.choiceConsistent !== false) && clicked && valueEqual(model.value, selection ? selection.value : search ? search.value : instruction.modelValue ?? instruction.value)
               && domEqual(model.domValue, selection ? selection.domValue : search ? search.domValue : instruction.domValue ?? instruction.value),
             unsupported: !model.available, domReadback: clean(model.domValue), modelReadback: clean(model.value) };
@@ -390,8 +412,8 @@
         probe, adapter: adapter?.name || null, model: adapter ? adapter.readModel(el, probe) : probe });
     } catch { return { ...manual('component_probe_failed'), adapter: null }; }
   }
-  const helpers = Object.freeze({ norm, equal, prose, proseEqual, richtextValue, empty, tick, makePlan, switchPlan, safeClick, nativeSet, confirmSearchOption, check, clickAllowed, clean, validDate });
-  globalThis.ResumeControls = Object.freeze({ version: 1, revision: 17, mode: 'shadow', liveSupportClaimed: false,
+  const helpers = Object.freeze({ norm, equal, prose, proseEqual, richtextValue, empty, tick, makePlan, switchPlan, safeClick, nativeSet, confirmSearchOption, confirmTreeNode, check, clickAllowed, clean, validDate });
+  globalThis.ResumeControls = Object.freeze({ version: 1, revision: 18, mode: 'shadow', liveSupportClaimed: false,
     register, createAdapter, resolve, inspect, plan, helpers, list: () => ordered().map(a => ({ name: a.name, lib: a.lib, type: a.type, priority: a.priority || 0 })),
     verify: (el, instruction, ctx) => resolve(el)?.verify(el, instruction, ctx) || Promise.resolve({ status: 'unsupported', reason: 'control_or_version_unconfirmed' }) });
 })();

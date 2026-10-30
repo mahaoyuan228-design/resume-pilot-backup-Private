@@ -509,17 +509,26 @@ test('ordinary RESUME_FILL reaches an input-backed ud-select only with the opt-i
   }
 });
 
-test('resume entry refreshes MAIN candidates after revealing an opt-in widget editor', async t => {
+test('manual editor opening refreshes MAIN candidates before filling an opt-in widget', async t => {
   const h = await harness({ enabled: true,
     html: '<header><input type="search" value="KEEP_HEADER"></header><section><p>简历摘要</p><button type="button">编辑简历</button></section>' });
   t.after(() => h.dom.window.close());
   h.window.eval(source('src/content/controls/resume-form.js'));
   let edits = 0, widget;
-  h.window.document.querySelector('button').addEventListener('click', () => {
+  const openEditor = () => {
     edits++;
     h.window.document.querySelector('section').innerHTML = '<form><label for="name">姓名</label><input id="name"></form>';
     widget = syntheticUdSelect(h);
-  });
+  };
+  h.window.document.querySelector('button').addEventListener('click', openEditor);
+  const blocked = await h.fill();
+  assert.equal(blocked.ok, false);
+  assert.equal(blocked.fillNotStarted, true);
+  assert.equal(blocked.writeStarted, false);
+  assert.equal(edits, 0);
+  assert.equal(widget, undefined);
+  // Model the user's independent editor opening, then issue a fresh fill.
+  openEditor();
   const result = await h.fill();
   assert.equal(result.ok, true, JSON.stringify(result));
   const row = result.data.fields.find(field => field.path === 'fullName');

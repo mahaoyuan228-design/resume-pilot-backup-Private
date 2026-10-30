@@ -1438,6 +1438,7 @@
     const validationGaps = currentValidationGaps();
     return { url: location.href, title: document.title,
       fields: [...entries.map(publicEntry), ...cmsUncollectedQuestions(entries)],
+      entry: globalThis.ResumeFormFlow?.inspect() || null,
       navigation: globalThis.ResumeFormFlow?.navigation?.inspect() || null,
       ...(validationGaps ? { validationGaps } : {}) };
   }

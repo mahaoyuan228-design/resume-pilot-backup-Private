@@ -30,7 +30,8 @@ Object.assign(incompleteResearch, { optionsComplete: true, reason: 'option_dicti
 delete incompleteResearch.samplePrefixMatched;
 
 async function cdpStub(t, {
-  nonGet = false, blockFails = false, visibilityNonGetAt, networkCase, inspection
+  nonGet = false, blockFails = false, visibilityNonGetAt, networkCase, inspection,
+  evaluationGet = true, omitEvaluationReplyAt
 } = {}) {
   const calls = [];
   const server = http.createServer((request, response) => {
@@ -44,6 +45,7 @@ async function cdpStub(t, {
   const wss = new WebSocketServer({ server });
   wss.on('connection', socket => {
     let focusEnabled = false;
+    let evaluationCount = 0;
     socket.on('message', raw => {
       const message = JSON.parse(String(raw));
       calls.push(message);
@@ -70,6 +72,7 @@ async function cdpStub(t, {
         if (message.method === visibilityNonGetAt && message.params.enabled !== false) requestEvents('POST');
       }
       if (message.method === 'Runtime.evaluate') {
+        evaluationCount += 1;
         const names = calls.map(call => call.method);
         assert.ok(names.indexOf('Network.enable') < names.indexOf('Runtime.evaluate'));
         assert.ok(names.indexOf('Fetch.enable') < names.indexOf('Runtime.evaluate'));
@@ -79,7 +82,7 @@ async function cdpStub(t, {
         assert.equal(message.params.throwOnSideEffect, true);
         assert.equal(message.params.userGesture, false);
         assert.equal(message.params.awaitPromise, false);
-        const methods = nonGet ? ['GET', 'POST', 'HEAD'] : ['GET'];
+        const methods = nonGet ? ['GET', 'POST', 'HEAD'] : evaluationGet ? ['GET'] : [];
         for (const method of methods) requestEvents(method);
         if (networkCase === 'early_response') event('Network.responseReceived', {
           requestId: 'network-POST', response: { status: 200, body: PRIVATE }
@@ -106,7 +109,9 @@ async function cdpStub(t, {
         }
         // Default: execute the real inspector in an empty synthetic realm.
         // An explicit fixture replays sanitized per-field evidence only.
-        reply({ result: { value: inspection ?? vm.runInNewContext(message.params.expression) } });
+        if (evaluationCount === omitEvaluationReplyAt) return;
+        const current = typeof inspection === 'function' ? inspection(evaluationCount) : inspection;
+        reply({ result: { value: current ?? vm.runInNewContext(message.params.expression) } });
       } else if (message.method === 'Fetch.failRequest' && blockFails) {
         socket.send(JSON.stringify({ id: message.id, error: { message: PRIVATE } }));
       } else {
@@ -164,6 +169,57 @@ test('actual loopback CDP transport continues GET and returns an honest incomple
     .map(call => call.params), [{ enabled: true }, { enabled: false }]);
   assert.deepEqual(result.visibilityKeeper, { targetActivated: true, pageBroughtToFront: true,
     focusEmulationEnabled: true, focusEmulationCleared: true });
+});
+
+function modeledUnavailableInspection() {
+  // This sanitized hypothetical projection exercises host timing only. It
+  // does not add a CMS DOM capture or alter the historical fixture.
+  const inspection = structuredClone(liveShape.inspection);
+  const row = inspection.fields.find(field => field.key === 'expectedWorkNature');
+  Object.assign(row, { ok: false, status: 'skipped', reason: 'current_options_unavailable',
+    optionsReadiness: 'target_missing' });
+  delete row.observedOptionCount;
+  delete row.optionsEvidenceSource;
+  return inspection;
+}
+
+test('actual loopback transport passively repeats the same strict expression and retains newest readiness evidence', async t => {
+  const stub = await cdpStub(t, { evaluationGet: false,
+    inspection: attempt => attempt === 1 ? modeledUnavailableInspection() : liveShape.inspection });
+  const result = await runCmsRowDLive({ port: stub.port, timeoutMs: 1000,
+    optionsWaitMs: 500, optionsPollMs: 25, wait: async () => {} });
+  safe(result);
+  assert.equal(result.reason, 'row_d_preflight_incomplete');
+  assert.deepEqual(result.optionsReadiness, { status: 'ready', attempts: 2,
+    waitRounds: 1, initialUnavailableCount: 1, finalUnavailableCount: 0 });
+  assert.equal(result.fields.filter(row => row.ok).length, 13);
+  const evaluations = stub.calls.filter(call => call.method === 'Runtime.evaluate');
+  assert.equal(evaluations.length, 2);
+  assert.equal(evaluations[0].params.expression, evaluations[1].params.expression);
+  assert.ok(evaluations.every(call => call.params.throwOnSideEffect === true));
+  assert.ok(evaluations[1].params.timeout <= 500);
+  assert.equal(stub.calls.filter(call => call.method === 'Target.activateTarget').length, 1);
+});
+
+test('actual loopback missing readiness reply times out within its remaining host budget without a permissive retry', async t => {
+  const stub = await cdpStub(t, { evaluationGet: false, inspection: modeledUnavailableInspection(),
+    omitEvaluationReplyAt: 2 });
+  const started = performance.now();
+  const result = await runCmsRowDLive({ port: stub.port, timeoutMs: 1000,
+    optionsWaitMs: 75, optionsPollMs: 25, wait: async () => {} });
+  const elapsed = performance.now() - started;
+  safe(result);
+  // The transport terminates on timeout; failed guard teardown must retain
+  // its existing final precedence over the inspection timeout diagnosis.
+  assert.equal(result.reason, 'non_get_or_guard_failure');
+  assert.equal(result.optionsReadiness.status, 'inspection_failed');
+  assert.equal(result.optionsReadiness.attempts, 2);
+  assert.equal(result.fields.find(row => row.key === 'expectedWorkNature').reason, 'current_options_unavailable');
+  assert.ok(elapsed < 750, `remaining host timeout must bound the omitted reply, took ${elapsed} ms`);
+  const evaluations = stub.calls.filter(call => call.method === 'Runtime.evaluate');
+  assert.equal(evaluations.length, 2);
+  assert.ok(evaluations.every(call => call.params.throwOnSideEffect === true));
+  assert.ok(evaluations[1].params.timeout <= 75);
 });
 
 for (const visibilityNonGetAt of ['Target.activateTarget', 'Page.bringToFront', 'Emulation.setFocusEmulationEnabled']) {

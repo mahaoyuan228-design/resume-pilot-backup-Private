@@ -128,6 +128,19 @@ test('serialized row D probe matches the direct inspector without interaction or
   assert.equal(result.fields.find(row => row.wrapperId === SELECT).reason, 'read_only_options_preflight');
   assert.equal(result.fields.find(row => row.wrapperId === CHECKBOX).reason, 'read_only_options_preflight');
   assert.equal(result.fields.find(row => row.wrapperId === '16_65_0').reason, 'calendar_live_evidence_missing');
+  assert.equal(result.fields.find(row => row.wrapperId === SELECT).optionsReadiness, 'observed');
+});
+
+for (const [name, mutate, readiness] of [
+  ['unmounted target', doc => doc.getElementById(`synthetic-${SELECT}`).remove(), 'target_missing'],
+  ['empty target', doc => doc.getElementById(`synthetic-${SELECT}`).replaceChildren(), 'list_empty']
+]) test(`serialized SYNTHETIC options readiness diagnoses ${name} without interaction`, () => {
+  const result = auditedResults({}, undefined, mutate);
+  const row = result.fields.find(candidate => candidate.wrapperId === SELECT);
+  assert.equal(row.ok, false);
+  assert.equal(row.reason, 'current_options_unavailable');
+  assert.equal(row.optionsReadiness, readiness);
+  assert.equal(Object.hasOwn(row, 'observedOptionCount'), false);
 });
 
 const host = (doc, id = SELECT) => doc.getElementById(id).querySelector('.ant-form-item-control');

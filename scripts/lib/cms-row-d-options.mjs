@@ -205,10 +205,140 @@ export function resolveCmsRowDOption(wrapperId, requested) {
 const normalizeText = text => trimProbeText(String(text ?? '').replace(/\s+/gu, ' '));
 const listTokens = text => trimProbeText(String(text ?? '')).split(/\s+/u).filter(Boolean);
 
+// Vue's reactive instance/prop accessors are not a read-only contract. Read
+// only exact own data descriptors; do not call getters, iterators, render
+// methods, or option value/selected-state properties. A hostile Proxy can
+// reject a descriptor read; the live throwOnSideEffect boundary remains on.
+const ownProbeData = (object, key) => {
+  if (!object || !['object', 'function'].includes(typeof object)) return undefined;
+  const descriptor = Object.getOwnPropertyDescriptor(object, key);
+  if (!descriptor) return undefined;
+  if (!Object.hasOwn(descriptor, 'value')) throw new TypeError();
+  return descriptor.value;
+};
+const denseProbeArray = (object, maximum) => {
+  if (!Array.isArray(object)) throw new TypeError();
+  const length = ownProbeData(object, 'length');
+  if (!Number.isSafeInteger(length) || length < 1 || length > maximum) throw new TypeError();
+  const result = [];
+  for (let index = 0; index < length; index += 1) {
+    const descriptor = Object.getOwnPropertyDescriptor(object, String(index));
+    if (!descriptor || !Object.hasOwn(descriptor, 'value')) throw new TypeError();
+    result.push(descriptor.value);
+  }
+  return result;
+};
+
+/**
+ * Conservative Ant Design Vue 1.7.8 / Vue 2 option-definition evidence.
+ * vc-select/Select.js initializes _options=[] and renders that menu only while
+ * open. Its current propsData.children, however, already contains the option
+ * VNodes created by select/index.js. Reading those current definitions can
+ * avoid opening a dormant portal. This is not mounted-list DOM evidence.
+ *
+ * Bind every step to this exact current root and current render/parent VNodes.
+ * Never inspect _optionsInfo: the component retains old selected entries in
+ * that cache. Reject unsupported groups, custom render/search modes, rich
+ * labels, disabled options, accessors, cycles, and incomplete component links.
+ * Labels remain evaluation-local and still face the exact harvested dictionary
+ * checks. Source compatibility is not proof of the real CMS component shape.
+ */
+const ownedSelectVNodeLabels = (select, reference) => {
+  try {
+    const seen = [];
+    const candidates = [];
+    let current = ownProbeData(select, '__vue__');
+    // Vue may move __vue__ to a lower component sharing this root after an
+    // update. Ascend only the exact current single-root render chain first.
+    const ascended = [];
+    for (let depth = 0; current && depth < 8; depth += 1) {
+      if (ascended.includes(current) || ownProbeData(current, '$el') !== select
+        || ownProbeData(ownProbeData(current, '_vnode'), 'elm') !== select) return null;
+      ascended.push(current);
+      const parent = ownProbeData(current, '$parent');
+      if (!parent || ownProbeData(parent, '$el') !== select) break;
+      const render = ownProbeData(parent, '_vnode');
+      if (ownProbeData(render, 'elm') !== select || ownProbeData(current, '$vnode') !== render
+        || ownProbeData(render, 'componentInstance') !== current || depth === 7) return null;
+      current = parent;
+    }
+    for (let depth = 0; current && depth < 8; depth += 1) {
+      if (seen.includes(current)) return null;
+      seen.push(current);
+      const render = ownProbeData(current, '_vnode');
+      if (ownProbeData(current, '$el') !== select || ownProbeData(render, 'elm') !== select) return null;
+      const parent = ownProbeData(current, '$vnode');
+      const component = ownProbeData(parent, 'componentOptions');
+      const config = ownProbeData(ownProbeData(component, 'Ctor'), 'options');
+      if (ownProbeData(config, 'name') === 'Select') {
+        if (ownProbeData(parent, 'componentInstance') !== current || ownProbeData(parent, 'elm') !== select) return null;
+        candidates.push(current);
+      }
+      const child = ownProbeData(render, 'componentInstance');
+      if (child && ownProbeData(child, '$vnode') !== render) return null;
+      current = child;
+    }
+    if (current || candidates.length !== 1) return null;
+    const candidate = candidates[0];
+    const parent = ownProbeData(candidate, '$vnode');
+    const props = ownProbeData(ownProbeData(candidate, '$options'), 'propsData');
+    if (!props || ownProbeData(ownProbeData(parent, 'componentOptions'), 'propsData') !== props) return null;
+    const flags = ['multiple', 'tags', 'combobox', 'showSearch', 'disabled'];
+    for (let flagIndex = 0; flagIndex < flags.length; flagIndex += 1) {
+      const flag = ownProbeData(props, flags[flagIndex]);
+      if (flag !== undefined && flag !== false) return null;
+    }
+    if (ownProbeData(props, 'optionLabelProp') !== 'children'
+      || ownProbeData(props, 'dropdownRender') !== undefined
+      || typeof ownProbeData(props, 'filterOption') === 'function') return null;
+    const render = ownProbeData(candidate, '_vnode');
+    const trigger = ownProbeData(render, 'componentOptions');
+    const triggerConfig = ownProbeData(ownProbeData(trigger, 'Ctor'), 'options');
+    const triggerInstance = ownProbeData(render, 'componentInstance');
+    if (ownProbeData(triggerConfig, 'name') !== 'SelectTrigger'
+      || ownProbeData(ownProbeData(trigger, 'propsData'), 'ariaId') !== reference
+      || ownProbeData(triggerInstance, '$vnode') !== render) return null;
+    const options = denseProbeArray(ownProbeData(props, 'children'), 10000);
+    const labels = [];
+    for (let index = 0; index < options.length; index += 1) {
+      const option = options[index];
+      const component = ownProbeData(option, 'componentOptions');
+      const config = ownProbeData(ownProbeData(component, 'Ctor'), 'options');
+      const data = ownProbeData(option, 'data');
+      const attrs = ownProbeData(data, 'attrs');
+      const disabled = ownProbeData(ownProbeData(component, 'propsData'), 'disabled');
+      if (ownProbeData(config, 'isSelectOption') !== true || !data
+        || ownProbeData(data, 'slot') !== undefined
+        || ownProbeData(data, 'style') !== undefined || ownProbeData(data, 'staticStyle') !== undefined
+        || ownProbeData(data, 'class') !== undefined || ownProbeData(data, 'staticClass') !== undefined
+        || ownProbeData(data, 'scopedSlots') !== undefined
+        || (attrs !== undefined && (!attrs || Reflect.ownKeys(attrs).length !== 0))
+        || (disabled !== undefined && disabled !== false)) return null;
+      const children = denseProbeArray(ownProbeData(component, 'children'), 64);
+      const text = [];
+      for (let childIndex = 0; childIndex < children.length; childIndex += 1) {
+        const child = children[childIndex];
+        const label = ownProbeData(child, 'text');
+        if (typeof label !== 'string' || label.length > 2000
+          || ownProbeData(child, 'tag') !== undefined || ownProbeData(child, 'data') !== undefined
+          || ownProbeData(child, 'componentOptions') !== undefined
+          || ownProbeData(child, 'isComment') !== false) return null;
+        text.push(label);
+      }
+      const label = normalizeText(text.join(''));
+      if (!label || labels.includes(label)) return null;
+      labels.push(label);
+    }
+    return labels;
+  } catch { return null; }
+};
+
 /**
  * Inspect only. requests is an optional plain object keyed by exact allowlisted
  * wrapper IDs. Current list ownership must come from the current combobox's
  * aria-controls; harvested UUIDs and global dropdown fallbacks are never used.
+ * If that exact list is missing/empty, a narrowly bound current Select VNode
+ * definition can supply separately labeled evidence without opening anything.
  * A dormant hidden portal is readable without opening it. Its unique owner and
  * section/item boundaries are still required. No DOM node or option text is
  * included in a result.
@@ -441,36 +571,49 @@ export function inspectCmsRowDOptions(doc, requests = {}) {
           .filter(node => listTokens(node.getAttribute('aria-controls')).includes(reference));
         if (owners.length !== 1 || owners[0] !== combo) { push(false, 'dropdown_owner_not_unique'); continue; }
         const targets = exactIds(reference);
-        if (!targets.length) { push(false, 'current_options_unavailable'); continue; }
-        if (targets.length !== 1) { push(false, 'dropdown_target_not_unique'); continue; }
-        const list = targets[0];
-        const dropdown = closest(list, '.ant-select-dropdown');
-        const listItem = closest(list, '.ant-form-item');
-        const listSection = closest(list, '.form-cell');
-        const listWrapper = nearestNamedWrapper(list);
-        const dropdownWrapper = nearestNamedWrapper(dropdown);
-        if (!list.isConnected || !dropdown || closest(dropdown.parentElement, '.ant-select-dropdown')
-          || list.querySelector('.ant-select-dropdown') || (listItem && listItem !== item)
-          || (listSection && listSection !== section)
-          || (listWrapper && listWrapper !== wrapper) || (dropdownWrapper && dropdownWrapper !== wrapper)
-          || (closest(dropdown, '.ant-form-item') && closest(dropdown, '.ant-form-item') !== item)
-          || (closest(dropdown, '.form-cell') && closest(dropdown, '.form-cell') !== section)) {
-          push(false, 'dropdown_scope_mismatch'); continue;
-        }
-        const optionNodes = snapshot(list.querySelectorAll('.ant-select-dropdown-menu-item,.ant-select-item-option,li[role="option"],.ant-select-item,li'));
-        if (!optionNodes.length) { push(false, 'current_options_unavailable'); continue; }
-        if (optionNodes.some(node => closest(node, '.ant-select-dropdown') !== dropdown
-          || closest(node, '.ant-form-item') !== listItem || closest(node, '.form-cell') !== listSection
-          || nearestNamedWrapper(node) !== listWrapper
-          || optionNodes.some(other => other !== node && node.contains(other)))) {
-          push(false, 'option_ownership_mismatch'); continue;
-        }
-        // A dormant dropdown may be hidden. No visibility action is performed.
-        if (optionNodes.some(node => matches(node, '[disabled],[aria-disabled="true"],.ant-select-dropdown-menu-item-disabled,.ant-select-item-option-disabled'))) {
-          push(false, 'option_not_available'); continue;
-        }
-        for (let index = 0; index < optionNodes.length; index += 1) {
-          optionLabels.push(normalizeText(optionNodes[index].textContent));
+        if (!targets.length) {
+          observation.optionsReadiness = 'target_missing';
+          const fallback = ownedSelectVNodeLabels(select, reference);
+          if (!fallback) { push(false, 'current_options_unavailable'); continue; }
+          for (let index = 0; index < fallback.length; index += 1) optionLabels.push(fallback[index]);
+        } else {
+          if (targets.length !== 1) { push(false, 'dropdown_target_not_unique'); continue; }
+          const list = targets[0];
+          const dropdown = closest(list, '.ant-select-dropdown');
+          const listItem = closest(list, '.ant-form-item');
+          const listSection = closest(list, '.form-cell');
+          const listWrapper = nearestNamedWrapper(list);
+          const dropdownWrapper = nearestNamedWrapper(dropdown);
+          if (!list.isConnected || !dropdown || closest(dropdown.parentElement, '.ant-select-dropdown')
+            || list.querySelector('.ant-select-dropdown') || (listItem && listItem !== item)
+            || (listSection && listSection !== section)
+            || (listWrapper && listWrapper !== wrapper) || (dropdownWrapper && dropdownWrapper !== wrapper)
+            || (closest(dropdown, '.ant-form-item') && closest(dropdown, '.ant-form-item') !== item)
+            || (closest(dropdown, '.form-cell') && closest(dropdown, '.form-cell') !== section)) {
+            push(false, 'dropdown_scope_mismatch'); continue;
+          }
+          const optionNodes = snapshot(list.querySelectorAll('.ant-select-dropdown-menu-item,.ant-select-item-option,li[role="option"],.ant-select-item,li'));
+          if (!optionNodes.length) {
+            observation.optionsReadiness = 'list_empty';
+            const fallback = ownedSelectVNodeLabels(select, reference);
+            if (!fallback) { push(false, 'current_options_unavailable'); continue; }
+            for (let index = 0; index < fallback.length; index += 1) optionLabels.push(fallback[index]);
+          } else {
+            observation.optionsReadiness = 'observed';
+            if (optionNodes.some(node => closest(node, '.ant-select-dropdown') !== dropdown
+              || closest(node, '.ant-form-item') !== listItem || closest(node, '.form-cell') !== listSection
+              || nearestNamedWrapper(node) !== listWrapper
+              || optionNodes.some(other => other !== node && node.contains(other)))) {
+              push(false, 'option_ownership_mismatch'); continue;
+            }
+            // A dormant dropdown may be hidden. No visibility action is performed.
+            if (optionNodes.some(node => matches(node, '[disabled],[aria-disabled="true"],.ant-select-dropdown-menu-item-disabled,.ant-select-item-option-disabled'))) {
+              push(false, 'option_not_available'); continue;
+            }
+            for (let index = 0; index < optionNodes.length; index += 1) {
+              optionLabels.push(normalizeText(optionNodes[index].textContent));
+            }
+          }
         }
       } else {
         const radio = field.controlKind === 'radio-group';
@@ -504,6 +647,8 @@ export function inspectCmsRowDOptions(doc, requests = {}) {
         push(false, 'option_list_ambiguous'); continue;
       }
       observation.observedOptionCount = optionLabels.length;
+      if (field.controlKind === 'ant-select') observation.optionsEvidenceSource = observation.optionsReadiness === 'observed'
+        ? 'aria_controls_dom' : 'owned_select_vnodes';
       if (!field.optionsComplete) {
         // A fully enumerated current DOM is not an independently complete
         // dictionary. Preserve the 25-label/reused evidence limits explicitly.
@@ -569,6 +714,9 @@ export function buildCmsRowDOptionsProbeExpression(requests = {}) {
     `const trimProbeText = ${trimProbeText.toString()};`,
     `const normalizeText = ${normalizeText.toString()};`,
     `const listTokens = ${listTokens.toString()};`,
+    `const ownProbeData = ${ownProbeData.toString()};`,
+    `const denseProbeArray = ${denseProbeArray.toString()};`,
+    `const ownedSelectVNodeLabels = ${ownedSelectVNodeLabels.toString()};`,
     `const resolveCmsRowDOption = ${resolveCmsRowDOption.toString()};`,
     `const inspectCmsRowDOptions = ${inspectCmsRowDOptions.toString()};`,
     `return inspectCmsRowDOptions(globalThis.document, ${JSON.stringify(canonical)});`,

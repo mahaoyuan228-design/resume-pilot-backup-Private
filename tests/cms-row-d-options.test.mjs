@@ -731,6 +731,18 @@ test('SYNTHETIC unrelated visible dropdowns cannot replace a missing owned dorma
     const row = result.fields.find(candidate => candidate.wrapperId === SELECT);
     assert.equal(row.ok, false);
     assert.equal(row.reason, 'current_options_unavailable');
+    assert.equal(row.optionsReadiness, 'target_missing');
+    assert.equal(Object.hasOwn(row, 'observedOptionCount'), false);
+  });
+});
+
+test('SYNTHETIC linked empty list is distinguished from an unmounted ARIA target', () => {
+  withInspection({ mutate: doc => list(doc, SELECT).replaceChildren() }, result => {
+    const row = result.fields.find(candidate => candidate.wrapperId === SELECT);
+    assert.equal(row.ok, false);
+    assert.equal(row.reason, 'current_options_unavailable');
+    assert.equal(row.optionsReadiness, 'list_empty');
+    assert.equal(Object.hasOwn(row, 'observedOptionCount'), false);
   });
 });
 
@@ -749,6 +761,7 @@ test('SYNTHETIC unrelated dropdowns and foreign sections cannot alter an owned d
     const row = result.fields.find(candidate => candidate.wrapperId === SELECT);
     assert.equal(row.ok, true);
     assert.equal(row.reason, 'read_only_options_preflight');
+    assert.equal(row.optionsReadiness, 'observed');
   });
 });
 

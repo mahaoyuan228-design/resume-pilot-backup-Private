@@ -172,7 +172,7 @@ for(const mode of ['success','wrong-page','unsafe'])test('URL sentinels never re
   assert.equal(fs.existsSync(path.join(out,'structure.json')),mode==='success');
   for(const file of fs.readdirSync(out))safe(fs.readFileSync(path.join(out,file),'utf8'));
 });
-test('only the second exact-href check changes DOM reads; R11/schema/guard/IO, R7 runner pin and other three dependencies stay exact',()=>{
+test('only the second exact-href check changes DOM reads; R11/schema/guard/IO and reviewed dependency pins stay exact',()=>{
   const file='scripts/live/cms-row-d-location-structure.mjs';
   const old=execFileSync('git',['show',BASE+':'+file],{cwd:ROOT,encoding:'utf8'}).replace(/\r\n/gu,'\n');
   const now=fs.readFileSync(path.join(ROOT,file),'utf8').replace(/\r\n/gu,'\n');
@@ -185,8 +185,8 @@ test('only the second exact-href check changes DOM reads; R11/schema/guard/IO, R
   assert.equal(block(now,'export function cleanCaptureAllowed','\n// getJson owns'),block(old,'export function cleanCaptureAllowed','\nexport async function runLocationStructure'));
   for(const file of Object.keys(SOURCE_PINS)){
     const current=fs.readFileSync(path.join(ROOT,file),'utf8').replace(/\r\n/gu,'\n');
-    if(file==='scripts/live/cms-row-d-live.mjs'){
-      // The reviewed R7 runner revision replaces only this historical pin.
+    if(file==='scripts/live/cms-row-d-live.mjs'||file==='scripts/lib/cms-row-d-options.mjs'){
+      // The reviewed options readiness revision replaces these two pins.
       assert.equal(createHash('sha256').update(current.replace(/\n/gu,'\r\n')).digest('hex'),SOURCE_PINS[file]);
       continue;
     }

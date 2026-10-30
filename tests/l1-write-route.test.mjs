@@ -65,6 +65,22 @@ test('ordinary RESUME_FILL keeps the absent/false flag on the existing write pat
   }
 });
 
+test('candidate detection skips a throwing component and captcha while retaining a healthy date', async t => {
+  const h = await harness({ enabled: true, html: '<form><input id="broken"><div data-captcha><input type="date"></div><input id="healthy" type="date"></form>' });
+  t.after(() => h.dom.window.close());
+  Object.defineProperty(h.window.document.getElementById('broken'), '__vue__', { get() { throw Error('unreadable_component'); } });
+  let effects = 0;
+  for (const type of ['click', 'input', 'change']) h.window.document.addEventListener(type, () => effects++);
+  const result = await h.invoke({ type: CONTROL_CANDIDATES_MESSAGE, timeOrigin: h.window.performance.timeOrigin });
+  assert.equal(result.ok, true, JSON.stringify(result));
+  assert.equal(result.writeStarted, false);
+  assert.equal(result.liveSupportClaimed, false);
+  assert.equal(result.candidates.length, 1);
+  assert.equal(result.candidates[0].adapter, 'native-date');
+  assert.equal(h.window.document.querySelector(result.candidates[0].selector).id, 'healthy');
+  assert.equal(effects, 0);
+});
+
 test('ordinary RESUME_FILL opt-in executes the actual MAIN registry plan/write/dual verify under the profile lock', async t => {
   const h = await harness({ enabled: true }); t.after(() => h.dom.window.close());
   const result = await h.fill(), row = result.data.fields[0];
@@ -125,7 +141,7 @@ test('enabled route fails closed without falling back to the legacy native sette
   t.after(() => h.dom.window.close());
   let inputs = 0; h.window.document.getElementById('name').addEventListener('input', () => { inputs++; });
   const result = await h.fill(), row = result.data.fields[0];
-  assert.equal(row.adapterStatus, 'unsupported');
+  assert.equal(row.adapterStatus, 'manual');
   assert.equal(row.status, 'skipped');
   assert.equal(row.reason, 'control_or_version_unconfirmed');
   assert.equal(h.window.document.getElementById('name').value, '');

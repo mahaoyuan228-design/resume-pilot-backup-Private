@@ -209,6 +209,7 @@ function selectPage({ rows = 1, dedicated = false, duplicateId = '' } = {}) {
     'entrySignature', 'entryScope', 'publicEntry', 'meaningfulCurrent', 'exactOptionText', 'settleUnresolvedEntry', 'fillOwnedContent'];
   const deps = {
     M, cmsDecision, markDuplicateTargets, atsControlTargets: new Map(),
+    MANUAL_CONTROL_SELECTOR: '[data-captcha]', manualControlReason: disabled, // No challenge surfaces in this isolated select scaffold.
     visible: () => true, cmsAntV3InnerSearch: disabled, cmsRegionControl: disabled,
     cmsCheckboxControl: disabled, namedSection: () => null, cmsSection: sectionOf,
     cmsDedicatedRecordKind: control => control.closest('.form-cell')?.dedicated ? 'education' : null,

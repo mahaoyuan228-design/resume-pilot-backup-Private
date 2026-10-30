@@ -75,7 +75,7 @@ test('a component name without the actual library version export remains unclaim
   assert.equal(model.version, null);
   assert.equal(model.versionEvidence, 'version_unconfirmed');
   assert.equal(f.R.resolve(el), null);
-  assert.equal(f.R.plan(el, { value: '选项' }).status, 'unsupported');
+  assert.equal(f.R.plan(el, { value: '选项' }).status, 'manual');
   let effects = 0;
   for (const event of ['input', 'change', 'click', 'pointerdown', 'mousedown']) el.addEventListener(event, () => { effects++; });
   const result = await adapter.write(el, instruction, { allowWrite: true, check: async () => {} });
@@ -208,7 +208,7 @@ test('React fibers provide read-only diagnostics and cannot fall through to nati
   assert.equal(model.lib, null);
   assert.equal(model.version, null);
   assert.equal(f.R.resolve(el), null);
-  assert.equal(f.R.plan(el, { value: 'another' }).status, 'unsupported');
+  assert.equal(f.R.plan(el, { value: 'another' }).status, 'manual');
   assert.equal(called, 0);
 });
 
@@ -254,7 +254,7 @@ test('React values without a provable owning DOM root remain unavailable', t => 
   assert.equal(model.framework, 'react');
   assert.equal(model.available, false);
   assert.equal(model.value, null);
-  assert.equal(f.R.plan(input, { value: 'replacement' }).status, 'unsupported');
+  assert.equal(f.R.plan(input, { value: 'replacement' }).status, 'manual');
   const component = { displayName: 'UdSelect', library: { name: 'ud', version: 'fixture-contract-1' } };
   f.window.UD = { version: 'fixture-contract-1' };
   input.__reactFiber$fixture = { type: component, memoizedProps: { value: 'named-but-unowned' } };

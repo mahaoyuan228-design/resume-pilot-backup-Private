@@ -5,7 +5,7 @@
   'use strict';
   // Rebuild old registries so reinjection installs the upload-aware native
   // adapter as well as the current model resolver.
-  if (globalThis.ResumeControls?.version === 1 && globalThis.ResumeControls.revision === 5) return;
+  if (globalThis.ResumeControls?.version === 1 && globalThis.ResumeControls.revision === 6) return;
   const adapters = new Map();
   const norm = value => String(value ?? '').normalize('NFKC').replace(/\s+/gu, ' ').trim();
   const equal = (a, b) => Array.isArray(a) || Array.isArray(b)
@@ -13,10 +13,13 @@
     : typeof a === 'boolean' || typeof b === 'boolean' ? a === b : norm(a) === norm(b);
   const empty = value => value == null || value === '' || (Array.isArray(value) && value.every(empty));
   const tick = (ms = 0) => new Promise(resolve => setTimeout(resolve, ms));
+  const manual = reason => ({ status: 'manual', reason, writeStarted: false, liveSupportClaimed: false });
+  const manualSelector = 'iframe,[data-captcha],[class*="captcha" i],[id*="captcha" i],[name*="captcha" i],input[autocomplete="one-time-code"]';
   const manualReason = el => {
     if (!el?.isConnected) return 'target_detached';
     if (el.ownerDocument !== document || el.getRootNode?.() !== document) return 'shadow_or_frame_manual';
-    if (el.closest?.('iframe,[data-captcha],.g-recaptcha,.h-captcha') || el.matches?.('iframe')) return 'iframe_or_captcha_manual';
+    // Inspect only the frame element, never its document/window or descendants.
+    if (el.closest?.(manualSelector)) return 'iframe_or_captcha_manual';
     return null;
   };
   function validDate(value, type) {
@@ -100,7 +103,7 @@
       if (action.matches('a[href],input[type="submit"],input[type="image"]')) return false;
       if (action.tagName === 'BUTTON' && action.type === 'submit') return false;
     }
-    return !node.closest?.('[class*="captcha"],.g-recaptcha,.h-captcha');
+    return !manualReason(node);
   }
   async function safeClick(node, ctx) {
     await check(ctx);
@@ -187,23 +190,35 @@
     return adapter;
   }
   const ordered = () => [...adapters.values()].sort((a, b) => (b.priority || 0) - (a.priority || 0));
-  function resolve(el) {
-    const probe = globalThis.ResumeControlModel.inspect(el);
+  function findAdapter(el, probe) {
     return ordered().find(adapter => adapter.matches(el, probe) && adapter.libVersionProbe(el, probe)) || null;
   }
+  function resolve(el) {
+    try {
+      if (manualReason(el)) return null;
+      return findAdapter(el, globalThis.ResumeControlModel.inspect(el));
+    } catch { return null; }
+  }
   function plan(el, fact) {
-    const reason = manualReason(el);
-    if (reason) return { status: 'manual', reason };
-    const adapter = resolve(el);
-    if (!adapter) return { status: 'unsupported', reason: 'control_or_version_unconfirmed' };
-    return clean(adapter.plan(fact, adapter.readModel(el)));
+    try {
+      const reason = manualReason(el);
+      if (reason) return manual(reason);
+      const probe = globalThis.ResumeControlModel.inspect(el), adapter = findAdapter(el, probe);
+      if (!adapter) return manual('control_or_version_unconfirmed');
+      return clean(adapter.plan(fact, adapter.readModel(el, probe)));
+    } catch { return manual('component_probe_failed'); }
   }
   function inspect(el) {
-    const probe = globalThis.ResumeControlModel.inspect(el), adapter = resolve(el);
-    return clean({ probe, adapter: adapter?.name || null, model: adapter ? adapter.readModel(el, probe) : probe });
+    try {
+      const reason = manualReason(el);
+      if (reason) return { ...manual(reason), adapter: null };
+      const probe = globalThis.ResumeControlModel.inspect(el), adapter = findAdapter(el, probe);
+      return clean({ ...(!adapter ? manual('control_or_version_unconfirmed') : {}),
+        probe, adapter: adapter?.name || null, model: adapter ? adapter.readModel(el, probe) : probe });
+    } catch { return { ...manual('component_probe_failed'), adapter: null }; }
   }
   const helpers = Object.freeze({ norm, equal, empty, tick, makePlan, safeClick, nativeSet, check, clickAllowed, clean, validDate });
-  globalThis.ResumeControls = Object.freeze({ version: 1, revision: 5, mode: 'shadow', liveSupportClaimed: false,
+  globalThis.ResumeControls = Object.freeze({ version: 1, revision: 6, mode: 'shadow', liveSupportClaimed: false,
     register, createAdapter, resolve, inspect, plan, helpers, list: () => ordered().map(a => ({ name: a.name, lib: a.lib, type: a.type, priority: a.priority || 0 })),
     verify: (el, instruction, ctx) => resolve(el)?.verify(el, instruction, ctx) || Promise.resolve({ status: 'unsupported', reason: 'control_or_version_unconfirmed' }) });
 })();

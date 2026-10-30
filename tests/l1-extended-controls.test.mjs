@@ -81,7 +81,7 @@ for (const contract of contracts) {
     const exported = w[contract[1] === 'iview' ? 'iview' : contract[1] === 'ud' ? 'UD' : 'Phoenix'];
     exported.version = '99.0.0';
     assert.equal(R.resolve(el), null);
-    assert.equal(R.plan(el, fact).status, 'unsupported');
+    assert.equal(R.plan(el, fact).status, 'manual');
     assert.equal(R.resolve(el.querySelector('input')), null, 'unconfirmed widget never falls through to native');
     assert.deepEqual(f.effects, []);
   });
@@ -111,12 +111,12 @@ for (const contract of contracts.filter(row => row[1] !== 'iview')) {
 }
 function wValue(f, selector) { return f.w.document.querySelector(selector).value; }
 
-test('unknown ud/phoenix contract versions stay unsupported even if page and component agree', t => {
+test('unknown ud/phoenix contract versions stay manual even if page and component agree', t => {
   for (const contract of contracts.filter(row => row[1] !== 'iview')) {
     const f = boot(contract); t.after(() => f.dom.window.close());
     f.el.__reactFiber$fixture.type.library.version = 'unreviewed-2';
     f.w[contract[1] === 'ud' ? 'UD' : 'Phoenix'].version = 'unreviewed-2';
-    assert.equal(f.R.plan(f.el, f.fact).status, 'unsupported');
+    assert.equal(f.R.plan(f.el, f.fact).status, 'manual');
   }
 });
 
@@ -134,7 +134,7 @@ test('owning React component wins over a nested host value; foreign portals are 
 test('ViewUI, imprecise dates, object/multiple selects and ambiguous options fail closed', t => {
   const a = boot(contracts[0]), b = boot(contracts[3]);
   t.after(() => { a.dom.window.close(); b.dom.window.close(); });
-  a.w.ViewUI = { version: '4.0.0' }; assert.equal(a.R.plan(a.el, a.fact).status, 'unsupported');
+  a.w.ViewUI = { version: '4.0.0' }; assert.equal(a.R.plan(a.el, a.fact).status, 'manual');
   assert.equal(b.R.plan(b.el, { value: '2023-01' }).reason, 'invalid_date_precision');
   b.props.valueFormat = null; assert.equal(b.R.plan(b.el, b.fact).reason, 'value_format_unverified');
   const c = boot(contracts[2]); t.after(() => c.dom.window.close());
@@ -177,7 +177,7 @@ test('object-valued models and option codes cannot be flattened into empty value
     const original = { id: 'existing-code' };
     f.props.value = original;
     const plan = f.R.plan(f.el, f.fact);
-    assert.equal(plan.status, 'unsupported', contract[0]);
+    assert.equal(plan.status, 'manual', contract[0]);
     assert.equal(f.R.inspect(f.el).probe.available, false);
     assert.equal(f.props.value, original);
     assert.equal(f.effects.length, 0);
@@ -200,7 +200,7 @@ test('reinjection upgrades an old v1 MAIN model/registry and restores every adap
   assert.equal(f.w.ResumeControlModel.version, 1);
   assert.equal(f.w.ResumeControlModel.revision, 4);
   assert.equal(f.R.version, 1);
-  assert.equal(f.R.revision, 5);
+  assert.equal(f.R.revision, 6);
   const names = new Set(f.R.list().map(adapter => adapter.name));
   for (const name of ['native-text', 'native-select', 'native-date', 'native-month', 'el-select', 'antdv1-month', ...contracts.map(row => row[0])]) {
     assert.equal(names.has(name), true, name);
@@ -208,13 +208,13 @@ test('reinjection upgrades an old v1 MAIN model/registry and restores every adap
   assert.equal(names.has('old_adapter'), false);
   assert.equal(f.R.plan(f.el, f.fact).adapter, 'ud-select');
   f.props.value = { id: 'opaque-existing-value' };
-  assert.equal(f.R.plan(f.el, f.fact).status, 'unsupported', 'upgraded model keeps the opaque-value protection');
+  assert.equal(f.R.plan(f.el, f.fact).status, 'manual', 'upgraded model keeps the opaque-value protection');
 });
 
 test('revision 2 reinjection replaces captured models and adapters before a guarded UI write', async t => {
   const f = boot(contracts[2], { legacy: 2 }); t.after(() => f.dom.window.close());
   assert.equal(f.w.ResumeControlModel.revision, 4);
-  assert.equal(f.R.revision, 5);
+  assert.equal(f.R.revision, 6);
   assert.equal(f.R.list().some(adapter => adapter.name === 'old_adapter'), false);
   for (const name of ['native-text', 'el-select', 'antdv1-month', ...contracts.map(row => row[0])]) {
     assert.equal(f.R.list().some(adapter => adapter.name === name), true, name);

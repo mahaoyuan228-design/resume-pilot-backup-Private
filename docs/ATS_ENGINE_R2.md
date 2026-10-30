@@ -37,6 +37,14 @@ The packaged zoo invokes the actual ordinary `RESUME_FILL` message with the flag
 
 The popup offers a blank schema-path choice followed by an explicit confirmation button for unmapped fields. Confirmation re-reads the active page and field signature, and accepts only a currently confirmed profile path. Re-identification applies the mapping on the same domain, page fingerprint and field signature. The mapped answer is still subject to the normal confirmed-fact and write checks.
 
+## Manual control boundary
+
+Registry `plan` and `inspect` return `manual` with `writeStarted=false` for iframe/captcha surfaces, foreign documents, shadow roots, unrecognized controls/versions and failed component probes. They never read a frame's `contentDocument` or `contentWindow`. Captcha markers (`data-captcha`, captcha class/id/name tokens) and one-time-code inputs are excluded from resolution and effect helpers, including when a previously planned control becomes a challenge. Candidate discovery skips manual observations and continues with other controls.
+
+The ordinary inspector also reports visible top-level iframe and input-free challenge placeholders. Challenge controls bypass semantic classification and domain-memory mapping, and ordinary fill skips them with or without the experimental write flag. Every generic legacy effect rechecks the challenge boundary after asynchronous binding checks; if a marker appears after an earlier assignment, further effects stop and `failed / writeStarted=true` retains the partial result for review. Unknown labels retain `semanticStatus=manual`. No automatic synonym learning is added: only the existing explicit user-confirmation path may persist mappings.
+
+The packaged zoo verifies browser-enforced cross-origin isolation using a locally fulfilled child document, then makes frame access throw during detect/plan. It requires manual results, unchanged DOM/values, zero control events and zero frame reads. The generic L1 no-adapter outcome changes from `unsupported` to `manual`; the legacy baseline and accepted writer behavior are unchanged. `liveSupportClaimed=false`.
+
 ## Verification and limits
 
 Run Node 24 `node --test --test-concurrency=1`, `node scripts/build-paid-smoke.mjs`, regenerate `SOURCE_INVENTORY.json`, build the internal extension and run `npm run test:zoo`. Local Windows tests require their documented EXAMPLE PEM fixtures, `OPENSSL_BIN` and browser executable paths. Historical immutable-source hash checks require the repository's original LF working-copy bytes. Zoo loads exact packaged bytes, uses a temporary browser profile and fulfills all page assets locally; unknown requests are aborted.

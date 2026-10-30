@@ -41,7 +41,7 @@
       "field": "jobCategory",
       "value": "投资/证券/基金",
       "adapter": null,
-      "status": "unsupported",
+      "status": "manual",
       "comparison": "intentional_difference",
       "reason": "The legacy GTH plugin-dialog writer is a site-specific contract reserved for L3; generic L1 must not claim it as Element Cascader."
     }

@@ -118,11 +118,95 @@ test('plain native controls cannot absorb unconfirmed component versions or shad
   assert.equal(f.R.resolve(f.el).name, 'native-text');
   for (const id of ['element', 'ant', 'phoenix']) {
     assert.equal(f.R.resolve(f.get(id)), null);
-    assert.equal(f.R.plan(f.get(id), { value: 'example' }).status, 'unsupported');
+    assert.equal(f.R.plan(f.get(id), { value: 'example' }).status, 'manual');
   }
   const shadow = f.get('host').attachShadow({ mode: 'open' });
   const input = f.window.document.createElement('input'); shadow.append(input);
   assert.equal(f.R.plan(input, { value: 'example' }).status, 'manual');
+});
+
+test('frames, foreign documents, shadow roots and captcha markers stay manual without probing or effects', async t => {
+  const f = boot('<input id="target"><iframe id="frame" src="https://foreign.example.test/challenge"></iframe><div data-captcha><input id="data-marker"></div><div class="CAPTCHA-wrapper"><input id="class-marker"></div><div id="captcha-wrapper"><input id="id-marker"></div><input id="name-marker" name="CAPTCHA-answer"><input id="otp" autocomplete="one-time-code"><div id="host"></div>');
+  const foreign = new JSDOM('<input>', { url: 'https://foreign.example.test/challenge' });
+  t.after(() => { f.dom.window.close(); foreign.window.close(); });
+  const frame = f.get('frame');
+  for (const property of ['contentDocument', 'contentWindow']) Object.defineProperty(frame, property, {
+    get() { throw Error('frame_document_must_not_be_read'); }
+  });
+  const shadowInput = f.window.document.createElement('input');
+  f.get('host').attachShadow({ mode: 'open' }).append(shadowInput);
+  const foreignInput = foreign.window.document.querySelector('input');
+  const targets = [frame, ...['data-marker', 'class-marker', 'id-marker', 'name-marker', 'otp'].map(f.get),
+    foreignInput, shadowInput];
+  const adapter = f.R.resolve(f.el);
+  let effects = 0;
+  for (const el of targets) {
+    for (const event of ['input', 'change', 'blur', 'click', 'pointerdown', 'mousedown']) el.addEventListener(event, () => { effects++; });
+    const reason = [shadowInput, foreignInput].includes(el) ? 'shadow_or_frame_manual' : 'iframe_or_captcha_manual';
+    const plan = f.R.plan(el, { value: 'desired' }), detected = f.R.inspect(el);
+    for (const result of [plan, detected]) {
+      assert.equal(result.status, 'manual'); assert.equal(result.reason, reason);
+      assert.equal(result.writeStarted, false); assert.equal(result.liveSupportClaimed, false);
+    }
+    assert.equal(f.R.resolve(el), null);
+    const result = await adapter.write(el, plan, { allowWrite: true, check: async () => {} });
+    assert.equal(result.status, 'unsupported'); assert.equal(result.attempts, 0);
+    if (el.tagName === 'INPUT') assert.equal(el.value, '');
+  }
+  assert.equal(f.R.plan(f.el, { value: 'desired' }).status, 'planned');
+  assert.equal(effects, 0);
+});
+
+test('a cached native adapter cannot write after its target acquires a captcha boundary', async t => {
+  const f = boot(); t.after(() => f.dom.window.close());
+  const adapter = f.R.resolve(f.el), instruction = f.R.plan(f.el, { value: 'desired' });
+  let effects = 0;
+  for (const event of ['input', 'change', 'blur', 'click', 'pointerdown', 'mousedown']) f.el.addEventListener(event, () => { effects++; });
+  f.el.setAttribute('data-captcha', '');
+  const result = await adapter.write(f.el, instruction, { allowWrite: true, check: async () => {} });
+  assert.equal(result.status, 'unsupported'); assert.equal(result.reason, 'iframe_or_captcha_manual');
+  assert.equal(result.attempts, 0); assert.equal(f.el.value, ''); assert.equal(effects, 0);
+});
+
+test('unknown controls and frameworks are manual while an ordinary neighbor remains plannable', t => {
+  const f = boot('<input id="target"><div id="unknown" role="combobox"></div><input id="framework">');
+  t.after(() => f.dom.window.close());
+  const input = f.get('framework');
+  input.__vue__ = { $el: input, $options: { name: 'UnreviewedWidget' }, $props: { value: '' } };
+  for (const el of [f.get('unknown'), input]) {
+    assert.equal(f.R.resolve(el), null);
+    for (const result of [f.R.plan(el, { value: 'desired' }), f.R.inspect(el)]) {
+      assert.equal(result.status, 'manual'); assert.equal(result.reason, 'control_or_version_unconfirmed');
+    }
+    assert.equal(el.value || el.textContent, '');
+  }
+  assert.equal(f.R.plan(f.el, { value: 'desired' }).status, 'planned');
+});
+
+test('throwing framework getters and adapter probes fail closed per field without events', t => {
+  for (const failure of ['getter', 'matches', 'libVersionProbe', 'readModel', 'plan']) {
+    const f = boot('<input id="target"><input id="neighbor">');
+    t.after(() => f.dom.window.close());
+    let effects = 0;
+    for (const event of ['input', 'change', 'blur', 'click', 'pointerdown', 'mousedown']) f.el.addEventListener(event, () => { effects++; });
+    const fail = () => { throw Error('fixture_probe_failed'); };
+    if (failure === 'getter') Object.defineProperty(f.el, '__vue__', { get: fail });
+    else f.R.register({ name: `throws-${failure}`, priority: 9000, lib: 'native', type: 'text',
+      matches(el) { return el === f.el && (failure === 'matches' ? fail() : true); },
+      libVersionProbe: failure === 'libVersionProbe' ? fail : () => ({ lib: 'native', version: 'html' }),
+      readModel: failure === 'readModel' ? fail : el => ({ available: true, value: el.value, domValue: el.value }),
+      ...(failure === 'plan' ? { plan: fail } : {})
+    });
+    const result = f.R.plan(f.el, { value: 'desired' });
+    assert.equal(result.status, 'manual', failure); assert.equal(result.reason, 'component_probe_failed', failure);
+    assert.equal(result.writeStarted, false); assert.equal(result.liveSupportClaimed, false);
+    if (failure !== 'plan') {
+      assert.equal(f.R.inspect(f.el).status, 'manual', failure);
+      assert.equal(f.R.inspect(f.el).reason, 'component_probe_failed', failure);
+    }
+    assert.equal(f.R.plan(f.get('neighbor'), { value: 'desired' }).status, 'planned', failure);
+    assert.equal(f.el.value, ''); assert.equal(f.get('neighbor').value, ''); assert.equal(effects, 0);
+  }
 });
 
 test('planner rejects ambiguous options and protects coded existing values, including pending remote searches', t => {

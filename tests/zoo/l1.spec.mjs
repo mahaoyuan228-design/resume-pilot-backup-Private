@@ -28,6 +28,48 @@ async function record(testInfo, zoo, result) {
   await zoo.page.screenshot({ path: testInfo.outputPath('l1-fixture.png'), fullPage: true });
 }
 
+test('packaged detect/plan leaves cross-origin frames, captcha, unknown and broken controls manual', async ({}, testInfo) => {
+  const zoo = await startZoo('cms-month');
+  try {
+    const frameUrl = 'https://manual-frame.invalid/challenge';
+    await zoo.page.route(frameUrl, route => route.fulfill({ contentType: 'text/html', body: '<input value="FRAME_KEEP">' }));
+    const originCheck = await zoo.page.evaluate(async url => {
+      const host = document.createElement('section');
+      host.id = 'manual-cases';
+      host.innerHTML = '<iframe id="manual-frame"></iframe><div data-captcha><input id="manual-challenge"></div><div id="manual-unknown" role="combobox"></div><input id="manual-broken"><input id="manual-healthy">';
+      document.body.append(host);
+      const frame = host.querySelector('iframe');
+      await new Promise(resolve => { frame.onload = resolve; frame.src = url; });
+      let denied = false;
+      try { void frame.contentWindow.document; } catch (error) { denied = error.name === 'SecurityError'; }
+      const opaque = frame.contentDocument === null;
+      window.__manualEffects = 0; window.__manualFrameReads = 0;
+      for (const key of ['contentDocument', 'contentWindow']) Object.defineProperty(frame, key, { get() {
+        window.__manualFrameReads++; throw Error('frame_access_forbidden');
+      } });
+      Object.defineProperty(host.querySelector('#manual-broken'), '__vue__', { get() { throw Error('component_unreadable'); } });
+      for (const type of ['click', 'input', 'change', 'focus', 'submit']) host.addEventListener(type, () => window.__manualEffects++, true);
+      return { denied, opaque };
+    }, frameUrl);
+    expect(originCheck).toEqual({ denied: true, opaque: true });
+    const before = await zoo.page.locator('#manual-cases').evaluate(node => node.outerHTML);
+    const selectors = ['#manual-frame', '#manual-challenge', '#manual-unknown', '#manual-broken', '#manual-healthy'];
+    const result = await zoo.shadow(selectors.map(selector => ({ selector, fact: { value: 'synthetic' } })));
+    expect(result).toMatchObject({ writeStarted: false, liveSupportClaimed: false });
+    for (const row of result.plans.slice(0, 4)) {
+      expect(row).toMatchObject({ status: 'manual', writeStarted: false, liveSupportClaimed: false,
+        inspection: { status: 'manual', adapter: null } });
+    }
+    expect(result.plans[3].reason).toBe('component_probe_failed');
+    expect(result.plans[4]).toMatchObject({ status: 'planned', adapter: 'native-text' });
+    expect(await zoo.page.evaluate(() => ({ effects: window.__manualEffects, frameReads: window.__manualFrameReads,
+      values: [...document.querySelectorAll('#manual-cases input')].map(node => node.value) })))
+      .toEqual({ effects: 0, frameReads: 0, values: ['', '', ''] });
+    expect(await zoo.page.locator('#manual-cases').evaluate(node => node.outerHTML)).toBe(before);
+    await record(testInfo, zoo, result);
+  } finally { await zoo.close(); }
+});
+
 async function legacyReadback(zoo, name) {
   if (name === 'cms-month') {
     await zoo.inject(['src/content/cms-date-picker.js']);

@@ -5,7 +5,7 @@
   'use strict';
   // Rebuild old registries so reinjection installs current dropdown readback
   // contracts as well as the current model resolver.
-  if (globalThis.ResumeControls?.version === 1 && globalThis.ResumeControls.revision === 20) return;
+  if (globalThis.ResumeControls?.version === 1 && globalThis.ResumeControls.revision === 21) return;
   const adapters = new Map();
   // Executable dropdown/choice plans stay bound to their original widget in MAIN.
   // Serialized shadow observations carry no authority to write another root.
@@ -41,6 +41,8 @@
   const choiceEqual = (a, b) => Array.isArray(a) || Array.isArray(b)
     ? Array.isArray(a) && Array.isArray(b) && a.length === b.length && a.every((value, index) => choiceEqual(value, b[index]))
     : typeof a === typeof b && a === b;
+  const setEqual = (a, b) => Array.isArray(a) && Array.isArray(b) && a.length === b.length
+    && a.every(value => b.filter(part => choiceEqual(part, value)).length === a.filter(part => choiceEqual(part, value)).length);
   const empty = value => value == null || value === '' || (Array.isArray(value) && value.every(empty));
   const tick = (ms = 0) => new Promise(resolve => setTimeout(resolve, ms));
   const manual = reason => ({ status: 'manual', reason, writeStarted: false, liveSupportClaimed: false });
@@ -227,7 +229,7 @@
     if (Array.isArray(value)) return value.slice(0, 1000).map(v => clean(v, depth + 1));
     if (typeof value !== 'object' || value.nodeType || value instanceof Map) return null;
     const out = {};
-    for (const [key, val] of Object.entries(value)) if (!['controlRoot', 'numberInput', 'sliderInput', 'sliderTrack', 'sliderThumb', 'rateTargets', 'vm', 'props', 'rangeInputs', 'rangeRoots', 'rangeOwners', 'treeOwners'].includes(key) && typeof val !== 'function') out[key] = clean(val, depth + 1);
+    for (const [key, val] of Object.entries(value)) if (!['controlRoot', 'numberInput', 'sliderInput', 'sliderTrack', 'sliderThumb', 'rateTargets', 'vm', 'props', 'rangeInputs', 'rangeRoots', 'rangeOwners', 'treeOwners', 'transferOwners'].includes(key) && typeof val !== 'function') out[key] = clean(val, depth + 1);
     if (selectBindings.has(value)) selectBindings.set(out, selectBindings.get(value));
     if (choiceBindings.has(value)) choiceBindings.set(out, choiceBindings.get(value));
     if (searchSelections.has(value)) searchSelections.set(out, searchSelections.get(value));
@@ -243,13 +245,14 @@
     const time = spec.type === 'time';
     const range = spec.type === 'date-range';
     const tree = spec.type === 'tree-select';
+    const transfer = spec.type === 'transfer';
     const toggle = spec.type === 'switch';
     const multi = spec.type === 'multi-select';
-    const boundControl = rate || slider || tree || range || time || numeric || multiline || ['select', 'select-search', 'multi-select', 'cascader', 'radio', 'checkbox', 'checkbox-group', 'switch'].includes(spec.type);
+    const boundControl = transfer || rate || slider || tree || range || time || numeric || multiline || ['select', 'select-search', 'multi-select', 'cascader', 'radio', 'checkbox', 'checkbox-group', 'switch'].includes(spec.type);
     const choice = ['radio', 'checkbox', 'checkbox-group', 'switch'].includes(spec.type);
-    const ownerBound = rate || slider || tree || range || time || numeric || multiline || choice || ['select-search', 'multi-select'].includes(spec.type);
-    const valueEqual = multiline ? proseEqual : ownerBound ? choiceEqual : equal;
-    const domEqual = numeric || slider || rate ? choiceEqual : multiline ? proseEqual : equal;
+    const ownerBound = transfer || rate || slider || tree || range || time || numeric || multiline || choice || ['select-search', 'multi-select'].includes(spec.type);
+    const valueEqual = transfer ? setEqual : multiline ? proseEqual : ownerBound ? choiceEqual : equal;
+    const domEqual = transfer ? setEqual : numeric || slider || rate ? choiceEqual : multiline ? proseEqual : equal;
     const validInstruction = instruction => ['planned', 'success'].includes(instruction?.status) && instruction.adapter === spec.name
       && (!numeric || instruction.type === 'number' && Number.isFinite(instruction.value)
         && instruction.value === instruction.modelValue && instruction.value === instruction.domValue
@@ -262,6 +265,8 @@
         && ['set', 'click'].includes(instruction.operation))
       && (!multi || instruction.type === spec.type && Array.isArray(instruction.value)
         && choiceEqual(instruction.value, instruction.modelValue) && equal(instruction.labels, instruction.domValue))
+      && (!transfer || instruction.type === 'transfer' && instruction.operation === 'set'
+        && setEqual(instruction.value, instruction.modelValue) && setEqual(instruction.labels, instruction.domValue))
       && (!multiline || instruction.type === spec.type && proseEqual(instruction.value, instruction.modelValue)
         && proseEqual(instruction.value, instruction.domValue))
       && (!time || instruction.type === 'time' && typeof instruction.value === 'string'
@@ -278,6 +283,11 @@
     const sameOwner = (el, instruction, model) => {
       if (!ownerBound) return true;
       const owner = choiceBindings.get(instruction), ref = globalThis.ResumeControlModel.resolve(el);
+      if (transfer) return !!owner && owner.root === model.controlRoot && owner.version === model.version
+        && owner.transferPlan === JSON.stringify(clean(instruction)) && owner.transferContract === model.transferContract
+        && Array.isArray(model.transferOwners) && owner.transferOwners.length === model.transferOwners.length
+        && owner.transferOwners.every((part, index) => part === model.transferOwners[index])
+        && model.transferOwners.every(vm => !vm?._isDestroyed && !vm?._isBeingDestroyed && !vm?.isUnmounted);
       if (tree) return !!owner && owner.root === model.controlRoot && owner.version === model.version
         && owner.treePlan === JSON.stringify(clean(instruction)) && owner.treeContract === model.treeContract
         && Array.isArray(model.treeOwners) && owner.treeOwners.length === model.treeOwners.length
@@ -323,6 +333,8 @@
           const ref = globalThis.ResumeControlModel.resolve(model.controlRoot);
           choiceBindings.set(plan, { root: model.controlRoot, vm: ref.vm, framework: ref.framework,
             componentType: ref.componentType, version: model.version,
+            ...(transfer ? { transferPlan: JSON.stringify(clean(plan)), transferContract: model.transferContract,
+              transferOrigin: [model.value, model.domValue], transferOwners: model.transferOwners.slice() } : {}),
             ...(tree ? { treePlan: JSON.stringify(clean(plan)), treeContract: model.treeContract,
               treeOwners: model.treeOwners.slice() } : {}),
             ...(range ? { rangePlan: JSON.stringify(clean(plan)), rangeContract: model.rangeContract,
@@ -354,6 +366,11 @@
         if (resolve(el)?.name !== spec.name) return { status: 'unsupported', reason: 'control_or_version_changed', strategy: 'none', attempts: 0 };
         const model = adapter.readModel(el);
         if (boundControl && (!model.controlRoot || selectBindings.get(instruction) !== model.controlRoot || !sameOwner(el, instruction, model))) return { status: 'unsupported', reason: 'control_target_changed', strategy: 'none', attempts: 0 };
+        if (transfer && model.available && model.transferConsistent && !model.transferBusy && !model.disabled && !model.readonly
+          && valueEqual(model.value, instruction.value) && domEqual(model.domValue, instruction.domValue))
+          return { status: 'success', reason: 'preexisting_same_value', strategy: 'none', attempts: 0 };
+        if (transfer && !choiceEqual(choiceBindings.get(instruction).transferOrigin, [model.value, model.domValue]))
+          return { status: 'unsupported', reason: 'instruction_stale', strategy: 'none', attempts: 0 };
         if ((numeric || toggle || slider || rate) && model.available && model.choiceConsistent !== false && !model.disabled && !model.readonly && (!slider || !model.sliderBusy) && (!rate || !model.rateBusy && model.rateInteractable)
           && model.value === instruction.value && model.domValue === instruction.domValue)
           return { status: 'success', reason: 'preexisting_same_value', strategy: 'none', attempts: 0 };
@@ -389,12 +406,12 @@
           if (slider && model.sliderBusy) return { ok: false, unsupported: true, reason: 'slider_busy' };
           if (rate && model.rateBusy) return { ok: false, unsupported: true, reason: 'rate_busy' };
           if (rate && !model.rateInteractable) return { ok: false, unsupported: true, reason: 'rate_not_interactable' };
-          if ((rate || slider || tree || range || time || numeric || multiline || toggle) && (model.disabled || model.readonly)) return { ok: false, unsupported: true, reason: 'control_not_writable' };
+          if ((transfer || rate || slider || tree || range || time || numeric || multiline || toggle) && (model.disabled || model.readonly)) return { ok: false, unsupported: true, reason: 'control_not_writable' };
           if (boundControl && (resolve(el)?.name !== spec.name || !model.controlRoot
             || selectBindings.get(instruction) !== model.controlRoot || !sameOwner(el, instruction, model))) return { ok: false, unsupported: true, reason: 'control_target_changed' };
           const search = searchSelections.get(instruction), selection = search?.selection;
           const clicked = (!search?.required || !!selection) && (!tree || treeSelections.get(instruction)?.clicked === true);
-          return { ok: model.available && (!toggle || model.choiceConsistent !== false) && clicked && valueEqual(model.value, selection ? selection.value : search ? search.value : instruction.modelValue ?? instruction.value)
+          return { ok: model.available && (!transfer || model.transferConsistent === true) && (!toggle || model.choiceConsistent !== false) && clicked && valueEqual(model.value, selection ? selection.value : search ? search.value : instruction.modelValue ?? instruction.value)
               && domEqual(model.domValue, selection ? selection.domValue : search ? search.domValue : instruction.domValue ?? instruction.value),
             unsupported: !model.available, domReadback: clean(model.domValue), modelReadback: clean(model.value) };
         };
@@ -444,7 +461,7 @@
     } catch { return { ...manual('component_probe_failed'), adapter: null }; }
   }
   const helpers = Object.freeze({ norm, equal, prose, proseEqual, richtextValue, empty, tick, makePlan, switchPlan, safeClick, nativeSet, confirmSearchOption, confirmTreeNode, check, clickAllowed, clean, validDate });
-  globalThis.ResumeControls = Object.freeze({ version: 1, revision: 20, mode: 'shadow', liveSupportClaimed: false,
+  globalThis.ResumeControls = Object.freeze({ version: 1, revision: 21, mode: 'shadow', liveSupportClaimed: false,
     register, createAdapter, resolve, inspect, plan, helpers, list: () => ordered().map(a => ({ name: a.name, lib: a.lib, type: a.type, priority: a.priority || 0 })),
     verify: (el, instruction, ctx) => resolve(el)?.verify(el, instruction, ctx) || Promise.resolve({ status: 'unsupported', reason: 'control_or_version_unconfirmed' }) });
 })();

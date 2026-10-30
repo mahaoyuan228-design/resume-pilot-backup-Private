@@ -14,6 +14,7 @@ export const CONTROL_FILES = Object.freeze([
   'src/content/controls/tree-select-controls.js',
   'src/content/controls/slider-controls.js',
   'src/content/controls/rate-controls.js',
+  'src/content/controls/transfer-controls.js',
 ]);
 
 export function readShadowRequests(requests, expectedUrl) {

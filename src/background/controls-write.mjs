@@ -21,6 +21,7 @@ export function readControlCandidatesInPage(expectedUrl, timeOrigin) {
     'el-rate', 'elplus-rate', 'antdv1-rate', 'aria-rate',
     'native-combobox-search', 'el-autocomplete', 'antdv1-autocomplete', 'el-select-search', 'antdv1-select-search',
     'el-select-multiple', 'antdv1-select-multiple',
+    'el-transfer', 'ant-transfer',
     'antdv1-tree-select', 'el-tree-select', 'el-search-tree-select',
     'native-textarea', 'el-textarea', 'antdv1-textarea', 'native-richtext']);
   const candidates = [], roots = new Set();
@@ -34,9 +35,9 @@ export function readControlCandidatesInPage(expectedUrl, timeOrigin) {
     const selector = ['html', ...parts].join(' > ');
     return selector.length <= 2048 && document.querySelectorAll(selector).length === 1 ? selector : null;
   };
-  // Confirm slider handles before their optional number editors, so one
+  // Confirm compound controls before their internal editors, so one
   // component contributes one answer target and never a second native field.
-  const elements = new Set([...document.querySelectorAll('.el-rate,.ant-rate,[role="slider"]'),
+  const elements = new Set([...document.querySelectorAll('.el-transfer,.ant-transfer,.el-rate,.ant-rate,[role="slider"]'),
     ...document.querySelectorAll('input,textarea,[contenteditable],[role="combobox"]')]);
   for (const element of [...elements].slice(0, 300)) {
     if ([...roots].some(root => root.contains(element))) continue;
@@ -47,17 +48,17 @@ export function readControlCandidatesInPage(expectedUrl, timeOrigin) {
     const type = registry.list().find(row => row.name === inspection.adapter).type;
     // Some TreeSelects render a focusable combobox root and create their
     // query input only inside the popup. The root is their answer target.
-    if (!element.matches('input,textarea,[contenteditable]') && !['tree-select', 'slider', 'rate'].includes(type)) continue;
+    if (!element.matches('input,textarea,[contenteditable]') && !['tree-select', 'slider', 'rate', 'transfer'].includes(type)) continue;
     // A multiple select can own both display and search inputs. Expose one
     // answer target and its root so ISOLATED cannot collect the peer as a field.
-    const root = ['multi-select', 'date-range', 'tree-select', 'slider', 'rate'].includes(type) ? registry.resolve(element)?.readModel(element).controlRoot : null;
+    const root = ['multi-select', 'date-range', 'tree-select', 'slider', 'rate', 'transfer'].includes(type) ? registry.resolve(element)?.readModel(element).controlRoot : null;
     if (root && roots.has(root)) continue;
     const rootSelector = root && selectorOf(root);
     // Chips may be inserted before a search input's containing li. A unique
     // input under the confirmed root survives that harmless index change.
-    const selector = !['slider', 'rate'].includes(type) && rootSelector && root.querySelectorAll('input:not([type="hidden"])').length === 1
+    const selector = !['slider', 'rate', 'transfer'].includes(type) && rootSelector && root.querySelectorAll('input:not([type="hidden"])').length === 1
       ? `${rootSelector} input:not([type="hidden"])` : selectorOf(element);
-    if (!selector || ['multi-select', 'date-range', 'tree-select', 'slider', 'rate'].includes(type) && !rootSelector) continue;
+    if (!selector || ['multi-select', 'date-range', 'tree-select', 'slider', 'rate', 'transfer'].includes(type) && !rootSelector) continue;
     if (root) roots.add(root);
     candidates.push({ selector, adapter: inspection.adapter, type, ...(rootSelector ? { rootSelector } : {}) });
   }

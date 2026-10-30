@@ -204,7 +204,7 @@ test('reinjection replaces revision 11 prose contracts and installs the richtext
   for (const source of sources) f.w.eval(source);
   const current = f.w.ResumeControls;
   assert.notEqual(current, old);
-  assert.equal(current.revision, 20);
+  assert.equal(current.revision, 21);
   for (const name of ['native-slider', 'el-slider', 'antdv1-slider', 'el-rate', 'elplus-rate', 'antdv1-rate', 'aria-rate']) assert.equal(current.list().some(row => row.name === name), true, name);
   assert.equal(current.resolve(f.get('rich')).name, 'native-richtext');
   for (const source of sources) f.w.eval(source);

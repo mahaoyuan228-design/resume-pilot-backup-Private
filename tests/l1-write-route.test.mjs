@@ -206,7 +206,7 @@ test('ordinary birthday part placeholders read empty while unbound parts remain 
   const previousListener = h.window.__resumeQuickFillEngineListener;
   h.window.__resumeQuickFillEngineRevision = 15;
   h.window.eval(source('src/content/engine.js'));
-  assert.equal(h.window.__resumeQuickFillEngineRevision, 22);
+  assert.equal(h.window.__resumeQuickFillEngineRevision, 23);
   assert.notEqual(h.window.__resumeQuickFillEngineListener, previousListener);
   let events = 0;
   for (const type of ['input', 'change', 'click']) h.window.document.addEventListener(type, () => events++);

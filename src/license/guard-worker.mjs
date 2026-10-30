@@ -6,6 +6,7 @@
 import '../background/bg-ping.mjs';
 import { installCmsEducationTaskRunner } from '../background/cms-education-task-runner.mjs';
 import { installProfileBindingBridge } from '../profile/profile-lifecycle.js';
+import { installControlWriteBridge } from '../background/controls-write.mjs';
 import { installEducationTaskRunner } from '../background/education-task-runner.mjs';
 import { installBasicTaskRunner } from '../background/basic-task-runner.mjs';
 import { installGthDraftTaskRunner } from '../background/gth-draft-task-runner.mjs';
@@ -134,3 +135,4 @@ function bootPaidAuto(name, fn) {
 }
 bootPaidAuto('gth-basic-auto', installGthBasicAutoRunner);
 bootPaidAuto('cms-basic-auto', installCmsBasicAutoRunner);
+bootPaidAuto('ats-control-write', installControlWriteBridge);

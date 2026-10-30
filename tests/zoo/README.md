@@ -1,5 +1,7 @@
 # Offline ATS control zoo (legacy baseline and L1 shadow)
 
+R2 adds eight per-adapter checks in `extended.spec.mjs` and the ordinary production message route in `write-route.spec.mjs`; see [the R2 contract](../../docs/ATS_ENGINE_R2.md). The original legacy baseline and five shadow comparisons remain intact. iView uses actual pinned 3.5.4 components. Ud/phoenix use explicitly synthetic contract replays, with production versions still pending samples. `liveSupportClaimed=false`.
+
 The legacy suite records existing adapter behavior at base `f07879e1caa24e6f7f09bf6c59e30b7098d89b6b` (#226). PR-2 starts from `8dcd68619cdad860f1402e56196fc61aefd881f0` (#227) and adds L1 shadow planning and disposable offline writer checks. It does not implement L2 semantics, L3 profiles or the live batch runner.
 
 ## Run
@@ -27,7 +29,7 @@ The suite loads the unchanged built extension and executes its shipped adapter f
 | GTH employment month range | Two actual Element month controls | Existing work-editor contract and `gth-open-fill.js`; both model and visible dates are checked. |
 | GTH plugin-dialog picker | Minimal custom DOM replay | Repository census and existing picker contract; synthetic category path. This is a GTH-specific replay, not a generic cascader. |
 
-Vue 2.7.16 and Ant Design Vue 1.7.8 match the handover. Element UI 2.15.14 is a selected offline fixture version; GTH's live version remains unverified. iView, antd-mobile, Moka and Feishu require further samples and are outside these five cases. Exact dependency versions and integrity hashes are in `package-lock.json`; copyright notices and upstream commits are in `THIRD_PARTY_NOTICES.md`.
+Vue 2.7.16 and Ant Design Vue 1.7.8 match the handover. Element UI 2.15.14 is a selected offline fixture version; GTH's live version remains unverified. The original five cases exclude iView, antd-mobile, Moka and Feishu. R2 adds actual iView 3.5.4 and synthetic ud/phoenix cases; their live samples remain pending. Exact dependency versions and integrity hashes are in `package-lock.json`; copyright notices and upstream commits are in `THIRD_PARTY_NOTICES.md`.
 
 The checked-in legacy baseline is an expectation, not a support matrix. A green suite means the existing result, visible DOM, MAIN-world fixture model, neighboring fields and safety evidence match that expectation. Known unsupported or fail-closed behavior must remain explicit. Future adapter work must explain each intentional baseline change instead of silently accepting new output.
 

@@ -1,5 +1,7 @@
 # L1 control registry: PR-2 shadow boundary
 
+This document records #229's original boundary. [R2](ATS_ENGINE_R2.md) adds the deferred adapter entries, section vocabulary, confirmed domain memory and a default-OFF production writer. `inspectControls` itself remains read-only.
+
 Base: `8dcd68619cdad860f1402e56196fc61aefd881f0` (#227). This slice adds the L1 registry and an explicit diagnostic bridge. Existing CMS/GTH writers and production message routes remain unchanged. There is no automatic cutover to a new writer.
 
 ## Contract

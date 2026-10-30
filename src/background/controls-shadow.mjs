@@ -1,11 +1,12 @@
-// PR-2 diagnostic entry point. No runtime message handler or production fill
-// route calls this module. MAIN targets the top frame's default world explicitly;
+// Read-only diagnostic entry point; the separate opt-in controls-write bridge
+// shares this file inventory. MAIN targets the top frame's default world;
 // existing CDP context pinning and throwOnSideEffect probes remain untouched.
 export const CONTROL_FILES = Object.freeze([
   'src/content/controls/model.js',
   'src/content/controls/registry.js',
   'src/content/controls/native.js',
   'src/content/controls/vue-controls.js',
+  'src/content/controls/extended-controls.js',
 ]);
 
 export function readShadowRequests(requests, expectedUrl) {

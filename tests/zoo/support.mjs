@@ -6,6 +6,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createHash } from 'node:crypto';
 import { createRowDNetworkGuard } from '../../scripts/live/cms-row-d-live.mjs';
+import { assessNeverSaveBatch } from '../../scripts/lib/never-save-guard.mjs';
 import { canonicalProfileHash } from '../../src/profile/profile-lifecycle.js';
 
 export const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
@@ -209,13 +210,14 @@ export async function startZoo(caseName, variant = '') {
       return { version: 1, epoch, profileHash: await canonicalProfileHash(profile) };
     }
     async function evidence() {
-      await guard.drain();
       const safety = await page.evaluate(() => ({ ...window.__zooSafety,
         blacklistClicks: window.__zoo.snapshot().effects.blacklistClicks }));
+      await guard.drain();
+      const batchAssessment = assessNeverSaveBatch([guard]);
       return { neverSave: true, liveSupportClaimed: false, routing, ...safety,
         nonGetObserved: guard.traffic.observedNonGetCount, nonGetBlocked: guard.traffic.blockedNonGetCount,
-        responseToNonGet: guard.traffic.responseToNonGetCount, guardFailed: guard.failed(),
-        guardAssessment: guard.assessment(), adapterHashes: fileHashes };
+        responseToNonGet: guard.traffic.responseToNonGetCount, guardFailed: batchAssessment.status === 'FAIL',
+        guardAssessment: guard.assessment(), batchAssessment, adapterHashes: fileHashes };
     }
     return { page, worker, tabId, inject, shadow, execute, readback, bind, evidence, close: cleanup };
   } catch (error) { await cleanup(); throw error; }

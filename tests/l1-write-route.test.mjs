@@ -44,6 +44,7 @@ async function harness({ enabled, html = '<form><label for="name">姓名</label>
       throw Error('unexpected_message');
     } }, storage: { local: storage } };
   window.eval(source('src/core/matcher.js'));
+  window.eval(source('src/content/controls/resume-form.js'));
   window.eval(source('src/content/engine.js'));
   const run = async type => {
     const currentBinding = await captureProfileBinding(storage);
@@ -205,7 +206,7 @@ test('ordinary birthday part placeholders read empty while unbound parts remain 
   const previousListener = h.window.__resumeQuickFillEngineListener;
   h.window.__resumeQuickFillEngineRevision = 15;
   h.window.eval(source('src/content/engine.js'));
-  assert.equal(h.window.__resumeQuickFillEngineRevision, 21);
+  assert.equal(h.window.__resumeQuickFillEngineRevision, 22);
   assert.notEqual(h.window.__resumeQuickFillEngineListener, previousListener);
   let events = 0;
   for (const type of ['input', 'change', 'click']) h.window.document.addEventListener(type, () => events++);
@@ -542,13 +543,15 @@ test('ordinary RESUME_FILL reaches an input-backed ud-select only with the opt-i
     const h = await harness({ enabled: scenario !== 'off' }); t.after(() => h.dom.window.close());
     const f = syntheticUdSelect(h, { version: scenario === 'version' ? 'unknown-2' : 'fixture-contract-1', readonly: scenario === 'readonly' });
     const result = await h.fill();
-    assert.equal(result.ok, true, JSON.stringify(result));
+    assert.equal(result.ok, scenario === 'enabled', JSON.stringify(result));
     if (scenario === 'enabled') {
       assert.equal(result.data.fields[0].adapter, 'ud-select');
       assert.equal(result.data.fields[0].adapterStatus, 'success');
       assert.equal(f.input.value, '离线姓名');
       assert.equal(f.props.value, 'name-code');
     } else {
+      assert.equal(result.readiness.status, 'manual');
+      assert.equal(result.writeStarted, false);
       assert.equal(f.input.value, '', scenario);
       assert.equal(f.props.value, '', scenario);
     }
@@ -703,7 +706,12 @@ test('ordinary richtext candidates reject nested, disabled and unconfirmed frame
     t.after(() => h.dom.window.close());
     h.data.resumeProfile = { schemaVersion: 1, selfEvaluation: '安全边界', confirmedFields: ['selfEvaluation'] };
     const result = await h.fill();
-    assert.equal(result.ok, true, JSON.stringify(result));
+    const readOnly = html.includes('contenteditable="false"') || html.includes('aria-disabled="true"');
+    assert.equal(result.ok, !readOnly, JSON.stringify(result));
+    if (readOnly) {
+      assert.equal(result.readiness.status, 'form_not_ready');
+      assert.equal(result.writeStarted, false);
+    }
     assert.equal(h.window.document.getElementById('prose').textContent, '');
     assert.equal(h.calls.filter(call => call.func?.name === 'writeControlInPage').length, 0);
   }

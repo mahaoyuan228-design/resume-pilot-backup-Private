@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { JSDOM } from 'jsdom';
 
-const files = ['model.js', 'registry.js', 'native.js', 'vue-controls.js', 'extended-controls.js'].map(name =>
+const files = ['model.js', 'registry.js', 'native.js', 'vue-controls.js', 'extended-controls.js', 'slider-controls.js'].map(name =>
   fs.readFileSync(new URL(`../src/content/controls/${name}`, import.meta.url), 'utf8'));
 const contracts = [
   ['ivu-select', 'iview', 'iSelect', '本科'], ['ivu-date', 'iview', 'CalendarPicker', '2023-01-02'],
@@ -293,11 +293,12 @@ test('object-valued models and option codes cannot be flattened into empty value
 test('reinjection upgrades an old v1 MAIN model/registry and restores every adapter family', t => {
   const f = boot(contracts[2], { legacy: true }); t.after(() => f.dom.window.close());
   assert.equal(f.w.ResumeControlModel.version, 1);
-  assert.equal(f.w.ResumeControlModel.revision, 13);
+  assert.equal(f.w.ResumeControlModel.revision, 14);
   assert.equal(f.R.version, 1);
-  assert.equal(f.R.revision, 18);
+  assert.equal(f.R.revision, 19);
   const names = new Set(f.R.list().map(adapter => adapter.name));
-  for (const name of ['native-text', 'native-select', 'native-date', 'native-month', 'el-select', 'antdv1-month', ...contracts.map(row => row[0])]) {
+  for (const name of ['native-text', 'native-select', 'native-date', 'native-month', 'el-select', 'antdv1-month',
+    'native-slider', 'el-slider', 'antdv1-slider', ...contracts.map(row => row[0])]) {
     assert.equal(names.has(name), true, name);
   }
   assert.equal(names.has('old_adapter'), false);
@@ -308,10 +309,10 @@ test('reinjection upgrades an old v1 MAIN model/registry and restores every adap
 
 test('revision 2 reinjection replaces captured models and adapters before a guarded UI write', async t => {
   const f = boot(contracts[2], { legacy: 2 }); t.after(() => f.dom.window.close());
-  assert.equal(f.w.ResumeControlModel.revision, 13);
-  assert.equal(f.R.revision, 18);
+  assert.equal(f.w.ResumeControlModel.revision, 14);
+  assert.equal(f.R.revision, 19);
   assert.equal(f.R.list().some(adapter => adapter.name === 'old_adapter'), false);
-  for (const name of ['native-text', 'el-select', 'antdv1-month', ...contracts.map(row => row[0])]) {
+  for (const name of ['native-text', 'el-select', 'antdv1-month', 'native-slider', 'el-slider', 'antdv1-slider', ...contracts.map(row => row[0])]) {
     assert.equal(f.R.list().some(adapter => adapter.name === name), true, name);
   }
   const plan = f.R.plan(f.el, f.fact), adapter = f.R.resolve(f.el);

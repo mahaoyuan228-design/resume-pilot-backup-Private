@@ -1,6 +1,6 @@
 {
   "version": "0.1.4.9",
-  "sumsSha256": "72d54800d8d8bcda49a000503bd79fcc705026605314d3ce60ed9edb087e8655",
+  "sumsSha256": "4a37beb8e05be4bce777ee621184fa30e3733db513b3b327867b7e3c3b243e71",
   "inventory": [
     {
       "path": "manifest.json",
@@ -274,8 +274,8 @@
     },
     {
       "path": "src/content/engine.js",
-      "sha256": "e4b92b1003ff77ff7524bfc144d1e4f8888176afe5f4fc0f1d85fcaf8cb6f0dc",
-      "sourceSha256": "e4b92b1003ff77ff7524bfc144d1e4f8888176afe5f4fc0f1d85fcaf8cb6f0dc",
+      "sha256": "e51f6e9753268e4cf1aa71900e0d640ac167c3805dba009e215b5117d19bdd0e",
+      "sourceSha256": "e51f6e9753268e4cf1aa71900e0d640ac167c3805dba009e215b5117d19bdd0e",
       "kind": "frozen-product"
     },
     {
@@ -820,20 +820,20 @@
     },
     {
       "path": "src/background/controls-shadow.mjs",
-      "sha256": "bae6bf2726f52ab40d68a99c26f37156472a716b3dc578fb7cc97445159a4ffd",
-      "sourceSha256": "bae6bf2726f52ab40d68a99c26f37156472a716b3dc578fb7cc97445159a4ffd",
+      "sha256": "1000b342397ac3c4b4a4341a1adc6b2fe43831528d334879ed6ded14db0c3063",
+      "sourceSha256": "1000b342397ac3c4b4a4341a1adc6b2fe43831528d334879ed6ded14db0c3063",
       "kind": "frozen-product"
     },
     {
       "path": "src/content/controls/model.js",
-      "sha256": "1d9b42cdec8b6386d446a3ba6bce3e20eaccd24a639d8323a94f0c204b394d11",
-      "sourceSha256": "1d9b42cdec8b6386d446a3ba6bce3e20eaccd24a639d8323a94f0c204b394d11",
+      "sha256": "1d9f5356a9698b5c11ce2c0232bc4652168a9d40dc81e54a4d395937ad3dd266",
+      "sourceSha256": "1d9f5356a9698b5c11ce2c0232bc4652168a9d40dc81e54a4d395937ad3dd266",
       "kind": "frozen-product"
     },
     {
       "path": "src/content/controls/registry.js",
-      "sha256": "f9d8051241079107a7ccf71e9a570ea6c1153f5e2459aa52a2abdda98d87043b",
-      "sourceSha256": "f9d8051241079107a7ccf71e9a570ea6c1153f5e2459aa52a2abdda98d87043b",
+      "sha256": "ba9d9adc02afb7063dc838cd844e607577404bd01a52811cf8ae752961540220",
+      "sourceSha256": "ba9d9adc02afb7063dc838cd844e607577404bd01a52811cf8ae752961540220",
       "kind": "frozen-product"
     },
     {
@@ -862,8 +862,8 @@
     },
     {
       "path": "src/background/controls-write.mjs",
-      "sha256": "013a101c5b23c0f93f9dee96e689313882861c901ccfc84e4951085060c34e06",
-      "sourceSha256": "013a101c5b23c0f93f9dee96e689313882861c901ccfc84e4951085060c34e06",
+      "sha256": "b3d42f39c50106a454740fe18066b82ee9d4c78c9a58b5042bf409e93973c442",
+      "sourceSha256": "b3d42f39c50106a454740fe18066b82ee9d4c78c9a58b5042bf409e93973c442",
       "kind": "frozen-product"
     },
     {
@@ -906,6 +906,12 @@
       "path": "src/content/controls/tree-select-controls.js",
       "sha256": "f9c47788a73ea2a6bbc09d0150ba0248122339849fd490df45f92a43244854c5",
       "sourceSha256": "f9c47788a73ea2a6bbc09d0150ba0248122339849fd490df45f92a43244854c5",
+      "kind": "frozen-product"
+    },
+    {
+      "path": "src/content/controls/slider-controls.js",
+      "sha256": "f1e9fa8b9a5a59b0dfa041e2cbe8b8602164dbdeae885fb20a198770bdc08fb5",
+      "sourceSha256": "f1e9fa8b9a5a59b0dfa041e2cbe8b8602164dbdeae885fb20a198770bdc08fb5",
       "kind": "frozen-product"
     },
     {

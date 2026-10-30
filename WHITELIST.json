@@ -236,7 +236,15 @@
     "tests/fixtures/tree-select-harness.mjs",
     "tests/zoo/tree-select.spec.mjs",
     "tests/zoo/fixtures/tree-select.html",
-    "tests/zoo/fixtures/tree-select.js"
+    "tests/zoo/fixtures/tree-select.js",
+    "src/content/controls/slider-controls.js",
+    "tests/l1-slider-controls.test.mjs",
+    "tests/l1-slider-write-route.test.mjs",
+    "tests/fixtures/slider-harness.mjs",
+    "tests/zoo/slider.spec.mjs",
+    "tests/zoo/fixtures/slider.html",
+    "tests/zoo/fixtures/slider.js",
+    "docs/ATS_SLIDER_CONTROLS.md"
   ],
   "productPaths": [
     "manifest.json",
@@ -389,7 +397,8 @@
     "src/content/controls/date-controls.js",
     "src/content/controls/time-controls.js",
     "src/content/controls/date-range-controls.js",
-    "src/content/controls/tree-select-controls.js"
+    "src/content/controls/tree-select-controls.js",
+    "src/content/controls/slider-controls.js"
   ],
   "excluded": [
     "No directory-wide copy of repository/tests/exports/dist.",

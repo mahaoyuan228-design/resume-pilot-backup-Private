@@ -1,0 +1,12 @@
+{
+  "baseTip": "f07879e1caa24e6f7f09bf6c59e30b7098d89b6b",
+  "evidence": "offline synthetic components; expected legacy behavior, not live support",
+  "liveSupportClaimed": false,
+  "cases": {
+    "cms-month": { "status": "unsupported", "reason": "no_shipped_month_writer", "legacy": { "status": "skipped", "reason": "insufficient_precision" }, "dom": "", "model": "" },
+    "cms-school": { "status": "verified", "reason": "readback_matched", "dom": "离线示例大学", "model": "离线示例大学" },
+    "hotjob-pair": { "status": "verified", "reason": "readback_matched", "dom": ["北京市", "北京市"], "model": ["北京市", "北京市"] },
+    "gth-month-range": { "status": "verified", "reason": "readback_matched", "dom": "2023-01 | 2024-06", "model": "2023-01 | 2024-06" },
+    "gth-plugin-picker": { "status": "verified", "reason": "readback_matched", "dom": "投资/证券/基金", "model": "投资/证券/基金" }
+  }
+}

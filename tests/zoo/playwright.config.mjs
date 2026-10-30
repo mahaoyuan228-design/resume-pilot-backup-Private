@@ -1,0 +1,16 @@
+import { defineConfig } from '@playwright/test';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const here = path.dirname(fileURLToPath(import.meta.url));
+export default defineConfig({
+  testDir: here,
+  testMatch: 'legacy.spec.mjs',
+  timeout: 90000,
+  expect: { timeout: 10000 },
+  workers: 1,
+  fullyParallel: false,
+  retries: 0,
+  reporter: [['list']],
+  outputDir: path.resolve(here, '../../test-results/zoo'),
+});

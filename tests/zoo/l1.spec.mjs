@@ -4,6 +4,77 @@ import { startZoo, workProfile, CMS } from './support.mjs';
 
 const expectations = JSON.parse(await fs.readFile(new URL('./l1-shadow-expectations.json', import.meta.url), 'utf8'));
 
+test('packaged number family sets, increments and decrements with real Vue and native/ARIA readback', async ({}, testInfo) => {
+  const zoo = await startZoo('cms-month');
+  try {
+    await zoo.page.evaluate(async () => {
+      const host = document.createElement('section');
+      host.id = 'l1-number-fixture';
+      host.innerHTML = `<input id="l1-native-number" type="number" min="0" max="10" step="0.1">
+        <input id="l1-aria-number" type="text" role="spinbutton" aria-valuenow="" aria-valuemin="0" aria-valuemax="10" step="0.1">
+        <input id="l1-number-neighbor" value="KEEP_NUMBER_NEIGHBOR"><div id="l1-number-vue"></div>`;
+      document.body.append(host);
+      window.__numberVue = new Vue({ el: '#l1-number-vue',
+        // Element coerces null to zero; undefined is its empty-number contract.
+        data: { antNumber: null, elNumber: undefined },
+        template: `<div id="l1-number-vue">
+          <a-input-number v-model="antNumber" :min="0" :max="10" :step="0.1" :precision="1" />
+          <el-input-number v-model="elNumber" :min="0" :max="10" :step="0.1" :precision="1" />
+        </div>`,
+      });
+      await Vue.nextTick();
+      const aria = document.querySelector('#l1-aria-number');
+      const sync = () => aria.setAttribute('aria-valuenow', aria.value);
+      for (const type of ['input', 'change']) aria.addEventListener(type, sync);
+      aria.addEventListener('keydown', event => {
+        if (!['ArrowUp', 'ArrowDown'].includes(event.key)) return;
+        event.preventDefault();
+        aria.value = ((Math.round(Number(aria.value) * 10) + (event.key === 'ArrowUp' ? 1 : -1)) / 10).toFixed(1);
+        aria.dispatchEvent(new Event('input', { bubbles: true }));
+        aria.dispatchEvent(new Event('change', { bubbles: true }));
+      });
+      window.__numberEffects = 0;
+      for (const type of ['input', 'change', 'keydown', 'keyup']) host.addEventListener(type, () => window.__numberEffects++);
+    });
+    const requests = [
+      ['#l1-native-number', 'native-number'], ['#l1-aria-number', 'aria-number'],
+      ['#l1-number-vue .ant-input-number', 'antdv1-number'], ['#l1-number-vue .el-input-number', 'el-number'],
+    ];
+    const shadow = await zoo.shadow(requests.map(([selector]) => ({ selector, fact: { value: 0.2 } })));
+    shadow.plans.forEach((plan, index) => expect(plan, JSON.stringify(shadow))
+      .toMatchObject({ adapter: requests[index][1], status: 'planned', type: 'number' }));
+    expect(await zoo.page.evaluate(() => window.__numberEffects)).toBe(0);
+    const results = await zoo.execute(async requests => {
+      const results = [];
+      for (const [selector] of requests) {
+        const el = document.querySelector(selector), adapter = ResumeControls.resolve(el), steps = [];
+        for (const fact of [{ value: 0.2 }, { operation: 'inc' }, { operation: 'dec' }]) {
+          const plan = ResumeControls.plan(el, fact);
+          const denied = await adapter.write(el, plan);
+          const written = await adapter.write(el, plan, { allowWrite: true, check: async () => {
+            if (!el.isConnected || document.visibilityState !== 'visible') throw Error('zoo_control_not_visible');
+          } });
+          steps.push({ plan, denied, written, verified: await ResumeControls.verify(el, plan) });
+        }
+        results.push({ selector, steps });
+      }
+      return results;
+    }, [requests], 'MAIN');
+    for (const result of results) result.steps.forEach((step, index) => {
+      expect(step.plan.status, JSON.stringify(result)).toBe('planned');
+      expect(step.denied).toMatchObject({ reason: 'shadow_mode', attempts: 0 });
+      expect(step.written.attempts, JSON.stringify(result)).toBe(1);
+      expect(step.verified, JSON.stringify(result)).toMatchObject({ status: 'success', modelReadback: [0.2, 0.3, 0.2][index] });
+      expect(Number(step.verified.domReadback)).toBe([0.2, 0.3, 0.2][index]);
+    });
+    expect(await zoo.page.evaluate(() => ({ ant: window.__numberVue.antNumber, el: window.__numberVue.elNumber,
+      native: document.querySelector('#l1-native-number').value, aria: document.querySelector('#l1-aria-number').getAttribute('aria-valuenow'),
+      neighbor: document.querySelector('#l1-number-neighbor').value })))
+      .toEqual({ ant: 0.2, el: 0.2, native: '0.2', aria: '0.2', neighbor: 'KEEP_NUMBER_NEIGHBOR' });
+    await record(testInfo, zoo, { shadow, results, scope: 'offline native, ARIA and real pinned Vue InputNumber controls only' });
+  } finally { await zoo.close(); }
+});
+
 async function safety(zoo) {
   const evidence = await zoo.evidence();
   expect(evidence).toMatchObject({

@@ -14,6 +14,7 @@ export function readControlCandidatesInPage(expectedUrl, timeOrigin) {
   if (registry?.version !== 1 || registry.liveSupportClaimed !== false) throw Error('control_registry_missing');
   const names = new Set(['ivu-select', 'ivu-date', 'ud-select', 'ud-date', 'ud-cascader', 'phoenix-select', 'phoenix-cascader', 'phoenix-date',
     'native-date', 'native-month', 'my97-date', 'my97-datetime', 'antdv1-month',
+    'native-number', 'aria-number', 'el-number', 'antdv1-number',
     'native-combobox-search', 'el-autocomplete', 'antdv1-autocomplete', 'el-select-search', 'antdv1-select-search',
     'el-select-multiple', 'antdv1-select-multiple',
     'native-textarea', 'el-textarea', 'antdv1-textarea', 'native-richtext']);

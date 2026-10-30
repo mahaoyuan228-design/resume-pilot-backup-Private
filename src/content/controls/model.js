@@ -2,7 +2,7 @@
 // instances or handlers to the extension. No events, setters or network calls.
 (() => {
   'use strict';
-  if (globalThis.ResumeControlModel?.version === 1 && globalThis.ResumeControlModel.revision === 9) return;
+  if (globalThis.ResumeControlModel?.version === 1 && globalThis.ResumeControlModel.revision === 10) return;
   const norm = value => String(value ?? '').normalize('NFKC').replace(/\s+/gu, ' ').trim();
   function serial(value, depth = 0) {
     if (value == null || ['string', 'number', 'boolean'].includes(typeof value)) return value ?? null;
@@ -50,7 +50,7 @@
     }
     return serial(value);
   }
-  const knownVue = /^(El(Input|Autocomplete|Select|Option|Radio(Group)?|Checkbox(Group)?|Switch|DatePicker|Cascader)|A(Input|Textarea|AutoComplete|Select|Radio(Group)?|Checkbox(Group)?|Switch|DatePicker|MonthPicker|Cascader)|iSelect|CalendarPicker)$/u;
+  const knownVue = /^(El(InputNumber|Input|Autocomplete|Select|Option|Radio(Group)?|Checkbox(Group)?|Switch|DatePicker|Cascader)|A(InputNumber|Input|Textarea|AutoComplete|Select|Radio(Group)?|Checkbox(Group)?|Switch|DatePicker|MonthPicker|Cascader)|iSelect|CalendarPicker)$/u;
   const knownReact = /^(Ud|Phoenix)(Select|DatePicker|Cascader)$/u;
   const valueControls = root => root?.nodeType === 1 ? [
     ...(root.matches('input:not([type="hidden"]),textarea,select') ? [root] : []),
@@ -282,5 +282,5 @@
           || props.displayRender || vm?.$scopedSlots?.displayRender || vm?.$scopedSlots?.default || customFields) } : {}),
       versionEvidence: version ? 'page_library_export' : 'version_unconfirmed' };
   }
-  globalThis.ResumeControlModel = Object.freeze({ version: 1, revision: 9, inspect, resolve, serial, optionsOf });
+  globalThis.ResumeControlModel = Object.freeze({ version: 1, revision: 10, inspect, resolve, serial, optionsOf });
 })();

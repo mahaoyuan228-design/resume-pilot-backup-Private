@@ -3,9 +3,9 @@
 // No implementation source from the ATS research repos is used.
 (() => {
   'use strict';
-  // Rebuild old registries so reinjection installs the upload-aware native
-  // adapter as well as the current model resolver.
-  if (globalThis.ResumeControls?.version === 1 && globalThis.ResumeControls.revision === 6) return;
+  // Rebuild old registries so reinjection installs current select readback
+  // contracts as well as the current model resolver.
+  if (globalThis.ResumeControls?.version === 1 && globalThis.ResumeControls.revision === 7) return;
   const adapters = new Map();
   const norm = value => String(value ?? '').normalize('NFKC').replace(/\s+/gu, ' ').trim();
   const equal = (a, b) => Array.isArray(a) || Array.isArray(b)
@@ -218,7 +218,7 @@
     } catch { return { ...manual('component_probe_failed'), adapter: null }; }
   }
   const helpers = Object.freeze({ norm, equal, empty, tick, makePlan, safeClick, nativeSet, check, clickAllowed, clean, validDate });
-  globalThis.ResumeControls = Object.freeze({ version: 1, revision: 6, mode: 'shadow', liveSupportClaimed: false,
+  globalThis.ResumeControls = Object.freeze({ version: 1, revision: 7, mode: 'shadow', liveSupportClaimed: false,
     register, createAdapter, resolve, inspect, plan, helpers, list: () => ordered().map(a => ({ name: a.name, lib: a.lib, type: a.type, priority: a.priority || 0 })),
     verify: (el, instruction, ctx) => resolve(el)?.verify(el, instruction, ctx) || Promise.resolve({ status: 'unsupported', reason: 'control_or_version_unconfirmed' }) });
 })();

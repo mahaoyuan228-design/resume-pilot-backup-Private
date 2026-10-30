@@ -8,7 +8,7 @@
   if(nativeMessages.hasListeners?.()===false)globalThis.__resumeNativeListenersResetObserved=true;
   if(globalThis.__resumeQuickFillInstalled){
     existingListenerAlive=!!ownedListener&&nativeMessages.hasListener?.(ownedListener)===true;
-    if(existingListenerAlive&&globalThis.__resumeQuickFillEngineRevision===13&&typeof globalThis.ResumeQuickFillGthInspect==='function')return;
+    if(existingListenerAlive&&globalThis.__resumeQuickFillEngineRevision===14&&typeof globalThis.ResumeQuickFillGthInspect==='function')return;
     if(existingListenerAlive){if(fillState.pending)throw Error('profile_write_context_busy');nativeMessages.removeListener(ownedListener);existingListenerAlive=false;}
     else if(!ownedListener&&nativeMessages.hasListeners?.()===true&&!globalThis.__resumeNativeListenersResetObserved)throw Error('extension_reload_required');
   }
@@ -839,6 +839,23 @@
       &&JSON.stringify(options.map(node=>M.normalize(radioOptionLabel(node,true))).sort())===JSON.stringify(["否","是"].sort());
   }
 
+  function datePartPlaceholder(option) {
+    const label = String(option.textContent || '').normalize('NFKC').trim().toLowerCase();
+    const value = String(option.value).normalize('NFKC').trim().toLowerCase();
+    const part = /^(?:年|year|yyyy)$/u.test(label) ? 'year'
+      : /^(?:月|month|mm)$/u.test(label) ? 'month' : /^(?:日|day|dd)$/u.test(label) ? 'day' : null;
+    if (!part || !['', '-1', '0', label].includes(value)) return false;
+    const choices = [...option.closest('select').options].filter(node => node !== option
+      && !node.disabled && !node.closest('optgroup[disabled]'));
+    const pattern = part === 'year' ? /^\d{4}$/u : /^\d{1,2}$/u;
+    const display = part === 'year' ? /^(\d{4})年?$/u : part === 'month' ? /^(\d{1,2})月?$/u : /^(\d{1,2})日?$/u;
+    return choices.length > 0 && choices.every(node => {
+      const code = node.value.normalize('NFKC').trim(), text = node.textContent.normalize('NFKC').trim().match(display);
+      return pattern.test(code) && text && Number(code) === Number(text[1])
+        && Number(code) >= (part === 'year' ? 1900 : 1) && Number(code) <= (part === 'year' ? 2100 : part === 'month' ? 12 : 31);
+    });
+  }
+
   function meaningfulCurrent(control, radioOptions = null, antUnnamed = false) {
     if(cmsCheckboxControl(control)) {
       const selected=globalThis.ResumeCmsCheckboxes.inspectControl(control)?.selected;
@@ -859,6 +876,7 @@
     if (control instanceof HTMLSelectElement) {
       const chosen = control.selectedOptions[0];
       if (!chosen || chosen.disabled || !chosen.value) return "";
+      if (datePartPlaceholder(chosen)) return "";
       if (["请选择", "选择", "请选", "select"].includes(M.normalize(chosen.textContent))) return "";
       return chosen.textContent.trim();
     }
@@ -1082,10 +1100,12 @@
         result.reason = "invalid_profile_value";
       }
       if (result.reason === "ready" && (control instanceof HTMLSelectElement || radio)) {
-        const options = radio ? radioOptions.map((item) => ({ label: radioOptionLabel(item, !!group?.antUnnamed), value: group?.antUnnamed ? "" : item.value, disabled: item.disabled })) : [...control.options];
+        const options = radio ? radioOptions.map((item) => ({ label: radioOptionLabel(item, !!group?.antUnnamed), value: group?.antUnnamed ? "" : item.value, disabled: item.disabled }))
+          : [...control.options].map(option => ({ label: option.label, value: option.value,
+            disabled: option.disabled || !!option.closest('optgroup[disabled]') || datePartPlaceholder(option) }));
         const selection = M.selectOption(options, result.answer);
         result.optionIndex = selection.index;
-        if (selection.index < 0) result.reason = selection.reason;
+        if (selection.index < 0) { result.reason = selection.reason; result.semanticStatus = "manual"; }
       }
       if (result.reason === "ready") result.reason = controlConstraint(control, result.answer, atsControlTargets.has(control)) || "ready";
       if (["unconfirmed_profile_value", "unlabelled_field"].includes(result.reason)) result.semanticStatus = "manual";
@@ -1133,7 +1153,10 @@
       || plain.kind === "cms_ant_v3_select" || plain.kind === "cms_school_search"
       ? (left, right) => exactOptionText(left) === exactOptionText(right)
       : (left, right) => M.normalize(left) === M.normalize(right);
-    if (plain.reason === "ready" && plain.currentValue && !answers.some((value) => same(plain.currentValue, value))) {
+    const matchesCurrent = control instanceof HTMLSelectElement
+      ? control.selectedIndex === entry.optionIndex
+      : answers.some((value) => same(plain.currentValue, value));
+    if (plain.reason === "ready" && plain.currentValue && !matchesCurrent) {
       plain.reason = "existing_value";
     }
     return plain;
@@ -2585,7 +2608,7 @@
         sendResponse(reply);
       });
     return true;
-  };chrome.runtime.onMessage.addListener(engineListener);globalThis.__resumeQuickFillEngineListener=engineListener;globalThis.__resumeQuickFillEngineRevision=13;}
+  };chrome.runtime.onMessage.addListener(engineListener);globalThis.__resumeQuickFillEngineListener=engineListener;globalThis.__resumeQuickFillEngineRevision=14;}
   globalThis.ResumeQuickFillGthInspect = (profile) => {
     if (`${location.origin}${location.pathname}` !== "https://hr.gtht.com/resume/edit/")
       throw new Error("gth_inspect_wrong_page");

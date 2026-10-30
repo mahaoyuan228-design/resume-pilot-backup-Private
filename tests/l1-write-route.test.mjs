@@ -45,14 +45,86 @@ async function harness({ enabled, html = '<form><label for="name">姓名</label>
     } }, storage: { local: storage } };
   window.eval(source('src/core/matcher.js'));
   window.eval(source('src/content/engine.js'));
-  const fill = async () => {
+  const run = async type => {
     const currentBinding = await captureProfileBinding(storage);
-    return new Promise(resolve => listeners[0]({ type: 'RESUME_FILL', profile: clone(data.resumeProfile), profileBinding: currentBinding }, { id: sender.id }, resolve));
+    return new Promise(resolve => listeners[0]({ type, profile: clone(data.resumeProfile), profileBinding: currentBinding }, { id: sender.id }, resolve));
   };
+  const fill = () => run('RESUME_FILL'), inspect = () => run('RESUME_INSPECT');
   const request = () => ({ type: CONTROL_WRITE_MESSAGE, selector: '#name', path: 'fullName', value: data.resumeProfile.fullName,
     profileBinding: binding, timeOrigin: window.performance.timeOrigin });
-  return { dom, window, data, calls, locks, sender, tab, binding, fill, invoke, request };
+  return { dom, window, data, calls, locks, sender, tab, binding, fill, inspect, invoke, request };
 }
+
+test('ordinary country-code and phone selects compare the selected option, preserving distinct labels and values', async t => {
+  // Legacy selectedIndex writes are covered in Chromium: jsdom 26 leaves its
+  // previously accessed selectedOptions collection stale after that setter.
+  for (const [enabled, preselected] of [[true, false], [false, true], [true, true]]) {
+    const h = await harness({ enabled, html: `<form>
+      <label for="prefix">国家码</label><select id="prefix" autocomplete="tel-country-code">
+        <option value="">请选择</option><option value="+86" ${preselected ? 'selected' : ''}>中国 (+86)</option><option value="+44">英国 (+44)</option>
+      </select><label for="phone">手机号</label><select id="phone"><option value="">请选择</option>
+        <option value="13800138000" ${preselected ? 'selected' : ''}>138 0013 8000</option></select>
+      <input id="neighbor" value="KEEP"><button type="submit">提交</button><button type="button">保存</button>
+    </form>` });
+    t.after(() => h.dom.window.close());
+    h.data.resumeProfile = { schemaVersion: 1, phone: '13800138000', customAnswers: { 国家码: '+86' },
+      customFacts: [{ question: '国家码', answer: '+86', sitePageUrl: h.tab.url, sectionName: 'form:single', rowContext: 'none' }],
+      confirmedFields: ['phone', 'customAnswers.国家码'] };
+    let events = 0, clicks = 0;
+    h.window.document.addEventListener('input', () => events++);
+    h.window.document.addEventListener('click', () => clicks++);
+    const before = await h.inspect();
+    for (const id of ['prefix', 'phone']) assert.equal(before.data.fields.find(row => row.id === id).reason, 'ready', JSON.stringify(before));
+    assert.equal(events, 0);
+    const result = await h.fill();
+    assert.equal(result.ok, true, JSON.stringify(result));
+    for (const id of ['prefix', 'phone']) {
+      const row = result.data.fields.find(field => field.id === id);
+      assert.equal(row.status, 'verified', JSON.stringify(result));
+      assert.equal(row.reason, preselected ? 'preexisting_same_value' : 'readback_matched');
+      if (enabled) { assert.equal(row.adapter, 'native-select'); assert.equal(row.adapterStatus, 'success'); }
+    }
+    assert.equal(h.window.document.getElementById('prefix').value, '+86');
+    assert.equal(h.window.document.getElementById('phone').value, '13800138000');
+    assert.equal(h.window.document.getElementById('neighbor').value, 'KEEP');
+    assert.equal(clicks, 0);
+    if (preselected) assert.equal(events, 0);
+  }
+});
+
+test('ordinary birthday part placeholders read empty while unbound parts remain manual', async t => {
+  const h = await harness({ enabled: true, html: `<form><label for="year">年</label><select id="year"><option value="-1">年</option><option value="1996">1996</option></select>
+    <label for="month">月</label><select id="month"><option value="0">月</option><option value="02">2</option></select>
+    <label for="day">日</label><select id="day"><option value="日">日</option><option value="29">29</option></select>
+    <label for="selected">年份</label><select id="selected"><option value="1996">1996</option></select>
+    <label for="frequency">周期</label><select id="frequency"><option value="month">Month</option><option value="week">Week</option></select>
+    <input id="neighbor" value="KEEP"></form>` });
+  t.after(() => h.dom.window.close());
+  h.data.resumeProfile = { schemaVersion: 1, birthDate: '1996-02-29', confirmedFields: ['birthDate'] };
+  const previousListener = h.window.__resumeQuickFillEngineListener;
+  h.window.__resumeQuickFillEngineRevision = 13;
+  h.window.eval(source('src/content/engine.js'));
+  assert.equal(h.window.__resumeQuickFillEngineRevision, 14);
+  assert.notEqual(h.window.__resumeQuickFillEngineListener, previousListener);
+  let events = 0;
+  for (const type of ['input', 'change', 'click']) h.window.document.addEventListener(type, () => events++);
+  for (const result of [await h.inspect(), await h.fill()]) {
+    assert.equal(result.ok, true, JSON.stringify(result));
+    for (const id of ['year', 'month', 'day']) {
+      const row = result.data.fields.find(field => field.id === id);
+      assert.equal(row.currentValue, ''); assert.equal(row.semanticStatus, 'manual');
+      assert.equal(row.path, undefined);
+    }
+    assert.equal(result.data.fields.find(row => row.id === 'selected').currentValue, '1996');
+    assert.equal(result.data.fields.find(row => row.id === 'frequency').currentValue, 'Month');
+  }
+  assert.equal(h.window.document.getElementById('year').value, '-1');
+  assert.equal(h.window.document.getElementById('month').value, '0');
+  assert.equal(h.window.document.getElementById('day').value, '日');
+  assert.equal(h.window.document.getElementById('neighbor').value, 'KEEP');
+  assert.equal(events, 0);
+  assert.equal(h.calls.some(call => call.func?.name === 'writeControlInPage'), false);
+});
 
 test('ordinary RESUME_FILL keeps the absent/false flag on the existing write path', async t => {
   for (const enabled of [undefined, false, 'true']) {

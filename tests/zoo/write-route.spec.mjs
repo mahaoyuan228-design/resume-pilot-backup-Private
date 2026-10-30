@@ -54,6 +54,72 @@ for (const scenario of ['legacy', 'native', 'ud-select']) {
   });
 }
 
+for (const enabled of [false, true]) for (const preselected of [false, true]) {
+  test(`ordinary select readback: enabled=${enabled}, preselected=${preselected}`, async ({}, testInfo) => {
+    const zoo = await startZoo('write-route');
+    try {
+      await zoo.page.evaluate(preselected => {
+        document.querySelector('#fullName').value = 'KEEP_EXISTING_NAME';
+        document.querySelector('form').insertAdjacentHTML('afterbegin', `
+          <label for="prefix">国家码</label><select id="prefix" autocomplete="tel-country-code">
+            <option value="">请选择</option><option value="+86" ${preselected ? 'selected' : ''}>中国 (+86)</option>
+            <option value="+44">英国 (+44)</option></select>
+          <label for="phone">手机号</label><select id="phone"><option value="">请选择</option>
+            <option value="13800138000" ${preselected ? 'selected' : ''}>138 0013 8000</option></select>
+          <label for="birth-year">年</label><select id="birth-year"><option value="-1">年</option><option value="1996">1996年</option></select>
+          <label for="birth-month">月</label><select id="birth-month"><option value="0">月</option><option value="02">2月</option></select>
+          <label for="birth-day">日</label><select id="birth-day"><option value="日">日</option><option value="29">29日</option></select>
+          <label for="real-year">年份</label><select id="real-year"><option value="1996">1996</option></select>
+          <label for="frequency">频率</label><select id="frequency"><option value="month">Month</option><option value="year">Year</option></select>`);
+        window.__selectRouteEffects = [];
+        for (const type of ['input', 'change', 'click', 'submit']) document.addEventListener(type,
+          event => window.__selectRouteEffects.push([type, event.target.id]), true);
+      }, preselected);
+      const profile = { schemaVersion: 1, phone: '13800138000', birthDate: '1996-02-29',
+        customAnswers: { 国家码: '+86' }, customFacts: [{ question: '国家码', answer: '+86',
+          sitePageUrl: zoo.page.url(), sectionName: 'form:single', rowContext: 'none' }],
+        confirmedFields: ['phone', 'birthDate', 'customAnswers.国家码'] };
+      const profileBinding = await zoo.bind(profile);
+      await zoo.worker.evaluate(enabled => chrome.storage.local.set({ resumeAtsEngineWriteEnabled: enabled }), enabled);
+      await zoo.inject(['src/core/matcher.js', 'src/core/domain-memory.js', 'src/content/engine.js']);
+      const invoke = type => zoo.worker.evaluate(async ({ tabId, type, profile, profileBinding }) =>
+        chrome.tabs.sendMessage(tabId, { type, profile, profileBinding }), { tabId: zoo.tabId, type, profile, profileBinding });
+      const before = await invoke('RESUME_INSPECT');
+      expect(before.ok, JSON.stringify(before)).toBe(true);
+      for (const id of ['prefix', 'phone']) expect(before.data.fields.find(row => row.id === id).reason).toBe('ready');
+      expect(await zoo.page.evaluate(() => window.__selectRouteEffects)).toEqual([]);
+      const result = await invoke('RESUME_FILL');
+      expect(result.ok, JSON.stringify(result)).toBe(true);
+      for (const [id, value, display] of [['prefix', '+86', '中国 (+86)'], ['phone', '13800138000', '138 0013 8000']]) {
+        const field = result.data.fields.find(row => row.id === id);
+        expect(field, JSON.stringify(result)).toMatchObject({ status: 'verified', currentValue: display,
+          reason: preselected ? 'preexisting_same_value' : 'readback_matched' });
+        if (enabled) expect(field).toMatchObject({ adapter: 'native-select', adapterStatus: 'success' });
+        else expect(field.adapter).toBeUndefined();
+        expect(await zoo.page.locator(`#${id}`).inputValue()).toBe(value);
+      }
+      for (const data of [before.data, result.data]) for (const id of ['birth-year', 'birth-month', 'birth-day']) {
+        expect(data.fields.find(row => row.id === id)).toMatchObject({ semanticStatus: 'manual', currentValue: '' });
+        expect(data.fields.find(row => row.id === id).path).toBeUndefined();
+      }
+      for (const [id, value] of [['birth-year', '-1'], ['birth-month', '0'], ['birth-day', '日'], ['real-year', '1996'],
+        ['frequency', 'month'], ['fullName', 'KEEP_EXISTING_NAME'], ['neighbor', 'ZOO_NEIGHBOR_KEEP']]) {
+        expect(await zoo.page.locator(`#${id}`).inputValue()).toBe(value);
+      }
+      expect(result.data.fields.find(row => row.id === 'real-year').currentValue).toBe('1996');
+      expect(result.data.fields.find(row => row.id === 'frequency').currentValue).toBe('Month');
+      const effects = await zoo.page.evaluate(() => window.__selectRouteEffects);
+      expect(effects.every(([type, id]) => ['input', 'change'].includes(type) && ['prefix', 'phone'].includes(id))).toBe(true);
+      if (preselected) expect(effects).toEqual([]);
+      const evidence = await zoo.evidence();
+      expect(evidence).toMatchObject({ neverSave: true, liveSupportClaimed: false, nonGetObserved: 0, responseToNonGet: 0,
+        nonGetBlocked: 0, blacklistClickAttempts: 0, blacklistClicks: 0, guardFailed: false });
+      expect(evidence.routing).toMatchObject({ rejected: [], nonGetReachedRoute: 0 });
+      await fs.writeFile(testInfo.outputPath('select-readback-evidence.json'), JSON.stringify({ enabled, preselected, before, result, effects, evidence }, null, 2));
+    } finally { await zoo.close(); }
+  });
+}
+
 test('thin ATS profile keeps unknown fields manual through ordinary inspect/fill without effects', async ({}, testInfo) => {
   const zoo = await startZoo('write-route');
   try {

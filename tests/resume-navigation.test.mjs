@@ -138,7 +138,7 @@ test('replanning rejects removed controls and changed target ownership without c
 
 test('reinjection upgrades the old entry API and keeps the new API stable', t => {
   const f = fixture(t, '<nav><a id="target" href="#panel">Education</a></nav><section id="panel"></section>');
-  f.window.ResumeFormFlow = Object.freeze({ version: 1, inspect() {}, ensure() {} });
+  f.window.ResumeFormFlow = Object.freeze({ version: 1, navigation: { version: 1 }, inspect() {}, ensure() {} });
   f.window.eval(source);
   assert.equal(typeof f.window.ResumeFormFlow.ensure, 'function');
   assert.equal(f.window.ResumeFormFlow.inspect().entryCount, 0);
@@ -166,6 +166,8 @@ test('ordinary engine inspect exposes read-only navigation without entering or f
     fullName: 'Synthetic Person', confirmedFields: ['fullName'],
   } }, { id: 'offline-extension' }, resolve));
   assert.equal(reply.ok, true, reply.error);
+  assert.equal(reply.data.entry.entryPlan.status, 'manual');
+  readonly(reply.data.entry.entryPlan);
   assert.equal(reply.data.navigation.status, 'observed');
   assert.deepEqual(Array.from(reply.data.navigation.sections, row => row.status), ['planned', 'manual']);
   readonly(reply.data.navigation);

@@ -24,23 +24,28 @@ async function record(testInfo, zoo, result) {
 }
 
 for (const family of ['hotjob', 'beisen']) {
-  test(`batch B ${family}: resume entry controls open the form before filling`, async ({}, testInfo) => {
+  test(`batch B ${family}: unverified resume entry remains manual before filling`, async ({}, testInfo) => {
     const zoo = await startZoo(family === 'hotjob' ? 'batchb-hotjob-entry' : 'batchb-beisen-summary');
     try {
       const file = family === 'hotjob' ? 'src/content/hotjob-mc-basic.js' : 'src/content/beisen-2022-basic.js';
       expect(await zoo.page.locator('input[id="fullName"]').count()).toBe(0);
       await zoo.inject([flow, file]);
+      const before = await zoo.readback();
+      const beforeDom = await zoo.page.content();
       const result = await zoo.execute(async ({ family, values }) => {
         const api = family === 'hotjob' ? ResumeHotjobMcBasic : ResumeBeisen2022Basic;
         return api.fillBasic(values, { synthetic: true, restore: false, readinessTimeoutMs: 1200 });
       }, [{ family, values }]);
-      expect(result, JSON.stringify(result)).toMatchObject({ ok: true, writeAttempted: true, liveSupportClaimed: false, saved: false, skippedSave: true });
-      expect(result.results).toHaveLength(3);
-      expect(result.results.every(row => row.ok)).toBe(true);
-      for (const key of ['fullName', 'mobile', 'email']) expect(await zoo.page.locator(`#${key}`).inputValue()).toBe(values[key]);
+      expect(result, JSON.stringify(result)).toMatchObject({ ok: false, status: 'manual',
+        writeAttempted: false, liveSupportClaimed: false, saved: false, skippedSave: true,
+        readiness: { status: 'manual', entryAttempted: false, writeAttempted: false,
+          entryPlan: { status: 'manual', activation: 'manual', navigationAttempted: false } } });
+      expect(result.results).toHaveLength(0);
+      expect(await zoo.page.locator('input[id="fullName"]').count()).toBe(0);
+      expect(await zoo.page.content()).toBe(beforeDom);
       const reads = await record(testInfo, zoo, result);
-      expect(reads.model).toMatchObject({ fullName: values.fullName, mobile: values.mobile, email: values.email });
-      expect(reads.snapshot.effects.entryClicks).toEqual(family === 'hotjob' ? ['创建简历', '进入简历'] : ['编辑简历']);
+      expect(reads).toEqual(before);
+      expect(reads.snapshot.effects.entryClicks).toEqual([]);
     } finally { await zoo.close(); }
   });
 }

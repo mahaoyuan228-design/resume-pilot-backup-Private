@@ -1,8 +1,8 @@
 // Shared resume-entry / hydration state machine. No ATS tenant or field mapping.
-// Entry actions only reveal an editor; ready() must prove its writable controls.
+// Entry routes are observations, never permission to activate page handlers.
 (() => {
   'use strict';
-  if (globalThis.ResumeFormFlow?.version === 1 && globalThis.ResumeFormFlow.navigation?.version === 1) return;
+  if (globalThis.ResumeFormFlow?.version === 1 && globalThis.ResumeFormFlow.revision === 2) return;
   const normalize = value => String(value ?? '').normalize('NFKC').replace(/\s+/gu, '').trim();
   const actions = new Map([
     ['创建简历', 'create'], ['新建简历', 'create'],
@@ -25,28 +25,11 @@
         action: actions.get(normalize(node.textContent || node.value || node.getAttribute('aria-label'))) }))
       .filter(row => row.action);
   }
-  function refusal(node) {
-    if (node.disabled || node.matches(':disabled') || node.closest('[aria-disabled="true"]')) return 'entry_disabled';
-    if (node.matches('input[type="submit"],input[type="image"]') || node.tagName === 'BUTTON' && node.type !== 'button') return 'entry_submit_manual';
-    if (node.closest('form[aria-busy="true"],[data-captcha],.g-recaptcha,.h-captcha')) return 'entry_busy_or_captcha';
-    if (node.matches('a')) {
-      if (node.hasAttribute('download') || node.target && node.target !== '_self') return 'navigation_manual';
-      const href = node.getAttribute('href');
-      if (href) {
-        let destination;
-        try { destination = new URL(href, location.href); } catch { return 'navigation_manual'; }
-        // Full document navigation loses the inspected control/context binding.
-        // Leave it manual rather than guessing a site's resume route.
-        if (!['http:', 'https:'].includes(destination.protocol) || destination.origin !== location.origin
-          || destination.pathname !== location.pathname || destination.search !== location.search) return 'navigation_manual';
-      }
-    }
-    return null;
-  }
   function inspect() {
-    const rows = candidates();
+    const rows = candidates(), entryPlan = rows.length === 1 ? navigationPlan(rows[0].node) : null;
     return { entryCount: rows.length, action: rows.length === 1 ? rows[0].action : null,
-      reason: rows.length > 1 ? 'entry_ambiguous' : rows.length ? refusal(rows[0].node) || 'entry_ready' : 'entry_absent' };
+      entryPlan, reason: rows.length > 1 ? 'entry_ambiguous' : entryPlan
+        ? entryPlan.status === 'planned' ? 'entry_activation_manual' : entryPlan.reason : 'entry_absent' };
   }
   // Navigation observations never activate page handlers. Even an ARIA tab or
   // hashchange can autosave; a plan is not permission to click or change the URL.
@@ -60,13 +43,24 @@
     const matches = [...document.querySelectorAll('[id]')].filter(node => node.id === id);
     return matches.length === 1 ? matches[0] : null;
   };
+  function nonGetEntry(node) {
+    // Generic declarative HTTP actions, including inherited/delegated actions.
+    // GET metadata is not proof that arbitrary page handlers are safe.
+    for (let owner = node; owner; owner = owner.parentElement) {
+      if (['method', 'formmethod', 'data-method', 'data-turbo-method', 'data-http-method']
+        .some(name => owner.hasAttribute(name) && owner.getAttribute(name).trim().toUpperCase() !== 'GET')
+        || ['post', 'put', 'patch', 'delete'].some(method =>
+          owner.hasAttribute(`hx-${method}`) || owner.hasAttribute(`data-hx-${method}`))) return true;
+    }
+    return false;
+  }
   function navigationPlan(node) {
     const label = String(node?.getAttribute?.('aria-label') || node?.textContent || node?.value || '')
       .normalize('NFKC').replace(/\s+/gu, ' ').trim().slice(0, 200);
     const result = (reason, strategy = 'none', target = null) => ({
       status: reason ? 'manual' : 'planned', reason: reason || 'navigation_planned',
       label, strategy, target, ...navigationFlags });
-    if (!node?.isConnected || node.ownerDocument !== document || node.getRootNode() !== document)
+    if (node?.nodeType !== 1 || !node.isConnected || node.ownerDocument !== document || node.getRootNode() !== document)
       return result('navigation_target_changed');
     if (document.visibilityState !== 'visible' || !visible(node)) return result('navigation_hidden');
     if (!node.matches(navigationControls)) return result('navigation_unrecognized');
@@ -74,6 +68,7 @@
       return result('navigation_disabled');
     if (node.closest('[aria-busy="true"],[aria-readonly="true"],[data-captcha],.g-recaptcha,.h-captcha'))
       return result('navigation_busy_or_captcha');
+    if (nonGetEntry(node)) return result('navigation_non_get_manual');
     if (node.matches('input[type="submit"],input[type="image"]') || node.tagName === 'BUTTON' && node.type !== 'button'
       || node.hasAttribute('formaction') || node.hasAttribute('formmethod')) return result('navigation_submit_manual');
     // Check all captions, including an aria-label which may hide a save/next caption.
@@ -95,9 +90,11 @@
         let id;
         try { id = decodeURIComponent(destination.hash.slice(1)); }
         catch { return result('navigation_target_unconfirmed'); }
-        const panel = uniqueId(id);
+        const targets = [...document.querySelectorAll('[id],a[name]')]
+          .filter(target => target.id === id || target.matches('a[name]') && target.getAttribute('name') === id);
+        const panel = targets.length === 1 ? targets[0] : null;
         if (!panel || panel.closest('[data-captcha],.g-recaptcha,.h-captcha')) return result('navigation_target_unconfirmed');
-        return result(null, 'hash', id);
+        return result(null, panel.id === id ? 'hash' : 'anchor', id);
       }
       if (destination.hash !== location.hash) return result('navigation_link_manual');
       const current = new URL(location.href).searchParams, next = destination.searchParams;
@@ -123,7 +120,7 @@
     const sections = [...document.querySelectorAll(`${navigationControls},[aria-controls]`)]
       .filter(node => visible(node) && (node.closest(navigationGroups) || node.matches('[role="tab"],[aria-controls]')))
       .map((node, index) => ({ index, ...navigationPlan(node) }));
-    const priority = { hash: 0, query: 1, tab: 2, none: 3 };
+    const priority = { hash: 0, anchor: 0, query: 1, tab: 2, none: 3 };
     sections.sort((a, b) => priority[a.strategy] - priority[b.strategy] || a.index - b.index);
     const observed = sections.some(row => row.status === 'planned');
     return { status: observed ? 'observed' : 'manual',
@@ -132,16 +129,17 @@
   }
   async function ensure({ ready, allowEntry = false, timeoutMs = 2000, check } = {}) {
     if (typeof ready !== 'function') throw Error('form_readiness_required');
-    const initialDocument = document, initialOrigin = location.origin;
+    const initialDocument = document, initialUrl = location.href;
     const duration = Number.isFinite(timeoutMs) ? Math.min(Math.max(timeoutMs, 0), 10000) : 2000;
-    const deadline = Date.now() + duration, clicked = new WeakSet(), transitions = [];
-    const result = (ok, status, reason) => ({ ok, status, reason, transitions,
-      entryAttempted: transitions.length > 0, writeAttempted: false, saved: false,
-      skippedSave: true, liveSupportClaimed: false });
+    const deadline = Date.now() + duration;
+    const result = (ok, status, reason, entryPlan = null) => ({ ok, status, reason, entryPlan,
+      transitions: [], entryAttempted: false, ...navigationFlags });
     const validate = async () => {
-      if (document !== initialDocument || location.origin !== initialOrigin) return 'form_document_changed';
+      if (document !== initialDocument || location.href !== initialUrl) return 'form_document_changed';
       if (document.visibilityState !== 'visible') return 'fill_interrupted_page_hidden';
       if (typeof check === 'function') await check();
+      if (document !== initialDocument || location.href !== initialUrl) return 'form_document_changed';
+      if (document.visibilityState !== 'visible') return 'fill_interrupted_page_hidden';
       return null;
     };
     for (;;) {
@@ -152,22 +150,26 @@
         await pause(40);
         const changed = await validate();
         if (changed) return result(false, 'manual', changed);
-        if (await ready()) return result(true, 'ready', 'form_ready');
+        if (await ready()) {
+          const settled = await validate();
+          return settled ? result(false, 'manual', settled) : result(true, 'ready', 'form_ready');
+        }
       } else if (allowEntry) {
         const rows = candidates();
         if (rows.length > 1) return result(false, 'manual', 'entry_ambiguous');
-        if (rows.length === 1 && !clicked.has(rows[0].node)) {
-          const { node, action } = rows[0], blocked = refusal(node);
-          if (blocked) return result(false, 'manual', blocked);
-          if (transitions.length >= 3) return result(false, 'manual', 'entry_transition_limit');
+        if (rows.length === 1) {
+          const { node, action } = rows[0];
           const changed = await validate();
           if (changed) return result(false, 'manual', changed);
           if (await ready()) continue;
           const current = candidates();
           if (current.length !== 1 || current[0].node !== node || current[0].action !== action
-            || !visible(node) || refusal(node)) return result(false, 'manual', 'entry_changed');
-          clicked.add(node); transitions.push({ action });
-          node.click();
+            || !visible(node)) return result(false, 'manual', 'entry_changed');
+          const entryPlan = navigationPlan(node);
+          // A click, tab event, hashchange or document navigation may autosave.
+          // No execution-level GET-only capability exists here: fail closed.
+          return result(false, 'manual', entryPlan.status === 'planned'
+            ? 'entry_activation_manual' : entryPlan.reason, entryPlan);
         }
       }
       if (Date.now() >= deadline) return result(false, 'unsupported', 'form_not_ready');
@@ -175,5 +177,5 @@
     }
   }
   const navigation = Object.freeze({ version: 1, inspect: inspectNavigation, plan: navigationPlan, liveSupportClaimed: false });
-  globalThis.ResumeFormFlow = Object.freeze({ version: 1, inspect, ensure, navigation, liveSupportClaimed: false });
+  globalThis.ResumeFormFlow = Object.freeze({ version: 1, revision: 2, inspect, ensure, navigation, liveSupportClaimed: false });
 })();

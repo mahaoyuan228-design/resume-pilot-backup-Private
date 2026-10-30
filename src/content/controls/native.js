@@ -69,7 +69,8 @@
   }
   function radios(el) {
     if (!el.name) return [el];
-    const scope = el.form || el.getRootNode();
+    // A form-associated radio may sit outside the form's DOM subtree.
+    const scope = el.getRootNode();
     return [...scope.querySelectorAll('input[type="radio"]')].filter(node =>
       node.name === el.name && node.form === el.form);
   }
@@ -197,30 +198,52 @@
       return model;
     },
     async performWrite(el, instruction, ctx) {
+      const reason = guards(el);
+      if (reason) return noWrite(reason);
       const value = String(targetValue(instruction) ?? '');
       const group = radios(el), selected = group.filter(node => node.checked);
       const targets = group.filter(node => node.value === value && !disabled(node));
       if (targets.length !== 1) return noWrite(targets.length ? 'ambiguous_option' : 'option_missing');
       if (selected.length > 1) return noWrite('ambiguous_radio_group');
       if (selected.length && selected[0] !== targets[0]) return noWrite('existing_value');
+      const target = targets[0], targetReason = guards(target);
+      if (targetReason) return noWrite(targetReason);
       if (targets[0].checked) return { strategy: 'ui', attempts: 0 };
-      if (!targets[0].isConnected) return noWrite('target_detached');
-      await safeClick(targets[0], ctx);
+      const ownership = { name: el.name, form: el.form, tree: el.getRootNode() };
+      const snapshot = group.map(node => ({ node, value: node.value, label: label(node),
+        checked: node.checked, disabled: disabled(node), readonly: node.readOnly || node.getAttribute('aria-readonly') === 'true' }));
+      await safeClick(target, { ...ctx, async check() {
+        await ctx.check();
+        const current = radios(el);
+        if (guards(el) || guards(target) || !plain(el) || !plain(target) || el.type !== 'radio' || target.type !== 'radio'
+          || el.name !== ownership.name || el.form !== ownership.form || el.getRootNode() !== ownership.tree
+          || current.length !== snapshot.length || snapshot.some((part, i) => current[i] !== part.node
+            || part.node.value !== part.value || label(part.node) !== part.label || part.node.checked !== part.checked
+            || disabled(part.node) !== part.disabled
+            || (part.node.readOnly || part.node.getAttribute('aria-readonly') === 'true') !== part.readonly))
+          throw Error('control_changed');
+      } });
       await tick();
       return { strategy: 'ui', attempts: 1 };
     }
   });
-  register({ name: 'native-checkbox', type: 'checkbox',
-    matches: (el, probe) => plain(el, probe) && el.tagName === 'INPUT' && el.type === 'checkbox',
+  for (const type of ['checkbox', 'switch']) register({ name: `native-${type}`, type,
+    matches: (el, probe) => plain(el, probe) && el.tagName === 'INPUT' && el.type === 'checkbox'
+      && (el.getAttribute('role') === 'switch') === (type === 'switch'),
     readModel: (el, probe) => base(el, probe, !!el.checked),
     async performWrite(el, instruction, ctx) {
       const reason = guards(el);
       if (reason) return noWrite(reason);
       const value = targetValue(instruction);
-      if (typeof value !== 'boolean') return noWrite('invalid_checkbox_value');
+      if (typeof value !== 'boolean') return noWrite(`invalid_${type}_value`);
       if (el.checked && !value) return noWrite('existing_value');
       if (el.checked === value) return { strategy: 'ui', attempts: 0 };
-      await safeClick(el, ctx);
+      const checked = el.checked, role = el.getAttribute('role');
+      await safeClick(el, { ...ctx, async check() {
+        await ctx.check();
+        if (guards(el) || !plain(el) || el.type !== 'checkbox' || el.getAttribute('role') !== role || el.checked !== checked)
+          throw Error('control_changed');
+      } });
       await tick();
       return { strategy: 'ui', attempts: 1 };
     }

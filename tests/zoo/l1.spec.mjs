@@ -287,6 +287,8 @@ test('offline native adapters preserve guards and verify text, select, radio and
         <label><input id="l1-radio-a" name="l1-radio" type="radio" value="a">甲</label>
         <label><input id="l1-radio-b" name="l1-radio" type="radio" value="b">乙</label>
         <label><input id="l1-checkbox" type="checkbox">勾选</label>
+        <label><input id="l1-switch" type="checkbox" role="switch">Toggle</label>
+        <label><input id="l1-external-anchor" type="radio" name="l1-external" value="inside">Inside</label>
         <input id="l1-existing" value="KEEP_EXISTING">
         <input id="l1-same" value="SAME">
         <input id="l1-readonly" readonly value="KEEP_READONLY">
@@ -294,6 +296,10 @@ test('offline native adapters preserve guards and verify text, select, radio and
         <input id="l1-upload" type="file">`;
       form.addEventListener('submit', event => event.preventDefault());
       document.body.append(form);
+      const external = document.createElement('section');
+      external.innerHTML = '<label><input id="l1-external-target" type="radio" form="l1-native-fixture" name="l1-external" value="outside">Outside</label>'
+        + '<label><input id="l1-unowned" type="radio" name="l1-external" value="keep" checked>Keep</label>';
+      document.body.append(external);
     });
     const requests = [
       { selector: '#l1-text', fact: { value: '离线原生文本' }, adapter: 'native-text' },
@@ -301,6 +307,8 @@ test('offline native adapters preserve guards and verify text, select, radio and
       { selector: '#l1-select', fact: { value: '本科' }, adapter: 'native-select' },
       { selector: '#l1-radio-a', fact: { value: '乙' }, adapter: 'native-radio' },
       { selector: '#l1-checkbox', fact: { value: true }, adapter: 'native-checkbox' },
+      { selector: '#l1-switch', fact: { value: true }, adapter: 'native-switch' },
+      { selector: '#l1-external-anchor', fact: { value: 'Outside' }, adapter: 'native-radio' },
     ];
     const shadow = await zoo.shadow(requests.map(({ selector, fact }) => ({ selector, fact })));
     expect(shadow.plans).toHaveLength(requests.length);
@@ -326,6 +334,9 @@ test('offline native adapters preserve guards and verify text, select, radio and
     expect(await zoo.page.locator('#l1-textarea').inputValue()).toBe('离线多行内容');
     expect(await zoo.page.locator('#l1-select').inputValue()).toBe('degree-bs');
     expect(await zoo.page.locator('#l1-radio-b').isChecked()).toBe(true);
+    expect(await zoo.page.locator('#l1-external-target').isChecked()).toBe(true);
+    expect(await zoo.page.locator('#l1-unowned').isChecked()).toBe(true);
+    expect(await zoo.page.locator('#l1-switch').isChecked()).toBe(true);
     expect(await zoo.page.locator('#l1-checkbox').isChecked()).toBe(true);
     const guards = await zoo.shadow([
       { selector: '#l1-existing', fact: { value: 'REPLACE' } },

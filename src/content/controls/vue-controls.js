@@ -27,8 +27,60 @@
   const named = (probe, names) => names.includes(probe.componentName);
   const empty = value => value == null || value === '' || (Array.isArray(value) && value.every(empty));
   const unsupported = reason => ({ status: 'unsupported', reason });
+  const choiceName = /^(?:El|A)(?:Radio|Checkbox|Switch)(?:Group)?$/u;
+  const primitive = value => ['string', 'boolean'].includes(typeof value) || typeof value === 'number' && Number.isFinite(value);
+  const sameValue = (a, b) => typeof a === typeof b && a === b;
+  const sameChoices = (a, b) => Array.isArray(a) && Array.isArray(b)
+    ? a.length === b.length && a.every((value, index) => sameValue(value, b[index])) : sameValue(a, b);
+  function choiceOptions(root, p) {
+    const type = /Radio/u.test(p.componentName) ? 'radio' : 'checkbox';
+    const inputs = [...(root.matches?.(`input[type="${type}"]`) ? [root] : []), ...all(root, `input[type="${type}"]`)];
+    return inputs.map(input => {
+      const label = input.labels?.[0] || input.closest('label');
+      const value = /Group$/u.test(p.componentName) ? input._value ?? input.value : p.optionValue;
+      return { input, click: label || input, value, valueSupported: primitive(value), owned: resolve(input).element === root,
+        label: n(input.getAttribute('aria-label') || label?.textContent || input.value),
+        disabled: !!input.disabled || input.matches(':disabled') || !!input.closest('[aria-disabled="true"]') };
+    });
+  }
+  function choiceModel(el, p) {
+    const root = rootOf(el, p), group = /Group$/u.test(p.componentName), radio = /Radio/u.test(p.componentName);
+    const toggle = /Switch$/u.test(p.componentName), records = choiceOptions(root, p);
+    const { vm } = resolve(el);
+    const disabled = !!(vm?.disabled || vm?.$props?.disabled || root.matches?.(':disabled')
+      || root.closest('[aria-disabled="true"],[inert]')) || (!group && !!records[0]?.disabled);
+    const readonly = p.readonly || root.getAttribute('aria-readonly') === 'true'
+      || records.some(record => (!toggle && record.input.readOnly) || record.input.getAttribute('aria-readonly') === 'true');
+    if (toggle || !group && !radio) {
+      const role = root.matches?.('[role="switch"]') ? root : root.querySelector('[role="switch"]');
+      const aria = role?.getAttribute('aria-checked');
+      const checked = toggle && role ? aria === 'true' ? true : aria === 'false' ? false
+        : aria == null && p.lib === 'ant-design-vue' && role.matches('button.ant-switch')
+          ? role.classList.contains('ant-switch-checked')
+          : aria == null && p.lib === 'element-ui' && records.length === 1 && records[0].owned
+            ? records[0].input.checked : null : records[0]?.input.checked;
+      const active = p.checkedValue, inactive = p.uncheckedValue;
+      return { ...p, disabled, readonly, domValue: checked, choiceKind: 'boolean',
+        available: p.available && p.choiceValuesSupported && !sameValue(active, inactive)
+          && typeof checked === 'boolean' && (toggle || records.length === 1)
+          && (sameValue(p.value, active) || sameValue(p.value, inactive)),
+        choiceConsistent: checked === sameValue(p.value, active) };
+    }
+    const options = records.map(({ input, click, ...option }) => option), selected = records.filter(record => record.input.checked);
+    const raw = p.componentName === 'ARadio' ? p.value ? p.optionValue : '' : radio ? p.value ?? '' : p.value;
+    const known = group && !radio ? Array.isArray(raw) && raw.every(value => options.some(option => sameValue(option.value, value))) : true;
+    const value = group && !radio && known ? options.filter(option => raw.some(value => sameValue(value, option.value))).map(option => option.value) : raw;
+    const domModel = radio ? selected[0]?.value ?? '' : selected.map(option => option.value);
+    return { ...p, disabled, readonly, options, value, choiceKind: group ? 'group' : 'radio',
+      domValue: radio ? selected[0]?.label || '' : selected.map(option => option.label),
+      available: p.available && known && records.length > 0 && options.every(option => option.valueSupported && option.owned)
+        && (group || records.length === 1) && (!radio || selected.length <= 1)
+        && !options.some((option, index) => options.slice(0, index).some(previous => sameValue(previous.value, option.value))),
+      choiceConsistent: sameChoices(value, domModel) };
+  }
 
   function modelFor(el, probe) {
+    if (choiceName.test(probe.componentName)) return choiceModel(el, probe);
     const root = rootOf(el, probe);
     let domValue;
     let options = probe.options;
@@ -37,12 +89,6 @@
     } else if (probe.lib === 'ant-design-vue' && /Select/u.test(probe.componentName)) {
       const selected = all(root, '.ant-select-selection-selected-value,.ant-select-selection__choice__content');
       domValue = selected.length ? selected.map(node => n(node.textContent)).join(' | ') : '';
-    } else if (/RadioGroup|CheckboxGroup/u.test(probe.componentName)) {
-      options = all(root, 'input[type="radio"],input[type="checkbox"]').map(input => ({
-        value: input._value ?? input.value, label: n(input.closest('label')?.textContent || input.value), disabled: !!input.disabled,
-      }));
-      const selected = all(root, 'input:checked').map(input => n(input.closest('label')?.textContent || input.value));
-      domValue = /Radio/u.test(probe.componentName) ? selected[0] || '' : selected;
     } else {
       const input = valueInput(root);
       domValue = input ? input.value : n(root.textContent);
@@ -274,23 +320,71 @@
     return checkedEmit(el, instruction, ctx, p.lib === 'element-ui' ? 'input' : 'change', instruction.value);
   }
 
-  async function writeChoice(el, instruction, ctx) {
-    const p = inspect(el), root = rootOf(el, p);
-    const desired = instruction.labels || [instruction.domValue ?? instruction.value];
-    const many = instruction.type === 'checkbox';
-    const labels = all(root, 'label');
-    for (const label of desired) {
-      const matches = labels.filter(node => n(node.textContent) === n(label));
-      if (matches.length !== 1) return unsupported('option_ambiguous');
-      const input = matches[0].querySelector('input');
-      if (!input || input.disabled || matches[0].getAttribute('aria-disabled') === 'true')
-        return unsupported('control_guard');
-      // Checkboxes only add. Existing checks are never toggled off.
-      if (!input.checked) await H.safeClick(matches[0], ctx);
-      if (!many) break;
+  function choicePlan(fact, model, type, ctx) {
+    const value = fact && typeof fact === 'object' && !Array.isArray(fact) ? fact.value : fact;
+    if (model.disabled || model.readonly) return { status: 'manual', reason: model.disabled ? 'disabled' : 'readonly' };
+    if (!model.available) return unsupported('model_unavailable');
+    if (!model.choiceConsistent) return unsupported('choice_readback_mismatch');
+    if (model.choiceKind === 'boolean') {
+      if (value == null || value === '' && !ctx?.modelValue) return unsupported('no_fact');
+      const target = !ctx?.modelValue && typeof value === 'boolean' ? value ? model.checkedValue : model.uncheckedValue : value;
+      if (!sameValue(target, model.checkedValue) && !sameValue(target, model.uncheckedValue)) return unsupported(`invalid_${type}_value`);
+      const checked = sameValue(target, model.checkedValue);
+      if (model.domValue && !checked) return unsupported('existing_value');
+      const same = sameValue(model.value, target) && model.domValue === checked;
+      return { status: same ? 'success' : 'planned', reason: same ? 'preexisting_same_value' : 'ready',
+        value: target, modelValue: target, domValue: checked, labels: [] };
     }
-    await H.tick();
-    return { strategy: 'ui', attempts: 1 };
+    if (type === 'checkbox') {
+      if (!Array.isArray(value)) return unsupported('invalid_checkbox_value');
+      if (!value.length) return unsupported('no_fact');
+      const target = [...model.value];
+      for (const choice of value) {
+        const hits = model.options.filter(option => (!option.disabled || target.some(v => sameValue(v, option.value)))
+          && (H.equal(option.value, choice) || H.equal(option.label, choice)));
+        if (hits.length !== 1) return unsupported('option_missing_or_ambiguous');
+        if (!target.some(v => sameValue(v, hits[0].value))) target.push(hits[0].value);
+      }
+      const selected = model.options.filter(option => target.some(value => sameValue(value, option.value)));
+      const ordered = selected.map(option => option.value), labels = selected.map(option => option.label);
+      const same = H.equal(model.value, ordered) && H.equal(model.domValue, labels);
+      return { status: same ? 'success' : 'planned', reason: same ? 'preexisting_same_value' : 'ready',
+        value: ordered, modelValue: ordered, domValue: labels, labels };
+    }
+    return H.makePlan(fact, model, { type });
+  }
+  async function writeChoice(el, instruction, ctx) {
+    const p = inspect(el), root = rootOf(el, p), owner = resolve(el).vm;
+    const records = choiceOptions(root, p);
+    let baseline, attempts = 0;
+    const guarded = { ...ctx, async check() {
+      await ctx.check();
+      const live = inspect(el), model = modelFor(el, live), current = choiceOptions(root, live);
+      if (rootOf(el, live) !== root || resolve(el).vm !== owner || owner?._isDestroyed || live.version !== p.version
+        || !sameValue(live.checkedValue, p.checkedValue) || !sameValue(live.uncheckedValue, p.uncheckedValue)
+        || !model.available || model.disabled || model.readonly || !model.choiceConsistent
+        || current.length !== records.length || current.some((record, index) => record.input !== records[index].input || record.click !== records[index].click
+          || !sameValue(record.value, records[index].value) || record.label !== records[index].label
+          || record.disabled !== records[index].disabled)
+        || baseline && (!sameChoices(model.value, baseline.value) || !H.equal(model.domValue, baseline.domValue))) throw Error('control_changed');
+    } };
+    const model = modelFor(el, p);
+    const targets = model.choiceKind === 'boolean' ? [{ click: root.matches?.('[role="switch"]') ? root : records[0]?.click }]
+      : (Array.isArray(instruction.value) ? instruction.value : [instruction.value]).map(value =>
+        records.find(record => sameValue(record.value, value)));
+    if (targets.some(record => !record?.click)) return unsupported('option_missing');
+    for (const target of targets) {
+      baseline = modelFor(el, inspect(el));
+      if (model.choiceKind === 'boolean' ? baseline.domValue === instruction.domValue : target.input.checked) continue;
+      await H.safeClick(target.click, guarded);
+      attempts++;
+      baseline = null;
+      await H.tick();
+      const after = modelFor(el, inspect(el));
+      if (!after.choiceConsistent || (model.choiceKind === 'boolean' ? after.domValue !== instruction.domValue : !target.input.checked))
+        return { ...unsupported('choice_readback_mismatch'), strategy: 'ui', attempts };
+    }
+    return { strategy: 'ui', attempts };
   }
 
   function cascaderPlan(fact, model) {
@@ -375,8 +469,9 @@
     ['el-input', 'element-ui', 'text', 150, ['ElInput'], writeInput],
     ['el-textarea', 'element-ui', 'textarea', 175, ['ElInput'], writeInput],
     ['el-select', 'element-ui', 'select', 400, ['ElSelect'], writeSelect],
-    ['el-radio', 'element-ui', 'radio', 300, ['ElRadioGroup'], writeChoice],
-    ['el-checkbox', 'element-ui', 'checkbox', 300, ['ElCheckboxGroup'], writeChoice],
+    ['el-radio', 'element-ui', 'radio', 300, ['ElRadioGroup', 'ElRadio'], writeChoice],
+    ['el-checkbox', 'element-ui', 'checkbox', 300, ['ElCheckboxGroup', 'ElCheckbox'], writeChoice],
+    ['el-switch', 'element-ui', 'switch', 300, ['ElSwitch'], writeChoice],
     ['el-date', 'element-ui', 'date', 500, ['ElDatePicker'], writeDate],
     ['el-month', 'element-ui', 'month', 600, ['ElDatePicker'], writeDate],
     ['el-cascader', 'element-ui', 'cascader', 650, ['ElCascader'], writeCascader],
@@ -384,8 +479,10 @@
     ['antdv1-textarea', 'ant-design-vue', 'textarea', 175, ['ATextarea'], writeInput],
     ['antdv1-select', 'ant-design-vue', 'select', 400, ['ASelect'], writeSelect],
     ['antdv1-select-search', 'ant-design-vue', 'select-search', 450, ['ASelect'], writeSelect],
-    ['antdv1-radio', 'ant-design-vue', 'radio', 300, ['ARadioGroup'], writeChoice],
+    ['antdv1-radio', 'ant-design-vue', 'radio', 300, ['ARadioGroup', 'ARadio'], writeChoice],
     ['antdv1-checkbox-group', 'ant-design-vue', 'checkbox', 300, ['ACheckboxGroup'], writeChoice],
+    ['antdv1-checkbox', 'ant-design-vue', 'checkbox', 300, ['ACheckbox'], writeChoice],
+    ['antdv1-switch', 'ant-design-vue', 'switch', 300, ['ASwitch'], writeChoice],
     ['antdv1-date', 'ant-design-vue', 'date', 500, ['ADatePicker'], writeDate],
     ['antdv1-month', 'ant-design-vue', 'month', 600, ['AMonthPicker'], writeDate],
     ['antdv1-cascader', 'ant-design-vue', 'cascader', 650, ['ACascader'], writeCascader],
@@ -407,7 +504,8 @@
       readModel: modelFor,
       ...(type === 'month' || type === 'date' ? { plan: (fact, model) => datePlan(fact, model, type) }
         : type === 'select-search' ? { plan: searchPlan }
-          : type === 'cascader' ? { plan: cascaderPlan } : {}),
+          : type === 'cascader' ? { plan: cascaderPlan }
+            : ['radio', 'checkbox', 'switch'].includes(type) ? { plan: (fact, model, ctx) => choicePlan(fact, model, type, ctx) } : {}),
       performWrite,
     });
   }

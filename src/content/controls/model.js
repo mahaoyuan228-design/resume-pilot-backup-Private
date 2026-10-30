@@ -2,7 +2,7 @@
 // instances or handlers to the extension. No events, setters or network calls.
 (() => {
   'use strict';
-  if (globalThis.ResumeControlModel?.version === 1 && globalThis.ResumeControlModel.revision === 6) return;
+  if (globalThis.ResumeControlModel?.version === 1 && globalThis.ResumeControlModel.revision === 7) return;
   const norm = value => String(value ?? '').normalize('NFKC').replace(/\s+/gu, ' ').trim();
   function serial(value, depth = 0) {
     if (value == null || ['string', 'number', 'boolean'].includes(typeof value)) return value ?? null;
@@ -50,7 +50,7 @@
     }
     return serial(value);
   }
-  const knownVue = /^(El(Input|Select|Option|Radio(Group)?|Checkbox(Group)?|DatePicker|Cascader)|A(Input|Textarea|Select|Radio(Group)?|Checkbox(Group)?|DatePicker|MonthPicker|Cascader)|iSelect|CalendarPicker)$/u;
+  const knownVue = /^(El(Input|Select|Option|Radio(Group)?|Checkbox(Group)?|Switch|DatePicker|Cascader)|A(Input|Textarea|Select|Radio(Group)?|Checkbox(Group)?|Switch|DatePicker|MonthPicker|Cascader)|iSelect|CalendarPicker)$/u;
   const knownReact = /^(Ud|Phoenix)(Select|DatePicker|Cascader)$/u;
   const valueControls = root => root?.nodeType === 1 ? [
     ...(root.matches('input:not([type="hidden"]),textarea,select') ? [root] : []),
@@ -119,7 +119,7 @@
   function resolve(el) {
     if (!el || el.nodeType !== 1) return {};
     const seen = new Set();
-    let inputFallback, frameworkFallback, reactValueFallback, reactNamedFallback, vueFallback;
+    let inputFallback, choiceFallback, frameworkFallback, reactValueFallback, reactNamedFallback, vueFallback;
     for (let node = el, count = 0; node && count++ < 40; node = node.parentElement) {
       let vm = node.__vue__;
       for (let level = 0; vm && level++ < 20 && !seen.has(vm); vm = vm.$parent) {
@@ -136,6 +136,7 @@
           // Display/search inputs belong to their Select/DatePicker/Cascader.
           // Keep a plain Input only if no owning complex component is present.
           if (/^(?:ElInput|AInput|ATextarea)$/u.test(name)) inputFallback ||= found;
+          else if (/^(?:El|A)(?:Radio|Checkbox)$/u.test(name)) choiceFallback ||= found;
           else return found;
         }
         if (!/^(?:ElSelect|ASelect|iSelect|ElCascader|ACascader)$/u.test(name) && ownsControl(vm.$el, el)) vueFallback ||= {
@@ -178,7 +179,7 @@
         }
       }
     }
-    return inputFallback || vueFallback || reactNamedFallback || reactValueFallback || frameworkFallback
+    return choiceFallback || inputFallback || vueFallback || reactNamedFallback || reactValueFallback || frameworkFallback
       || { element: el, framework: 'native', props: {} };
   }
   function inspect(el) {
@@ -206,7 +207,9 @@
         && identity.version === exported?.version ? identity.version : null;
     }
     const root = ref.element || el;
-    const valueKey = Object.prototype.hasOwnProperty.call(props, 'value') ? 'value'
+    const checkedModel = /^(?:ACheckbox|ASwitch|ARadio)$/u.test(componentName);
+    const valueKey = checkedModel && Object.prototype.hasOwnProperty.call(props, 'checked') ? 'checked'
+      : checkedModel ? null : Object.prototype.hasOwnProperty.call(props, 'value') ? 'value'
       : Object.prototype.hasOwnProperty.call(props, 'modelValue') ? 'modelValue' : null;
     let rawOptions = props.options;
     if (!Array.isArray(rawOptions) && componentName === 'ElSelect') rawOptions = vm?.options;
@@ -238,6 +241,18 @@
       ...(antMonth ? { valueFormatEvidence: defaultMonthFormat ? 'component_default' : 'explicit_prop',
         modelKind: defaultMonthFormat ? 'moment' : 'formatted',
         modelReason: monthModelConfirmed ? null : 'month_model_unconfirmed' } : {}),
+      ...(/^(?:El|A)(?:Radio|Checkbox|Switch)$/u.test(componentName) ? {
+        optionValue: serial(componentName === 'ElRadio' ? props.label : props.value),
+        optionValueSupported: optionValueSupported(componentName === 'ElRadio' ? props.label : props.value),
+        checkedValue: serial(componentName === 'ElSwitch' ? props.activeValue ?? true
+          : componentName === 'ElCheckbox' ? props.trueLabel ?? true : true),
+        uncheckedValue: serial(componentName === 'ElSwitch' ? props.inactiveValue ?? false
+          : componentName === 'ElCheckbox' ? props.falseLabel ?? false : false),
+        choiceValuesSupported: [componentName === 'ElSwitch' ? props.activeValue ?? true
+          : componentName === 'ElCheckbox' ? props.trueLabel ?? true : true,
+        componentName === 'ElSwitch' ? props.inactiveValue ?? false
+          : componentName === 'ElCheckbox' ? props.falseLabel ?? false : false].every(optionValueSupported)
+      } : {}),
       type: props.type || null, filterable: !!(props.filterable || props.showSearch),
       remote: !!(props.remote || (props.showSearch && props.filterOption === false)),
       lazy, disabled: !!(props.disabled || vm?.disabled || input?.disabled),
@@ -250,5 +265,5 @@
           || props.displayRender || vm?.$scopedSlots?.displayRender || vm?.$scopedSlots?.default || customFields) } : {}),
       versionEvidence: version ? 'page_library_export' : 'version_unconfirmed' };
   }
-  globalThis.ResumeControlModel = Object.freeze({ version: 1, revision: 6, inspect, resolve, serial, optionsOf });
+  globalThis.ResumeControlModel = Object.freeze({ version: 1, revision: 7, inspect, resolve, serial, optionsOf });
 })();

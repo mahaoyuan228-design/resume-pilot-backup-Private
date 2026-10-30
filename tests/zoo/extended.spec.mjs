@@ -12,15 +12,16 @@ for (const adapter of adapters) {
       const shadow = await zoo.shadow([{ selector: '#extended-control', field: adapter, fact: { value } }]);
       expect(shadow.plans[0], JSON.stringify(shadow)).toMatchObject({ adapter, status: 'planned' });
       expect(await zoo.readback()).toEqual(before);
-      const outcome = await zoo.execute(async instruction => {
+      const outcome = await zoo.execute(async value => {
         const el = document.querySelector('#extended-control'), selected = ResumeControls.resolve(el);
+        const instruction = ResumeControls.plan(el, { value });
         const denied = await selected.write(el, instruction);
         const written = await selected.write(el, instruction, { allowWrite: true, check: async () => {
           if (!el.isConnected || document.visibilityState !== 'visible') throw Error('zoo_effect_denied');
         } });
         const verified = await selected.verify(el, instruction);
         return { denied, written, verified };
-      }, [shadow.plans[0]], 'MAIN');
+      }, [value], 'MAIN');
       expect(outcome.denied).toMatchObject({ status: 'unsupported', reason: 'shadow_mode', attempts: 0 });
       expect(outcome.written.strategy, JSON.stringify(outcome)).toBe('ui');
       expect(outcome.verified.status, JSON.stringify(outcome)).toBe('success');
@@ -33,8 +34,9 @@ for (const adapter of adapters) {
       expect(preserved.plans[0].status).toBe('unsupported');
       expect(await zoo.readback()).toEqual(after);
       // One-sided visible changes must fail even when the component model holds.
-      const fourState = await zoo.execute(async instruction => {
+      const fourState = await zoo.execute(async value => {
         const el = document.querySelector('#extended-control');
+        const instruction = ResumeControls.plan(el, { value });
         const input = el.querySelector('input:not([type="hidden"])');
         if (!input) return { checked: false };
         const original = input.value;
@@ -45,7 +47,7 @@ for (const adapter of adapters) {
         setTimeout(() => Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, ''), 10);
         const reverted = await ResumeControls.verify(el, instruction, { settleMs: 40 });
         return { checked: true, mismatch, restored, reverted };
-      }, [shadow.plans[0]], 'MAIN');
+      }, [value], 'MAIN');
       if (fourState.checked) {
         expect(fourState.mismatch.status).toBe('mismatch');
         expect(fourState.restored.status).toBe('success');

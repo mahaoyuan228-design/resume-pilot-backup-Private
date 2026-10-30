@@ -82,6 +82,28 @@ test('ordinary empty prompts retain their display while real values never become
   assert.deepEqual(f.effects, []); safeNeighbor(f);
 });
 
+test('dash prompts require sentinel codes and an agreeing year option family', t => {
+  const f = boot(`${['', '-1', '0', '----'].map((value, i) => `<select id="dash${i}">
+    <option value="${value}">----</option><option value="2000">2000年</option></select>`).join('')}
+    <select id="real-dash"><option value="1999">----</option><option value="2000">2000年</option></select>
+    <select id="mixed-dash"><option value="-1">----</option><option value="2000">2000年</option><option value="other">Other</option></select>
+    <select id="mismatch-dash"><option value="0">----</option><option value="2000">2001年</option></select>
+    <select id="numeric-dash"><option value="0">----</option><option value="2">2</option></select>`);
+  t.after(() => f.dom.window.close());
+  for (let i = 0; i < 4; i++) {
+    const el = f.get(`dash${i}`), model = f.R.resolve(el).readModel(el);
+    assert.equal(model.value, ''); assert.equal(model.domValue, ''); assert.equal(model.options[0].disabled, true);
+    assert.equal(f.R.plan(el, { value: '----' }).reason, 'option_missing');
+    assert.equal(f.R.plan(el, { value: '2000' }).status, 'planned');
+  }
+  for (const [id, value] of [['real-dash', '1999'], ['mixed-dash', '-1'], ['mismatch-dash', '0'], ['numeric-dash', '0']]) {
+    const model = f.R.resolve(f.get(id)).readModel(f.get(id));
+    assert.equal(model.value, value); assert.equal(model.domValue, '----'); assert.equal(model.options[0].disabled, false);
+    assert.equal(f.R.plan(f.get(id), { value: '2000' }).status, 'manual');
+  }
+  assert.deepEqual(f.effects, []); safeNeighbor(f);
+});
+
 test('date-part prompts require a complete numeric option family and preserve self-described frequency codes', t => {
   const f = boot(`<select id="frequency"><option value="month">Month</option><option value="year">Year</option></select>
     <select id="mixed"><option value="0">月</option><option value="2">2月</option><option value="other">其他</option></select>
@@ -145,7 +167,7 @@ test('reinjection replaces revision 6 select contracts before reading a date-par
   f.window.ResumeControls = { version: 1, revision: 6, list: () => [{ name: 'native-text' }] };
   for (const source of sources) f.window.eval(source);
   const R = f.window.ResumeControls;
-  assert.equal(R.revision, 7);
+  assert.equal(R.revision, 8);
   assert.equal(R.inspect(f.get('year')).model.value, '');
   assert.equal(R.plan(f.get('year'), { value: '2000' }).status, 'planned');
   assert.deepEqual(f.effects, []);

@@ -79,7 +79,7 @@ function fixture(t, { field = item(), sectionId = '11', heading = SECTION, extra
   return { window, document, target, counts, message, safety, setBindingHook: hook => { onBindingCheck = hook; } };
 }
 
-const addressFields = result => result.data.fields.filter(field => field.labels.some(label => label.startsWith(QUESTION)));
+const addressFields = result => result.data.fields.filter(field => field.labels.some(label => label.startsWith(QUESTION) || label === '请填写联系地址'));
 
 test('confirmed empty harvested address uses the existing guarded native write without clicks', async t => {
   const h = fixture(t);
@@ -274,7 +274,7 @@ test('a stale revision-6 listener is replaced so reinjection installs the addres
   h.window.__resumeQuickFillEngineRevision = 6;
   h.window.eval(SOURCES[1]);
   assert.notEqual(h.window.__resumeQuickFillEngineListener, stale);
-  assert.equal(h.window.__resumeQuickFillEngineRevision, 15);
+  assert.equal(h.window.__resumeQuickFillEngineRevision, 16);
   assert.equal(h.window.chrome.runtime.onMessage.hasListener(stale), false);
   assert.equal(h.window.chrome.runtime.onMessage.hasListener(h.window.__resumeQuickFillEngineListener), true);
   h.safety();

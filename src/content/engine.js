@@ -8,7 +8,7 @@
   if(nativeMessages.hasListeners?.()===false)globalThis.__resumeNativeListenersResetObserved=true;
   if(globalThis.__resumeQuickFillInstalled){
     existingListenerAlive=!!ownedListener&&nativeMessages.hasListener?.(ownedListener)===true;
-    if(existingListenerAlive&&globalThis.__resumeQuickFillEngineRevision===15&&typeof globalThis.ResumeQuickFillGthInspect==='function')return;
+    if(existingListenerAlive&&globalThis.__resumeQuickFillEngineRevision===16&&typeof globalThis.ResumeQuickFillGthInspect==='function')return;
     if(existingListenerAlive){if(fillState.pending)throw Error('profile_write_context_busy');nativeMessages.removeListener(ownedListener);existingListenerAlive=false;}
     else if(!ownedListener&&nativeMessages.hasListeners?.()===true&&!globalThis.__resumeNativeListenersResetObserved)throw Error('extension_reload_required');
   }
@@ -93,6 +93,20 @@
     return style.display !== "none" && style.visibility !== "hidden" && control.getClientRects().length > 0;
   }
 
+  function questionOwnsControl(label, control, scope) {
+    if (!label) return false;
+    if (label.htmlFor) {
+      const target = document.getElementById(label.htmlFor);
+      return target === control || !!target && control.contains(target);
+    }
+    const editors = [...scope.querySelectorAll('input:not([type="hidden"]),select,textarea')]
+      .filter(node => !['button', 'submit', 'reset', 'image'].includes(node.type));
+    const widget = node => node.closest('.ant-select,.el-select,.ivu-select,.ant-radio-group,.el-radio-group,.ivu-radio-group') || node;
+    if (editors.length && editors.every(node => node.type === 'radio' && node.name === editors[0].name)) return editors.includes(control);
+    const owners = new Set(editors.map(widget));
+    return owners.size === 1 && owners.has(widget(control));
+  }
+
   function labelTexts(control) {
     const found = [];
     const add = (value) => {
@@ -102,11 +116,12 @@
     // The Ant form item's own label is the question. A placeholder may be a
     // generic hint or even name a different fact; it must not veto that label.
     const antQuestion = formItemQuestion(control.closest(".ant-form-item"));
-    if (antQuestion) {
+    if (questionOwnsControl(antQuestion, control, control.closest('.ant-form-item'))) {
       add(antQuestion.textContent);
       return found;
     }
     for (const label of control.labels || []) {
+      if (!questionOwnsControl(label, control, label)) continue;
       const copy = label.cloneNode(true);
       copy.querySelectorAll("input,select,textarea,button").forEach((item) => item.remove());
       add(copy.textContent);
@@ -117,18 +132,18 @@
     // Ant Design and Element UI often put the question on the enclosing form
     // item without associating it with the native input. Take only that item's
     // own, unique label so a nested repeat row cannot borrow another question.
-    add(formItemQuestion(control.closest(".ant-form-item"))?.textContent);
     const elementItem = control.closest(".el-form-item");
     if (elementItem) {
       const ownLabels = [...elementItem.querySelectorAll(".el-form-item__label")]
         .filter((label) => label.closest(".el-form-item") === elementItem);
-      if (ownLabels.length === 1) add(ownLabels[0].textContent);
+      if (ownLabels.length === 1 && questionOwnsControl(ownLabels[0], control, elementItem)) add(ownLabels[0].textContent);
     }
     add(control.getAttribute("placeholder"));
     add(control.getAttribute("title"));
     if (!found.length) {
       const near = control.closest(".form-item,.form-group,.field,[data-field]");
-      add(near?.querySelector("label,.label,[data-label]")?.textContent);
+      const label = near?.querySelector("label,.label,[data-label]");
+      if (questionOwnsControl(label, control, near)) add(label.textContent);
     }
     return found;
   }
@@ -842,7 +857,7 @@
   function datePartPlaceholder(option) {
     const label = String(option.textContent || '').normalize('NFKC').trim().toLowerCase();
     const value = String(option.value).normalize('NFKC').trim().toLowerCase();
-    const part = /^(?:年|year|yyyy)$/u.test(label) ? 'year'
+    const part = /^(?:年|year|yyyy|-{2,})$/u.test(label) ? 'year'
       : /^(?:月|month|mm)$/u.test(label) ? 'month' : /^(?:日|day|dd)$/u.test(label) ? 'day' : null;
     if (!part || !['', '-1', '0', label].includes(value)) return false;
     const choices = [...option.closest('select').options].filter(node => node !== option
@@ -2609,7 +2624,7 @@
         sendResponse(reply);
       });
     return true;
-  };chrome.runtime.onMessage.addListener(engineListener);globalThis.__resumeQuickFillEngineListener=engineListener;globalThis.__resumeQuickFillEngineRevision=15;}
+  };chrome.runtime.onMessage.addListener(engineListener);globalThis.__resumeQuickFillEngineListener=engineListener;globalThis.__resumeQuickFillEngineRevision=16;}
   globalThis.ResumeQuickFillGthInspect = (profile) => {
     if (`${location.origin}${location.pathname}` !== "https://hr.gtht.com/resume/edit/")
       throw new Error("gth_inspect_wrong_page");

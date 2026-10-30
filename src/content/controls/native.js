@@ -48,7 +48,7 @@
     // Require a date-part option family, so a real "Month" frequency choice
     // or an unknown mixed option list cannot be mistaken for an empty prompt.
     const token = norm(option.textContent).toLowerCase();
-    const part = /^(?:年|year|yyyy)$/u.test(token) ? 'year' : /^(?:月|month|mm)$/u.test(token) ? 'month'
+    const part = /^(?:年|year|yyyy|-{2,})$/u.test(token) ? 'year' : /^(?:月|month|mm)$/u.test(token) ? 'month'
       : /^(?:日|day|dd)$/u.test(token) ? 'day' : null;
     if (!part || !['', '-1', '0', token].includes(norm(option.value).toLowerCase())) return false;
     const choices = [...(option.closest('select')?.options || [])].filter(node => node !== option

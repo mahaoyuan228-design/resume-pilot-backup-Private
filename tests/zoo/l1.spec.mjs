@@ -180,15 +180,16 @@ for (const name of ['cms-school', 'hotjob-pair', 'gth-month-range']) {
       const shadow = await zoo.shadow([{ selector: expected.selector, fact: { value: expected.value } }]);
       expect(shadow.plans[0]).toMatchObject({ adapter: expected.adapter, status: 'planned' });
       expect(await zoo.readback()).toEqual(before);
-      const write = await zoo.execute(async ({ selector, instruction }) => {
+      const write = await zoo.execute(async ({ selector, value }) => {
         const el = document.querySelector(selector);
+        const instruction = ResumeControls.plan(el, { value });
         const adapter = ResumeControls.resolve(el);
         if (!adapter) throw Error('zoo_adapter_missing');
         const result = await adapter.write(el, instruction, { allowWrite: true, check: async () => {
           if (document.visibilityState !== 'visible' || !el.isConnected) throw Error('zoo_control_not_visible');
         } });
         return { result, verify: await ResumeControls.verify(el, instruction) };
-      }, [{ selector: expected.selector, instruction: shadow.plans[0] }], 'MAIN');
+      }, [{ selector: expected.selector, value: expected.value }], 'MAIN');
       expect(write.verify.status, JSON.stringify(write)).toBe('success');
       expect(write.result.strategy, JSON.stringify(write)).toBe('ui');
       const reads = (await zoo.readback()).model;
@@ -309,17 +310,17 @@ test('offline native adapters preserve guards and verify text, select, radio and
     const denied = await zoo.execute(async instruction => ResumeControls.resolve(document.querySelector('#l1-text')).write(document.querySelector('#l1-text'), instruction), [shadow.plans[0]], 'MAIN');
     expect(denied).toMatchObject({ status: 'unsupported', reason: 'shadow_mode', attempts: 0 });
     expect(await zoo.page.locator('#l1-text').inputValue()).toBe('');
-    const results = await zoo.execute(async ({ requests, instructions }) => {
+    const results = await zoo.execute(async requests => {
       const results = [];
       for (let i = 0; i < requests.length; i++) {
-        const el = document.querySelector(requests[i].selector), instruction = instructions[i];
+        const el = document.querySelector(requests[i].selector), instruction = ResumeControls.plan(el, requests[i].fact);
         const written = await ResumeControls.resolve(el).write(el, instruction, { allowWrite: true, check: async () => {
           if (document.visibilityState !== 'visible' || !el.isConnected) throw Error('zoo_control_not_visible');
         } });
         results.push({ written, verified: await ResumeControls.verify(el, instruction) });
       }
       return results;
-    }, [{ requests, instructions: shadow.plans }], 'MAIN');
+    }, [requests], 'MAIN');
     for (const result of results) expect(result.verified.status, JSON.stringify(results)).toBe('success');
     expect(await zoo.page.locator('#l1-text').inputValue()).toBe('离线原生文本');
     expect(await zoo.page.locator('#l1-textarea').inputValue()).toBe('离线多行内容');

@@ -5,8 +5,11 @@
   'use strict';
   // Rebuild old registries so reinjection installs current select readback
   // contracts as well as the current model resolver.
-  if (globalThis.ResumeControls?.version === 1 && globalThis.ResumeControls.revision === 7) return;
+  if (globalThis.ResumeControls?.version === 1 && globalThis.ResumeControls.revision === 8) return;
   const adapters = new Map();
+  // Executable dropdown plans stay bound to their original widget in MAIN.
+  // Serialized shadow observations carry no authority to write another root.
+  const selectBindings = new WeakMap();
   const norm = value => String(value ?? '').normalize('NFKC').replace(/\s+/gu, ' ').trim();
   const equal = (a, b) => Array.isArray(a) || Array.isArray(b)
     ? Array.isArray(a) && Array.isArray(b) && a.length === b.length && a.every((v, i) => equal(v, b[i]))
@@ -138,17 +141,23 @@
     if (typeof value !== 'object' || value.nodeType || value instanceof Map) return null;
     const out = {};
     for (const [key, val] of Object.entries(value)) if (!['controlRoot', 'vm', 'props'].includes(key) && typeof val !== 'function') out[key] = clean(val, depth + 1);
+    if (selectBindings.has(value)) selectBindings.set(out, selectBindings.get(value));
     return out;
   }
   function createAdapter(spec) {
     const readModel = spec.readModel || ((el, probe) => ({ ...probe }));
+    const boundSelect = ['select', 'select-search'].includes(spec.type);
     const adapter = { ...spec,
       libVersionProbe: spec.libVersionProbe || ((el, probe = globalThis.ResumeControlModel.inspect(el)) =>
         probe.lib === spec.lib && probe.version ? { lib: probe.lib, version: probe.version } : null),
       readModel(el, probe = globalThis.ResumeControlModel.inspect(el)) { return readModel(el, probe); },
       readOptions(el, probe) { return spec.readOptions ? spec.readOptions(el, probe) : adapter.readModel(el, probe).options || []; },
-      plan(fact, model, ctx) { return { adapter: spec.name, lib: spec.lib, type: spec.type,
-        ...(spec.plan ? spec.plan(fact, model, ctx) : makePlan(fact, model, { type: spec.type })) }; },
+      plan(fact, model, ctx) {
+        const plan = { adapter: spec.name, lib: spec.lib, type: spec.type,
+          ...(spec.plan ? spec.plan(fact, model, ctx) : makePlan(fact, model, { type: spec.type })) };
+        if (boundSelect && model.controlRoot) selectBindings.set(plan, model.controlRoot);
+        return plan;
+      },
       async write(el, instruction, ctx) {
         if (ctx?.allowWrite !== true || typeof ctx?.check !== 'function') return { status: 'unsupported', reason: 'shadow_mode', strategy: 'none', attempts: 0 };
         if (!['planned', 'success'].includes(instruction?.status) || instruction.adapter !== spec.name) return { status: 'unsupported', reason: 'invalid_instruction', strategy: 'none', attempts: 0 };
@@ -157,18 +166,26 @@
         await check(ctx);
         if (resolve(el)?.name !== spec.name) return { status: 'unsupported', reason: 'control_or_version_changed', strategy: 'none', attempts: 0 };
         const model = adapter.readModel(el);
+        if (boundSelect && (!model.controlRoot || selectBindings.get(instruction) !== model.controlRoot)) return { status: 'unsupported', reason: 'control_target_changed', strategy: 'none', attempts: 0 };
         const current = adapter.plan({ value: instruction.value }, model);
         if (!['planned', 'success'].includes(current.status)) return { status: 'unsupported', reason: current.reason, strategy: 'none', attempts: 0 };
         if (!equal(current.value, instruction.value) || !equal(current.domValue, instruction.domValue)) return { status: 'unsupported', reason: 'instruction_stale', strategy: 'none', attempts: 0 };
         if (current.status === 'success') return { status: 'success', reason: 'preexisting_same_value', strategy: 'none', attempts: 0 };
         if (!spec.performWrite) return { status: 'unsupported', reason: 'writer_unavailable', strategy: 'none', attempts: 0 };
-        return spec.performWrite(el, instruction, ctx);
+        const ownedCtx = !boundSelect ? ctx : { ...ctx, async check() {
+          await ctx.check();
+          if (resolve(el)?.name !== spec.name) throw Error('control_or_version_changed');
+          if (adapter.readModel(el).controlRoot !== selectBindings.get(instruction)) throw Error('control_target_changed');
+        } };
+        return spec.performWrite(el, instruction, ownedCtx);
       },
       async verify(el, instruction, ctx = {}) {
         if (instruction?.adapter !== spec.name || !['planned', 'success'].includes(instruction.status)) return { status: 'unsupported', reason: 'invalid_instruction' };
         const sample = () => {
           if (!el?.isConnected) return { ok: false, unsupported: true, reason: 'target_detached' };
           const model = adapter.readModel(el);
+          if (boundSelect && (resolve(el)?.name !== spec.name || !model.controlRoot
+            || selectBindings.get(instruction) !== model.controlRoot)) return { ok: false, unsupported: true, reason: 'control_target_changed' };
           return { ok: model.available && equal(model.value, instruction.modelValue ?? instruction.value) && equal(model.domValue, instruction.domValue ?? instruction.value),
             unsupported: !model.available, domReadback: clean(model.domValue), modelReadback: clean(model.value) };
         };
@@ -218,7 +235,7 @@
     } catch { return { ...manual('component_probe_failed'), adapter: null }; }
   }
   const helpers = Object.freeze({ norm, equal, empty, tick, makePlan, safeClick, nativeSet, check, clickAllowed, clean, validDate });
-  globalThis.ResumeControls = Object.freeze({ version: 1, revision: 7, mode: 'shadow', liveSupportClaimed: false,
+  globalThis.ResumeControls = Object.freeze({ version: 1, revision: 8, mode: 'shadow', liveSupportClaimed: false,
     register, createAdapter, resolve, inspect, plan, helpers, list: () => ordered().map(a => ({ name: a.name, lib: a.lib, type: a.type, priority: a.priority || 0 })),
     verify: (el, instruction, ctx) => resolve(el)?.verify(el, instruction, ctx) || Promise.resolve({ status: 'unsupported', reason: 'control_or_version_unconfirmed' }) });
 })();

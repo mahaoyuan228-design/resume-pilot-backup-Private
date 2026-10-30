@@ -157,6 +157,95 @@ function modeledTwelveFieldInspection() {
   return inspection;
 }
 
+for (const requestMethod of ['GET', 'POST']) {
+  for (const pending of [false, true]) test(`one Fetch decision per repeated ${requestMethod} interception (pending=${pending})`, async () => {
+    const calls = [];
+    let release;
+    const guard = createRowDNetworkGuard((method, params) => {
+      calls.push({ method, params });
+      if (calls.length > 1) return Promise.reject(new Error('Invalid InterceptionId.'));
+      return pending ? new Promise(resolve => { release = resolve; }) : Promise.resolve({});
+    });
+    guard.setKeeperActive(true);
+    const [network, fetch] = keeperRequest('replay', requestMethod);
+    guard.onEvent(network);
+    guard.onEvent(fetch);
+    if (!pending) await guard.drain();
+    guard.onEvent(fetch);
+    release?.({});
+    await guard.drain();
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].params.requestId, fetch.params.requestId);
+    assert.equal(calls[0].method, requestMethod === 'GET' ? 'Fetch.continueRequest' : 'Fetch.failRequest');
+    assert.equal(guard.traffic.commandFailed, false);
+    assert.equal(guard.traffic.blockedNonGetCount, requestMethod === 'POST' ? 1 : 0);
+    assert.equal(guard.failed(), true, 'duplicate evidence remains ineligible for preservation');
+  });
+}
+
+test('distinct Fetch interception IDs sharing a network ID each receive an abort', async () => {
+  const calls = [];
+  const guard = createRowDNetworkGuard((method, params) => { calls.push({ method, params }); });
+  guard.setKeeperActive(true);
+  const [network, fetch] = keeperRequest('restart');
+  guard.onEvent(network);
+  guard.onEvent(fetch);
+  guard.onEvent({ ...fetch, params: { ...fetch.params, requestId: 'second-interception' } });
+  await guard.drain();
+  assert.deepEqual(calls.map(call => call.method), ['Fetch.failRequest', 'Fetch.failRequest']);
+  assert.deepEqual(calls.map(call => call.params.requestId), [fetch.params.requestId, 'second-interception']);
+  assert.equal(guard.traffic.commandFailed, false);
+  assert.equal(guard.traffic.blockedNonGetCount, 2);
+  assert.equal(guard.failed(), true, 'duplicate network phases are still rejected');
+});
+
+for (const requestMethod of ['GET', 'POST']) test(`Invalid InterceptionId is redacted without inventing ${requestMethod} prevention`, async () => {
+  const calls = [];
+  const guard = createRowDNetworkGuard((method, params) => {
+    calls.push({ method, params });
+    throw new Error(JSON.stringify({ message: `Invalid InterceptionId. ${PRIVATE}` }));
+  });
+  guard.setKeeperActive(true);
+  keeperRequest('retired', requestMethod).forEach(guard.onEvent);
+  await guard.drain();
+  assert.equal(calls.length, 1, 'never retry a retired interception');
+  assert.equal(guard.traffic.commandFailed, false);
+  assert.equal(guard.traffic.blockedNonGetCount, 0);
+  assert.deepEqual(guard.traffic.commandFailures, [{ method: requestMethod === 'GET'
+    ? 'Fetch.continueRequest' : 'Fetch.failRequest', reason: 'invalid_interception_id', ignored: true }]);
+  assert.equal(guard.failed(), requestMethod === 'POST', 'unacknowledged non-GET still hard fails');
+  assert.equal(JSON.stringify(guard.traffic).includes(PRIVATE), false);
+});
+
+for (const requestMethod of ['GET', 'POST']) test(`responseErrorReason ${requestMethod} pause is resolved without continue or fake block evidence`, async () => {
+  const calls = [];
+  const guard = createRowDNetworkGuard((method, params) => { calls.push({ method, params }); });
+  guard.setKeeperActive(true);
+  const [network, fetch] = keeperRequest('error-stage', requestMethod);
+  fetch.params.responseErrorReason = 'Aborted';
+  guard.onEvent(network);
+  guard.onEvent(fetch);
+  await guard.drain();
+  assert.deepEqual(calls.map(call => call.method), ['Fetch.failRequest']);
+  assert.equal(guard.traffic.blockedNonGetCount, requestMethod === 'POST' ? 1 : 0);
+  assert.equal(guard.traffic.commandFailed, false);
+  assert.equal(guard.failed(), requestMethod === 'POST');
+});
+
+test('a reused GET interception cannot authorize continuing a later POST', async () => {
+  const calls = [];
+  const guard = createRowDNetworkGuard((method, params) => { calls.push({ method, params }); });
+  guard.setKeeperActive(true);
+  guard.onEvent(paused('GET', keeperUrl, 'conflicting-id'));
+  const events = keeperRequest('conflict');
+  events[1].params.requestId = 'conflicting-id';
+  events.forEach(guard.onEvent);
+  guard.onEvent(events[1]);
+  await guard.drain();
+  assert.deepEqual(calls.map(call => call.method), ['Fetch.continueRequest', 'Fetch.failRequest']);
+  assert.equal(guard.failed(), true);
+});
+
 test('baseline and initial evidence preserve Never-Save, no live PASS, and booked 58 with D unbooked', () => {
   assert.equal(ROW_D_LIVE_BASE_TIP, '23c0ce54b759aa1fc42516ecaf7c851bd63e785c');
   const evidence = rowDProbeEvidence();
@@ -752,7 +841,11 @@ test('keeper cleanup rejection fails safely and still disables guards and closes
   });
   const evidence = await fake.run();
   assertSafety(evidence);
-  assert.equal(evidence.reason, 'visibility_keeper_cleanup_failed');
+  assert.equal(evidence.reason, 'non_get_or_guard_failure');
+  assert.equal(evidence.traffic.commandFailed, true);
+  assert.deepEqual(evidence.traffic.commandFailures, [{
+    method: 'Emulation.setFocusEmulationEnabled', reason: 'command_rejected', ignored: false
+  }]);
   assert.equal(evidence.probeCompleted, true);
   assert.equal(evidence.ok, false);
   assert.equal(evidence.visibilityKeeper.focusEmulationCleared, false);
@@ -1332,6 +1425,7 @@ test('only bounded option readiness and exact enumerated provenance metadata rea
     // A modeled sanitized current component enumeration checks the boundary
     // only; lib tests separately mount real Ant components and inspect VNodes.
     const actual = clone(dom.window.eval(buildCmsRowDOptionsProbeExpression()));
+    delete actual.fields.find(row => row.wrapperId === '13_43_0').optionsDefinitionIssue;
     Object.assign(actual.fields.find(row => row.wrapperId === '13_43_0'), {
       optionsReadiness: 'target_missing', optionsEvidenceSource: 'owned_select_vnodes',
       observedOptionCount: 2, reason: 'read_only_options_preflight', ok: true, status: 'observed'
@@ -1339,6 +1433,26 @@ test('only bounded option readiness and exact enumerated provenance metadata rea
     const vnode = await fakeCdp({ evaluate: () => clone(actual) }).run({ optionsWaitMs: 0 });
     assertSafety(vnode);
     assert.equal(vnode.fields.find(row => row.wrapperId === '13_43_0').optionsEvidenceSource, 'owned_select_vnodes');
+  } finally { dom.window.close(); }
+});
+
+test('loading and failed option-definition diagnostics survive only as unavailable evidence', async () => {
+  const dom = syntheticDom();
+  try {
+    const doc = dom.window.document;
+    doc.getElementById('synthetic-13_43_0').remove();
+    doc.getElementById('13_47_0').querySelector('.ant-select').setAttribute('aria-busy', 'true');
+    const evidence = await fakeCdp({ evaluate: expression => clone(dom.window.eval(expression)) })
+      .run({ optionsWaitMs: 0 });
+    assertSafety(evidence);
+    const missing = evidence.fields.find(row => row.wrapperId === '13_43_0');
+    assert.equal(missing.reason, 'current_options_unavailable');
+    assert.equal(missing.optionsDefinitionIssue, 'root_anchor_missing');
+    const loading = evidence.fields.find(row => row.wrapperId === '13_47_0');
+    assert.equal(loading.optionsReadiness, 'loading');
+    assert.equal(loading.reason, 'current_options_unavailable');
+    assert.equal(loading.observedOptionCount, undefined);
+    assert.equal(loading.optionsEvidenceSource, undefined);
   } finally { dom.window.close(); }
 });
 
@@ -1371,6 +1485,12 @@ test('malformed or misplaced structural diagnostics reject Runtime evidence', as
     ['13_102501_0', { optionsComplete: false }],
     ['13_43_0', { evidenceSource: PRIVATE }],
     ['13_43_0', { optionsReadiness: PRIVATE }],
+    ['13_43_0', { optionsDefinitionIssue: PRIVATE }],
+    ['13_43_0', { optionsDefinitionIssue: 'root_anchor_missing' }],
+    ['13_43_0', { optionsReadiness: 'loading' }],
+    ['13_43_0', { reason: 'current_options_unavailable', optionsReadiness: 'loading', observedOptionCount: 0 }],
+    ['13_43_0', { reason: 'current_options_unavailable', optionsReadiness: 'loading', optionsDefinitionIssue: 'loading' }],
+    ['13_102402_0', { reason: 'current_options_unavailable', optionsReadiness: 'loading' }],
     ['13_43_0', { optionsReadiness: 'observed' }],
     ['13_43_0', { optionsReadiness: 'target_missing' }],
     ['13_102402_0', { optionsReadiness: 'observed' }],

@@ -131,7 +131,9 @@ export function connectCdp(wsUrl, { timeoutMs, step = 'connect', onEvent } = {})
             if (!pending.has(id)) return;
             pending.delete(id);
             rej(new StepTimeoutError(callStep));
-            terminate();
+            // A bounded synchronous inspector can retain its guarded session
+            // solely for cleanup. Defaults still close on every timeout.
+            if (options.closeOnTimeout !== false) terminate();
           }, callTimeout);
           pending.set(id, { resolve: res, reject: rej, timer, step: callStep });
           try {

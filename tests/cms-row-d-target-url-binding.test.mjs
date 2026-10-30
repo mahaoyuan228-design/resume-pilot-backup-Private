@@ -186,8 +186,15 @@ test('only the second exact-href check changes DOM reads; R11/schema/guard/IO an
   for(const file of Object.keys(SOURCE_PINS)){
     const current=fs.readFileSync(path.join(ROOT,file),'utf8').replace(/\r\n/gu,'\n');
     if(file==='scripts/live/cms-row-d-live.mjs'||file==='scripts/lib/cms-row-d-options.mjs'){
-      // The reviewed options readiness revision replaces these two pins.
+      // Keep the reviewed options/runner dependencies' deployed CRLF bytes pinned.
       assert.equal(createHash('sha256').update(current.replace(/\n/gu,'\r\n')).digest('hex'),SOURCE_PINS[file]);
+      continue;
+    }
+    if(file==='tools/live-harvest/cdp-client.mjs'){
+      // The reviewed timeout cleanup change uses the actual deployed LF bytes.
+      const bytes=fs.readFileSync(path.join(ROOT,file));
+      assert.equal(bytes.toString('utf8'),current);
+      assert.equal(createHash('sha256').update(bytes).digest('hex'),SOURCE_PINS[file]);
       continue;
     }
     assert.equal(current,execFileSync('git',['show',BASE+':'+file],{cwd:ROOT,encoding:'utf8'}).replace(/\r\n/gu,'\n'));

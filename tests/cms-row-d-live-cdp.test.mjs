@@ -201,7 +201,7 @@ test('actual loopback transport passively repeats the same strict expression and
   assert.equal(stub.calls.filter(call => call.method === 'Target.activateTarget').length, 1);
 });
 
-test('actual loopback missing readiness reply times out within its remaining host budget without a permissive retry', async t => {
+test('actual loopback missing readiness reply preserves cleanup and the latest incomplete snapshot', async t => {
   const stub = await cdpStub(t, { evaluationGet: false, inspection: modeledUnavailableInspection(),
     omitEvaluationReplyAt: 2 });
   const started = performance.now();
@@ -209,17 +209,150 @@ test('actual loopback missing readiness reply times out within its remaining hos
     optionsWaitMs: 75, optionsPollMs: 25, wait: async () => {} });
   const elapsed = performance.now() - started;
   safe(result);
-  // The transport terminates on timeout; failed guard teardown must retain
-  // its existing final precedence over the inspection timeout diagnosis.
-  assert.equal(result.reason, 'non_get_or_guard_failure');
+  assert.equal(result.ok, false);
+  assert.equal(result.probeCompleted, true);
+  assert.equal(result.reason, 'inspection_failed');
   assert.equal(result.optionsReadiness.status, 'inspection_failed');
   assert.equal(result.optionsReadiness.attempts, 2);
-  assert.equal(result.fields.find(row => row.key === 'expectedWorkNature').reason, 'current_options_unavailable');
+  assert.equal(result.optionsReadiness.initialUnavailableCount, 1);
+  assert.equal(result.optionsReadiness.finalUnavailableCount, 1);
+  assert.deepEqual(result.fields, modeledUnavailableInspection().fields);
+  assert.equal(result.traffic.commandFailed, false);
+  assert.deepEqual(result.traffic.keeperAssessment, { status: 'no_non_get', reasons: [] });
+  assert.equal(result.visibilityKeeper.focusEmulationCleared, true);
   assert.ok(elapsed < 750, `remaining host timeout must bound the omitted reply, took ${elapsed} ms`);
   const evaluations = stub.calls.filter(call => call.method === 'Runtime.evaluate');
   assert.equal(evaluations.length, 2);
   assert.ok(evaluations.every(call => call.params.throwOnSideEffect === true));
   assert.ok(evaluations[1].params.timeout <= 75);
+  assert.deepEqual(stub.calls.slice(-3).map(call => call.method), [
+    'Emulation.setFocusEmulationEnabled', 'Fetch.disable', 'Network.disable'
+  ]);
+  assert.deepEqual(stub.calls.at(-3).params, { enabled: false });
+});
+
+// These timings model an omitted synchronous evaluation reply and an abort
+// whose ACK arrives after that read has timed out. They are offline transport
+// scheduling only, not a new CMS observation or DOM capture.
+async function inspectionTimeoutStub(t, { lateReply = false, blockFails = false } = {}) {
+  const calls = [];
+  const trace = [];
+  const timers = new Set();
+  let evaluations = 0;
+  let blockAcknowledged = false;
+  let timedOutEvaluation;
+  const server = http.createServer((request, response) => {
+    response.setHeader('Content-Type', 'application/json');
+    response.end(JSON.stringify([{ type: 'page', id: 'timeout-tab', url: ROW_D_PAGE,
+      webSocketDebuggerUrl: `ws://127.0.0.1:${server.address().port}/devtools/page/timeout-tab` }]));
+  });
+  const wss = new WebSocketServer({ server });
+  wss.on('connection', socket => {
+    const send = message => socket.send(JSON.stringify(message));
+    socket.on('message', raw => {
+      const message = JSON.parse(String(raw));
+      calls.push(message);
+      const reply = result => send({ id: message.id, result });
+      if (message.method === 'Runtime.evaluate') {
+        evaluations += 1;
+        assert.equal(message.params.throwOnSideEffect, true);
+        assert.equal(message.params.awaitPromise, false);
+        assert.equal(message.params.userGesture, false);
+        if (evaluations === 1) {
+          reply({ result: { value: modeledUnavailableInspection() } });
+          return;
+        }
+        assert.equal(evaluations, 2, 'a timed out sample must not dispatch another read');
+        trace.push('omitted_evaluation');
+        timedOutEvaluation = message;
+        const request = { method: 'POST', url: `${autosaveUrl}?private=${PRIVATE}` };
+        send({ method: 'Network.requestWillBeSent', params: { requestId: 'timeout-network', request } });
+        send({ method: 'Fetch.requestPaused', params: {
+          requestId: 'timeout-fetch', networkId: 'timeout-network', request
+        } });
+        return;
+      }
+      if (message.method === 'Fetch.failRequest') {
+        assert.deepEqual(message.params, { requestId: 'timeout-fetch', errorReason: 'BlockedByClient' });
+        trace.push('abort_pending');
+        const timer = setTimeout(() => {
+          timers.delete(timer);
+          if (socket.readyState !== 1) return;
+          trace.push(blockFails ? 'abort_rejected' : 'abort_acknowledged');
+          blockAcknowledged = !blockFails;
+          if (blockFails) send({ id: message.id, error: { message: PRIVATE } });
+          else reply({});
+          if (lateReply) {
+            trace.push('late_evaluation_reply');
+            send({ id: timedOutEvaluation.id, result: { result: { value: liveShape.inspection } } });
+          }
+        }, timedOutEvaluation.params.timeout + 40);
+        timers.add(timer);
+        return;
+      }
+      if (message.method === 'Emulation.setFocusEmulationEnabled' && !message.params.enabled) {
+        trace.push('focus_reset');
+        assert.equal(blockAcknowledged, !blockFails, 'cleanup waits for the outstanding abort result');
+      }
+      if (['Fetch.disable', 'Network.disable'].includes(message.method)) trace.push(message.method);
+      reply({});
+    });
+  });
+  server.listen(0, '127.0.0.1');
+  await once(server, 'listening');
+  t.after(async () => {
+    for (const timer of timers) clearTimeout(timer);
+    for (const socket of wss.clients) socket.terminate();
+    await new Promise(resolve => wss.close(resolve));
+    await new Promise(resolve => server.close(resolve));
+  });
+  return { calls, trace, port: server.address().port };
+}
+
+for (const lateReply of [false, true]) {
+  test(`actual loopback read timeout lets a pending non-GET block settle during cleanup (late reply=${lateReply})`, async t => {
+    const stub = await inspectionTimeoutStub(t, { lateReply });
+    const result = await runCmsRowDLive({ port: stub.port, timeoutMs: 1000,
+      optionsWaitMs: 75, optionsPollMs: 25, wait: async () => {} });
+    safe(result);
+    assert.equal(result.ok, false);
+    assert.equal(result.reason, 'inspection_failed');
+    assert.equal(result.probeCompleted, true);
+    assert.deepEqual(result.fields, modeledUnavailableInspection().fields);
+    assert.deepEqual(result.optionsReadiness, { status: 'inspection_failed', attempts: 2,
+      waitRounds: 1, initialUnavailableCount: 1, finalUnavailableCount: 1 });
+    assert.equal(result.visibilityKeeper.focusEmulationCleared, true);
+    assert.equal(result.traffic.commandFailed, false);
+    assert.equal(result.traffic.observedNonGetCount, 1);
+    assert.equal(result.traffic.interceptedNonGetCount, 1);
+    assert.equal(result.traffic.blockedNonGetCount, 1);
+    assert.equal(result.traffic.responseToNonGetCount, 0);
+    assert.deepEqual(result.traffic.keeperAssessment, { status: 'correlated_keeper_blocks', reasons: [] });
+    assert.ok(stub.trace.indexOf('abort_pending') < stub.trace.indexOf('abort_acknowledged'));
+    assert.ok(stub.trace.indexOf('abort_acknowledged') < stub.trace.indexOf('focus_reset'));
+    assert.deepEqual(stub.trace.slice(-3), ['focus_reset', 'Fetch.disable', 'Network.disable']);
+    if (lateReply) assert.ok(stub.trace.indexOf('late_evaluation_reply') < stub.trace.indexOf('focus_reset'));
+    assert.equal(stub.calls.filter(call => call.method === 'Runtime.evaluate').length, 2);
+    assert.equal(stub.calls.some(call => call.method === 'Fetch.continueRequest'), false);
+    assert.doesNotMatch(JSON.stringify(result), /timeout-network|timeout-fetch|private=/);
+  });
+}
+
+test('actual loopback read timeout cannot hide a pending non-GET block rejection', async t => {
+  const stub = await inspectionTimeoutStub(t, { blockFails: true, lateReply: true });
+  const result = await runCmsRowDLive({ port: stub.port, timeoutMs: 1000,
+    optionsWaitMs: 75, optionsPollMs: 25, wait: async () => {} });
+  safe(result);
+  assert.equal(result.ok, false);
+  assert.equal(result.reason, 'non_get_or_guard_failure');
+  assert.equal(result.optionsReadiness.status, 'inspection_failed');
+  assert.deepEqual(result.fields, modeledUnavailableInspection().fields);
+  assert.equal(result.traffic.commandFailed, true);
+  assert.equal(result.traffic.blockedNonGetCount, 0);
+  assert.equal(result.traffic.responseToNonGetCount, 0);
+  assert.ok(result.traffic.keeperAssessment.reasons.includes('guard_command_failed'));
+  assert.equal(result.visibilityKeeper.focusEmulationCleared, true);
+  assert.ok(stub.trace.indexOf('abort_rejected') < stub.trace.indexOf('focus_reset'));
 });
 
 for (const visibilityNonGetAt of ['Target.activateTarget', 'Page.bringToFront', 'Emulation.setFocusEmulationEnabled']) {
@@ -342,7 +475,8 @@ for (const networkCase of ['blocked_info_edit', 'mismatched_network_id', 'respon
     assert.equal(result.traffic.commandFailed, false);
     assert.equal(result.traffic.truncated, false);
     if (networkCase === 'blocked_info_edit') {
-      const { keeperAssessment, ...redactedTraffic } = result.traffic;
+      const { keeperAssessment, commandFailures, ...redactedTraffic } = result.traffic;
+      assert.deepEqual(commandFailures, []);
       assert.deepEqual(redactedTraffic, liveShape.traffic, 'the reported aggregate and phases match the supplied live report');
       assert.deepEqual(keeperAssessment, { status: 'correlated_keeper_blocks', reasons: [] });
     } else {
@@ -385,7 +519,8 @@ for (const networkCase of ['r7_missing', 'r7_missing_reverse', 'r7_missing_respo
     assert.equal(result.traffic.blockedNonGetCount, networkCase === 'r7_missing_second' ? 2 : 1);
     assert.equal(result.traffic.commandFailed, false);
     if (preserved) {
-      const { keeperAssessment, ...traffic } = result.traffic;
+      const { keeperAssessment, commandFailures, ...traffic } = result.traffic;
+      assert.deepEqual(commandFailures, []);
       // The sanitized observed -> paused -> blocked shape carries no raw IDs.
       // Fetch-first naturally records its first two phases in reverse order.
       assert.deepEqual({ ...traffic, records: historicalShape.traffic.records }, historicalShape.traffic);

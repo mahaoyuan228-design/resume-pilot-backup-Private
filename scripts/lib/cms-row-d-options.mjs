@@ -238,66 +238,79 @@ const denseProbeArray = (object, maximum) => {
  *
  * Bind every step to this exact current root and current render/parent VNodes.
  * Never inspect _optionsInfo: the component retains old selected entries in
- * that cache. Reject unsupported groups, custom render/search modes, rich
+ * that cache. Reject unsupported groups, custom render/filter modes, rich
  * labels, disabled options, accessors, cycles, and incomplete component links.
  * Labels remain evaluation-local and still face the exact harvested dictionary
  * checks. Source compatibility is not proof of the real CMS component shape.
  */
-const ownedSelectVNodeLabels = (select, reference) => {
+const ownedSelectVNodeLabels = (select, reference, diagnostic = {}) => {
+  const reject = issue => { diagnostic.optionsDefinitionIssue = issue; return null; };
   try {
     const seen = [];
     const candidates = [];
     let current = ownProbeData(select, '__vue__');
+    if (!current) return reject('root_anchor_missing');
     // Vue may move __vue__ to a lower component sharing this root after an
     // update. Ascend only the exact current single-root render chain first.
     const ascended = [];
     for (let depth = 0; current && depth < 8; depth += 1) {
       if (ascended.includes(current) || ownProbeData(current, '$el') !== select
-        || ownProbeData(ownProbeData(current, '_vnode'), 'elm') !== select) return null;
+        || ownProbeData(ownProbeData(current, '_vnode'), 'elm') !== select) return reject('current_root_unverified');
       ascended.push(current);
       const parent = ownProbeData(current, '$parent');
       if (!parent || ownProbeData(parent, '$el') !== select) break;
       const render = ownProbeData(parent, '_vnode');
       if (ownProbeData(render, 'elm') !== select || ownProbeData(current, '$vnode') !== render
-        || ownProbeData(render, 'componentInstance') !== current || depth === 7) return null;
+        || ownProbeData(render, 'componentInstance') !== current || depth === 7) return reject('current_chain_unverified');
       current = parent;
     }
     for (let depth = 0; current && depth < 8; depth += 1) {
-      if (seen.includes(current)) return null;
+      if (seen.includes(current)) return reject('current_chain_unverified');
       seen.push(current);
       const render = ownProbeData(current, '_vnode');
-      if (ownProbeData(current, '$el') !== select || ownProbeData(render, 'elm') !== select) return null;
+      if (ownProbeData(current, '$el') !== select || ownProbeData(render, 'elm') !== select) return reject('current_root_unverified');
       const parent = ownProbeData(current, '$vnode');
       const component = ownProbeData(parent, 'componentOptions');
       const config = ownProbeData(ownProbeData(component, 'Ctor'), 'options');
       if (ownProbeData(config, 'name') === 'Select') {
-        if (ownProbeData(parent, 'componentInstance') !== current || ownProbeData(parent, 'elm') !== select) return null;
+        if (ownProbeData(parent, 'componentInstance') !== current || ownProbeData(parent, 'elm') !== select) return reject('current_chain_unverified');
         candidates.push(current);
       }
       const child = ownProbeData(render, 'componentInstance');
-      if (child && ownProbeData(child, '$vnode') !== render) return null;
+      if (child && ownProbeData(child, '$vnode') !== render) return reject('current_chain_unverified');
       current = child;
     }
-    if (current || candidates.length !== 1) return null;
+    if (current || candidates.length !== 1) return reject('select_component_unrecognized');
     const candidate = candidates[0];
     const parent = ownProbeData(candidate, '$vnode');
     const props = ownProbeData(ownProbeData(candidate, '$options'), 'propsData');
-    if (!props || ownProbeData(ownProbeData(parent, 'componentOptions'), 'propsData') !== props) return null;
-    const flags = ['multiple', 'tags', 'combobox', 'showSearch', 'disabled'];
+    if (!props || ownProbeData(ownProbeData(parent, 'componentOptions'), 'propsData') !== props) return reject('current_props_unverified');
+    // select/index.js forwards loading to this current propsData. Matching
+    // labels retained during a refresh do not establish ready options.
+    const loading = ownProbeData(props, 'loading');
+    if (loading !== undefined && loading !== false) return reject('loading');
+    const flags = ['multiple', 'tags', 'combobox', 'disabled'];
     for (let flagIndex = 0; flagIndex < flags.length; flagIndex += 1) {
       const flag = ownProbeData(props, flags[flagIndex]);
-      if (flag !== undefined && flag !== false) return null;
+      if (flag !== undefined && flag !== false) return reject('select_mode_unsupported');
     }
+    // Ant 1.7.8 keeps the full current children definition for searchable
+    // single selects too. renderFilterOptionsFromChildren filters a separate
+    // menu using _inputValue; never read that private search/selected state.
+    // This source remains definition evidence, not a filtered/visible menu.
+    const searchable = ownProbeData(props, 'showSearch');
+    const filter = ownProbeData(props, 'filterOption');
+    if ((searchable !== undefined && searchable !== false && searchable !== true)
+      || (filter !== undefined && filter !== false && filter !== true)) return reject('search_filter_unsupported');
     if (ownProbeData(props, 'optionLabelProp') !== 'children'
-      || ownProbeData(props, 'dropdownRender') !== undefined
-      || typeof ownProbeData(props, 'filterOption') === 'function') return null;
+      || ownProbeData(props, 'dropdownRender') !== undefined) return reject('option_render_unsupported');
     const render = ownProbeData(candidate, '_vnode');
     const trigger = ownProbeData(render, 'componentOptions');
     const triggerConfig = ownProbeData(ownProbeData(trigger, 'Ctor'), 'options');
     const triggerInstance = ownProbeData(render, 'componentInstance');
     if (ownProbeData(triggerConfig, 'name') !== 'SelectTrigger'
       || ownProbeData(ownProbeData(trigger, 'propsData'), 'ariaId') !== reference
-      || ownProbeData(triggerInstance, '$vnode') !== render) return null;
+      || ownProbeData(triggerInstance, '$vnode') !== render) return reject('aria_binding_unverified');
     const options = denseProbeArray(ownProbeData(props, 'children'), 10000);
     const labels = [];
     for (let index = 0; index < options.length; index += 1) {
@@ -313,7 +326,7 @@ const ownedSelectVNodeLabels = (select, reference) => {
         || ownProbeData(data, 'class') !== undefined || ownProbeData(data, 'staticClass') !== undefined
         || ownProbeData(data, 'scopedSlots') !== undefined
         || (attrs !== undefined && (!attrs || Reflect.ownKeys(attrs).length !== 0))
-        || (disabled !== undefined && disabled !== false)) return null;
+        || (disabled !== undefined && disabled !== false)) return reject('option_shape_unsupported');
       const children = denseProbeArray(ownProbeData(component, 'children'), 64);
       const text = [];
       for (let childIndex = 0; childIndex < children.length; childIndex += 1) {
@@ -322,15 +335,15 @@ const ownedSelectVNodeLabels = (select, reference) => {
         if (typeof label !== 'string' || label.length > 2000
           || ownProbeData(child, 'tag') !== undefined || ownProbeData(child, 'data') !== undefined
           || ownProbeData(child, 'componentOptions') !== undefined
-          || ownProbeData(child, 'isComment') !== false) return null;
+          || ownProbeData(child, 'isComment') !== false) return reject('option_text_unsupported');
         text.push(label);
       }
       const label = normalizeText(text.join(''));
-      if (!label || labels.includes(label)) return null;
+      if (!label || labels.includes(label)) return reject('option_text_ambiguous');
       labels.push(label);
     }
     return labels;
-  } catch { return null; }
+  } catch { return reject('definition_data_unavailable'); }
 };
 
 /**
@@ -564,6 +577,11 @@ export function inspectCmsRowDOptions(doc, requests = {}) {
           push(false, 'control_not_available', { availabilityIssue: 'hidden_non_search_input' }); continue;
         }
         observation.hiddenSearchInputCount = hiddenInputs.length;
+        if (select.getAttribute('aria-busy') === 'true' || combo.getAttribute('aria-busy') === 'true'
+          || matches(select, '.ant-select-loading') || owned('.ant-select-arrow .anticon-loading').length) {
+          observation.optionsReadiness = 'loading';
+          push(false, 'current_options_unavailable'); continue;
+        }
         const references = listTokens(combo.getAttribute('aria-controls'));
         if (references.length !== 1) { push(false, 'dropdown_reference_missing_or_ambiguous'); continue; }
         const reference = references[0];
@@ -573,7 +591,7 @@ export function inspectCmsRowDOptions(doc, requests = {}) {
         const targets = exactIds(reference);
         if (!targets.length) {
           observation.optionsReadiness = 'target_missing';
-          const fallback = ownedSelectVNodeLabels(select, reference);
+          const fallback = ownedSelectVNodeLabels(select, reference, observation);
           if (!fallback) { push(false, 'current_options_unavailable'); continue; }
           for (let index = 0; index < fallback.length; index += 1) optionLabels.push(fallback[index]);
         } else {
@@ -595,7 +613,7 @@ export function inspectCmsRowDOptions(doc, requests = {}) {
           const optionNodes = snapshot(list.querySelectorAll('.ant-select-dropdown-menu-item,.ant-select-item-option,li[role="option"],.ant-select-item,li'));
           if (!optionNodes.length) {
             observation.optionsReadiness = 'list_empty';
-            const fallback = ownedSelectVNodeLabels(select, reference);
+            const fallback = ownedSelectVNodeLabels(select, reference, observation);
             if (!fallback) { push(false, 'current_options_unavailable'); continue; }
             for (let index = 0; index < fallback.length; index += 1) optionLabels.push(fallback[index]);
           } else {

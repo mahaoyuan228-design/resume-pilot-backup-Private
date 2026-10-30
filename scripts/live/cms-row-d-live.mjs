@@ -30,6 +30,14 @@ const safety = () => ({ neverSave: true, liveSupportClaimed: false,
 const validPort = port => Number.isInteger(port) && port >= 1 && port <= 65535;
 const validOptionsWait = value => Number.isInteger(value) && value >= 0 && value <= 5000;
 const validOptionsPoll = value => Number.isInteger(value) && value >= 25 && value <= 500;
+// Error text is inspected locally, never copied into evidence.
+function commandFailureKind(error) {
+  if (error?.reason === 'timeout' || error?.name === 'StepTimeoutError') return 'timeout';
+  const message = typeof error?.message === 'string' ? error.message : '';
+  if (/Invalid InterceptionId\b/iu.test(message)) return 'invalid_interception_id';
+  if (message === 'cdp_socket_closed') return 'socket_closed';
+  return 'command_rejected';
+}
 const inside = (root, candidate) => {
   const relative = path.relative(root, candidate);
   return !path.isAbsolute(relative) && relative !== '..' && !relative.startsWith(`..${path.sep}`);
@@ -134,7 +142,7 @@ export function createRowDNetworkGuard(send) {
   // Move this same entry object so an outstanding abort ack retains its target.
   const unlinkedPauseId = Symbol('unlinked_fetch_pause');
   let missingFetchNetworkId = false;
-  const fetchIds = new Set();
+  const fetchIds = new Map();
   const earlyResponses = new Set();
   let keeperActive = false;
   let correlationFailed = false;
@@ -146,7 +154,14 @@ export function createRowDNetworkGuard(send) {
   const rejectCorrelation = reason => { correlationFailed = true; rejections.add(reason); };
   const traffic = { observedNonGetCount: 0, interceptedNonGetCount: 0,
     blockedNonGetCount: 0, infoEditObservedCount: 0, infoEditBlockedCount: 0,
-    responseToNonGetCount: 0, commandFailed: false, truncated: false, records: [] };
+    responseToNonGetCount: 0, commandFailed: false, truncated: false, records: [],
+    commandFailures: [] };
+  const commandFailure = (method, error, ignored = false) => {
+    if (traffic.commandFailures.length < 20) traffic.commandFailures.push({
+      method, reason: commandFailureKind(error), ignored });
+    else traffic.truncated = true;
+    if (!ignored) traffic.commandFailed = true;
+  };
   const record = (phase, identity) => {
     if (traffic.records.length < 200) traffic.records.push({ phase, ...identity });
     else traffic.truncated = true;
@@ -219,17 +234,21 @@ export function createRowDNetworkGuard(send) {
   function command(method, params, identity, entry) {
     let reply;
     try { reply = send(method, params); }
-    catch { reply = Promise.reject(new Error('guard_command_failed')); }
+    catch (error) { reply = Promise.reject(error); }
     const task = Promise.resolve(reply).then(() => {
-      if (method === 'Fetch.failRequest') {
+      if (method === 'Fetch.failRequest' && identity?.method !== 'GET') {
         if (entry) entry.blocked = true;
         traffic.blockedNonGetCount += 1;
         if (identity.infoEdit) traffic.infoEditBlockedCount += 1;
         record('blocked', identity);
       }
-    }, () => {
-      traffic.commandFailed = true;
-      if (identity) record('block_failed', identity);
+    }, error => {
+      // Chromium can retire an interception before our decision arrives.
+      // Do not retry a stale ID or claim an abort acknowledgement from it.
+      // A non-GET without a successful block still fails the strict ledger.
+      const retired = commandFailureKind(error) === 'invalid_interception_id';
+      commandFailure(method, error, retired);
+      if (identity?.method !== 'GET') record('block_failed', identity);
     });
     pending.add(task);
     void task.then(() => { pending.delete(task); notify(); });
@@ -239,24 +258,44 @@ export function createRowDNetworkGuard(send) {
       const params = message?.params || {};
       if (message?.method === 'Fetch.requestPaused') {
         const identity = trafficIdentity(params.request);
-        if (identity.method === 'GET') command('Fetch.continueRequest', { requestId: params.requestId });
+        const responseStage = params.responseStatusCode !== undefined || params.responseErrorReason !== undefined
+          || params.responseHeaders !== undefined || params.responseStatusText !== undefined;
+        let repeated = false;
+        let priorWasGet = false;
+        if (!validId(params.requestId)) rejectCorrelation('fetch_id_missing_or_invalid');
+        else if (fetchIds.has(params.requestId)) {
+          // One decision per interception, including while its ACK is pending.
+          // Duplicate/conflicting evidence remains ineligible for preservation.
+          repeated = true;
+          priorWasGet = fetchIds.get(params.requestId) === 'GET';
+          rejectCorrelation('duplicate_fetch_id');
+        } else if (fetchIds.size < 200) fetchIds.set(params.requestId, identity.method);
+        else traffic.truncated = true;
+        if (identity.method === 'GET') {
+          if (!repeated && validId(params.requestId)) {
+            // An error-stage pause still requires resolution; failing it avoids
+            // continuing an already failed response or leaving it stranded.
+            command(params.responseErrorReason !== undefined ? 'Fetch.failRequest' : 'Fetch.continueRequest',
+              { requestId: params.requestId,
+                ...(params.responseErrorReason !== undefined ? { errorReason: 'BlockedByClient' } : {}) }, identity);
+          }
+        }
         else {
           traffic.interceptedNonGetCount += 1;
           record('paused', identity);
           const entry = track('paused', params.networkId, params.request, identity);
           if (entry && validId(params.networkId)) observed.set(params.networkId, entry);
-          if (!validId(params.requestId)) rejectCorrelation('fetch_id_missing_or_invalid');
-          else if (fetchIds.has(params.requestId)) rejectCorrelation('duplicate_fetch_id');
-          else if (fetchIds.size < 200) fetchIds.add(params.requestId);
-          else traffic.truncated = true;
           // A response-stage pause cannot establish request-stage prevention.
           if (params.redirectedRequestId !== undefined) rejectCorrelation('redirect_evidence');
-          if (params.responseStatusCode !== undefined || params.responseErrorReason !== undefined
-            || params.responseHeaders !== undefined || params.responseStatusText !== undefined) {
+          if (responseStage) {
             rejectCorrelation('response_stage_pause');
             if (params.responseStatusCode !== undefined) response(entry);
           }
-          command('Fetch.failRequest', { requestId: params.requestId, errorReason: 'BlockedByClient' }, identity, entry);
+          if ((!repeated || priorWasGet) && validId(params.requestId)) {
+            if (priorWasGet) fetchIds.set(params.requestId, identity.method);
+            command('Fetch.failRequest',
+              { requestId: params.requestId, errorReason: 'BlockedByClient' }, identity, entry);
+          }
         }
       } else if (message?.method === 'Network.requestWillBeSent') {
         const identity = trafficIdentity(params.request);
@@ -282,7 +321,7 @@ export function createRowDNetworkGuard(send) {
         .includes(message?.method)) {
         responseFor(params.requestId);
       }
-    } catch { traffic.commandFailed = true; }
+    } catch (error) { commandFailure('event_observer', error); }
     finally {
       // Once optional-ID pairing is used, any second non-GET event makes the
       // identity inference ambiguous forever, including after inspection.
@@ -312,6 +351,7 @@ export function createRowDNetworkGuard(send) {
     return kinds;
   };
   return { onEvent, traffic,
+    commandFailure,
     setKeeperActive(active) { keeperActive = active === true; notify(); },
     async drain() {
       for (let round = 0; pending.size && round < 20; round += 1) await Promise.all([...pending]);
@@ -398,6 +438,13 @@ const CONTROL_KIND_ISSUES = new Set([
   'conflicting_picker', 'unexpected_interactive_control', 'select_not_unique',
   'mixed_choice_controls', 'input_outside_select', 'unexpected_input_kind'
 ]);
+const OPTIONS_DEFINITION_ISSUES = new Set([
+  'root_anchor_missing', 'current_root_unverified', 'current_chain_unverified',
+  'select_component_unrecognized', 'current_props_unverified', 'loading',
+  'select_mode_unsupported', 'search_filter_unsupported', 'option_render_unsupported',
+  'aria_binding_unverified', 'option_shape_unsupported', 'option_text_unsupported',
+  'option_text_ambiguous', 'definition_data_unavailable'
+]);
 const ENUMERATED_OPTIONS_REASONS = new Set([
   'option_list_ambiguous', 'option_dictionary_mismatch', 'reused_dictionary_unverified',
   'option_dictionary_incomplete', 'read_only_options_preflight', 'request_type_invalid',
@@ -442,8 +489,16 @@ function cleanInspection(value) {
         ? row.reason === 'current_options_unavailable'
           || (row.optionsEvidenceSource === 'owned_select_vnodes' && row.observedOptionCount > 0
             && ENUMERATED_OPTIONS_REASONS.has(row.reason))
-        : status === 'observed' && (ENUMERATED_OPTIONS_REASONS.has(row.reason)
-          || ['option_ownership_mismatch', 'option_not_available'].includes(row.reason))));
+        : status === 'loading'
+          ? row.reason === 'current_options_unavailable'
+            && !Object.hasOwn(row, 'observedOptionCount') && !Object.hasOwn(row, 'optionsEvidenceSource')
+          : status === 'observed' && (ENUMERATED_OPTIONS_REASONS.has(row.reason)
+            || ['option_ownership_mismatch', 'option_not_available'].includes(row.reason))));
+    optional('optionsDefinitionIssue', issue => spec.controlKind === 'ant-select'
+      && row.reason === 'current_options_unavailable'
+      && ['target_missing', 'list_empty'].includes(row.optionsReadiness)
+      && !Object.hasOwn(row, 'observedOptionCount') && !Object.hasOwn(row, 'optionsEvidenceSource')
+      && OPTIONS_DEFINITION_ISSUES.has(issue));
     optional('optionsEvidenceSource', source => spec.controlKind === 'ant-select'
       && row.observedOptionCount > 0 && ENUMERATED_OPTIONS_REASONS.has(row.reason)
       && (source === 'aria_controls_dom' ? row.optionsReadiness === 'observed'
@@ -555,7 +610,10 @@ export async function runCmsRowDLive({ port = 9242, timeoutMs = 10000, requests 
         // Every sample retains this boundary. No page observer, timer, promise,
         // event, control open, or interaction is installed to await options.
         throwOnSideEffect: true, timeout: evaluationTimeout
-      }, { timeoutMs: evaluationTimeout, step: 'inspection' });
+      // The browser timeout still bounds synchronous evaluation. If its reply
+      // misses the host deadline, stop inspection but retain the guards/socket
+      // for focus reset and drain. Never retry or authorize that timed-out read.
+      }, { timeoutMs: evaluationTimeout, step: 'inspection', closeOnTimeout: false });
       if (reply?.exceptionDetails) {
         readiness.status = 'inspection_failed';
         evidence.ok = false;
@@ -631,10 +689,11 @@ export async function runCmsRowDLive({ port = 9242, timeoutMs = 10000, requests 
     stage = 'settlement';
     await wait(250); // Monitoring window only; not a restoration/support assertion.
     await guard.drain();
-  } catch {
+  } catch (error) {
     // CDP exception strings may contain page values, queries or remote URLs.
     evidence.ok = false;
     evidence.reason = `${stage}_failed`;
+    evidence.failure = { stage, reason: commandFailureKind(error) };
     if (stage === 'inspection') evidence.optionsReadiness.status = 'inspection_failed';
   } finally {
     if (session) {
@@ -646,7 +705,10 @@ export async function runCmsRowDLive({ port = 9242, timeoutMs = 10000, requests 
         try {
           await session.send('Emulation.setFocusEmulationEnabled', { enabled: false });
           evidence.visibilityKeeper.focusEmulationCleared = true;
-        } catch { keeperCleanupFailed = true; }
+        } catch (error) {
+          keeperCleanupFailed = true;
+          guard.commandFailure('Emulation.setFocusEmulationEnabled', error);
+        }
         // Focus/blur handlers may schedule requests after the command reply.
         // Keep the guards for a bounded window even after a failed reset or an
         // early stop. This does not isolate all possible later page activity.
@@ -657,14 +719,16 @@ export async function runCmsRowDLive({ port = 9242, timeoutMs = 10000, requests 
       // paused requests received their decisions.
       guard.setKeeperActive(false);
       if (fetchEnabled) {
-        try { await session.send('Fetch.disable'); } catch { guard.traffic.commandFailed = true; }
+        try { await session.send('Fetch.disable'); }
+        catch (error) { guard.commandFailure('Fetch.disable', error); }
       }
       await guard.drain();
       if (networkEnabled) {
-        try { await session.send('Network.disable'); } catch { guard.traffic.commandFailed = true; }
+        try { await session.send('Network.disable'); }
+        catch (error) { guard.commandFailure('Network.disable', error); }
       }
       await guard.drain();
-      try { session.close(); } catch { guard.traffic.commandFailed = true; }
+      try { session.close(); } catch (error) { guard.commandFailure('session_close', error); }
     }
     evidence.traffic = { ...guard.traffic, keeperAssessment: guard.assessment() };
     if (keeperCleanupFailed) {

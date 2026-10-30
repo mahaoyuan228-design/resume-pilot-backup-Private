@@ -213,7 +213,13 @@
     "tests/zoo/dates.spec.mjs",
     "tests/zoo/fixtures/dates.html",
     "tests/zoo/fixtures/dates.js",
-    "docs/ATS_DATE_CONTROLS.md"
+    "docs/ATS_DATE_CONTROLS.md",
+    "src/content/controls/time-controls.js",
+    "tests/l1-time-controls.test.mjs",
+    "tests/zoo/time.spec.mjs",
+    "tests/zoo/fixtures/time.html",
+    "tests/zoo/fixtures/time.js",
+    "docs/ATS_TIME_CONTROLS.md"
   ],
   "productPaths": [
     "manifest.json",
@@ -363,7 +369,8 @@
     "src/content/controls/extended-controls.js",
     "src/core/domain-memory.js",
     "src/popup/field-memory.js",
-    "src/content/controls/date-controls.js"
+    "src/content/controls/date-controls.js",
+    "src/content/controls/time-controls.js"
   ],
   "excluded": [
     "No directory-wide copy of repository/tests/exports/dist.",

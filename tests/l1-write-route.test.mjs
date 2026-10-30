@@ -55,6 +55,53 @@ async function harness({ enabled, html = '<form><label for="name">姓名</label>
   return { dom, window, data, calls, locks, sender, tab, binding, fill, inspect, invoke, request };
 }
 
+test('ordinary time discovery uses the existing confirmed-answer route only after opt-in', async t => {
+  for (const enabled of [undefined, false, true]) {
+    const h = await harness({ enabled, html: '<form><label for="arrival">到场时间</label><input id="arrival" type="time"><input id="neighbor" value="KEEP"><button type="submit">提交</button><button type="button">保存</button></form>' });
+    t.after(() => h.dom.window.close());
+    h.data.resumeProfile = { schemaVersion: 1, customAnswers: { 到场时间: '09:35' },
+      customFacts: [{ question: '到场时间', answer: '09:35', sitePageUrl: h.tab.url,
+        sectionName: 'form:single', rowContext: 'none' }], confirmedFields: ['customAnswers.到场时间'] };
+    let forbidden = 0;
+    for (const type of ['click', 'submit']) h.window.document.addEventListener(type, () => forbidden++);
+    const before = await h.inspect();
+    assert.equal(before.ok, true, JSON.stringify(before));
+    assert.equal(h.window.document.getElementById('arrival').value, '');
+    const result = await h.fill();
+    assert.equal(result.ok, true, JSON.stringify(result));
+    const writes = h.calls.filter(call => call.func?.name === 'writeControlInPage');
+    if (enabled) {
+      const row = result.data.fields.find(field => field.id === 'arrival');
+      assert.equal(row.adapter, 'native-time', JSON.stringify(result));
+      assert.equal(row.status, 'verified', JSON.stringify(result));
+      assert.equal(row.currentValue, '09:35');
+      assert.equal(h.window.document.getElementById('arrival').value, '09:35');
+      assert.equal(writes.length, 1);
+      assert.equal(result.data.liveSupportClaimed, false);
+    } else assert.equal(writes.length, 0);
+    assert.equal(h.window.document.getElementById('neighbor').value, 'KEEP');
+    assert.equal(forbidden, 0);
+  }
+});
+
+test('ordinary time batch readback catches a later field reverting the value without retry', async t => {
+  const h = await harness({ enabled: true, html: '<form><label for="arrival">到场时间</label><input id="arrival" type="time"><label for="phone">手机号</label><input id="phone"></form>' });
+  t.after(() => h.dom.window.close());
+  h.data.resumeProfile = { schemaVersion: 1, phone: '13800138000', customAnswers: { 到场时间: '09:35' },
+    customFacts: [{ question: '到场时间', answer: '09:35', sitePageUrl: h.tab.url,
+      sectionName: 'form:single', rowContext: 'none' }], confirmedFields: ['phone', 'customAnswers.到场时间'] };
+  const el = h.window.document.getElementById('arrival');
+  let inputs = 0;
+  el.addEventListener('input', () => inputs++);
+  h.window.document.getElementById('phone').addEventListener('input', () => { el.value = ''; });
+  const result = await h.fill(), row = result.data.fields.find(field => field.id === 'arrival');
+  assert.equal(row.status, 'failed', JSON.stringify(result));
+  assert.equal(row.adapterStatus, 'reverted');
+  assert.equal(row.reason, 'readback_mismatch');
+  assert.equal(inputs, 1);
+  assert.equal(h.calls.filter(call => call.func?.name === 'writeControlInPage' && call.args[0].selector === '#arrival').length, 1);
+});
+
 test('ordinary country-code and phone selects compare the selected option, preserving distinct labels and values', async t => {
   // Legacy selectedIndex writes are covered in Chromium: jsdom 26 leaves its
   // previously accessed selectedOptions collection stale after that setter.

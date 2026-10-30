@@ -2,7 +2,7 @@
 // instances or handlers to the extension. No events, setters or network calls.
 (() => {
   'use strict';
-  if (globalThis.ResumeControlModel?.version === 1 && globalThis.ResumeControlModel.revision === 10) return;
+  if (globalThis.ResumeControlModel?.version === 1 && globalThis.ResumeControlModel.revision === 11) return;
   const norm = value => String(value ?? '').normalize('NFKC').replace(/\s+/gu, ' ').trim();
   function serial(value, depth = 0) {
     if (value == null || ['string', 'number', 'boolean'].includes(typeof value)) return value ?? null;
@@ -50,7 +50,7 @@
     }
     return serial(value);
   }
-  const knownVue = /^(El(InputNumber|Input|Autocomplete|Select|Option|Radio(Group)?|Checkbox(Group)?|Switch|DatePicker|Cascader)|A(InputNumber|Input|Textarea|AutoComplete|Select|Radio(Group)?|Checkbox(Group)?|Switch|DatePicker|MonthPicker|Cascader)|iSelect|CalendarPicker)$/u;
+  const knownVue = /^(El(InputNumber|Input|Autocomplete|Select|Option|Radio(Group)?|Checkbox(Group)?|Switch|DatePicker|TimePicker|Cascader)|A(InputNumber|Input|Textarea|AutoComplete|Select|Radio(Group)?|Checkbox(Group)?|Switch|DatePicker|MonthPicker|TimePicker|Cascader)|iSelect|CalendarPicker)$/u;
   const knownReact = /^(Ud|Phoenix)(Select|DatePicker|Cascader)$/u;
   const valueControls = root => root?.nodeType === 1 ? [
     ...(root.matches('input:not([type="hidden"]),textarea,select') ? [root] : []),
@@ -98,14 +98,14 @@
     // Incomplete or cyclic trees are not evidence of an isolated owner.
     return queue.length > 200 ? [] : roots;
   }
-  function monthOwner(vm) {
-    // Ant's public wrapper and rendered picker share a name/root. Vue can
+  function pickerOwner(vm) {
+    // Ant Month/Time public wrappers and rendered pickers share a name/root. Vue can
     // replace root.__vue__ with the inner picker during calendar navigation.
     // The outer wrapper owns the public Moment/string model and stays stable.
     let owner = vm;
     for (let parent = vm.$parent, count = 0; parent && count++ < 20; parent = parent.$parent) {
       if (parent.$el !== vm.$el) break;
-      if (parent.$options?.name === 'AMonthPicker') owner = parent;
+      if (parent.$options?.name === vm.$options?.name) owner = parent;
     }
     const queue = [...(owner.$children || [])];
     let displayFormat;
@@ -136,7 +136,7 @@
           ? ownsSelect(vm.$el, el, name) : /^(?:ElCascader|ACascader)$/u.test(name)
             ? ownsCascader(vm.$el, el, name) : ownsControl(vm.$el, el, multiple);
         if (knownVue.test(name) && owns) {
-          const owner = name === 'AMonthPicker' ? monthOwner(vm) : { vm };
+          const owner = /^(?:AMonthPicker|ATimePicker)$/u.test(name) ? pickerOwner(vm) : { vm };
           const found = { ...owner, props: owner.vm.$props || {}, element: owner.vm.$el, componentName: name, framework: 'vue2' };
           // Display/search inputs belong to their Select/DatePicker/Cascader.
           // Keep a plain Input only if no owning complex component is present.
@@ -282,5 +282,5 @@
           || props.displayRender || vm?.$scopedSlots?.displayRender || vm?.$scopedSlots?.default || customFields) } : {}),
       versionEvidence: version ? 'page_library_export' : 'version_unconfirmed' };
   }
-  globalThis.ResumeControlModel = Object.freeze({ version: 1, revision: 10, inspect, resolve, serial, optionsOf });
+  globalThis.ResumeControlModel = Object.freeze({ version: 1, revision: 11, inspect, resolve, serial, optionsOf });
 })();

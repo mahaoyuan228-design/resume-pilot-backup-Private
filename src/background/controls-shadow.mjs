@@ -7,6 +7,7 @@ export const CONTROL_FILES = Object.freeze([
   'src/content/controls/upload.js',
   'src/content/controls/native.js',
   'src/content/controls/date-controls.js',
+  'src/content/controls/time-controls.js',
   'src/content/controls/vue-controls.js',
   'src/content/controls/extended-controls.js',
 ]);

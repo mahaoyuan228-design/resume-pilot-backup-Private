@@ -34,6 +34,7 @@ const assets = {
   '/fixtures/batchb.js': 'tests/zoo/fixtures/batchb.js',
   '/fixtures/upload.js': 'tests/zoo/fixtures/upload.js',
   '/fixtures/dates.js': 'tests/zoo/fixtures/dates.js',
+  '/fixtures/time.js': 'tests/zoo/fixtures/time.js',
 };
 const contentType = file => /\.(?:js|mjs)$/u.test(file) ? 'text/javascript; charset=utf-8'
   : file.endsWith('.json') ? 'application/json; charset=utf-8'
@@ -52,7 +53,7 @@ function extensionPath() {
 }
 
 export async function startZoo(caseName, variant = '') {
-  const synthetic = caseName.startsWith('batchb-') || caseName.startsWith('upload-') || caseName.startsWith('dates-');
+  const synthetic = caseName.startsWith('batchb-') || caseName.startsWith('upload-') || caseName.startsWith('dates-') || caseName.startsWith('time-');
   const extension = extensionPath();
   const manifest = JSON.parse(fs.readFileSync(path.join(extension, 'manifest.json'), 'utf8'));
   if (manifest.background?.service_worker !== 'src/background/worker.mjs') throw Error('zoo_requires_internal_build');
@@ -97,7 +98,8 @@ export async function startZoo(caseName, variant = '') {
         ...(synthetic ? [new URL(SYNTHETIC).origin] : [])].includes(url.origin)) {
         routing.rejected.push(`${url.origin}${url.pathname}`); await route.abort('blockedbyclient'); return;
       }
-      const file = synthetic && url.href === SYNTHETIC ? (caseName.startsWith('dates-') ? 'tests/zoo/fixtures/dates.html'
+      const file = synthetic && url.href === SYNTHETIC ? (caseName.startsWith('time-') ? 'tests/zoo/fixtures/time.html'
+        : caseName.startsWith('dates-') ? 'tests/zoo/fixtures/dates.html'
         : caseName.startsWith('upload-') ? 'tests/zoo/fixtures/upload.html' : 'tests/zoo/fixtures/batchb.html')
         : url.href === CMS || url.href === GTH || url.href === WRITE_ROUTE ? 'tests/zoo/fixtures/index.html' : assets[url.pathname];
       if (!file) {

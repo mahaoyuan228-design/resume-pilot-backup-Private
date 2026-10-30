@@ -8,7 +8,7 @@
   if(nativeMessages.hasListeners?.()===false)globalThis.__resumeNativeListenersResetObserved=true;
   if(globalThis.__resumeQuickFillInstalled){
     existingListenerAlive=!!ownedListener&&nativeMessages.hasListener?.(ownedListener)===true;
-    if(existingListenerAlive&&globalThis.__resumeQuickFillEngineRevision===11&&typeof globalThis.ResumeQuickFillGthInspect==='function')return;
+    if(existingListenerAlive&&globalThis.__resumeQuickFillEngineRevision===12&&typeof globalThis.ResumeQuickFillGthInspect==='function')return;
     if(existingListenerAlive){if(fillState.pending)throw Error('profile_write_context_busy');nativeMessages.removeListener(ownedListener);existingListenerAlive=false;}
     else if(!ownedListener&&nativeMessages.hasListeners?.()===true&&!globalThis.__resumeNativeListenersResetObserved)throw Error('extension_reload_required');
   }
@@ -957,7 +957,8 @@
       const explicitRepeat = repeatContext(control);
       const questionScope = customQuestionScope(control);
       const semanticSection = questionScope.sectionName.startsWith("form:") ? "" : questionScope.sectionName;
-      const semantic = M.resolveField({ labels, section: semanticSection || explicitRepeat?.kind || "", index: explicitRepeat?.index ?? null });
+      const semantic = M.resolveAtsField({ hostname: location.hostname, labels,
+        section: semanticSection || explicitRepeat?.kind || "", index: explicitRepeat?.index ?? null });
       let mappingContext = null;
       try {
         mappingContext = globalThis.ResumeDomainMemory?.fieldMetadata({ labels, section: semanticSection,
@@ -989,6 +990,7 @@
       // Repeated unbound selects (e.g. education 学历 behind a row gate) must
       // not share a label-only ID. Confirmed paths still drive collision checks.
       const result = { id: cmsSimple ? `cms-scoped-input-${cmsSimple.alias}` : cmsCheckbox ? 'cms-checkbox-research-scoped' : cmsAcademic ? `cms-academic-${cmsAcademic.alias}` : cmsSelect ? (control.id || `cms-ant-v3-${M.normalize(labels[0])}-${position}`) : fieldId(control, position), labels, kind: cmsCheckbox?'cms_checkbox_group':cmsRegion?'cms_region':radio ? "radio" : degreeSelect ? "ant_degree_select" : cmbSelect ? "cmb_ant_v4_select" : cmsSchool ? "cms_school_search" : cmsSelect ? "cms_ant_v3_select" : cmsBirthDate ? "cms_birth_date" : cmsEducationDate ? "cms_education_date" : antSelectControl(control) ? "ant_select" : control.tagName.toLowerCase(), key, context, scope: questionScope, control, radioOptions, antUnnamedRadio: !!group?.antUnnamed };
+      result.atsProfile = semantic.atsProfile;
       // Only ordinary controls offer a manual mapping; dedicated record flows
       // retain their source binding and never learn from their fill results.
       if (!dedicatedRecordKind && !cmsSection(control) && !degreeSelect && !cmbSelect && !antSelectControl(control)
@@ -2581,7 +2583,7 @@
         sendResponse(reply);
       });
     return true;
-  };chrome.runtime.onMessage.addListener(engineListener);globalThis.__resumeQuickFillEngineListener=engineListener;globalThis.__resumeQuickFillEngineRevision=11;}
+  };chrome.runtime.onMessage.addListener(engineListener);globalThis.__resumeQuickFillEngineListener=engineListener;globalThis.__resumeQuickFillEngineRevision=12;}
   globalThis.ResumeQuickFillGthInspect = (profile) => {
     if (`${location.origin}${location.pathname}` !== "https://hr.gtht.com/resume/edit/")
       throw new Error("gth_inspect_wrong_page");

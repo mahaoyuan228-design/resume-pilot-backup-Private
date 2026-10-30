@@ -20,6 +20,8 @@ function boot(html) {
     register(adapter) { adapters.set(adapter.name, adapter); }, createAdapter: adapter => adapter,
     helpers: {
       norm, equal: (a, b) => JSON.stringify(a) === JSON.stringify(b), tick: async () => {},
+      prose: value => String(value ?? '').replace(/\r\n?/gu, '\n'),
+      proseEqual: (a, b) => a.replace(/\r\n?/gu, '\n') === b.replace(/\r\n?/gu, '\n'),
       async nativeSet(el, value, ctx) { await check(ctx); calls.push(['set', el.id, value]); el.value = value; },
       async safeClick(el, ctx) {
         await check(ctx);

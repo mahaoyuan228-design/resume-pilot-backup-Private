@@ -8,13 +8,35 @@
   if(nativeMessages.hasListeners?.()===false)globalThis.__resumeNativeListenersResetObserved=true;
   if(globalThis.__resumeQuickFillInstalled){
     existingListenerAlive=!!ownedListener&&nativeMessages.hasListener?.(ownedListener)===true;
-    if(existingListenerAlive&&globalThis.__resumeQuickFillEngineRevision===17&&typeof globalThis.ResumeQuickFillGthInspect==='function')return;
+    if(existingListenerAlive&&globalThis.__resumeQuickFillEngineRevision===18&&typeof globalThis.ResumeQuickFillGthInspect==='function')return;
     if(existingListenerAlive){if(fillState.pending)throw Error('profile_write_context_busy');nativeMessages.removeListener(ownedListener);existingListenerAlive=false;}
     else if(!ownedListener&&nativeMessages.hasListeners?.()===true&&!globalThis.__resumeNativeListenersResetObserved)throw Error('extension_reload_required');
   }
 
   async function checkProfileWrite(){const context=globalThis.ResumeProfileWriteContext;if(context)await context.check();}
   const M = globalThis.ResumeMatcher;
+  const proseValue = value => String(value ?? '').replace(/\r\n?/gu, '\n');
+  const richtextControl = control => control.hasAttribute('contenteditable') && !control.matches('input,textarea,select,iframe');
+  const proseControl = control => control instanceof HTMLTextAreaElement || richtextControl(control);
+  // ISOLATED-world observation mirrors L1's plain-text block/BR contract.
+  function richtextValue(root) {
+    const block = node => /^(DIV|P|LI|UL|OL|BLOCKQUOTE|PRE|H[1-6]|SECTION|ARTICLE)$/u.test(node.nodeName);
+    const read = node => {
+      if (node.nodeType === 3) return node.data;
+      if (node.nodeName === 'BR') return '\n';
+      const children = [...node.childNodes].filter(child => child.nodeType === 1 || child.nodeType === 3);
+      if ((node === root || block(node)) && children.length === 1 && children[0].nodeName === 'BR') return '';
+      let text = '', previous = null;
+      for (const child of children) {
+        const value = read(child);
+        if (!block(child) && value === '') continue;
+        if (previous && (block(previous) || block(child))) text += '\n';
+        text += value; previous = child;
+      }
+      return text;
+    };
+    return proseValue(read(root));
+  }
   let atsControlTargets = new Map();
   async function loadAtsControlTargets(enabled = null) {
     atsControlTargets = new Map();
@@ -25,7 +47,7 @@
     if (response?.ok !== true || response.mode !== 'candidates' || response.writeStarted !== false || response.liveSupportClaimed !== false) throw Error('control_candidates_unavailable');
     for (const candidate of response.candidates || []) {
       const nodes = document.querySelectorAll(candidate.selector);
-      if (nodes.length === 1 && nodes[0].matches('input,textarea')) atsControlTargets.set(nodes[0], candidate);
+      if (nodes.length === 1 && nodes[0].matches('input,textarea,[contenteditable]')) atsControlTargets.set(nodes[0], candidate);
     }
   }
   let fieldMemorySnapshot = null;
@@ -99,7 +121,9 @@
       const target = document.getElementById(label.htmlFor);
       return target === control || !!target && control.contains(target);
     }
-    const editors = [...scope.querySelectorAll('input:not([type="hidden"]),select,textarea')]
+    const editors = [...scope.querySelectorAll('input:not([type="hidden"]),select,textarea,[contenteditable]')]
+      .filter(node => !node.hasAttribute('contenteditable') || ['', 'true', 'plaintext-only'].includes(node.getAttribute('contenteditable').toLowerCase())
+        && !node.parentElement?.closest('[contenteditable]'))
       .filter(node => !['button', 'submit', 'reset', 'image'].includes(node.type));
     const widget = node => node.closest('.ant-select,.el-select,.ivu-select,.ant-radio-group,.el-radio-group,.ivu-radio-group') || node;
     if (editors.length && editors.every(node => node.type === 'radio' && node.name === editors[0].name)) return editors.includes(control);
@@ -120,10 +144,11 @@
       add(antQuestion.textContent);
       return found;
     }
-    for (const label of control.labels || []) {
+    const ownLabels = control.labels || [...document.querySelectorAll('label[for]')].filter(label => label.htmlFor === control.id);
+    for (const label of ownLabels) {
       if (!questionOwnsControl(label, control, label)) continue;
       const copy = label.cloneNode(true);
-      copy.querySelectorAll("input,select,textarea,button").forEach((item) => item.remove());
+      copy.querySelectorAll("input,select,textarea,button,[contenteditable]").forEach((item) => item.remove());
       add(copy.textContent);
     }
     add(control.getAttribute("aria-label"));
@@ -872,6 +897,7 @@
   }
 
   function meaningfulCurrent(control, radioOptions = null, antUnnamed = false) {
+    if (richtextControl(control)) return richtextValue(control);
     if(cmsCheckboxControl(control)) {
       const selected=globalThis.ResumeCmsCheckboxes.inspectControl(control)?.selected;
       return selected?.length?JSON.stringify(selected):'';
@@ -955,7 +981,10 @@
       ? [...(trialScope.wrapper.matches(selector) ? [trialScope.wrapper] : []), ...trialScope.wrapper.querySelectorAll(selector)]
       : [...document.querySelectorAll(selector)];
     const radioGroups = new Set();
-    const controls = query("input,select,textarea,iframe").filter((control) => {
+    // Rich text can enter only through MAIN's confirmed, opt-in L1 claim.
+    // It has no legacy native-setter path.
+    const controls = query('input,select,textarea,iframe,[contenteditable]').filter((control) => {
+      if (richtextControl(control) && atsControlTargets.get(control)?.type !== 'richtext') return false;
       if (!visible(control, atsControlTargets.has(control))) return false;
       // An opened but unsupported Ant v3 select exposes its inner text input.
       // It is never a standalone answer field, even when this select itself
@@ -1122,6 +1151,13 @@
         result.optionIndex = selection.index;
         if (selection.index < 0) { result.reason = selection.reason; result.semanticStatus = "manual"; }
       }
+      if (result.reason === 'ready' && proseControl(control) && typeof result.path === 'string' && (profile.confirmedFields || []).includes(result.path)) {
+        // Validation may trim a scalar for ordinary inputs. Prose consumes the
+        // original confirmed string, including its spaces and terminal lines.
+        const raw = result.path.startsWith('customAnswers.') ? profile.customAnswers?.[result.path.slice(14)]
+          : result.path.split('.').reduce((value, part) => value != null && Object.hasOwn(value, part) ? value[part] : undefined, profile);
+        if (typeof raw === 'string') result.answer = raw;
+      }
       if (result.reason === "ready") result.reason = controlConstraint(control, result.answer, atsControlTargets.has(control)) || "ready";
       if (["unconfirmed_profile_value", "unlabelled_field"].includes(result.reason)) result.semanticStatus = "manual";
       return result;
@@ -1167,7 +1203,8 @@
     const same = plain.kind === "ant_degree_select" || plain.kind === "cmb_ant_v4_select"
       || plain.kind === "cms_ant_v3_select" || plain.kind === "cms_school_search"
       ? (left, right) => exactOptionText(left) === exactOptionText(right)
-      : (left, right) => M.normalize(left) === M.normalize(right);
+      : proseControl(control) ? (left, right) => proseValue(left) === proseValue(right)
+        : (left, right) => M.normalize(left) === M.normalize(right);
     const matchesCurrent = control instanceof HTMLSelectElement
       ? control.selectedIndex === entry.optionIndex
       : answers.some((value) => same(plain.currentValue, value));
@@ -1793,7 +1830,7 @@
       const chosen = control.selectedOptions[0];
       return !!chosen && M.selectOption([chosen], entry.answer).index === 0;
     }
-    return control.value === String(answer);
+    return proseControl(control) ? proseValue(meaningfulCurrent(control)) === proseValue(answer) : control.value === String(answer);
   }
 
 
@@ -2653,7 +2690,7 @@
         sendResponse(reply);
       });
     return true;
-  };chrome.runtime.onMessage.addListener(engineListener);globalThis.__resumeQuickFillEngineListener=engineListener;globalThis.__resumeQuickFillEngineRevision=17;}
+  };chrome.runtime.onMessage.addListener(engineListener);globalThis.__resumeQuickFillEngineListener=engineListener;globalThis.__resumeQuickFillEngineRevision=18;}
   globalThis.ResumeQuickFillGthInspect = (profile) => {
     if (`${location.origin}${location.pathname}` !== "https://hr.gtht.com/resume/edit/")
       throw new Error("gth_inspect_wrong_page");

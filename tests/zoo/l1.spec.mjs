@@ -359,3 +359,88 @@ test('offline native adapters preserve guards and verify text, select, radio and
     await record(testInfo, zoo, { shadow, denied, results, guards, scope: 'offline native fixture only' });
   } finally { await zoo.close(); }
 });
+
+test('offline multiline and richtext writers retain exact prose with native and real Vue readbacks', async ({}, testInfo) => {
+  const zoo = await startZoo('cms-month');
+  try {
+    await zoo.page.evaluate(async () => {
+      const form = document.createElement('form');
+      form.id = 'l1-prose-fixture';
+      form.innerHTML = '<textarea id="l1-prose-native"></textarea>'
+        + '<div id="l1-prose-rich" contenteditable="true" role="textbox" aria-multiline="true"><p><br></p></div>'
+        + '<div id="l1-prose-vue"></div>';
+      const effects = window.__proseEffects = { clicks: 0, submits: 0, richInputs: [] };
+      form.addEventListener('click', () => effects.clicks++, true);
+      form.addEventListener('submit', event => { event.preventDefault(); effects.submits++; });
+      form.querySelector('#l1-prose-rich').addEventListener('input', event => effects.richInputs.push({
+        plainText: [...event.target.childNodes].map(node => node.nodeName === 'BR' ? '\n' : node.textContent).join(''),
+        inputType: event.inputType, data: event.data, isInputEvent: event instanceof InputEvent,
+        breaks: event.target.querySelectorAll('br').length,
+        markup: event.target.querySelectorAll('b,script,img').length,
+      }));
+      document.body.append(form);
+      window.__proseVue = new Vue({
+        el: '#l1-prose-vue', data: { element: '', ant: '' },
+        template: '<section><div id="l1-prose-element"><el-input type="textarea" v-model="element"></el-input></div>'
+          + '<div id="l1-prose-ant"><a-textarea v-model="ant"></a-textarea></div></section>',
+      });
+      await Vue.nextTick();
+    });
+    const value = ' Ａ  一\t二\r\n\r\n尾 <b>plain</b> \r', expected = value.replace(/\r\n?/gu, '\n');
+    const requests = [
+      { selector: '#l1-prose-native', fact: { value }, adapter: 'native-textarea' },
+      { selector: '#l1-prose-rich', fact: { value }, adapter: 'native-richtext' },
+      { selector: '#l1-prose-element textarea', fact: { value }, adapter: 'el-textarea' },
+      { selector: '#l1-prose-ant textarea', fact: { value }, adapter: 'antdv1-textarea' },
+    ];
+    const shadow = await zoo.shadow(requests.map(({ selector, fact }) => ({ selector, fact })));
+    for (let i = 0; i < requests.length; i++) expect(shadow.plans[i], JSON.stringify(shadow))
+      .toMatchObject({ adapter: requests[i].adapter, status: 'planned', liveSupportClaimed: false });
+    const results = await zoo.execute(async requests => {
+      const results = [];
+      for (const { selector, fact } of requests) {
+        const el = document.querySelector(selector), plan = ResumeControls.plan(el, fact);
+        const adapter = ResumeControls.resolve(el);
+        const written = await adapter.write(el, plan, { allowWrite: true, check: async () => {
+          if (document.visibilityState !== 'visible' || !el.isConnected) throw Error('zoo_control_not_visible');
+        } });
+        results.push({ written, verified: await ResumeControls.verify(el, plan) });
+      }
+      return results;
+    }, [requests], 'MAIN');
+    for (const result of results) expect(result.verified, JSON.stringify(results))
+      .toMatchObject({ status: 'success', domReadback: expected, modelReadback: expected });
+    expect(await zoo.page.locator('#l1-prose-native').inputValue()).toBe(expected);
+    expect(await zoo.page.locator('#l1-prose-rich').evaluate(node => ({
+      plainText: [...node.childNodes].map(child => child.nodeName === 'BR' ? '\n' : child.textContent).join(''),
+      renderedMultiline: node.innerText.includes('\n\n'),
+    }))).toEqual({ plainText: expected, renderedMultiline: true });
+    expect(await zoo.page.evaluate(() => ({ element: window.__proseVue.element, ant: window.__proseVue.ant })))
+      .toEqual({ element: expected, ant: expected });
+    expect(await zoo.page.evaluate(() => window.__proseEffects)).toEqual({ clicks: 0, submits: 0, richInputs: [{
+      plainText: expected, inputType: 'insertText', data: expected, isInputEvent: true,
+      breaks: expected.split('\n').length - 1, markup: 0,
+    }] });
+    const fidelity = await zoo.execute(async expected => {
+      const rich = document.querySelector('#l1-prose-rich'), native = document.querySelector('#l1-prose-native');
+      const richPlan = ResumeControls.plan(rich, { value: expected }), nativePlan = ResumeControls.plan(native, { value: expected });
+      const paint = value => rich.replaceChildren(...value.split('\n').flatMap((line, index) => [
+        ...(index ? [document.createElement('br')] : []), document.createTextNode(line),
+      ]));
+      paint(expected.replace('\n\n', '\n'));
+      const richMismatch = await ResumeControls.verify(rich, richPlan, { settleMs: 0 });
+      paint(expected);
+      const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set;
+      setter.call(native, expected.replace('Ａ', 'A'));
+      const nativeMismatch = await ResumeControls.verify(native, nativePlan, { settleMs: 0 });
+      setter.call(native, expected);
+      setTimeout(() => paint(expected.trim()), 20);
+      const reverted = await ResumeControls.verify(rich, richPlan, { settleMs: 100 });
+      return { richMismatch, nativeMismatch, reverted };
+    }, [expected], 'MAIN');
+    expect(fidelity.richMismatch.status).toBe('mismatch');
+    expect(fidelity.nativeMismatch.status).toBe('mismatch');
+    expect(fidelity.reverted.status).toBe('reverted');
+    await record(testInfo, zoo, { shadow, results, fidelity, scope: 'offline disposable prose controls only' });
+  } finally { await zoo.close(); }
+});

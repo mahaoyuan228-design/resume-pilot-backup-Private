@@ -18,6 +18,7 @@
  *   --status active             (default active)
  *   --json-only                 (print only JSON, no headers)
  *   --base64-only               (print only Base64 of JSON)
+ *   --code-only                 (print one RQF1 per-seat activation code)
  *
  * Output: signed JSON + Base64 for customer paste into activate UI.
  */
@@ -26,7 +27,7 @@ import { readFileSync, existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { dirname } from 'node:path';
-import { canonicalJson } from '../src/license/signed-entitlement.mjs';
+import { canonicalJson, encodeActivationCode } from '../src/license/signed-entitlement.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(__dirname, '..');
@@ -35,6 +36,7 @@ function usage(code = 1) {
   const msg = `Usage:
   node scripts/issue-entitlement.mjs --private-key <path-OUTSIDE-repo> --install-id <uuid> --days <n> --license-id <id>
   node scripts/issue-entitlement.mjs --private-key <path> --install-id <uuid> --expires-at-ms <ms> --license-id <id>
+  Add --code-only for a versioned code; --license-id is the unique seat number.
 
 Never pass EXAMPLE fixtures for customer tokens.
 Never place private keys under the repo or Desktop public folders.`;
@@ -58,13 +60,19 @@ if (hasFlag('--help') || hasFlag('-h')) usage(0);
 
 const privateKeyPathRaw = getArg('--private-key');
 const installId = getArg('--install-id');
-const licenseId = getArg('--license-id');
+const licenseId = getArg('--license-id')?.trim();
 const daysRaw = getArg('--days');
 const expiresAtMsRaw = getArg('--expires-at-ms');
 const status = getArg('--status') || 'active';
 const profileHashRaw = getArg('--profile-hash');
 const jsonOnly = hasFlag('--json-only');
 const base64Only = hasFlag('--base64-only');
+const codeOnly = hasFlag('--code-only');
+
+if ([jsonOnly, base64Only, codeOnly].filter(Boolean).length > 1) {
+  console.error('Choose only one of --json-only, --base64-only, --code-only');
+  process.exit(4);
+}
 
 if (!privateKeyPathRaw || !installId || !licenseId) {
   console.error('Missing required: --private-key, --install-id, --license-id');
@@ -99,13 +107,13 @@ if (!uuidRe.test(installId)) {
 let expiresAtMs;
 if (expiresAtMsRaw != null) {
   expiresAtMs = Number(expiresAtMsRaw);
-  if (!Number.isFinite(expiresAtMs) || expiresAtMs <= 0) {
-    console.error('--expires-at-ms must be a positive finite number');
+  if (!Number.isSafeInteger(expiresAtMs) || expiresAtMs <= Date.now() || expiresAtMs > 8640000000000000) {
+    console.error('--expires-at-ms must be a future epoch millisecond within the Date range');
     process.exit(4);
   }
 } else if (daysRaw != null) {
   const days = Number(daysRaw);
-  if (!Number.isFinite(days) || days <= 0 || days > 3650) {
+  if (!Number.isInteger(days) || days < 1 || days > 3650) {
     console.error('--days must be 1..3650');
     process.exit(4);
   }
@@ -131,7 +139,10 @@ if (privateKeyPem.includes('BEGIN PUBLIC KEY') && !privateKeyPem.includes('PRIVA
 }
 
 const privateKey = createPrivateKey(privateKeyPem);
-const publicKeyPem = createPublicKey(privateKey).export({ type: 'spki', format: 'pem' });
+if (privateKey.asymmetricKeyType !== 'ed25519') {
+  console.error('REFUSED: signing requires an Ed25519 private key');
+  process.exit(3);
+}
 
 const payload = {
   status,
@@ -152,6 +163,11 @@ const token = {
 
 const json = JSON.stringify(token);
 const b64 = Buffer.from(json, 'utf8').toString('base64');
+
+if (codeOnly) {
+  process.stdout.write(encodeActivationCode(token) + '\n');
+  process.exit(0);
+}
 
 if (base64Only) {
   process.stdout.write(b64 + '\n');

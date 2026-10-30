@@ -2,9 +2,71 @@
 // No payment APIs. Public key only in paid-config; private keys never ship in packages.
 
 import { LICENSE_CODES, LicenseGateError } from './errors.mjs';
+import { isInstallId } from './binding.mjs';
 
 export const SIGNED_ENTITLEMENT_ALG = 'Ed25519';
 export const SIGNED_ENTITLEMENT_VERSION = 1;
+export const ACTIVATION_CODE_PREFIX = 'RQF1.';
+
+function activationCodeError(detail = 'activation_code_invalid') {
+  return new LicenseGateError(LICENSE_CODES.NOT_ACTIVATED, detail);
+}
+
+/** New per-seat codes require explicit version, algorithm and signed binding fields. */
+function assertActivationCodeEnvelope(envelope) {
+  if (!isSignedEntitlementEnvelope(envelope)) throw activationCodeError();
+  if (envelope.v !== SIGNED_ENTITLEMENT_VERSION) {
+    throw activationCodeError('activation_code_version_unsupported');
+  }
+  if (envelope.alg !== SIGNED_ENTITLEMENT_ALG
+    || typeof envelope.signature !== 'string' || !envelope.signature.trim()) {
+    throw activationCodeError();
+  }
+  const { installId, licenseId, expiresAtMs } = envelope.payload;
+  if (!isInstallId(installId)
+    || typeof licenseId !== 'string' || !licenseId.trim() || licenseId !== licenseId.trim()
+    || typeof expiresAtMs !== 'number' || !Number.isFinite(expiresAtMs) || expiresAtMs <= 0) {
+    throw activationCodeError('activation_code_seat_invalid');
+  }
+}
+
+function encodeBase64Url(bytes) {
+  let binary = '';
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/u, '');
+}
+
+/** Encode a signed envelope for private delivery; signature verification remains separate. */
+export function encodeActivationCode(envelope) {
+  assertActivationCodeEnvelope(envelope);
+  return ACTIVATION_CODE_PREFIX + encodeBase64Url(new TextEncoder().encode(JSON.stringify(envelope)));
+}
+
+/** Decode strict unpadded base64url UTF-8 JSON; activateLocalToken verifies the signature. */
+export function decodeActivationCode(raw) {
+  const text = String(raw ?? '').trim();
+  const prefix = /^RQF(\d+)\./u.exec(text);
+  if (!prefix) throw activationCodeError();
+  if (prefix[0] !== ACTIVATION_CODE_PREFIX) {
+    throw activationCodeError('activation_code_version_unsupported');
+  }
+  const encoded = text.slice(ACTIVATION_CODE_PREFIX.length);
+  if (!/^[A-Za-z0-9_-]+$/u.test(encoded) || encoded.length % 4 === 1) {
+    throw activationCodeError();
+  }
+  let envelope;
+  try {
+    const base64 = encoded.replace(/-/g, '+').replace(/_/g, '/');
+    const binary = atob(base64 + '='.repeat((4 - base64.length % 4) % 4));
+    const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0));
+    if (encodeBase64Url(bytes) !== encoded) throw activationCodeError();
+    envelope = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes));
+  } catch {
+    throw activationCodeError();
+  }
+  assertActivationCodeEnvelope(envelope);
+  return envelope;
+}
 
 /**
  * Stable JSON for signing: sorted object keys, UTF-8 string.

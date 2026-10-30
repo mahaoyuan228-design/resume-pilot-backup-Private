@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { createHash, generateKeyPairSync } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import JSZip from '../src/import/vendor/jszip.min.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -90,10 +90,13 @@ test('update requires an existing installation', windows, async (t) => {
   assert.equal(fs.existsSync(f.extension), false);
 });
 
-test('fresh offline paid build installs and updates through the delivered helper', windows, (t) => {
+test('fresh offline paid build installs, updates and activates an issued seat code', windows, async (t) => {
   const f = fixture(t);
   const publicPath = path.join(f.temp, 'public.pem');
-  fs.writeFileSync(publicPath, publicKeyPem);
+  const privatePath = path.join(f.temp, 'operator-private.pem');
+  const keys = generateKeyPairSync('ed25519');
+  fs.writeFileSync(publicPath, keys.publicKey.export({ type: 'spki', format: 'pem' }));
+  fs.writeFileSync(privatePath, keys.privateKey.export({ type: 'pkcs8', format: 'pem' }));
   const result = spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass',
     '-File', path.join(root, 'scripts/build-paid.ps1'), '-Offline', '-PublicKeyPemPath', publicPath],
   { cwd: root, encoding: 'utf8', timeout: 60000 });
@@ -108,4 +111,31 @@ test('fresh offline paid build installs and updates through the delivered helper
   const manifest = JSON.parse(fs.readFileSync(path.join(f.extension, 'manifest.json')));
   assert.equal(manifest.background.service_worker, 'src/license/guard-worker.mjs');
   assert.equal(manifest.update_url, undefined);
+
+  // Exercise the delivered modules after installation/update, using an actual CLI code.
+  const installId = '11111111-2222-4333-a444-555555555555';
+  const issued = spawnSync(process.execPath, [path.join(root, 'scripts/issue-entitlement.mjs'),
+    '--private-key', privatePath, '--install-id', installId, '--license-id', 'seat-installed-001',
+    '--days', '1', '--code-only'], { cwd: root, encoding: 'utf8', timeout: 10000 });
+  success(issued);
+  const packed = (name) => import(pathToFileURL(path.join(f.extension, 'src/license', name)));
+  const { paidConfig } = await packed('paid-config.mjs');
+  const { activateLocalToken, readLicenseStatus } = await packed('entitlement.mjs');
+  const { createLicenseClient } = await packed('client.mjs');
+  const data = { resumeLicenseInstallId: installId };
+  const storage = {
+    async get(key) { return { [key]: data[key] }; },
+    async set(value) { Object.assign(data, structuredClone(value)); },
+  };
+  assert.equal((await activateLocalToken({ storage, tokenText: issued.stdout, config: paidConfig })).allowed, true);
+  const status = await readLicenseStatus({ flavor: 'paid', storage, config: paidConfig });
+  assert.equal(status.allowed, true);
+  assert.equal(status.licenseId, 'seat-installed-001');
+  let fetchCalls = 0;
+  const client = createLicenseClient({ config: paidConfig, storage, fetchImpl: async () => {
+    fetchCalls += 1;
+    throw new Error('network forbidden');
+  } });
+  assert.equal(await client.verifyBeforeFill(), true);
+  assert.equal(fetchCalls, 0);
 });

@@ -229,6 +229,146 @@ const denseProbeArray = (object, maximum) => {
   return result;
 };
 
+// The real CMS main world uses React, not Vue. Authenticate the committed
+// host branch before reading field-local Select definitions. DOM expandos can
+// retain the alternate from a previous render; neither that branch nor cached
+// Trigger.options/current values are dictionary evidence.
+const ownedReactSelectLabels = (select, reference, diagnostic) => {
+  const reject = issue => { diagnostic.optionsDefinitionIssue = issue; return null; };
+  try {
+    const keys = Object.getOwnPropertyNames(select);
+    const anchors = keys.filter(key => /^(?:__reactInternalInstance|__reactFiber)\$/u.test(key));
+    if (!anchors.length) return undefined; // A different framework may own it.
+    diagnostic.optionsFramework = 'react';
+    if (anchors.length !== 1) return reject('current_root_unverified');
+    const anchorKey = anchors[0];
+    const anchor = ownProbeData(select, anchorKey);
+    const alternate = ownProbeData(anchor, 'alternate');
+    const branches = alternate ? [anchor, alternate] : [anchor];
+    // React bailout subtrees can share children whose return still names the
+    // alternate parent. Collect only this host's possible ancestry, then prove
+    // its path DOWN from root.current through committed child/sibling links.
+    const ancestry = [];
+    const pending = branches.slice();
+    while (pending.length) {
+      const fiber = pending.pop();
+      if (!fiber || ancestry.includes(fiber)) continue;
+      if (ancestry.length >= 256) return reject('current_chain_unverified');
+      ancestry.push(fiber);
+      pending.push(ownProbeData(fiber, 'return'), ownProbeData(fiber, 'alternate'));
+    }
+    const roots = ancestry.filter(fiber => ownProbeData(fiber, 'tag') === 3
+      && !ownProbeData(fiber, 'return') && ownProbeData(ownProbeData(fiber, 'stateNode'), 'current') === fiber);
+    if (roots.length !== 1) return reject('current_chain_unverified');
+    const committed = [];
+    const work = [{ fiber: roots[0], path: [] }];
+    const visited = [];
+    while (work.length) {
+      const entry = work.pop();
+      const fiber = entry.fiber;
+      if (visited.includes(fiber) || visited.length >= 256 || entry.path.length >= 128) return reject('current_chain_unverified');
+      visited.push(fiber);
+      const path = entry.path.concat([fiber]);
+      if (branches.includes(fiber)) {
+        if (ownProbeData(fiber, 'tag') === 5 && ownProbeData(fiber, 'stateNode') === select
+          && ownProbeData(fiber, 'type') === 'div') committed.push(path.reverse());
+        continue;
+      }
+      const siblings = [];
+      for (let child = ownProbeData(fiber, 'child'); child; child = ownProbeData(child, 'sibling')) {
+        if (siblings.includes(child) || siblings.length >= 256) return reject('current_chain_unverified');
+        siblings.push(child);
+        if (ancestry.includes(child)) work.push({ fiber: child, path });
+      }
+    }
+    if (committed.length !== 1) return reject('current_chain_unverified');
+    const path = committed[0];
+    const candidates = [];
+    const triggers = [];
+    // Stop at the next host ancestor: no form model, sibling field, application
+    // store, or selected-state scan can substitute for this exact control.
+    for (let index = 1; index < path.length && index < 16; index += 1) {
+      const fiber = path[index];
+      if (ownProbeData(fiber, 'tag') === 5) break;
+      const type = ownProbeData(fiber, 'type');
+      const name = ownProbeData(type, 'displayName') || ownProbeData(type, 'name');
+      if (name === 'Select') candidates.push(fiber);
+      if (name === 'SelectTrigger') triggers.push(fiber);
+    }
+    if (candidates.length !== 1 || triggers.length !== 1
+      || path.indexOf(triggers[0]) >= path.indexOf(candidates[0])) return reject('select_component_unrecognized');
+    const props = ownProbeData(candidates[0], 'memoizedProps');
+    const triggerProps = ownProbeData(triggers[0], 'memoizedProps');
+    if (!props || !triggerProps
+      || ownProbeData(ownProbeData(candidates[0], 'stateNode'), 'props') !== props
+      || ownProbeData(ownProbeData(triggers[0], 'stateNode'), 'props') !== triggerProps) return reject('current_props_unverified');
+    if (ownProbeData(triggerProps, 'ariaId') !== reference
+      || ownProbeData(props, 'prefixCls') !== 'ant-select'
+      || ownProbeData(triggerProps, 'prefixCls') !== 'ant-select') return reject('aria_binding_unverified');
+    const loading = ownProbeData(props, 'loading');
+    if (loading !== undefined && loading !== false) return reject('loading');
+    const flags = ['multiple', 'tags', 'combobox', 'disabled', 'labelInValue'];
+    for (let index = 0; index < flags.length; index += 1) {
+      const flag = ownProbeData(props, flags[index]);
+      if (flag !== undefined && flag !== false) return reject('select_mode_unsupported');
+    }
+    const dropdownRender = ownProbeData(props, 'dropdownRender');
+    const defaultRender = ownProbeData(ownProbeData(ownProbeData(candidates[0], 'type'), 'defaultProps'), 'dropdownRender');
+    if (ownProbeData(props, 'optionLabelProp') !== 'children'
+      || (dropdownRender !== undefined && (typeof defaultRender !== 'function' || dropdownRender !== defaultRender))
+      || ownProbeData(triggerProps, 'dropdownRender') !== dropdownRender) return reject('option_render_unsupported');
+    const options = denseProbeArray(ownProbeData(props, 'children'), 10000);
+    const labels = [];
+    for (let index = 0; index < options.length; index += 1) {
+      const option = options[index];
+      const type = ownProbeData(option, 'type');
+      const optionProps = ownProbeData(option, 'props');
+      if (typeof type !== 'function' || ownProbeData(type, 'isSelectOption') !== true
+        || !optionProps || ownProbeData(option, 'ref') != null) return reject('option_shape_unsupported');
+      const names = Object.getOwnPropertyNames(optionProps);
+      if (names.some(name => !['children', 'value', 'disabled', 'title'].includes(name))) return reject('option_shape_unsupported');
+      const disabled = ownProbeData(optionProps, 'disabled');
+      if (disabled !== undefined && disabled !== false) return reject('option_shape_unsupported');
+      // Never read option values, component state, selected props or input text.
+      const text = ownProbeData(optionProps, 'children');
+      if (typeof text !== 'string' || text.length > 2000) return reject('option_text_unsupported');
+      const label = normalizeText(text);
+      if (!label || labels.includes(label)) return reject('option_text_ambiguous');
+      labels.push(label);
+    }
+    diagnostic.optionsEvidenceSource = 'owned_react_props';
+    return labels;
+  } catch { return reject('definition_data_unavailable'); }
+};
+
+// Classify the former L314 gate without invoking Vue accessors. Counts and
+// enums only; no component, property suffix, node content or page value escapes.
+const classifyOptionRoot = (select, item, doc) => {
+  const shape = node => {
+    if (!node) return 'node_absent';
+    const descriptor = Object.getOwnPropertyDescriptor(node, '__vue__');
+    return !descriptor ? 'absent' : !Object.hasOwn(descriptor, 'value') ? 'accessor'
+      : descriptor.value == null ? 'nullish' : 'data';
+  };
+  const result = { selectVue: shape(select), appVue: shape(doc.querySelector('#app')),
+    pathData: 0, pathAccessor: 0, pathAbsent: 0, pathNullish: 0 };
+  for (let node = select, depth = 0; node && depth < 32; node = node.parentElement, depth += 1) {
+    const kind = shape(node);
+    if (kind === 'data') result.pathData += 1;
+    if (kind === 'accessor') result.pathAccessor += 1;
+    if (kind === 'absent') result.pathAbsent += 1;
+    if (kind === 'nullish') result.pathNullish += 1;
+    if (node === item) break;
+  }
+  return result;
+};
+
+const ownedSelectDefinitionLabels = (select, reference, diagnostic, item, doc) => {
+  diagnostic.optionsRootDiagnostic = classifyOptionRoot(select, item, doc);
+  const react = ownedReactSelectLabels(select, reference, diagnostic);
+  return react === undefined ? ownedSelectVNodeLabels(select, reference, diagnostic, item) : react;
+};
+
 /**
  * Conservative Ant Design Vue 1.7.8 / Vue 2 option-definition evidence.
  * vc-select/Select.js initializes _options=[] and renders that menu only while
@@ -654,7 +794,7 @@ export function inspectCmsRowDOptions(doc, requests = {}) {
         const targets = exactIds(reference);
         if (!targets.length) {
           observation.optionsReadiness = 'target_missing';
-          const fallback = ownedSelectVNodeLabels(select, reference, observation, item);
+          const fallback = ownedSelectDefinitionLabels(select, reference, observation, item, doc);
           if (!fallback) { push(false, 'current_options_unavailable'); continue; }
           for (let index = 0; index < fallback.length; index += 1) optionLabels.push(fallback[index]);
         } else {
@@ -676,7 +816,7 @@ export function inspectCmsRowDOptions(doc, requests = {}) {
           const optionNodes = snapshot(list.querySelectorAll('.ant-select-dropdown-menu-item,.ant-select-item-option,li[role="option"],.ant-select-item,li'));
           if (!optionNodes.length) {
             observation.optionsReadiness = 'list_empty';
-            const fallback = ownedSelectVNodeLabels(select, reference, observation, item);
+            const fallback = ownedSelectDefinitionLabels(select, reference, observation, item, doc);
             if (!fallback) { push(false, 'current_options_unavailable'); continue; }
             for (let index = 0; index < fallback.length; index += 1) optionLabels.push(fallback[index]);
           } else {
@@ -728,7 +868,7 @@ export function inspectCmsRowDOptions(doc, requests = {}) {
         push(false, 'option_list_ambiguous'); continue;
       }
       observation.observedOptionCount = optionLabels.length;
-      if (field.controlKind === 'ant-select') observation.optionsEvidenceSource = observation.optionsReadiness === 'observed'
+      if (field.controlKind === 'ant-select' && !observation.optionsEvidenceSource) observation.optionsEvidenceSource = observation.optionsReadiness === 'observed'
         ? 'aria_controls_dom' : 'owned_select_vnodes';
       if (!field.optionsComplete) {
         // A fully enumerated current DOM is not an independently complete
@@ -797,6 +937,9 @@ export function buildCmsRowDOptionsProbeExpression(requests = {}) {
     `const listTokens = ${listTokens.toString()};`,
     `const ownProbeData = ${ownProbeData.toString()};`,
     `const denseProbeArray = ${denseProbeArray.toString()};`,
+    `const ownedReactSelectLabels = ${ownedReactSelectLabels.toString()};`,
+    `const classifyOptionRoot = ${classifyOptionRoot.toString()};`,
+    `const ownedSelectDefinitionLabels = ${ownedSelectDefinitionLabels.toString()};`,
     `const ownedSelectVNodeLabels = ${ownedSelectVNodeLabels.toString()};`,
     `const resolveCmsRowDOption = ${resolveCmsRowDOption.toString()};`,
     `const inspectCmsRowDOptions = ${inspectCmsRowDOptions.toString()};`,

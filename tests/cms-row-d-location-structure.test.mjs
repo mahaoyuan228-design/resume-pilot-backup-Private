@@ -82,6 +82,8 @@ function fake(t,{onSend,onWait,mutateReply,mutateDom}={}){
       return {close(){calls.push({method:'close'});},async send(method,params,sendOptions){
         calls.push({method,params,sendOptions});
         const override=await onSend?.(method,params,{emit,calls});if(override!==undefined)return override;
+        if(method==='Runtime.enable')emit({method:'Runtime.executionContextCreated',params:{context:{id:71,auxData:{isDefault:true,frameId:'top-frame'}}}});
+        if(method==='Page.getFrameTree')return {frameTree:{frame:{id:'top-frame',url:ROW_D_PAGE}}};
         if(method==='Runtime.evaluate'){
           const reply={result:{value:value.window.eval(params.expression)}};
           mutateReply?.(reply);return reply;

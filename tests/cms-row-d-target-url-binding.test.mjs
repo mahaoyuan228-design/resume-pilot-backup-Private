@@ -35,6 +35,8 @@ function fixture(t,{url=FULL,inventory=[target()],onDiscover,onConnect,onSend,on
       return {close(){calls.push({method:'close'});},async send(method,params={},sendOptions){
         calls.push({method,params,sendOptions});const override=await onSend?.(method,params,{emit});
         if(override!==undefined)return override;
+        if(method==='Runtime.enable')emit({method:'Runtime.executionContextCreated',params:{context:{id:71,auxData:{isDefault:true,frameId:'top-frame'}}}});
+        if(method==='Page.getFrameTree')return {frameTree:{frame:{id:'top-frame',url:ROW_D_PAGE}}};
         return method==='Runtime.evaluate'?{result:{value:dom.window.eval(params.expression)}}:{};
       }};
     },wait:async()=>{await onWait?.(++waits,{emit});}};

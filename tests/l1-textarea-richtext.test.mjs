@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { JSDOM } from 'jsdom';
 
-const sources = ['model', 'registry', 'native', 'slider-controls'].map(name =>
+const sources = ['model', 'registry', 'native', 'slider-controls', 'rate-controls'].map(name =>
   readFileSync(new URL(`../src/content/controls/${name}.js`, import.meta.url), 'utf8'));
 const prose = '  Ａ e\u0301\tfirst  line\r\nsecond\r\n\r\nlast\r';
 const expected = prose.replace(/\r\n?/gu, '\n');
@@ -204,8 +204,8 @@ test('reinjection replaces revision 11 prose contracts and installs the richtext
   for (const source of sources) f.w.eval(source);
   const current = f.w.ResumeControls;
   assert.notEqual(current, old);
-  assert.equal(current.revision, 19);
-  for (const name of ['native-slider', 'el-slider', 'antdv1-slider']) assert.equal(current.list().some(row => row.name === name), true, name);
+  assert.equal(current.revision, 20);
+  for (const name of ['native-slider', 'el-slider', 'antdv1-slider', 'el-rate', 'elplus-rate', 'antdv1-rate', 'aria-rate']) assert.equal(current.list().some(row => row.name === name), true, name);
   assert.equal(current.resolve(f.get('rich')).name, 'native-richtext');
   for (const source of sources) f.w.eval(source);
   assert.equal(f.w.ResumeControls, current);

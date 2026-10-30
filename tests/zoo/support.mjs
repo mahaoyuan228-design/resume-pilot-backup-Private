@@ -41,6 +41,7 @@ const assets = {
   '/fixtures/date-range.js': 'tests/zoo/fixtures/date-range.js',
   '/fixtures/tree-select.js': 'tests/zoo/fixtures/tree-select.js',
   '/fixtures/slider.js': 'tests/zoo/fixtures/slider.js',
+  '/fixtures/rate.js': 'tests/zoo/fixtures/rate.js',
 };
 const contentType = file => /\.(?:js|mjs)$/u.test(file) ? 'text/javascript; charset=utf-8'
   : file.endsWith('.json') ? 'application/json; charset=utf-8'
@@ -59,7 +60,7 @@ function extensionPath() {
 }
 
 export async function startZoo(caseName, variant = '') {
-  const synthetic = caseName.startsWith('batchb-') || caseName.startsWith('upload-') || caseName.startsWith('dates-') || caseName.startsWith('time-') || caseName.startsWith('date-range-') || caseName.startsWith('tree-select-') || caseName.startsWith('slider-');
+  const synthetic = caseName.startsWith('batchb-') || caseName.startsWith('upload-') || caseName.startsWith('dates-') || caseName.startsWith('time-') || caseName.startsWith('date-range-') || caseName.startsWith('tree-select-') || caseName.startsWith('slider-') || caseName.startsWith('rate-');
   const extension = extensionPath();
   const manifest = JSON.parse(fs.readFileSync(path.join(extension, 'manifest.json'), 'utf8'));
   if (manifest.background?.service_worker !== 'src/background/worker.mjs') throw Error('zoo_requires_internal_build');
@@ -104,7 +105,8 @@ export async function startZoo(caseName, variant = '') {
         ...(synthetic ? [new URL(SYNTHETIC).origin] : [])].includes(url.origin)) {
         routing.rejected.push(`${url.origin}${url.pathname}`); await route.abort('blockedbyclient'); return;
       }
-      const file = synthetic && url.href === SYNTHETIC ? (caseName.startsWith('slider-') ? 'tests/zoo/fixtures/slider.html'
+      const file = synthetic && url.href === SYNTHETIC ? (caseName.startsWith('rate-') ? 'tests/zoo/fixtures/rate.html'
+        : caseName.startsWith('slider-') ? 'tests/zoo/fixtures/slider.html'
         : caseName.startsWith('tree-select-') ? 'tests/zoo/fixtures/tree-select.html'
         : caseName.startsWith('date-range-') ? 'tests/zoo/fixtures/date-range.html'
         : caseName.startsWith('time-') ? 'tests/zoo/fixtures/time.html'

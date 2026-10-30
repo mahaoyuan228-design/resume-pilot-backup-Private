@@ -8,7 +8,7 @@
   if(nativeMessages.hasListeners?.()===false)globalThis.__resumeNativeListenersResetObserved=true;
   if(globalThis.__resumeQuickFillInstalled){
     existingListenerAlive=!!ownedListener&&nativeMessages.hasListener?.(ownedListener)===true;
-    if(existingListenerAlive&&globalThis.__resumeQuickFillEngineRevision===20&&typeof globalThis.ResumeQuickFillGthInspect==='function')return;
+    if(existingListenerAlive&&globalThis.__resumeQuickFillEngineRevision===21&&typeof globalThis.ResumeQuickFillGthInspect==='function')return;
     if(existingListenerAlive){if(fillState.pending)throw Error('profile_write_context_busy');nativeMessages.removeListener(ownedListener);existingListenerAlive=false;}
     else if(!ownedListener&&nativeMessages.hasListeners?.()===true&&!globalThis.__resumeNativeListenersResetObserved)throw Error('extension_reload_required');
   }
@@ -51,8 +51,9 @@
       const nodes = document.querySelectorAll(candidate.selector);
       if (nodes.length !== 1 || !nodes[0].matches('input,textarea,[contenteditable]')
         && !(candidate.type === 'tree-select' && nodes[0].matches('[role="combobox"]'))
-        && !(candidate.type === 'slider' && nodes[0].matches('[role="slider"]'))) continue;
-      if (['multi-select', 'tree-select', 'slider'].includes(candidate.type)) {
+        && !(candidate.type === 'slider' && nodes[0].matches('[role="slider"]'))
+        && !(candidate.type === 'rate' && nodes[0].matches('.el-rate,.ant-rate,[role="slider"]'))) continue;
+      if (['multi-select', 'tree-select', 'slider', 'rate'].includes(candidate.type)) {
         const roots = typeof candidate.rootSelector === 'string' ? document.querySelectorAll(candidate.rootSelector) : [];
         if (roots.length !== 1 || !roots[0].contains(nodes[0])) continue;
         for (const peer of roots[0].querySelectorAll('input,textarea,[contenteditable]')) if (peer !== nodes[0]) atsControlPeers.add(peer);
@@ -136,19 +137,19 @@
       const target = document.getElementById(label.htmlFor);
       const candidate = atsControlTargets.get(control);
       return target === control || !!target && control.contains(target)
-        || !!target && candidate?.type === 'slider' && document.querySelector(candidate.rootSelector) === target;
+        || !!target && ['slider', 'rate'].includes(candidate?.type) && document.querySelector(candidate.rootSelector) === target;
     }
     const editors = [...scope.querySelectorAll('input:not([type="hidden"]),select,textarea,[contenteditable]')]
       .filter(node => !node.hasAttribute('contenteditable') || ['', 'true', 'plaintext-only'].includes(node.getAttribute('contenteditable').toLowerCase())
         && !node.parentElement?.closest('[contenteditable]'))
       .filter(node => !['button', 'submit', 'reset', 'image'].includes(node.type) && !treeQueryControl(node) && !atsControlPeers.has(node));
-    // A confirmed inputless TreeSelect or slider is itself the editor for a standard
+    // A confirmed inputless TreeSelect, slider or rate is the editor for a standard
     // form-item label. Include every peer so a shared row stays ambiguous.
     for (const [node, candidate] of atsControlTargets) {
-      if (['tree-select', 'slider'].includes(candidate.type) && scope.contains(node)
+      if (['tree-select', 'slider', 'rate'].includes(candidate.type) && scope.contains(node)
         && !node.matches('input,textarea,[contenteditable]')) editors.push(node);
     }
-    const widget = node => node.closest('.ant-select,.el-select,.ivu-select,.ant-radio-group,.el-radio-group,.ivu-radio-group,.ant-slider,.el-slider') || node;
+    const widget = node => node.closest('.ant-select,.el-select,.ivu-select,.ant-radio-group,.el-radio-group,.ivu-radio-group,.ant-slider,.el-slider,.ant-rate,.el-rate') || node;
     if (editors.length && editors.every(node => node.type === 'radio' && node.name === editors[0].name)) return editors.includes(control);
     const owners = new Set(editors.map(widget));
     return owners.size === 1 && owners.has(widget(control));
@@ -168,7 +169,7 @@
       return found;
     }
     const slider = atsControlTargets.get(control);
-    const sliderRoot = slider?.type === 'slider' ? document.querySelector(slider.rootSelector) : null;
+    const sliderRoot = ['slider', 'rate'].includes(slider?.type) ? document.querySelector(slider.rootSelector) : null;
     const ownLabels = [...(control.labels || []), ...document.querySelectorAll('label[for]')]
       .filter(label => label.control === control || control.id && label.htmlFor === control.id
         || sliderRoot?.id && label.htmlFor === sliderRoot.id);
@@ -925,7 +926,7 @@
   }
 
   function meaningfulCurrent(control, radioOptions = null, antUnnamed = false) {
-    if (atsControlTargets.get(control)?.type === 'slider' && control.matches('[role="slider"]')) return control.getAttribute('aria-valuenow') || '';
+    if (['slider', 'rate'].includes(atsControlTargets.get(control)?.type) && control.matches('[role="slider"]')) return control.getAttribute('aria-valuenow') || '';
     if (richtextControl(control)) return richtextValue(control);
     if(cmsCheckboxControl(control)) {
       const selected=globalThis.ResumeCmsCheckboxes.inspectControl(control)?.selected;
@@ -969,6 +970,7 @@
     // registered component version and a writable model. Its adapter owns all
     // effects; it never reaches the native setter in the opt-in route.
     if (confirmedWidget) return null;
+    if (control.closest('.el-rate,.ant-rate,[role="slider"][aria-roledescription]')) return 'rate_requires_l1';
     if (control.type === 'range' || control.closest('.el-slider,.ant-slider')) return 'slider_requires_l1';
     if (cmsBirthDateControl(control) || cmsEducationDateControl(control)) {
       // Once this unique CMS date control already contains a value, it is a
@@ -1039,7 +1041,7 @@
     // Inputless TreeSelect and slider targets enter only through MAIN's confirmed opt-in
     // claim. They have no native text path when the write flag is absent.
     for (const [control, candidate] of atsControlTargets) {
-      if (['tree-select', 'slider'].includes(candidate.type) && !controls.includes(control)
+      if (['tree-select', 'slider', 'rate'].includes(candidate.type) && !controls.includes(control)
         && !control.matches('input,textarea,[contenteditable]') && visible(control, true)
         && (!trialScope || trialScope.wrapper.contains(control))) controls.push(control);
     }
@@ -1234,7 +1236,7 @@
     plain.currentValue = meaningfulCurrent(control, radioOptions, antUnnamedRadio);
     // Search text is a query. MAIN's model and selected display decide
     // preservation and readback for an explicitly claimed select or tree.
-    if (['multi-select', 'tree-select', 'slider'].includes(atsControlTargets.get(control)?.type)) return plain;
+    if (['multi-select', 'tree-select', 'slider', 'rate'].includes(atsControlTargets.get(control)?.type)) return plain;
     if(entry.kind==='cms_checkbox_group') {
       const selected=globalThis.ResumeCmsCheckboxes.inspectControl(control)?.selected,
         desired=checkboxFact?.answers?.map(exactOptionText).sort();
@@ -2073,7 +2075,7 @@
     result.status = response.ok === true && response.status === 'success' ? 'verified'
       : response.writeStarted === true || ['mismatch', 'reverted'].includes(response.status) ? 'failed' : 'skipped';
     result.reason = response.reason || 'control_write_failed';
-    result.currentValue = atsControlTargets.get(entry.control)?.type === 'slider' && response.status === 'success'
+    result.currentValue = ['slider', 'rate'].includes(atsControlTargets.get(entry.control)?.type) && response.status === 'success'
       ? response.domReadback : meaningfulCurrent(entry.control, entry.radioOptions, entry.antUnnamedRadio);
     return response.readbackId;
   }
@@ -2092,7 +2094,7 @@
       result.status = 'failed';
       result.adapterStatus = response?.ok === true ? response.status : 'unsupported';
       result.reason = response?.reason || 'control_readback_failed';
-    } else if (atsControlTargets.get(entry.control)?.type === 'slider') result.currentValue = response.domReadback;
+    } else if (['slider', 'rate'].includes(atsControlTargets.get(entry.control)?.type)) result.currentValue = response.domReadback;
   }
 
   async function fillOwnedContent(profile, attachment, photoUploads = null) {
@@ -2746,7 +2748,7 @@
         sendResponse(reply);
       });
     return true;
-  };chrome.runtime.onMessage.addListener(engineListener);globalThis.__resumeQuickFillEngineListener=engineListener;globalThis.__resumeQuickFillEngineRevision=20;}
+  };chrome.runtime.onMessage.addListener(engineListener);globalThis.__resumeQuickFillEngineListener=engineListener;globalThis.__resumeQuickFillEngineRevision=21;}
   globalThis.ResumeQuickFillGthInspect = (profile) => {
     if (`${location.origin}${location.pathname}` !== "https://hr.gtht.com/resume/edit/")
       throw new Error("gth_inspect_wrong_page");

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { JSDOM } from 'jsdom';
 
-const sources = ['model', 'registry', 'native', 'slider-controls'].map(name =>
+const sources = ['model', 'registry', 'native', 'slider-controls', 'rate-controls'].map(name =>
   readFileSync(new URL(`../src/content/controls/${name}.js`, import.meta.url), 'utf8'));
 const ctx = { allowWrite: true, check: async () => {} };
 function boot(html) {
@@ -167,8 +167,8 @@ test('reinjection replaces revision 6 select contracts before reading a date-par
   f.window.ResumeControls = { version: 1, revision: 6, list: () => [{ name: 'native-text' }] };
   for (const source of sources) f.window.eval(source);
   const R = f.window.ResumeControls;
-  assert.equal(R.revision, 19);
-  for (const name of ['native-slider', 'el-slider', 'antdv1-slider']) assert.equal(R.list().some(row => row.name === name), true, name);
+  assert.equal(R.revision, 20);
+  for (const name of ['native-slider', 'el-slider', 'antdv1-slider', 'el-rate', 'elplus-rate', 'antdv1-rate', 'aria-rate']) assert.equal(R.list().some(row => row.name === name), true, name);
   assert.equal(R.inspect(f.get('year')).model.value, '');
   assert.equal(R.plan(f.get('year'), { value: '2000' }).status, 'planned');
   assert.deepEqual(f.effects, []);

@@ -131,6 +131,7 @@ function harness({ hostPermissions = grantedManifest().host_permissions, probeOk
       } else if (handled === false) resolve({ ok: false, reason: 'listener_ignored' });
     });
   const api = {
+    permissions: { getAll: async () => ({ origins: ['https://*/*'] }), contains: async () => true },
     storage: { local: storage },
     runtime: {
       id: autoSender.id,

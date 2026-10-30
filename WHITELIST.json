@@ -7,6 +7,7 @@
     "manifest.json",
     "scripts/build-internal.ps1",
     "scripts/regen-source-inventory.mjs",
+    "src/background/auto-form-readiness.mjs",
     "src/background/basic-task-runner.mjs",
     "src/background/cms-education-task-runner.mjs",
     "src/background/cms-page-focus.mjs",
@@ -264,6 +265,7 @@
   ],
   "productPaths": [
     "manifest.json",
+    "src/background/auto-form-readiness.mjs",
     "src/background/basic-task-runner.mjs",
     "src/background/cms-education-task-runner.mjs",
     "src/background/cms-page-focus.mjs",

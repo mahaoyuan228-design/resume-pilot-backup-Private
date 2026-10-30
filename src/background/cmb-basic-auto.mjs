@@ -6,6 +6,7 @@
 // siteId cmb plus a non-empty verified result list. A requested field that is
 // ambiguous, unsupported, or unsettled is failed and stays pending review.
 // It is not omitted so the other rows can complete.
+import {requireAutoFormReady,autoFormReadinessFailure} from './auto-form-readiness.mjs';
 import {captureProfileBinding,assertProfileBinding,canonicalProfileHash,
   dispatchBoundSource,withProfileBinding} from '../profile/profile-lifecycle.js';
 import {planCmbBasicFromProfile,cmbRequestedFillBlockers,cmbBirthDateReadinessView,CMB_REQUESTED_FILL_FAIL_CLOSED_REASONS,
@@ -499,19 +500,21 @@ export function createCmbBasicAutoRunner({ api = globalThis.chrome, verifyBefore
       pendingReviewRequired: true,
       auto: true
     };
-    await withProfileBinding(
-      api.storage.local,
-      binding,
-      () => api.storage.local.set({ [pendingKey(tab.id)]: review }),
-      lifecycleOptions
-    );
-
     await bounded(() => dispatchBoundSource(
       api.storage.local,
       binding,
       () => api.scripting.executeScript({ target: { tabId: tab.id }, files: ['src/content/cmb-basic.js'] }),
       lifecycleOptions
     ), 15000);
+
+    await requireAutoFormReady(api, tab.id);
+
+    await withProfileBinding(
+      api.storage.local,
+      binding,
+      () => api.storage.local.set({ [pendingKey(tab.id)]: review }),
+      lifecycleOptions
+    );
 
     const replies = await bounded(() => dispatchBoundSource(
       api.storage.local,
@@ -581,6 +584,7 @@ export function createCmbBasicAutoRunner({ api = globalThis.chrome, verifyBefore
     const found = await findTab(sender?.tab?.id, { openIfMissing, page: target.page });
     report.steps.push({ find: found.kind, tabId: found.tab.id, url: found.tab.url || null });
     await focusTab(found.tab);
+    report.formReadiness = await requireAutoFormReady(api, found.tab.id);
     report.steps.push('focused_cmb_tab');
     let probeResult = await probe(found.tab.id);
     if (!probeResult.ok) {
@@ -671,6 +675,7 @@ export function createCmbBasicAutoRunner({ api = globalThis.chrome, verifyBefore
       const payload = {
         ok: false,
         reason,
+        ...autoFormReadinessFailure(error),
         helpNeeded: help,
         helpUrl,
         helpReason: error?.helpReason || (help ? HELP_HINT : ''),

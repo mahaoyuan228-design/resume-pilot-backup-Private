@@ -1,6 +1,7 @@
 // Feishu ATSX basic auto (tiny). Mirror CITICS_BASIC_AUTO shape.
 // Fill-without-save only. Never clicks 保存/提交/投递. Isolated siteId: feishu-atsx.
 // Live resume edit path is login-walled; host match only (no hard-coded edit path yet).
+import {requireAutoFormReady,autoFormReadinessFailure} from './auto-form-readiness.mjs';
 import {captureProfileBinding,assertProfileBinding,canonicalProfileHash,
   dispatchBoundSource} from '../profile/profile-lifecycle.js';
 import {planFeishuAtsxBasicFromProfile,isFeishuAtsxHost} from '../content/feishu-atsx-profile-map.mjs';
@@ -197,6 +198,8 @@ export function createFeishuAtsxBasicAutoRunner({ api = globalThis.chrome, verif
       lifecycleOptions
     ), 15000);
 
+    await requireAutoFormReady(api, tab.id);
+
     const replies = await bounded(() => dispatchBoundSource(
       api.storage.local,
       binding,
@@ -246,6 +249,7 @@ export function createFeishuAtsxBasicAutoRunner({ api = globalThis.chrome, verif
     const found = await findTab(sender?.tab?.id, { openIfMissing, page: target.page });
     report.steps.push({ find: found.kind, tabId: found.tab.id, url: found.tab.url || null });
     await focusTab(found.tab);
+    report.formReadiness = await requireAutoFormReady(api, found.tab.id);
     report.steps.push('focused_feishu_atsx_tab');
     await bounded(() => api.scripting.executeScript({
       target: { tabId: found.tab.id },
@@ -256,7 +260,7 @@ export function createFeishuAtsxBasicAutoRunner({ api = globalThis.chrome, verif
       func: () => globalThis.ResumeFeishuAtsxBasic.prepareForm({ readinessTimeoutMs: 2000 })
     }), 10000);
     const formReadiness = prepared?.[0]?.result;
-    report.formReadiness = formReadiness;
+    report.preparation = formReadiness;
     if (formReadiness?.ok !== true) {
       report.ok = false;
       report.status = formReadiness?.status === 'unsupported' ? 'unsupported' : 'manual';
@@ -327,6 +331,7 @@ export function createFeishuAtsxBasicAutoRunner({ api = globalThis.chrome, verif
       const payload = {
         ok: false,
         reason,
+        ...autoFormReadinessFailure(error),
         helpNeeded: help,
         helpUrl,
         helpReason: error?.helpReason || (help ? HELP_HINT : ''),

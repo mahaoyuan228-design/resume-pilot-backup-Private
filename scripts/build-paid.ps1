@@ -60,6 +60,7 @@ if ($internalText -notmatch "(?s)\$files = @\((.*?)\n\)") {
 # Explicit product list (keep in sync with build-internal.ps1 $files).
 $productFiles = @(
   'manifest.json',
+  'src/background/auto-form-readiness.mjs',
   'src/background/basic-task-runner.mjs',
   'src/background/cms-education-task-runner.mjs',
   'src/background/cms-page-focus.mjs',

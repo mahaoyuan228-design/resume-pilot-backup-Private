@@ -18,7 +18,7 @@ import {
   cmsMcPageForSu,
   CMS_SU_RE
 } from './lib/cms-page-target.mjs';
-import { runAtsExtensionHarness } from './lib/ats-extension-harness.mjs';
+import { runAtsExtensionHarness, requireCdpAutoFormReady, autoFormReadinessFailure } from './lib/ats-extension-harness.mjs';
 
 if (typeof globalThis.WebSocket === 'undefined') {
   const { default: WS } = await import('ws');
@@ -298,7 +298,8 @@ function basePayload(partial) {
     at: new Date().toISOString(),
     ...partial,
     saved: false,
-    skippedSave: true
+    skippedSave: true,
+    liveSupportClaimed: false
   };
 }
 
@@ -415,6 +416,7 @@ async function runLive(mode, args) {
   }
   const { socket, send, page } = attached;
   await injectScript(send);
+  await requireCdpAutoFormReady(send);
   const probe = await evaluate(send, `ResumeHotjobMcBasic.probeLabels()`);
 
   if (mode === 'readiness') {
@@ -473,6 +475,7 @@ async function runLive(mode, args) {
     mobile: process.env.HOTJOB_MC_MOBILE || '13800138000',
     email: process.env.HOTJOB_MC_EMAIL || 'mc.live@example.com'
   };
+  await requireCdpAutoFormReady(send);
   const fill = await evaluate(send, `ResumeHotjobMcBasic.fillBasic({
     allowExplicitValues: true,
     fullName: ${JSON.stringify(fillValues.fullName)},
@@ -597,8 +600,10 @@ async function runLiveSelect(label, args) {
   }
   const { socket, send, page } = attached;
   await injectScript(send);
+  await requireCdpAutoFormReady(send);
   const restore = args.noRestore ? false : true;
   const expected = process.env.HOTJOB_MC_SELECT_VALUE || null;
+  await requireCdpAutoFormReady(send);
   const result = await evaluate(send, `ResumeHotjobMcBasic.fillSelect(${JSON.stringify(label)}, ${expected == null ? 'null' : JSON.stringify(expected)}, {
     restore: ${restore ? 'true' : 'false'},
     pickAlternate: ${expected == null ? 'true' : 'false'}
@@ -624,6 +629,7 @@ async function runLiveSelect(label, args) {
     tabId: page.id,
     tabUrl: page.url,
     saveGuard,
+    liveSupportClaimed: false,
     at: new Date().toISOString()
   };
   const written = writeSelectEvidence(label, payload);
@@ -688,6 +694,7 @@ async function main() {
       const payload = {
         ok: false, siteId: SITE_ID, label: args.only,
         reason: String(error?.message || error).slice(0, 300),
+        ...autoFormReadinessFailure(error),
         saved: false, skippedSave: true, neverClickedNext: true,
         at: new Date().toISOString(),
         error: String(error?.stack || error).slice(0, 800)
@@ -717,6 +724,7 @@ async function main() {
     const payload = basePayload({
       ok: false,
       reason: String(error?.message || error).slice(0, 300),
+      ...autoFormReadinessFailure(error),
       surface: useSynthetic ? 'synthetic-fixture' : 'cdp-live-mc',
       tenantSu,
       error: String(error?.stack || error).slice(0, 800)

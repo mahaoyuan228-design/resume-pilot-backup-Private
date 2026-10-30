@@ -7,6 +7,7 @@ import {awaitCmsPageDocumentFocus} from './cms-page-focus.mjs';
 import {CMS_QUESTION_TEMPLATES,CMS_QUESTION_PAGE,planCmsRegionFact,CMS_REGION_FACT_FAIL_CLOSED_REASONS} from '../profile/site-question-templates.js';
 import {seedCmsBasicFromEducation,CMS_BASIC_NEVER_SEED,CMS_BASIC_SEEDABLE} from '../profile/cms-basic-seed-from-education.mjs';
 import {SITE_FACTS_KEY} from '../profile/cms-education-site-facts.mjs';
+import {requireAutoFormReady,autoFormReadinessFailure} from './auto-form-readiness.mjs';
 
 const PAGE=CMS_QUESTION_PAGE;
 const ORIGIN=new URL(PAGE).origin;
@@ -24,13 +25,14 @@ const norm=value=>String(value||'').replace(/[\s\u00a0＊*？?]+/gu,' ').trim();
 const verifiedReasons=['readback_matched','readback_reapplied','preexisting_same_value'];
 const wroteField=field=>['readback_matched','readback_reapplied'].includes(field?.reason);
 const saveClaim=(...reports)=>({
+  saveAttempted:reports.some(report=>report?.saveAttempted===true),
   softwareClickedSave:reports.some(report=>report?.softwareClickedSave===true),
   softwareClickedSubmit:reports.some(report=>report?.softwareClickedSubmit===true),
   softwareClickedDelete:reports.some(report=>report?.softwareClickedDelete===true),
   savedOnSite:reports.some(report=>report?.savedOnSite===true),
   submitted:reports.some(report=>report?.submitted===true)
 });
-const anySaveClaim=flags=>flags.softwareClickedSave||flags.softwareClickedSubmit||flags.softwareClickedDelete
+const anySaveClaim=flags=>flags.saveAttempted||flags.softwareClickedSave||flags.softwareClickedSubmit||flags.softwareClickedDelete
   ||flags.savedOnSite||flags.submitted;
 // Basic-fill target page. Default 招商 baseline; a hotjob same-shell tenant may be passed as message.cmsPage.
 // Only https://wecruit.hotjob.cn/SU<id>/pb/resumeOperation.html (no query/hash) is accepted. Photo/education/
@@ -281,18 +283,20 @@ export function createCmsBasicAutoRunner({api=globalThis.chrome,verifyBeforeFill
       await api.storage.local.set({[pendingKey(tab.id)]:{tabId:tab.id,origin:ORIGIN,at:Date.now(),requestId,
         kind:'cms_basic_auto',profileBinding:binding,auto:true}});
     },lifecycleOptions);
-    const files=['src/core/matcher.js','src/core/domain-memory.js','src/content/cms-date-picker.js','src/content/cms-validation-gaps.js',
+    const files=['src/core/matcher.js','src/core/domain-memory.js','src/content/controls/resume-form.js','src/content/cms-date-picker.js','src/content/cms-validation-gaps.js',
       'src/content/cms-session.js','src/content/cms-school-search.js','src/content/cms-region.js',
       'src/content/cms-education-dates.js','src/content/cms-checkboxes.js','src/content/engine.js'];
     await bounded(()=>dispatchBoundSource(api.storage.local,binding,()=>api.scripting.executeScript({target:{tabId:tab.id},files}),lifecycleOptions),20000);
     let response;
     try{
+      await requireAutoFormReady(api,tab.id);
       response=await bounded(()=>dispatchBoundSource(api.storage.local,binding,()=>api.tabs.sendMessage(tab.id,{
         type:'RESUME_FILL',profile:raw,attachment:null,photoUploads:null,profileBinding:binding
       }),lifecycleOptions),timeoutMs);
     }catch(error){
       await withProfileBinding(api.storage.local,binding,()=>api.storage.local.remove(pendingKey(tab.id)),lifecycleOptions).catch(()=>{});
-      throw error;
+      if(!error?.formReadiness)throw error;
+      response={ok:false,error:safe(error),...autoFormReadinessFailure(error)};
     }
     const data=response?.data||{};
     // Inspect both envelopes before handling errors or pre-write claims. A trial
@@ -316,6 +320,11 @@ export function createCmsBasicAutoRunner({api=globalThis.chrome,verifyBeforeFill
     const fillFailed=response?.ok!==true||data.ok===false;
     const beforeWrite=fillFailed&&writeStarted!==true
       &&(response?.fillNotStarted===true||response?.writeStarted===false||data.writeStarted===false);
+    const readinessStopped=beforeWrite&&!anySaveClaim(clicks)&&!fieldWrite;
+    if(readinessStopped&&response?.fillNotStarted===true&&response.writeStarted===false&&response.readiness){
+      response={...response,formReadiness:response.readiness,error:response.readiness.reason||response.error};
+    }
+    const readinessFailure=readinessStopped?autoFormReadinessFailure(response):{};
     const regionFailure=summary.personal.find(row=>row.status==='failed'&&CMS_REGION_FACT_FAIL_CLOSED_REASONS.includes(row.reason));
     const reason=anySaveClaim(clicks)?'cms_basic_save_policy_violated':bindingError
       ||(fillFailed?safe(response?.error||response?.reason||data.reason||'cms_basic_fill_failed')
@@ -325,7 +334,9 @@ export function createCmsBasicAutoRunner({api=globalThis.chrome,verifyBeforeFill
     const outcome=state==='completed'?(fieldWrite?'verified':'verified_preexisting')
       :state==='stopped_before_write'?'failed_before_write':'unknown';
     const job={
+      ...readinessFailure,
       state,reason,requestId,outcome,writeStarted,complete:false,at:Date.now(),...clicks,
+      liveSupportClaimed:false,
       supportedComplete:typeof data.supportedComplete==='boolean'?data.supportedComplete:null,
       operableComplete:typeof data.operableComplete==='boolean'?data.operableComplete:null,
       savedOnSite:clicks.savedOnSite?true:(data.savedOnSite??response?.savedOnSite??null),
@@ -335,7 +346,7 @@ export function createCmsBasicAutoRunner({api=globalThis.chrome,verifyBeforeFill
     // Unknown outcomes retain pending review. Only a verified fill or an
     // explicit, consistent pre-write failure can release this request.
     if(state!=='unknown')await withProfileBinding(api.storage.local,binding,()=>api.storage.local.remove(pendingKey(tab.id)),lifecycleOptions);
-    return {job,responseSummary:{ok:state==='completed',reason,writeStarted,...clicks,
+    return {job,responseSummary:{...readinessFailure,ok:state==='completed',reason,writeStarted,...clicks,
       supportedComplete:job.supportedComplete,operableComplete:job.operableComplete,
       fieldCount:summary.personalCount,verified:summary.verified,
       skipped:summary.skipped,failed:summary.failed,totalReturned:summary.totalReturned,
@@ -391,7 +402,7 @@ export function createCmsBasicAutoRunner({api=globalThis.chrome,verifyBeforeFill
     const openIfMissing=message.openIfMissing===true;
     const target=resolveCmsBasicTarget(message.cmsPage);
     const report={version:1,kind:'cms_basic_auto',mode,at:Date.now(),steps:[],helpNeeded:false,
-      saveAttempted:false,writeAttempted:false,cmsPage:target.page,tenantSu:target.su,baselineSu:target.baseline};
+      saveAttempted:false,writeAttempted:false,liveSupportClaimed:false,cmsPage:target.page,tenantSu:target.su,baselineSu:target.baseline};
     const found=await findCmsTab(sender?.tab?.id,{openIfMissing,page:target.page});
     report.steps.push({find:found.kind,tabId:found.tab.id,url:found.tab.url||null});
     await focusTab(found.tab);
@@ -402,6 +413,7 @@ export function createCmsBasicAutoRunner({api=globalThis.chrome,verifyBeforeFill
     }catch(error){
       report.steps.push({cms_page_focus:safe(error)});
     }
+    report.formReadiness=await requireAutoFormReady(api,found.tab.id);
     const signatureMode=target.baseline?'baseline':'tenant';
     const signature=target.baseline?SIGNATURE:TENANT_SIGNATURE;
     report.steps.push({signatureMode,signature});
@@ -441,6 +453,7 @@ export function createCmsBasicAutoRunner({api=globalThis.chrome,verifyBeforeFill
     }
 
     const filled=await runFill(found.tab,message,readiness,target);
+    Object.assign(report,autoFormReadinessFailure(filled.job));
     report.writeAttempted=filled.job?.writeStarted===true;
     report.steps.push({fill:filled.job?.state,outcome:filled.outcome});
     const clicks=saveClaim(filled.job,filled.responseSummary);
@@ -448,12 +461,13 @@ export function createCmsBasicAutoRunner({api=globalThis.chrome,verifyBeforeFill
     report.savedOnSite=filled.job?.savedOnSite??null;
     report.submitted=filled.job?.submitted??null;
     report.job=filled.job?{state:filled.job.state,reason:filled.job.reason||null,requestId:filled.job.requestId,
+      ...autoFormReadinessFailure(filled.job),
       outcome:filled.job.outcome||null,writeStarted:filled.job.writeStarted,complete:false,
       supportedComplete:filled.job.supportedComplete,operableComplete:filled.job.operableComplete,
       ...clicks,savedOnSite:filled.job.savedOnSite??null,submitted:filled.job.submitted??null,
       fields:filled.job.fields||[],summary:filled.job.summary||null,source:filled.job.source||null}:null;
     report.fill=filled.responseSummary;
-    report.saveAttempted=false;
+    report.saveAttempted=clicks.saveAttempted;
     report.ok=filled.job?.state==='completed'&&['verified','verified_preexisting'].includes(filled.outcome)
       &&filled.responseSummary?.ok===true&&!anySaveClaim(clicks);
     if(!report.ok)report.reason=filled.job?.reason||filled.responseSummary?.reason||'cms_basic_fill_failed';
@@ -471,7 +485,8 @@ export function createCmsBasicAutoRunner({api=globalThis.chrome,verifyBeforeFill
       const help=reason==='cms_basic_login_or_wrong_page'||reason==='cms_basic_tab_missing'||/login|sso|auth/i.test(String(helpUrl));
       const payload={ok:false,reason,helpNeeded:help,helpUrl,helpReason:error?.helpReason||(help?(target&&!target.baseline?`我需要帮助！请打开已登录的 hotjob 租户 ${target.su} 简历页`:'我需要帮助！请打开已登录的招商证券/CMS 简历页'):''),
         cmsPage:target?.page||null,tenantSu:target?.su||null,
-        mode:message?.mode||'readiness',saveAttempted:false,writeAttempted:false,at:Date.now(),version:1,kind:'cms_basic_auto'};
+        mode:message?.mode||'readiness',saveAttempted:false,writeAttempted:false,liveSupportClaimed:false,
+        ...autoFormReadinessFailure(error),at:Date.now(),version:1,kind:'cms_basic_auto'};
       api.storage.local.set({resumeCmsBasicAutoRun:payload}).catch(()=>{});
       sendResponse(payload);
     });

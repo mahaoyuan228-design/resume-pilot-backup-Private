@@ -1,6 +1,7 @@
 // Hotjob mc (antd-mobile H5) basic auto. Mirror MOKA/FEISHU/BEISEN shape.
 // Fill-without-save only. Never clicks 下一步/保存/提交. Isolated siteId: hotjob-mc.
 // Fail-closed: https + *.hotjob.cn + /SU*/mc/deliver/operationResumer (host + SU path).
+import {requireAutoFormReady,autoFormReadinessFailure} from './auto-form-readiness.mjs';
 import {captureProfileBinding,assertProfileBinding,canonicalProfileHash,
   dispatchBoundSource} from '../profile/profile-lifecycle.js';
 import {planHotjobMcBasicFromProfile,isHotjobMcHost,isHotjobMcPath} from '../content/hotjob-mc-profile-map.mjs';
@@ -239,6 +240,8 @@ export function createHotjobMcBasicAutoRunner({ api = globalThis.chrome, verifyB
       lifecycleOptions
     ), 15000);
 
+    await requireAutoFormReady(api, tab.id);
+
     const replies = await bounded(() => dispatchBoundSource(
       api.storage.local,
       binding,
@@ -290,6 +293,7 @@ export function createHotjobMcBasicAutoRunner({ api = globalThis.chrome, verifyB
     const found = await findTab(sender?.tab?.id, { openIfMissing, page: target.page });
     report.steps.push({ find: found.kind, tabId: found.tab.id, url: found.tab.url || null });
     await focusTab(found.tab);
+    report.formReadiness = await requireAutoFormReady(api, found.tab.id);
     report.steps.push('focused_hotjob_mc_tab');
     if (mode === 'fill') {
       report.preparation = await prepareForm(found.tab);
@@ -363,6 +367,7 @@ export function createHotjobMcBasicAutoRunner({ api = globalThis.chrome, verifyB
       const payload = {
         ok: false,
         reason,
+        ...autoFormReadinessFailure(error),
         helpNeeded: help,
         helpUrl,
         helpReason: error?.helpReason || (help ? HELP_HINT : ''),

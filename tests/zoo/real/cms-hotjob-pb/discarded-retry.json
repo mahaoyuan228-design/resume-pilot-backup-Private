@@ -1,0 +1,42 @@
+{
+  "recordedAt": "2026-10-30T11:15:51.547Z",
+  "kind": "discarded_later_capture_retry",
+  "artifactWritten": false,
+  "reason": "guard_failure",
+  "neverSave": true,
+  "liveSupportClaimed": false,
+  "traffic": {
+    "observedNonGetCount": 1,
+    "interceptedNonGetCount": 1,
+    "blockedNonGetCount": 1,
+    "infoEditObservedCount": 1,
+    "infoEditBlockedCount": 1,
+    "responseToNonGetCount": 0,
+    "commandFailed": false,
+    "truncated": false,
+    "records": [
+      {
+        "phase": "observed",
+        "method": "POST",
+        "endpoint": "/resume/info/edit"
+      },
+      {
+        "phase": "paused",
+        "method": "POST",
+        "endpoint": "/resume/info/edit"
+      },
+      {
+        "phase": "blocked",
+        "method": "POST",
+        "endpoint": "/resume/info/edit"
+      }
+    ],
+    "assessment": {
+      "status": "rejected",
+      "reasons": [
+        "outside_keeper"
+      ]
+    }
+  },
+  "note": "A later read-only retry was rejected and wrote no capture artifacts. The accepted snapshot uses the earlier successful window recorded in manifest.json. No live controls were opened or changed."
+}

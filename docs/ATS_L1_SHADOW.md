@@ -8,7 +8,7 @@ Base: `8dcd68619cdad860f1402e56196fc61aefd881f0` (#227). This slice adds the L1 
 
 `src/content/controls/registry.js` registers adapters by descending priority, preserving registration order for ties. The first matching, version-confirmed adapter wins. Each adapter exposes `name`, `lib`, `type`, `libVersionProbe`, `matches`, `readModel`, `readOptions`, `plan`, `write`, and `verify`. The registry builds these methods from each module's specification; native and Vue modules share the planner, effect guards and verifier.
 
-Plans use `planned`, `success` (only a matching existing DOM and model), `unsupported`, or `manual`. A planned target is not a successful write. Verification separately returns `success`, `mismatch`, `reverted`, or `unsupported`; both the component value and visible value must match. A second sample detects reversion. Existing different values are preserved. Checkbox selections only increase.
+Plans use `planned`, `success` (only a matching existing DOM and model), `unsupported`, or `manual`. A planned target is not a successful write. Verification separately returns `success`, `mismatch`, `reverted`, or `unsupported`; both the component value and visible value must match. A second sample detects reversion. Existing different values are preserved except for explicitly requested switch changes and numeric stepping. Checkbox selections only increase.
 
 `src/background/controls-shadow.mjs` exports `inspectControls(api, tabId, requests)`. It requires an active HTTP(S) tab, injects the packaged control modules into `world: 'MAIN'`, `frameIds: [0]`, and checks the URL and visibility before reading. Requests contain an explicit unique selector, field identifier and fact value. Missing or ambiguous selectors fail closed. The returned plans contain serializable observations; Vue instances, React fibers and handlers remain in the page. No runtime message handler invokes this bridge and it never calls `write`.
 
@@ -18,9 +18,9 @@ The MAIN inspector reads Vue 2 reactive props normally, including getters, and p
 
 | Family | Entries | Evidence boundary |
 | --- | --- | --- |
-| HTML | text, textarea, number, explicit ARIA spinbutton, select, radio, checkbox; upload always manual | Native value/checked is the HTML control model; select/radio codes are separate from display labels. |
-| Element UI 2 | input, textarea, InputNumber, select, radio, checkbox, date, month, two-editor month range, cascader | Requires Vue 2 component identity and an observed library version export. Zoo uses 2.15.14; the live GTH version is unverified. |
-| ant-design-vue 1 | input, textarea, InputNumber, flat select, search select, radio, checkbox group, date, month, cascader | Requires Vue 2 component identity and an observed library version export. Zoo uses 1.7.8. |
+| HTML / ARIA | text, textarea, number, explicit ARIA spinbutton, select, radio, checkbox, checkbox-as-switch, explicit ARIA switch; upload always manual | Native value/checked or explicit binary ARIA state is the model; select/radio codes are separate from display labels. |
+| Element UI 2 | input, textarea, InputNumber, select, radio, checkbox, switch, date, month, two-editor month range, cascader | Requires Vue 2 component identity and an observed library version export. Zoo uses 2.15.14; the live GTH version is unverified. |
+| ant-design-vue 1 | input, textarea, InputNumber, flat select, search select, radio, checkbox group, switch, date, month, cascader | Requires Vue 2 component identity and an observed library version export. Zoo uses 1.7.8. |
 | hotjob pair | Two dependent ant-design-vue selects | Each child is independently probed. The second select's initial dependency-disabled state is distinguished from a site-disabled field. |
 | GTH plugin-dialog | No generic claim | Retained in the unchanged legacy writer; its site contract belongs to L3. |
 | iView/ViewUI, ud/Formily, phoenix, antd-mobile | Pending samples; no claimed adapter | No selectors, versions, or internal handlers are guessed. AntD React v4 is a later slice. |
@@ -38,6 +38,27 @@ Search and dependent-select plans explicitly mark unresolved options. A requeste
 Writes require `allowWrite: true` and a per-effect `check()`. Absolute writes and native/ARIA stepping use checked native input/change/blur events. Vue stepping dispatches one ArrowUp/ArrowDown keydown/keyup pair on the owned input, avoiding pointer long-press timers. Plans are privately bound to their original model owner and constraints; serialized, modified or cross-widget plans grant no write authority. Verification requires numeric DOM and authoritative model agreement and a second sample to detect reversion. Never-Save remains in force; this is offline support only: `liveSupportClaimed=false`.
 
 Run the focused checks with Node 24: `node --test tests/l1-number-controls.test.mjs`. Regression verification includes the existing L1, product-whitelist and guard tests, then `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-internal.ps1` and `npm run test:zoo`. Build before the zoo so its packaged-byte checks use the current controls. No product path or site-specific selector is added for this family.
+
+## Switch and toggle controls
+
+The generic L1 family covers `native-switch` (`input[type="checkbox"][role="switch"]`), `el-switch` (owning `ElSwitch`, Element UI 2), `antdv1-switch` (owning `ASwitch`, ant-design-vue 1), and `aria-switch` (an explicit non-input `role="switch"` with `aria-checked="true"` or `"false"`). This AntD claim is limited to the repository's confirmed Vue 2 contract; React AntD, Element Plus and unknown framework owners do not fall through to an ARIA/native writer. Classes alone grant no support. Missing/mixed ARIA state, indeterminate native checkboxes and nested interactive ARIA controls remain unsupported.
+
+`ResumeControls.plan(el, { value: true })` and `{ value: false }` request an absolute visible boolean state, including turning an existing switch off. Strings, numeric truthiness, labels and raw component codes are rejected. Element's observed `activeValue` / `inactiveValue` mapping, including typed numeric/string codes and inverted booleans, stays separate from the DOM boolean. `{ operation: 'toggle' }` requests one inversion from an already confirmed, consistent DOM/model origin; combining toggle with a value is rejected. Ordinary checkboxes retain their add-only contract and do not accept toggle.
+
+Writers require `allowWrite: true` plus a per-effect `check()`. A real UI click changes the switch; no checked setter, internal handler or component emit is used. A matching target returns success with zero clicks, and replaying a completed toggle does not toggle again. Plans stay privately bound to the original root, owner, library version, input/target, complete instruction and active/inactive mapping. Serialized, edited, cross-widget or stale plans cannot authorize a click. Every pointer effect rechecks ownership and guards; disabled, readonly, inert, hidden, detached, save/navigation and implicit-submit targets remain protected. A surrounding label must activate the switch target itself, preventing default click forwarding to an external button or checkbox even if the label association changes during pointerdown. Vue internal checkbox state must also agree with the model and ARIA state.
+
+Verification compares the exact authoritative model value and visible boolean, then samples again to detect reversion. The ARIA attribute itself is the explicit model for plain ARIA switches; Vue requires its owning reactive value as well. Read-only inspection and planning leave the controls unchanged. Never-Save remains in force and `liveSupportClaimed=false`; the evidence is entirely offline, with no site-specific selector or production route change.
+
+Reproduce with Node 24 (install pinned dependencies using `npm ci --ignore-scripts`):
+
+```powershell
+node --test tests/l1-switch-controls.test.mjs tests/l1-choice-controls.test.mjs
+node --test --test-concurrency=1 "tests/l1-*.test.mjs" tests/product-paths-whitelist.test.mjs tests/guard-worker-auto-runners.test.mjs tests/pack-side-effect-import.test.mjs tests/never-save-guard.test.mjs tests/cms-row-d-network-guard.test.mjs tests/moka-direct-page-guard.test.mjs
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-internal.ps1
+npm run test:zoo
+```
+
+The zoo requires installed Playwright Chromium and checks packaged bytes against the checkout. Its switch cases mount real pinned Element UI / ant-design-vue components alongside disposable native and ARIA controls, assert exact click counts and both readbacks, and record zero saves, submits or non-GET requests. Build before running the zoo; `npm run test:zoo -- switch.spec.mjs` runs only this family.
 
 ## Effect boundary
 

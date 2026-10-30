@@ -196,7 +196,7 @@ test('native radio writers stop before click when an option or its owner changes
   }
 });
 
-test('native switch is a distinct boolean checkbox contract with additive writes and readback', async t => {
+test('native switch is a distinct boolean checkbox contract with bidirectional writes and readback', async t => {
   const f = boot('<label><input id="toggle" type="checkbox" role="switch">开关</label>');
   t.after(() => f.dom.window.close());
   const el = f.get('toggle'), adapter = f.adapters.get('native-switch');
@@ -206,8 +206,10 @@ test('native switch is a distinct boolean checkbox contract with additive writes
   await adapter.performWrite(el, { value: true }, f.ctx);
   assert.equal(adapter.readModel(el, f.probe).value, true);
   assert.equal(adapter.readModel(el, f.probe).domValue, true);
+  await adapter.performWrite(el, { value: false }, f.ctx);
+  assert.equal(adapter.readModel(el, f.probe).value, false);
+  assert.equal(adapter.readModel(el, f.probe).domValue, false);
   const calls = f.calls.length;
-  assert.equal((await adapter.performWrite(el, { value: false }, f.ctx)).reason, 'existing_value');
   assert.equal((await adapter.performWrite(el, { value: 'true' }, f.ctx)).reason, 'invalid_switch_value');
   assert.equal(f.calls.length, calls);
 });

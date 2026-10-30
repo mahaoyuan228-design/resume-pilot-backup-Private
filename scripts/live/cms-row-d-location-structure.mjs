@@ -10,8 +10,8 @@ import { runCmsRowDLive, readRowDProbeConfig, rowDTemporaryPath, selectRowDTarge
 import { connectCdp, getJson } from '../../tools/live-harvest/cdp-client.mjs';
 
 export const SOURCE_PINS = Object.freeze({
-  'scripts/live/cms-row-d-live.mjs':'85292af7a20a25f47ad77c6dbe58328f087fbd4f081805f47158630ce3c0a219',
-  'scripts/lib/cms-row-d-options.mjs':'3e64c59fc7524a10a9f13188f83e68eaa7587d00e735a7adf0e92c3866921d83',
+  'scripts/live/cms-row-d-live.mjs':'5c0d9201b4f9c87fde70a55f309bbb39331dea195d9a504ad29acb441e8bca19',
+  'scripts/lib/cms-row-d-options.mjs':'f4d817279d4d63b60917f3db0806cbe5314a05ed7c1a00106661b9ca30bea0de',
   'tools/live-harvest/cdp-client.mjs':'5c3edacafd540b6f41bcdef4c221a5f8bf9d5e44a7442418b87784c2620b0d8e',
   'tools/live-harvest/errors.mjs':'528cefd73f5dcc3a0ecec732a09aac394a7bfd1e75196d514517fa32d46d3e9c'
 });
@@ -292,7 +292,9 @@ export async function runLocationStructure({port=9242,timeoutMs=10000,getTargets
       return {...reply,result:{...reply.result,value:envelope.inspection}};
     }};
   };
-  const official=await runCmsRowDLive({port,timeoutMs,connect:decorate,getTargets:discover,
+  // This diagnostic deliberately binds one evaluation and one structure
+  // capture; the official runner's optional readiness polling stays disabled.
+  const official=await runCmsRowDLive({port,timeoutMs,optionsWaitMs:0,connect:decorate,getTargets:discover,
     ...(wait?{wait}:{})});
   binding=undefined;
   const officialSafe=cleanCaptureAllowed(official);

@@ -28,6 +28,8 @@ const safety = () => ({ neverSave: true, liveSupportClaimed: false,
   livePassClaimed: false, writeStarted: false, mutationAllowed: false,
   valuesExposed: false, probeOnly: true });
 const validPort = port => Number.isInteger(port) && port >= 1 && port <= 65535;
+const validOptionsWait = value => Number.isInteger(value) && value >= 0 && value <= 5000;
+const validOptionsPoll = value => Number.isInteger(value) && value >= 25 && value <= 500;
 const inside = (root, candidate) => {
   const relative = path.relative(root, candidate);
   return !path.isAbsolute(relative) && relative !== '..' && !relative.startsWith(`..${path.sep}`);
@@ -56,11 +58,17 @@ export function rowDTemporaryPath(raw, root = repoRoot, cwd = process.cwd()) {
 export function readRowDProbeConfig(env = process.env, root = repoRoot, cwd = process.cwd()) {
   const portText = env.PORT || '9242';
   const timeoutText = env.STEP_TIMEOUT_MS || '10000';
+  const optionsWaitText = env.OPTIONS_WAIT_MS ?? '2000';
+  const optionsPollText = env.OPTIONS_POLL_MS ?? '100';
   if (typeof portText !== 'string' || !/^\d{1,5}$/u.test(portText) || !validPort(Number(portText))) {
     throw new TypeError('config_invalid');
   }
   if (typeof timeoutText !== 'string' || !/^\d+$/u.test(timeoutText)
     || Number(timeoutText) < 1000 || Number(timeoutText) > 30000) throw new TypeError('config_invalid');
+  if (typeof optionsWaitText !== 'string' || !/^\d+$/u.test(optionsWaitText)
+    || !validOptionsWait(Number(optionsWaitText))
+    || typeof optionsPollText !== 'string' || !/^\d+$/u.test(optionsPollText)
+    || !validOptionsPoll(Number(optionsPollText))) throw new TypeError('config_invalid');
   const outDir = rowDTemporaryPath(env.OUTDIR || path.join(root, '_temp-scripts/cms-row-d-live-never-save'), root, cwd);
   let requests = {};
   if (env.REQUESTS_FILE) {
@@ -69,7 +77,8 @@ export function readRowDProbeConfig(env = process.env, root = repoRoot, cwd = pr
     requests = JSON.parse(fs.readFileSync(input, 'utf8'));
   }
   buildCmsRowDOptionsProbeExpression(requests); // Fixed-error validation, before CDP attachment.
-  return { port: Number(portText), timeoutMs: Number(timeoutText), outDir, requests };
+  return { port: Number(portText), timeoutMs: Number(timeoutText),
+    optionsWaitMs: Number(optionsWaitText), optionsPollMs: Number(optionsPollText), outDir, requests };
 }
 
 export function selectRowDTarget(targets, port) {
@@ -309,6 +318,7 @@ export function createRowDNetworkGuard(send) {
       if (pending.size) traffic.commandFailed = true;
     },
     failed,
+    hasPendingCommands: () => pending.size > 0,
     async settleKeeper(wait = delay) {
       const initial = this.assessment();
       const pendingAtStart = pendingKinds();
@@ -388,6 +398,11 @@ const CONTROL_KIND_ISSUES = new Set([
   'conflicting_picker', 'unexpected_interactive_control', 'select_not_unique',
   'mixed_choice_controls', 'input_outside_select', 'unexpected_input_kind'
 ]);
+const ENUMERATED_OPTIONS_REASONS = new Set([
+  'option_list_ambiguous', 'option_dictionary_mismatch', 'reused_dictionary_unverified',
+  'option_dictionary_incomplete', 'read_only_options_preflight', 'request_type_invalid',
+  'request_empty', 'duplicate_option', 'option_unknown'
+]);
 
 /** Copy allowlisted metadata only; never serialize arbitrary Runtime results. */
 function cleanInspection(value) {
@@ -422,6 +437,17 @@ function cleanInspection(value) {
     const count = (number, maximum) => Number.isSafeInteger(number) && number >= 0 && number <= maximum;
     optional('hiddenSearchInputCount', number => spec.controlKind === 'ant-select' && count(number, 1));
     optional('observedOptionCount', number => spec.controlKind !== 'ant-calendar-picker' && count(number, 10000));
+    optional('optionsReadiness', status => spec.controlKind === 'ant-select'
+      && (['target_missing', 'list_empty'].includes(status)
+        ? row.reason === 'current_options_unavailable'
+          || (row.optionsEvidenceSource === 'owned_select_vnodes' && row.observedOptionCount > 0
+            && ENUMERATED_OPTIONS_REASONS.has(row.reason))
+        : status === 'observed' && (ENUMERATED_OPTIONS_REASONS.has(row.reason)
+          || ['option_ownership_mismatch', 'option_not_available'].includes(row.reason))));
+    optional('optionsEvidenceSource', source => spec.controlKind === 'ant-select'
+      && row.observedOptionCount > 0 && ENUMERATED_OPTIONS_REASONS.has(row.reason)
+      && (source === 'aria_controls_dom' ? row.optionsReadiness === 'observed'
+        : source === 'owned_select_vnodes' && ['target_missing', 'list_empty'].includes(row.optionsReadiness)));
     optional('samplePrefixMatched', matched => spec.controlKind !== 'ant-calendar-picker'
       && spec.optionsComplete === false && typeof matched === 'boolean'
       && Object.hasOwn(row, 'observedOptionCount')
@@ -450,16 +476,20 @@ export function rowDProbeEvidence(reason = 'not_started') {
     visibilityKeeper: { targetActivated: false, pageBroughtToFront: false,
       focusEmulationEnabled: false, focusEmulationCleared: false },
     inspectionGate: { status: 'not_reached', checkpoints: [] },
+    optionsReadiness: { status: 'not_reached', attempts: 0, waitRounds: 0,
+      initialUnavailableCount: 0, finalUnavailableCount: 0 },
     probeCompleted: false, ok: false, reason, restoration: 'not_needed_no_interaction', fields: [] };
 }
 
 /** Test dependencies are explicit. Importing this module never attaches. */
 export async function runCmsRowDLive({ port = 9242, timeoutMs = 10000, requests = {},
+  optionsWaitMs = 2000, optionsPollMs = 100,
   getTargets = getJson, connect = connectCdp, wait = delay } = {}) {
   const evidence = rowDProbeEvidence();
   let expression;
   try {
-    if (!validPort(port) || !Number.isInteger(timeoutMs) || timeoutMs < 1000 || timeoutMs > 30000) {
+    if (!validPort(port) || !Number.isInteger(timeoutMs) || timeoutMs < 1000 || timeoutMs > 30000
+      || !validOptionsWait(optionsWaitMs) || !validOptionsPoll(optionsPollMs)) {
       throw new TypeError('config_invalid');
     }
     expression = buildCmsRowDOptionsProbeExpression(requests);
@@ -513,19 +543,91 @@ export async function runCmsRowDLive({ port = 9242, timeoutMs = 10000, requests 
     if (!await keeperCheckpoint('before_inspection')) return evidence;
     evidence.inspectionGate.status = 'allowed';
     stage = 'inspection';
-    const reply = await session.send('Runtime.evaluate', {
-      expression, returnByValue: true, awaitPromise: false, userGesture: false,
-      // CDP rejects attempted side effects as a second boundary around the
-      // source-audited read-only inspector. There is no retry without this.
-      throwOnSideEffect: true, timeout: timeoutMs
-    });
-    if (reply?.exceptionDetails) { evidence.reason = 'inspection_exception'; return evidence; }
-    const inspection = cleanInspection(reply?.result?.value);
-    evidence.fields = inspection.fields;
-    evidence.visibilityBasis = inspection.visibilityBasis;
-    evidence.probeCompleted = true;
-    evidence.ok = inspection.ok;
-    evidence.reason = inspection.reason;
+    const readiness = evidence.optionsReadiness;
+    const unavailableCount = inspection => inspection.fields.filter(row =>
+      row.controlKind === 'ant-select' && row.reason === 'current_options_unavailable').length;
+    const retryable = inspection => inspection.reason === 'page_not_ready'
+      || (inspection.reason === 'row_d_preflight_incomplete' && unavailableCount(inspection) > 0);
+    const evaluate = async evaluationTimeout => {
+      readiness.attempts += 1;
+      const reply = await session.send('Runtime.evaluate', {
+        expression, returnByValue: true, awaitPromise: false, userGesture: false,
+        // Every sample retains this boundary. No page observer, timer, promise,
+        // event, control open, or interaction is installed to await options.
+        throwOnSideEffect: true, timeout: evaluationTimeout
+      }, { timeoutMs: evaluationTimeout, step: 'inspection' });
+      if (reply?.exceptionDetails) {
+        readiness.status = 'inspection_failed';
+        evidence.ok = false;
+        evidence.reason = 'inspection_exception';
+        return undefined;
+      }
+      const inspection = cleanInspection(reply?.result?.value);
+      // Replace the entire snapshot. Earlier successful fields cannot conceal
+      // a later ownership, label, visibility, dictionary, or control drift.
+      evidence.fields = inspection.fields;
+      evidence.visibilityBasis = inspection.visibilityBasis;
+      evidence.probeCompleted = true;
+      evidence.ok = inspection.ok;
+      evidence.reason = inspection.reason;
+      readiness.finalUnavailableCount = unavailableCount(inspection);
+      return inspection;
+    };
+    const optionsGuardReady = () => {
+      if (!guard.failed() && !guard.hasPendingCommands()) return true;
+      readiness.status = 'guard_blocked';
+      // Stop additional reads immediately. An in-flight abort acknowledgement
+      // may still complete during the existing cleanup; that final strict
+      // ledger remains authoritative over a previously clean actual verdict.
+      if (!evidence.probeCompleted) {
+        evidence.ok = false;
+        evidence.reason = 'non_get_or_guard_failure';
+      }
+      return false;
+    };
+    if (!optionsGuardReady()) return evidence;
+    let inspection = await evaluate(timeoutMs);
+    if (!inspection) return evidence;
+    readiness.initialUnavailableCount = readiness.finalUnavailableCount;
+    if (!optionsGuardReady()) return evidence;
+    if (!retryable(inspection)) readiness.status = 'not_needed';
+    else {
+      // One host-side budget starts after the first complete actual snapshot.
+      // A round cap also bounds tests/callers whose injected wait is a no-op.
+      const deadline = performance.now() + optionsWaitMs;
+      const maximumRounds = Math.ceil(optionsWaitMs / optionsPollMs);
+      readiness.status = 'timed_out';
+      for (let round = 0; round < maximumRounds; round += 1) {
+        if (!optionsGuardReady()) return evidence;
+        let remaining = deadline - performance.now();
+        if (remaining <= 0) break;
+        readiness.waitRounds += 1;
+        await wait(Math.min(optionsPollMs, remaining));
+        if (!optionsGuardReady()) return evidence;
+        remaining = deadline - performance.now();
+        if (remaining <= 0) break; // Never dispatch a sample after the deadline.
+        const previous = inspection;
+        inspection = await evaluate(Math.max(1, Math.min(timeoutMs, Math.ceil(remaining))));
+        if (!inspection) return evidence;
+        if (!optionsGuardReady()) return evidence;
+        // A late reply remains the latest actual evidence, but cannot renew
+        // this deadline or authorize a successful readiness wait.
+        if (performance.now() >= deadline) {
+          if (evidence.ok) { evidence.ok = false; evidence.reason = 'options_readiness_timeout'; }
+          break;
+        }
+        const terminalDrift = inspection.reason !== 'page_not_ready'
+          && (!['row_d_preflight_incomplete', 'read_only_preflight'].includes(inspection.reason)
+            || previous.fields.some((row, index) => {
+              const current = inspection.fields[index];
+              return (row.ok || row.reason === 'current_options_unavailable')
+                && !current.ok && current.reason !== 'current_options_unavailable'
+                && !(current.observedOptionCount > 0);
+            }));
+        if (terminalDrift) { readiness.status = 'stopped'; break; }
+        if (!retryable(inspection)) { readiness.status = 'ready'; break; }
+      }
+    }
     stage = 'settlement';
     await wait(250); // Monitoring window only; not a restoration/support assertion.
     await guard.drain();
@@ -533,6 +635,7 @@ export async function runCmsRowDLive({ port = 9242, timeoutMs = 10000, requests 
     // CDP exception strings may contain page values, queries or remote URLs.
     evidence.ok = false;
     evidence.reason = `${stage}_failed`;
+    if (stage === 'inspection') evidence.optionsReadiness.status = 'inspection_failed';
   } finally {
     if (session) {
       await guard.drain();
@@ -587,6 +690,8 @@ Visibility uses attributes only; stylesheet/layout visibility is not verified.
 Guarded CDP activation retains focus emulation through the inspection window.
 No live PASS claimed until parent runs real CDP Never-Save. Booked stays 58 (not D).
 PORT defaults to 9242; STEP_TIMEOUT_MS defaults to 10000 (1000..30000).
+OPTIONS_WAIT_MS defaults to 2000 (0..5000); OPTIONS_POLL_MS to 100 (25..500).
+Options wait uses bounded host reads only; missing dormant lists remain skips.
 OUTDIR defaults to repo/_temp-scripts/cms-row-d-live-never-save.
 REQUESTS_FILE optionally names JSON wrapper IDs -> harvested labels/checkbox array.
 OUTDIR and REQUESTS_FILE must stay within repo/_temp-scripts, including symlinks.

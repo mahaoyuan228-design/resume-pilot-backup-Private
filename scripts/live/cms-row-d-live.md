@@ -70,6 +70,16 @@ without accepting explicit ID disagreements or aggregate counts as proof.
 The sanitized historical report cannot establish whether its IDs were absent.
 See [keeper R7 notes](../../tests/cms-row-d-keeper-nongget-r7-notes.md).
 
+The options-readiness revision starts at `0ca0acc2`. The supplied official
+probe completed with 2/16 fields, eleven `current_options_unavailable` skips,
+and zero observed/intercepted/blocked non-GET requests. That evidence points
+to absent current lists rather than another keeper-correlation failure. The
+runner now permits bounded passive re-inspection, and the inspector can use
+separately identified current Select option definitions when their ownership
+is proven. Installed Ant Design Vue 1.7.8 source and mounted offline components
+show lazy menu creation; this does not establish the real CMS component shape
+or prove that waiting alone can populate a dormant portal.
+
 `cms-row-d-live.mjs` attaches to an existing CMS resume tab and runs the merged offline options resolver and read-only ownership preflight. This is a probe, not a fill adapter. It never opens a popup, clicks an option or 保存/提交, emits input events, or reads current field values. No originals require restoration because the probe performs no form interactions or value mutations.
 
 Every result keeps `neverSave=true`, `liveSupportClaimed=false`, `livePassClaimed=false`, `writeStarted=false`, `mutationAllowed=false`, `valuesExposed=false`, and `probeOnly=true`. A successful preflight does not grant mutation permission or establish live fill support. Education is outside this probe's scope.
@@ -86,6 +96,12 @@ node scripts/live/cms-row-d-live.mjs
 ```
 
 `PORT` defaults to `9242`. `OUTDIR` defaults to the repository's `_temp-scripts/cms-row-d-live-never-save` directory. Keep all request files and generated evidence under `_temp-scripts`.
+
+`STEP_TIMEOUT_MS` defaults to `10000` (`1000..30000`). `OPTIONS_WAIT_MS`
+defaults to `2000` (`0..5000`), and `OPTIONS_POLL_MS` defaults to `100`
+(`25..500`). Setting the wait budget to `0` retains one inspection. Waiting
+repeats the same guarded expression on the host; it installs no page timer,
+observer, promise, event handler or control interaction.
 
 Optionally set `REQUESTS_FILE` to a JSON file under `_temp-scripts`. The object maps exact allowlisted wrapper IDs to literal harvested option labels; the industry checkbox field accepts an array of those labels. For example:
 
@@ -183,6 +199,46 @@ sample size. Observed
 calendar structure does not establish calendar behavior. Arbitrary Runtime
 metadata and current values are discarded.
 
+Per-select `optionsReadiness` distinguishes `target_missing`, `list_empty`,
+and `observed` DOM option nodes. After current labels have been enumerated,
+`optionsEvidenceSource` records either `aria_controls_dom` or
+`owned_select_vnodes`. The latter is a separate evidence source: a missing or
+empty DOM list remains recorded even when current component definitions match
+the dictionary. Neither source exposes labels or current selected values.
+
+The component path accepts only a bounded, exact-root Ant Select render chain
+whose current SelectTrigger matches the unique current `aria-controls`
+reference. It reads own data descriptors from current option VNodes, rejecting
+accessors, unsupported modes, custom/rich labels, disabled options, incomplete
+links and retained selected-option caches. It never calls Vue render methods
+or reactive getters. Exact current label order/cardinality and the existing
+dictionary-completeness rules still apply. An unknown component shape remains
+`current_options_unavailable`; no offline dictionary substitutes for current
+owned option evidence.
+
+The host retries only a loading same-page document or sanitized
+`current_options_unavailable` select rows. Each sample retains
+`throwOnSideEffect=true`, `awaitPromise=false`, and `userGesture=false`, with
+the remaining monotonic budget bounding both evaluation and transport timeout.
+One deadline and a finite round cap apply across the wait; neither traffic nor
+a new sample renews them. The deadline is checked after waiting and after a
+reply. Every clean sample replaces the entire previous inspection, so earlier
+passing rows cannot conceal later drift. Navigation, hidden-page results, new
+label/control/ownership/availability failures and evaluation errors stop
+further reads. Known location/calendar gaps do not become option-readiness
+failures, and an exhausted wait retains the latest actual incomplete rows.
+
+Top-level `optionsReadiness` contains only a fixed status and host counts:
+`attempts`, `waitRounds`, `initialUnavailableCount`, and
+`finalUnavailableCount`. Statuses are `not_reached`, `not_needed`, `ready`,
+`timed_out`, `stopped`, `guard_blocked`, or `inspection_failed`; `ready`
+describes the readiness wait and does not promote the overall preflight.
+Unresolved traffic or any pending guard command stops additional reads
+immediately. The existing final strict traffic ledger still determines whether
+a later acknowledged qualifying keeper block preserves the latest inspection;
+unsafe or unresolved traffic, responses and command failures still override it.
+Readiness introduces no keeper-settlement renewal or non-GET exception.
+
 Availability distinguishes the select host/combobox from one disabled-checked
 internal `.ant-select-search__field` inside its owned `.ant-select-search`.
 That specific helper may be hidden while the host remains attribute-visible;
@@ -220,7 +276,7 @@ prove that a control is visibly available for interaction.
 
 An earlier location-one open produced an `info/edit` POST while its displayed value stayed unchanged. The later harvest avoided location opens and observed no such POST. Its Escape/blur attempts did not establish popup closure. This probe therefore performs no popup opening or blur operation.
 
-Location-one has only 25 serialized labels from a 30-option list. Location-two has no independent options evidence. The industry dictionary now has a complete 32-label guarded capture; English calendar behavior remains unevidenced. Both locations and the calendar remain skipped. Current dropdown ownership must come from a unique current `aria-controls` association; a global visible dropdown or a harvested UUID cannot substitute for ownership.
+Location-one has only 25 serialized labels from a 30-option list. Location-two has no independent options evidence. The industry dictionary now has a complete 32-label guarded capture; English calendar behavior remains unevidenced. Both locations and the calendar remain skipped. Current option ownership must come from a unique current `aria-controls` association and either its verified DOM list or the exact-root component definitions described above; a global visible dropdown or a harvested UUID cannot substitute for ownership.
 
 After the parent re-runs guarded CDP, the page may still return
 `row_d_preflight_incomplete`, including `control_not_available`,

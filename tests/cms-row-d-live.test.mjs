@@ -77,8 +77,8 @@ function syntheticDom() {
   const dom = new JSDOM(`<!doctype html><body><form>${sections}<button>保存</button></form>${portals}</body>`,
     { url: exactUrl, pretendToBeVisual: true, runScripts: 'outside-only' });
   dom.window.Element.prototype.getClientRects = () => [{ width: 10, height: 10 }];
-  Object.defineProperty(dom.window.document, 'readyState', { get: () => 'complete' });
-  Object.defineProperty(dom.window.document, 'visibilityState', { get: () => 'visible' });
+  Object.defineProperty(dom.window.document, 'readyState', { configurable: true, get: () => 'complete' });
+  Object.defineProperty(dom.window.document, 'visibilityState', { configurable: true, get: () => 'visible' });
   return dom;
 }
 
@@ -98,8 +98,8 @@ function fakeCdp({ targets = [target()], evaluate = () => noDocumentInspection()
   let observer;
   const emit = message => observer(message);
   const session = {
-    async send(method, params = {}) {
-      calls.push({ method, params });
+    async send(method, params = {}, options) {
+      calls.push({ method, params, ...(options ? { options } : {}) });
       const override = onSend?.(method, params, { emit, calls });
       if (override !== undefined) return override;
       if (method === 'Runtime.evaluate') return { result: { value: evaluate(params.expression) } };
@@ -218,6 +218,8 @@ test('ambiguous, missing, malformed target inventories never attach or inspect',
 
 test('invalid requests and programmatic configuration stop before target discovery', async () => {
   for (const options of [{ port: 0 }, { port: '9242' }, { timeoutMs: 999 }, { timeoutMs: 30001 },
+    { optionsWaitMs: -1 }, { optionsWaitMs: 5001 }, { optionsWaitMs: '100' },
+    { optionsPollMs: 24 }, { optionsPollMs: 501 }, { optionsPollMs: 1.5 },
     { requests: { '13_47_0': PRIVATE } }, { requests: { '16_65_0': '2026-10-24' } }]) {
     const fake = fakeCdp();
     const evidence = await fake.run(options);
@@ -963,6 +965,267 @@ test('real serialized inspector preserves incomplete fields without current-valu
   } finally { dom.window.close(); }
 });
 
+test('host readiness re-reads passively populated synthetic aria target and empty list without interaction', async () => {
+  const dom = syntheticDom();
+  try {
+    const { document } = dom.window;
+    const missing = document.getElementById('synthetic-13_43_0');
+    const parent = missing.parentElement;
+    missing.remove();
+    const empty = document.getElementById('synthetic-13_47_0');
+    const children = [...empty.childNodes];
+    empty.replaceChildren();
+    let attempts = 0;
+    const forbidden = () => { attempts += 1; throw new Error(PRIVATE); };
+    for (const name of ['click', 'focus', 'blur']) dom.window.HTMLElement.prototype[name] = forbidden;
+    dom.window.EventTarget.prototype.dispatchEvent = forbidden;
+    dom.window.fetch = forbidden;
+    dom.window.XMLHttpRequest.prototype.send = forbidden;
+    dom.window.navigator.sendBeacon = forbidden;
+    dom.window.MutationObserver = forbidden;
+    dom.window.setTimeout = forbidden;
+    dom.window.setInterval = forbidden;
+    let populationStep = 0;
+    const fake = fakeCdp({ evaluate: expression => clone(dom.window.eval(expression)), onWait() {
+      // A synthetic external actor models passive population; the inspector
+      // never creates these nodes or asks the page to populate them.
+      populationStep += 1;
+      if (populationStep === 1) parent.append(missing);
+      if (populationStep === 2) empty.append(...children);
+    } });
+    const evidence = await fake.run({ optionsWaitMs: 1000, optionsPollMs: 100 });
+    assertSafety(evidence);
+    assert.equal(evidence.reason, 'row_d_preflight_incomplete');
+    assert.equal(evidence.fields.filter(row => row.ok).length, 13);
+    assert.deepEqual(evidence.optionsReadiness, { status: 'ready', attempts: 3,
+      waitRounds: 2, initialUnavailableCount: 2, finalUnavailableCount: 0 });
+    const evaluations = fake.calls.filter(row => row.method === 'Runtime.evaluate');
+    assert.equal(new Set(evaluations.map(row => row.params.expression)).size, 1);
+    for (const call of evaluations) {
+      assert.equal(call.params.throwOnSideEffect, true);
+      assert.equal(call.params.awaitPromise, false);
+      assert.equal(call.params.userGesture, false);
+      assert.equal(call.options.timeoutMs, call.params.timeout);
+      assert.equal(call.options.step, 'inspection');
+    }
+    assert.equal(methods(fake).filter(method => method === 'Target.activateTarget').length, 1);
+    assert.equal(methods(fake).filter(method => method === 'Page.bringToFront').length, 1);
+    assert.equal(fake.calls.filter(row => row.method === 'Emulation.setFocusEmulationEnabled'
+      && row.params.enabled).length, 1);
+    assert.equal(attempts, 0);
+  } finally { dom.window.close(); }
+});
+
+test('host readiness uses a finite round cap with no-op waits and retains latest actual incomplete evidence', async () => {
+  const dom = syntheticDom();
+  try {
+    dom.window.document.getElementById('synthetic-13_43_0').remove();
+    const actual = clone(dom.window.eval(buildCmsRowDOptionsProbeExpression()));
+    const fake = fakeCdp({ evaluate: () => clone(actual) });
+    const evidence = await fake.run({ optionsWaitMs: 500, optionsPollMs: 100 });
+    assertSafety(evidence);
+    assert.equal(evidence.reason, 'row_d_preflight_incomplete');
+    assert.deepEqual(evidence.optionsReadiness, { status: 'timed_out', attempts: 6,
+      waitRounds: 5, initialUnavailableCount: 1, finalUnavailableCount: 1 });
+    assert.equal(evidence.fields.find(row => row.wrapperId === '13_43_0').reason, 'current_options_unavailable');
+    assert.equal(evidence.fields.find(row => row.wrapperId === '13_47_0').ok, true);
+    const disabled = await fake.run({ optionsWaitMs: 0 });
+    assert.equal(disabled.optionsReadiness.attempts, 1);
+    assert.equal(disabled.optionsReadiness.waitRounds, 0);
+    assert.equal(disabled.optionsReadiness.status, 'timed_out');
+  } finally { dom.window.close(); }
+});
+
+test('host readiness deadline is checked after wait and before another Runtime command', async () => {
+  const dom = syntheticDom();
+  try {
+    dom.window.document.getElementById('synthetic-13_43_0').remove();
+    const actual = clone(dom.window.eval(buildCmsRowDOptionsProbeExpression()));
+    let waited = false;
+    const fake = fakeCdp({ evaluate: () => clone(actual), async onWait() {
+      if (!waited) { waited = true; await new Promise(resolve => setTimeout(resolve, 40)); }
+    } });
+    const evidence = await fake.run({ optionsWaitMs: 25, optionsPollMs: 25 });
+    assertSafety(evidence);
+    assert.equal(evidence.optionsReadiness.status, 'timed_out');
+    assert.equal(evidence.optionsReadiness.attempts, 1);
+    assert.equal(methods(fake).filter(method => method === 'Runtime.evaluate').length, 1);
+    assert.equal(evidence.fields.find(row => row.wrapperId === '13_43_0').reason, 'current_options_unavailable');
+  } finally { dom.window.close(); }
+});
+
+test('host readiness does not authorize a late Runtime reply and still retains its whole actual snapshot', async () => {
+  const dom = syntheticDom();
+  try {
+    const list = dom.window.document.getElementById('synthetic-13_43_0');
+    const parent = list.parentElement;
+    list.remove();
+    let evaluationCount = 0;
+    const fake = fakeCdp({ onSend(method, params) {
+      if (method !== 'Runtime.evaluate') return;
+      evaluationCount += 1;
+      if (evaluationCount !== 2) return;
+      parent.append(list);
+      const late = clone(dom.window.eval(params.expression));
+      return new Promise(resolve => setTimeout(() => resolve({ result: { value: late } }), 40));
+    }, evaluate: expression => clone(dom.window.eval(expression)) });
+    const evidence = await fake.run({ optionsWaitMs: 25, optionsPollMs: 25 });
+    assertSafety(evidence);
+    assert.equal(evidence.optionsReadiness.status, 'timed_out');
+    assert.equal(evidence.optionsReadiness.attempts, 2);
+    assert.equal(evidence.optionsReadiness.finalUnavailableCount, 0);
+    assert.equal(evidence.fields.find(row => row.wrapperId === '13_43_0').ok, true);
+  } finally { dom.window.close(); }
+});
+
+for (const drift of ['label', 'disabled', 'kind', 'hidden_page', 'wrong_page']) {
+  test(`host readiness stops on synthetic ${drift} drift and replaces earlier passing rows`, async () => {
+    const dom = syntheticDom();
+    try {
+      const { document } = dom.window;
+      const missing = document.getElementById('synthetic-13_43_0');
+      const parent = missing.parentElement;
+      missing.remove();
+      let changed = false;
+      const fake = fakeCdp({ evaluate: expression => clone(dom.window.eval(expression)), onWait() {
+        if (changed) return;
+        changed = true;
+        parent.append(missing);
+        const wrapper = document.getElementById('13_47_0');
+        if (drift === 'label') wrapper.querySelector('label').textContent = 'synthetic label changed';
+        if (drift === 'disabled') wrapper.querySelector('input').disabled = true;
+        if (drift === 'kind') wrapper.querySelector('.ant-select').className = 'synthetic-wrong-control';
+        if (drift === 'hidden_page') Object.defineProperty(document, 'visibilityState', { get: () => 'hidden' });
+        if (drift === 'wrong_page') dom.reconfigure({ url: 'https://example.invalid/synthetic-navigation' });
+      } });
+      const evidence = await fake.run({ optionsWaitMs: 1000, optionsPollMs: 100 });
+      assertSafety(evidence);
+      assert.equal(evidence.optionsReadiness.status, 'stopped');
+      assert.equal(evidence.optionsReadiness.attempts, 2);
+      assert.equal(evidence.fields.find(row => row.wrapperId === '13_47_0').ok, false,
+        'the first passing sample cannot conceal the latest failed field');
+      if (!['hidden_page', 'wrong_page'].includes(drift)) {
+        assert.equal(evidence.fields.find(row => row.wrapperId === '13_43_0').ok, true);
+      }
+    } finally { dom.window.close(); }
+  });
+}
+
+test('host readiness does not retry a merely disabled control and can await a loading same-page document', async () => {
+  const dom = syntheticDom();
+  try {
+    const { document } = dom.window;
+    document.getElementById('13_43_0').querySelector('input').disabled = true;
+    const disabled = fakeCdp({ evaluate: expression => clone(dom.window.eval(expression)) });
+    const disabledEvidence = await disabled.run();
+    assert.equal(disabledEvidence.optionsReadiness.status, 'not_needed');
+    assert.equal(disabledEvidence.optionsReadiness.attempts, 1);
+    assert.equal(disabledEvidence.fields.find(row => row.wrapperId === '13_43_0').reason, 'control_not_available');
+    document.getElementById('13_43_0').querySelector('input').disabled = false;
+    let ready = false;
+    Object.defineProperty(document, 'readyState', { get: () => ready ? 'complete' : 'loading' });
+    const loading = fakeCdp({ evaluate: expression => clone(dom.window.eval(expression)), onWait() { ready = true; } });
+    const evidence = await loading.run({ optionsWaitMs: 1000 });
+    assertSafety(evidence);
+    assert.equal(evidence.optionsReadiness.status, 'ready');
+    assert.equal(evidence.optionsReadiness.attempts, 2);
+    assert.equal(evidence.fields.filter(row => row.ok).length, 13);
+  } finally { dom.window.close(); }
+});
+
+for (const failure of ['exception', 'malformed']) {
+  test(`host readiness stops on second ${failure} reply with no weaker evaluation fallback`, async () => {
+    const dom = syntheticDom();
+    try {
+      dom.window.document.getElementById('synthetic-13_43_0').remove();
+      const fake = fakeCdp({ evaluate: expression => clone(dom.window.eval(expression)), onSend(method, params, { calls }) {
+        if (method !== 'Runtime.evaluate' || calls.filter(row => row.method === method).length !== 2) return;
+        return failure === 'exception' ? { exceptionDetails: { text: PRIVATE } }
+          : { result: { value: { ...noDocumentInspection(), reason: PRIVATE } } };
+      } });
+      const evidence = await fake.run({ optionsWaitMs: 1000 });
+      assertSafety(evidence);
+      assert.equal(evidence.optionsReadiness.status, 'inspection_failed');
+      assert.equal(evidence.optionsReadiness.attempts, 2);
+      assert.equal(evidence.reason, failure === 'exception' ? 'inspection_exception' : 'inspection_failed');
+      assert.equal(evidence.fields.find(row => row.wrapperId === '13_43_0').reason, 'current_options_unavailable');
+      assert.ok(fake.calls.filter(row => row.method === 'Runtime.evaluate').every(row => row.params.throwOnSideEffect));
+    } finally { dom.window.close(); }
+  });
+}
+
+for (const traffic of ['unmatched', 'response', 'new_unsafe', 'failed_get_guard']) {
+  test(`host readiness stops further reads when passive wait sees ${traffic} traffic`, async () => {
+    const dom = syntheticDom();
+    try {
+      dom.window.document.getElementById('synthetic-13_43_0').remove();
+      let sent = false;
+      const fake = fakeCdp({ evaluate: expression => clone(dom.window.eval(expression)),
+        onSend(method) { if (traffic === 'failed_get_guard' && method === 'Fetch.continueRequest') return Promise.reject(new Error(PRIVATE)); },
+        onWait({ emit }) {
+          if (sent) return;
+          sent = true;
+          const events = keeperRequest('readiness');
+          if (traffic === 'unmatched') emit(events[0]);
+          if (traffic === 'response') {
+            events.forEach(emit);
+            emit({ method: 'Network.responseReceived', params: { requestId: events[0].params.requestId } });
+          }
+          if (traffic === 'new_unsafe') emit(paused('PUT'));
+          if (traffic === 'failed_get_guard') emit(paused('GET'));
+        } });
+      const evidence = await fake.run({ optionsWaitMs: 1000 });
+      assertSafety(evidence);
+      assert.equal(evidence.reason, 'non_get_or_guard_failure');
+      assert.equal(evidence.optionsReadiness.status, 'guard_blocked');
+      assert.equal(evidence.optionsReadiness.attempts, 1);
+      assert.equal(evidence.traffic.responseToNonGetCount, traffic === 'response' ? 1 : 0);
+      assert.ok(fake.calls.filter(row => row.method === 'Fetch.continueRequest')
+        .every(row => traffic === 'failed_get_guard'));
+    } finally { dom.window.close(); }
+  });
+}
+
+for (const atAttempt of [1, 2]) for (const unsafeCleanup of [false, true]) {
+  test(`host readiness stops at pending ACK on attempt ${atAttempt}; final guard remains authoritative (unsafe cleanup=${unsafeCleanup})`, async () => {
+    const dom = syntheticDom();
+    try {
+      dom.window.document.getElementById('synthetic-13_43_0').remove();
+      let release;
+      let notifyPending;
+      const pendingAck = new Promise(resolve => { notifyPending = resolve; });
+      let issued = false;
+      const fake = fakeCdp({ evaluate: expression => clone(dom.window.eval(expression)),
+        onSend(method, params, { calls, emit }) {
+          if (method === 'Runtime.evaluate' && calls.filter(row => row.method === method).length === atAttempt) {
+            keeperRequest('pending-readiness').forEach(emit);
+            issued = true;
+          }
+          if (method === 'Fetch.failRequest' && !issued) {
+            return new Promise(resolve => { release = resolve; notifyPending(); });
+          }
+          if (method === 'Emulation.setFocusEmulationEnabled' && params.enabled === false) {
+            release?.({});
+            if (unsafeCleanup) emit(paused('PUT'));
+          }
+        } });
+      // Release the acknowledged keeper block at the start of final drain.
+      // The runner deliberately waits for all guard replies before reset.
+      const running = fake.run({ optionsWaitMs: 1000 });
+      await pendingAck;
+      setTimeout(() => release({}), 5);
+      const evidence = await running;
+      assertSafety(evidence);
+      assert.equal(evidence.optionsReadiness.status, 'guard_blocked');
+      assert.equal(evidence.optionsReadiness.attempts, atAttempt);
+      assert.equal(evidence.fields.find(row => row.wrapperId === '13_43_0').reason, 'current_options_unavailable');
+      assert.equal(evidence.reason, unsafeCleanup ? 'non_get_or_guard_failure' : 'row_d_preflight_incomplete');
+      assert.equal(evidence.traffic.responseToNonGetCount, 0);
+      assert.equal(evidence.traffic.keeperAssessment.status, unsafeCleanup ? 'rejected' : 'correlated_keeper_blocks');
+    } finally { dom.window.close(); }
+  });
+}
+
 test('inspection exceptions and arbitrary Runtime metadata never expose raw values', async () => {
   for (const [reply, expected] of [
     [{ exceptionDetails: { text: PRIVATE, exception: { description: PRIVATE } } }, 'inspection_exception'],
@@ -1050,6 +1313,35 @@ test('allowlisted structural diagnostics survive evidence redaction without prom
   assert.equal(evidence.fields.find(row => row.wrapperId === '16_65_0').optionsComplete, false);
 });
 
+test('only bounded option readiness and exact enumerated provenance metadata reach live evidence', async () => {
+  const dom = syntheticDom();
+  try {
+    const document = dom.window.document;
+    document.getElementById('synthetic-13_43_0').remove();
+    document.getElementById('synthetic-13_47_0').replaceChildren();
+    const fake = fakeCdp({ evaluate: expression => clone(dom.window.eval(expression)) });
+    const evidence = await fake.run({ optionsWaitMs: 0 });
+    assertSafety(evidence);
+    const field = id => evidence.fields.find(row => row.wrapperId === id);
+    assert.equal(field('13_43_0').optionsReadiness, 'target_missing');
+    assert.equal(field('13_47_0').optionsReadiness, 'list_empty');
+    assert.equal(field('13_195_0').optionsReadiness, 'observed');
+    assert.equal(field('13_195_0').optionsEvidenceSource, 'aria_controls_dom');
+    assert.equal(field('13_43_0').optionsEvidenceSource, undefined);
+    assert.equal(field('13_47_0').optionsEvidenceSource, undefined);
+    // A modeled sanitized current component enumeration checks the boundary
+    // only; lib tests separately mount real Ant components and inspect VNodes.
+    const actual = clone(dom.window.eval(buildCmsRowDOptionsProbeExpression()));
+    Object.assign(actual.fields.find(row => row.wrapperId === '13_43_0'), {
+      optionsReadiness: 'target_missing', optionsEvidenceSource: 'owned_select_vnodes',
+      observedOptionCount: 2, reason: 'read_only_options_preflight', ok: true, status: 'observed'
+    });
+    const vnode = await fakeCdp({ evaluate: () => clone(actual) }).run({ optionsWaitMs: 0 });
+    assertSafety(vnode);
+    assert.equal(vnode.fields.find(row => row.wrapperId === '13_43_0').optionsEvidenceSource, 'owned_select_vnodes');
+  } finally { dom.window.close(); }
+});
+
 test('malformed or misplaced structural diagnostics reject Runtime evidence', async () => {
   const invalid = [
     ['13_43_0', { hiddenSearchInputCount: -1 }],
@@ -1077,7 +1369,22 @@ test('malformed or misplaced structural diagnostics reject Runtime evidence', as
     ['13_43_0', { reason: 'control_kind_mismatch', controlKindIssue: PRIVATE }],
     ['13_43_0', { optionsComplete: false }],
     ['13_102501_0', { optionsComplete: false }],
-    ['13_43_0', { evidenceSource: PRIVATE }]
+    ['13_43_0', { evidenceSource: PRIVATE }],
+    ['13_43_0', { optionsReadiness: PRIVATE }],
+    ['13_43_0', { optionsReadiness: 'observed' }],
+    ['13_43_0', { optionsReadiness: 'target_missing' }],
+    ['13_102402_0', { optionsReadiness: 'observed' }],
+    ['13_43_0', { optionsEvidenceSource: PRIVATE }],
+    ['13_43_0', { optionsReadiness: 'target_missing', optionsEvidenceSource: 'owned_select_vnodes' }],
+    ['13_43_0', { reason: 'option_dictionary_mismatch', observedOptionCount: 2,
+      optionsReadiness: 'observed', optionsEvidenceSource: 'owned_select_vnodes' }],
+    ['13_43_0', { reason: 'option_dictionary_mismatch', observedOptionCount: 2,
+      optionsReadiness: 'target_missing', optionsEvidenceSource: 'aria_controls_dom' }],
+    ['13_43_0', { reason: 'current_options_unavailable', observedOptionCount: 2,
+      optionsReadiness: 'target_missing', optionsEvidenceSource: 'owned_select_vnodes' }],
+    ['13_43_0', { reason: 'control_not_available', observedOptionCount: 2,
+      optionsReadiness: 'observed', optionsEvidenceSource: 'aria_controls_dom' }],
+    ['16_65_0', { optionsReadiness: 'observed', optionsEvidenceSource: 'aria_controls_dom', observedOptionCount: 1 }]
   ];
   for (const [id, changes] of invalid) {
     const inspection = noDocumentInspection();
@@ -1225,15 +1532,20 @@ test('config defaults and optional harvested requests stay inside repository _te
   const config = readRowDProbeConfig({}, root, root);
   assert.equal(config.port, 9242);
   assert.equal(config.timeoutMs, 10000);
+  assert.equal(config.optionsWaitMs, 2000);
+  assert.equal(config.optionsPollMs, 100);
   assert.equal(config.outDir, path.join(root, '_temp-scripts/cms-row-d-live-never-save'));
   assert.deepEqual(config.requests, {});
   const input = path.join(temporary, 'requests.json');
   const requests = { '13_47_0': '11-20万', '13_102501_0': ['宏观', '策略', '债券'] };
   fs.writeFileSync(input, JSON.stringify(requests), 'utf8');
   const custom = readRowDProbeConfig({ PORT: '9243', STEP_TIMEOUT_MS: '1000',
+    OPTIONS_WAIT_MS: '0', OPTIONS_POLL_MS: '25',
     OUTDIR: path.join(temporary, 'out'), REQUESTS_FILE: input }, root, root);
   assert.equal(custom.port, 9243);
   assert.equal(custom.timeoutMs, 1000);
+  assert.equal(custom.optionsWaitMs, 0);
+  assert.equal(custom.optionsPollMs, 25);
   assert.deepEqual(custom.requests, requests);
 });
 
@@ -1241,6 +1553,9 @@ test('config rejects bad ports/timeouts, path escapes, unknown labels, and overs
   const temporary = temporaryDirectory(t);
   for (const env of [{ PORT: '0' }, { PORT: '65536' }, { PORT: 'localhost' }, { PORT: 9242 },
     { STEP_TIMEOUT_MS: '999' }, { STEP_TIMEOUT_MS: '30001' }, { STEP_TIMEOUT_MS: 'Infinity' },
+    { OPTIONS_WAIT_MS: '-1' }, { OPTIONS_WAIT_MS: '5001' }, { OPTIONS_WAIT_MS: '' },
+    { OPTIONS_WAIT_MS: 100 }, { OPTIONS_POLL_MS: '24' }, { OPTIONS_POLL_MS: '501' },
+    { OPTIONS_POLL_MS: 'Infinity' }, { OPTIONS_POLL_MS: 100 },
     { OUTDIR: root }, { OUTDIR: '../outside' }, { REQUESTS_FILE: runner }]) {
     assert.throws(() => readRowDProbeConfig(env, root, root));
   }

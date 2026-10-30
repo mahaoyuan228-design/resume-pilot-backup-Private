@@ -104,6 +104,21 @@ test('both wrappers and all four hosts are structural only; no text/state/ARIA c
     for(const host of row.hosts){assert.equal(host.reason,'linked_structure_observed');assert.equal(host.levelHint,'unknown');assert.equal(host.dictionaryComplete,false);}
   }
 });
+test('structure composition stays single-shot when an unrelated owned select has no mounted options',async t=>{
+  const fixture=fake(t,{mutateDom:document=>{
+    const wrapper=document.createElement('div');wrapper.id='13_43_0';
+    wrapper.innerHTML='<div class="ant-form-item"><div class="ant-form-item-label"><label>期望工作性质*</label></div><div class="ant-form-item-control"><div class="ant-select"><div class="ant-select-selection" role="combobox" aria-controls="synthetic-unmounted-options"></div></div></div></div>';
+    document.getElementById('13').append(wrapper);
+  }});
+  const result=await fixture.run();
+  assert.equal(result.captured,true);
+  assert.equal(result.official.reason,'row_d_preflight_incomplete');
+  assert.equal(result.official.fields.find(row=>row.key==='expectedWorkNature').reason,'current_options_unavailable');
+  assert.equal(result.official.optionsReadiness.status,'timed_out');
+  assert.equal(result.official.optionsReadiness.attempts,1);
+  assert.equal(result.official.optionsReadiness.waitRounds,0);
+  assert.equal(methodNames(fixture).filter(name=>name==='Runtime.evaluate').length,1);
+});
 for(const url of ['https://example.invalid/',ROW_D_PAGE+'?private=1',ROW_D_PAGE+'#private',ROW_D_PAGE+'/extra'])test('inner exact page check refuses navigation and aliases before tree access',t=>{
   const value=dom(t,{url});value.window.document.querySelectorAll=()=>{throw Error('tree reached');};
   assert.deepEqual(inspectLocationStructure(value.window.document,ROW_D_PAGE),{captured:false,reason:'wrong_page'});

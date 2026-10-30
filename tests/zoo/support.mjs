@@ -16,11 +16,14 @@ export const SYNTHETIC = 'http://127.0.0.1:17837/offline-ats-control-zoo';
 export const WRITE_ROUTE = 'https://offline.mokahr.com/zoo/';
 const assets = {
   '/vendor/vue.js': 'node_modules/vue/dist/vue.js',
+  '/vendor/vue3.js': 'node_modules/vue3/dist/vue.global.js',
   '/vendor/moment.js': 'node_modules/moment/min/moment.min.js',
   '/vendor/antd.js': 'node_modules/ant-design-vue/dist/antd.js',
   '/vendor/antd.css': 'node_modules/ant-design-vue/dist/antd.css',
   '/vendor/element.js': 'node_modules/element-ui/lib/index.js',
   '/vendor/element.css': 'node_modules/element-ui/lib/theme-chalk/index.css',
+  '/vendor/element-plus.js': 'node_modules/element-plus/dist/index.full.js',
+  '/vendor/element-plus.css': 'node_modules/element-plus/dist/index.css',
   '/vendor/iview.js': 'node_modules/iview/dist/iview.js',
   '/vendor/iview.css': 'node_modules/iview/dist/styles/iview.css',
   '/vendor/fonts/ionicons.woff2': 'node_modules/iview/dist/styles/fonts/ionicons.woff2',
@@ -36,6 +39,7 @@ const assets = {
   '/fixtures/dates.js': 'tests/zoo/fixtures/dates.js',
   '/fixtures/time.js': 'tests/zoo/fixtures/time.js',
   '/fixtures/date-range.js': 'tests/zoo/fixtures/date-range.js',
+  '/fixtures/tree-select.js': 'tests/zoo/fixtures/tree-select.js',
 };
 const contentType = file => /\.(?:js|mjs)$/u.test(file) ? 'text/javascript; charset=utf-8'
   : file.endsWith('.json') ? 'application/json; charset=utf-8'
@@ -54,7 +58,7 @@ function extensionPath() {
 }
 
 export async function startZoo(caseName, variant = '') {
-  const synthetic = caseName.startsWith('batchb-') || caseName.startsWith('upload-') || caseName.startsWith('dates-') || caseName.startsWith('time-') || caseName.startsWith('date-range-');
+  const synthetic = caseName.startsWith('batchb-') || caseName.startsWith('upload-') || caseName.startsWith('dates-') || caseName.startsWith('time-') || caseName.startsWith('date-range-') || caseName.startsWith('tree-select-');
   const extension = extensionPath();
   const manifest = JSON.parse(fs.readFileSync(path.join(extension, 'manifest.json'), 'utf8'));
   if (manifest.background?.service_worker !== 'src/background/worker.mjs') throw Error('zoo_requires_internal_build');
@@ -99,7 +103,8 @@ export async function startZoo(caseName, variant = '') {
         ...(synthetic ? [new URL(SYNTHETIC).origin] : [])].includes(url.origin)) {
         routing.rejected.push(`${url.origin}${url.pathname}`); await route.abort('blockedbyclient'); return;
       }
-      const file = synthetic && url.href === SYNTHETIC ? (caseName.startsWith('date-range-') ? 'tests/zoo/fixtures/date-range.html'
+      const file = synthetic && url.href === SYNTHETIC ? (caseName.startsWith('tree-select-') ? 'tests/zoo/fixtures/tree-select.html'
+        : caseName.startsWith('date-range-') ? 'tests/zoo/fixtures/date-range.html'
         : caseName.startsWith('time-') ? 'tests/zoo/fixtures/time.html'
         : caseName.startsWith('dates-') ? 'tests/zoo/fixtures/dates.html'
         : caseName.startsWith('upload-') ? 'tests/zoo/fixtures/upload.html' : 'tests/zoo/fixtures/batchb.html')

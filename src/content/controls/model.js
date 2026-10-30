@@ -2,7 +2,7 @@
 // instances or handlers to the extension. No events, setters or network calls.
 (() => {
   'use strict';
-  if (globalThis.ResumeControlModel?.version === 1 && globalThis.ResumeControlModel.revision === 12) return;
+  if (globalThis.ResumeControlModel?.version === 1 && globalThis.ResumeControlModel.revision === 13) return;
   const norm = value => String(value ?? '').normalize('NFKC').replace(/\s+/gu, ' ').trim();
   function serial(value, depth = 0) {
     if (value == null || ['string', 'number', 'boolean'].includes(typeof value)) return value ?? null;
@@ -50,7 +50,7 @@
     }
     return serial(value);
   }
-  const knownVue = /^(El(InputNumber|Input|Autocomplete|Select|Option|Radio(Group)?|Checkbox(Group)?|Switch|DatePicker|TimePicker|Cascader)|A(InputNumber|Input|Textarea|AutoComplete|Select|Radio(Group)?|Checkbox(Group)?|Switch|DatePicker|MonthPicker|RangePicker|TimePicker|Cascader)|iSelect|CalendarPicker)$/u;
+  const knownVue = /^(El(InputNumber|Input|Autocomplete|Select|Option|Radio(Group)?|Checkbox(Group)?|Switch|DatePicker|TimePicker|Cascader)|A(InputNumber|Input|Textarea|AutoComplete|Select|TreeSelect|Radio(Group)?|Checkbox(Group)?|Switch|DatePicker|MonthPicker|RangePicker|TimePicker|Cascader)|iSelect|CalendarPicker)$/u;
   const knownReact = /^(Ud|Phoenix)(Select|DatePicker|Cascader)$/u;
   const valueControls = root => root?.nodeType === 1 ? [
     ...(root.matches('input:not([type="hidden"]),textarea,select') ? [root] : []),
@@ -69,7 +69,7 @@
     return true;
   }
   function ownsSelect(root, el, name) {
-    const selector = { ElSelect: '.el-select', ASelect: '.ant-select', iSelect: '.ivu-select',
+    const selector = { ElSelect: '.el-select', ASelect: '.ant-select', ATreeSelect: '.ant-select', iSelect: '.ivu-select',
       ElAutocomplete: '.el-autocomplete', AAutoComplete: '.ant-select-auto-complete' }[name];
     if (!root?.matches?.(selector) || !ownsControl(root, el, true)) return false;
     // Search/display inputs may share one widget model. A native select or a
@@ -132,7 +132,7 @@
         if (autoOwner) autocompleteUnconfirmed = true;
         frameworkFallback ||= { element: el, framework: 'vue2', props: {} };
         const multiple = /(?:Select|DatePicker|MonthPicker|RangePicker|CalendarPicker|Cascader|RadioGroup|CheckboxGroup)$/u.test(name);
-        const owns = /^(?:ElSelect|ASelect|iSelect|ElAutocomplete|AAutoComplete)$/u.test(name)
+        const owns = /^(?:ElSelect|ASelect|ATreeSelect|iSelect|ElAutocomplete|AAutoComplete)$/u.test(name)
           ? ownsSelect(vm.$el, el, name) : /^(?:ElCascader|ACascader)$/u.test(name)
             ? ownsCascader(vm.$el, el, name) : ownsControl(vm.$el, el, multiple);
         if (knownVue.test(name) && owns) {
@@ -145,7 +145,7 @@
           else if (/^(?:El|A)(?:Radio|Checkbox)$/u.test(name)) choiceFallback ||= found;
           else return found;
         }
-        if (!/^(?:ElSelect|ASelect|iSelect|ElAutocomplete|AAutoComplete|ElCascader|ACascader)$/u.test(name) && ownsControl(vm.$el, el)) vueFallback ||= {
+        if (!/^(?:ElSelect|ASelect|ATreeSelect|iSelect|ElAutocomplete|AAutoComplete|ElCascader|ACascader)$/u.test(name) && ownsControl(vm.$el, el)) vueFallback ||= {
           vm, props: vm.$props || {}, element: vm.$el, componentName: name, framework: 'vue2'
         };
       }
@@ -282,5 +282,5 @@
           || props.displayRender || vm?.$scopedSlots?.displayRender || vm?.$scopedSlots?.default || customFields) } : {}),
       versionEvidence: version ? 'page_library_export' : 'version_unconfirmed' };
   }
-  globalThis.ResumeControlModel = Object.freeze({ version: 1, revision: 12, inspect, resolve, serial, optionsOf });
+  globalThis.ResumeControlModel = Object.freeze({ version: 1, revision: 13, inspect, resolve, serial, optionsOf });
 })();

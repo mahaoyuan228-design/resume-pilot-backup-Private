@@ -8,7 +8,7 @@
   if(nativeMessages.hasListeners?.()===false)globalThis.__resumeNativeListenersResetObserved=true;
   if(globalThis.__resumeQuickFillInstalled){
     existingListenerAlive=!!ownedListener&&nativeMessages.hasListener?.(ownedListener)===true;
-    if(existingListenerAlive&&globalThis.__resumeQuickFillEngineRevision===18&&typeof globalThis.ResumeQuickFillGthInspect==='function')return;
+    if(existingListenerAlive&&globalThis.__resumeQuickFillEngineRevision===19&&typeof globalThis.ResumeQuickFillGthInspect==='function')return;
     if(existingListenerAlive){if(fillState.pending)throw Error('profile_write_context_busy');nativeMessages.removeListener(ownedListener);existingListenerAlive=false;}
     else if(!ownedListener&&nativeMessages.hasListeners?.()===true&&!globalThis.__resumeNativeListenersResetObserved)throw Error('extension_reload_required');
   }
@@ -49,8 +49,9 @@
     if (response?.ok !== true || response.mode !== 'candidates' || response.writeStarted !== false || response.liveSupportClaimed !== false) throw Error('control_candidates_unavailable');
     for (const candidate of response.candidates || []) {
       const nodes = document.querySelectorAll(candidate.selector);
-      if (nodes.length !== 1 || !nodes[0].matches('input,textarea,[contenteditable]')) continue;
-      if (candidate.type === 'multi-select') {
+      if (nodes.length !== 1 || !nodes[0].matches('input,textarea,[contenteditable]')
+        && !(candidate.type === 'tree-select' && nodes[0].matches('[role="combobox"]'))) continue;
+      if (['multi-select', 'tree-select'].includes(candidate.type)) {
         const roots = typeof candidate.rootSelector === 'string' ? document.querySelectorAll(candidate.rootSelector) : [];
         if (roots.length !== 1 || !roots[0].contains(nodes[0])) continue;
         for (const peer of roots[0].querySelectorAll('input,textarea,[contenteditable]')) if (peer !== nodes[0]) atsControlPeers.add(peer);
@@ -90,6 +91,11 @@
     return control instanceof HTMLInputElement && control.type === "search"
       && control.getAttribute("role") === "combobox"
       && !!control.closest(".ant-form-item .ant-select");
+  }
+
+  function treeQueryControl(control) {
+    return control instanceof HTMLInputElement
+      && !!control.closest('.ant-select-tree-dropdown,[role="tree"]');
   }
 
   function formItemQuestion(item) {
@@ -132,7 +138,13 @@
     const editors = [...scope.querySelectorAll('input:not([type="hidden"]),select,textarea,[contenteditable]')]
       .filter(node => !node.hasAttribute('contenteditable') || ['', 'true', 'plaintext-only'].includes(node.getAttribute('contenteditable').toLowerCase())
         && !node.parentElement?.closest('[contenteditable]'))
-      .filter(node => !['button', 'submit', 'reset', 'image'].includes(node.type));
+      .filter(node => !['button', 'submit', 'reset', 'image'].includes(node.type) && !treeQueryControl(node));
+    // A confirmed inputless TreeSelect is itself the editor for a standard
+    // form-item label. Include every peer so a shared row stays ambiguous.
+    for (const [node, candidate] of atsControlTargets) {
+      if (candidate.type === 'tree-select' && scope.contains(node)
+        && !node.matches('input,textarea,[contenteditable]')) editors.push(node);
+    }
     const widget = node => node.closest('.ant-select,.el-select,.ivu-select,.ant-radio-group,.el-radio-group,.ivu-radio-group') || node;
     if (editors.length && editors.every(node => node.type === 'radio' && node.name === editors[0].name)) return editors.includes(control);
     const owners = new Set(editors.map(widget));
@@ -969,6 +981,9 @@
     // Its native input is only a display surface; changing its value directly
     // would not prove that the framework accepted a date or choice.
     if (control instanceof HTMLInputElement && control.closest('.el-date-editor,.el-select,.el-cascader,.cascader-wrap')) return "readonly_control";
+    // Tree search inputs are queries. Only a confirmed MAIN adapter can turn
+    // them into a choice through the owning tree's node click and readback.
+    if (treeQueryControl(control) || control.matches('[role="combobox"][aria-haspopup="tree"]')) return "readonly_control";
     if (antDegreeControl(control) || cmbAntV4Control(control)) return null;
     if (control.readOnly) return "readonly_control";
     if (Array.isArray(answer)) return null;
@@ -993,6 +1008,9 @@
     // It has no legacy native-setter path.
     const controls = query('input,select,textarea,iframe,[contenteditable]').filter((control) => {
       if (atsControlPeers.has(control)) return false;
+      // A portalled tree query can sit inside the labelled form item without
+      // belonging to the answer root. It never becomes a native text field.
+      if (treeQueryControl(control)) return false;
       if (richtextControl(control) && atsControlTargets.get(control)?.type !== 'richtext') return false;
       if (!visible(control, atsControlTargets.has(control))) return false;
       // An opened but unsupported Ant v3 select exposes its inner text input.
@@ -1008,6 +1026,13 @@
       }
       return true;
     });
+    // Inputless TreeSelect roots enter only through MAIN's confirmed opt-in
+    // claim. They have no native text path when the write flag is absent.
+    for (const [control, candidate] of atsControlTargets) {
+      if (candidate.type === 'tree-select' && !controls.includes(control)
+        && !control.matches('input,textarea,[contenteditable]') && visible(control, true)
+        && (!trialScope || trialScope.wrapper.contains(control))) controls.push(control);
+    }
     // Observe only the top-level surface; never read a frame's document/window.
     // A challenge without a visible input still needs a manual placeholder.
     controls.push(...query(MANUAL_CONTROL_SELECTOR).filter(control => visible(control)
@@ -1101,7 +1126,7 @@
         result.path = value?.path;
         result.answer = value?.value;
         result.reason = value?.reason || (value ? "ready" : "missing_profile_value");
-      } else if (antSelectControl(control) && !degreeSelect && atsControlTargets.get(control)?.type !== 'multi-select') {
+      } else if (antSelectControl(control) && !degreeSelect && !['multi-select', 'tree-select'].includes(atsControlTargets.get(control)?.type)) {
         result.reason = "custom_select_not_supported";
       } else if(cmsSimple) {
         const value=cmsScopedAcademicAnswer(profile,cmsSimple);
@@ -1144,7 +1169,7 @@
         result.answer = value.value;
         result.reason = value.reason || "ready";
         if (result.reason === "ready" && !(control instanceof HTMLSelectElement)
-          && atsControlTargets.get(control)?.type !== 'multi-select' && Array.isArray(result.answer) && result.answer.length !== 1) {
+          && !['multi-select', 'tree-select'].includes(atsControlTargets.get(control)?.type) && Array.isArray(result.answer) && result.answer.length !== 1) {
           result.reason = "multiple_profile_values";
         }
       }
@@ -1197,9 +1222,9 @@
     }
     const { control, answer, radioOptions, antUnnamedRadio,regionFact,checkboxFact,cmsBasicAddress, ...plain } = entry;
     plain.currentValue = meaningfulCurrent(control, radioOptions, antUnnamedRadio);
-    // Search text is not a selected chip. MAIN's array model and rendered tags
-    // decide preservation and readback for an explicitly claimed multi-select.
-    if (atsControlTargets.get(control)?.type === 'multi-select') return plain;
+    // Search text is a query. MAIN's model and selected display decide
+    // preservation and readback for an explicitly claimed select or tree.
+    if (['multi-select', 'tree-select'].includes(atsControlTargets.get(control)?.type)) return plain;
     if(entry.kind==='cms_checkbox_group') {
       const selected=globalThis.ResumeCmsCheckboxes.inspectControl(control)?.selected,
         desired=checkboxFact?.answers?.map(exactOptionText).sort();
@@ -2710,7 +2735,7 @@
         sendResponse(reply);
       });
     return true;
-  };chrome.runtime.onMessage.addListener(engineListener);globalThis.__resumeQuickFillEngineListener=engineListener;globalThis.__resumeQuickFillEngineRevision=18;}
+  };chrome.runtime.onMessage.addListener(engineListener);globalThis.__resumeQuickFillEngineListener=engineListener;globalThis.__resumeQuickFillEngineRevision=19;}
   globalThis.ResumeQuickFillGthInspect = (profile) => {
     if (`${location.origin}${location.pathname}` !== "https://hr.gtht.com/resume/edit/")
       throw new Error("gth_inspect_wrong_page");

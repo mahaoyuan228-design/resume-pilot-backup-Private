@@ -167,14 +167,14 @@ test('ordinary RESUME_INSPECT continues using its normal full-form path',async t
   const result=await h.invoke({type:'RESUME_INSPECT',profile:profile()});assert.equal(result.ok,true);assert.ok(result.data.fields.length>1);
 });
 
-for(const revision of [7,8,10])test(`legacy revision ${revision} is replaced with one current listener`,async t=>{
+for(const revision of [7,8,10,12])test(`legacy revision ${revision} is replaced with one current listener`,async t=>{
   const h=await harness(t),events=h.window.chrome.runtime.onMessage;
   events.removeListener(h.window.__resumeQuickFillEngineListener);
   const old=()=>{};events.addListener(old);h.window.__resumeQuickFillEngineListener=old;h.window.__resumeQuickFillEngineRevision=revision;
-  h.window.eval(sources[2]);assert.equal(events.hasListener(old),false);assert.equal(h.window.__resumeQuickFillEngineRevision,12);
+  h.window.eval(sources[2]);assert.equal(events.hasListener(old),false);assert.equal(h.window.__resumeQuickFillEngineRevision,13);
   assert.equal((await h.run()).ok,true);h.safety();
 });
-for(const revision of [7,8])test(`pending legacy revision ${revision} keeps its listener and shared lock`,async t=>{
+for(const revision of [7,8,12])test(`pending legacy revision ${revision} keeps its listener and shared lock`,async t=>{
   const h=await harness(t),events=h.window.chrome.runtime.onMessage;
   events.removeListener(h.window.__resumeQuickFillEngineListener);
   const old=()=>{};events.addListener(old);h.window.__resumeQuickFillEngineListener=old;h.window.__resumeQuickFillEngineRevision=revision;

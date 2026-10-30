@@ -8,7 +8,7 @@
   if(nativeMessages.hasListeners?.()===false)globalThis.__resumeNativeListenersResetObserved=true;
   if(globalThis.__resumeQuickFillInstalled){
     existingListenerAlive=!!ownedListener&&nativeMessages.hasListener?.(ownedListener)===true;
-    if(existingListenerAlive&&globalThis.__resumeQuickFillEngineRevision===12&&typeof globalThis.ResumeQuickFillGthInspect==='function')return;
+    if(existingListenerAlive&&globalThis.__resumeQuickFillEngineRevision===13&&typeof globalThis.ResumeQuickFillGthInspect==='function')return;
     if(existingListenerAlive){if(fillState.pending)throw Error('profile_write_context_busy');nativeMessages.removeListener(ownedListener);existingListenerAlive=false;}
     else if(!ownedListener&&nativeMessages.hasListeners?.()===true&&!globalThis.__resumeNativeListenersResetObserved)throw Error('extension_reload_required');
   }
@@ -957,11 +957,12 @@
       const explicitRepeat = repeatContext(control);
       const questionScope = customQuestionScope(control);
       const semanticSection = questionScope.sectionName.startsWith("form:") ? "" : questionScope.sectionName;
+      const fieldSection = semanticSection || explicitRepeat?.kind || "";
       const semantic = M.resolveAtsField({ hostname: location.hostname, labels,
-        section: semanticSection || explicitRepeat?.kind || "", index: explicitRepeat?.index ?? null });
+        section: fieldSection, index: explicitRepeat?.index ?? null });
       let mappingContext = null;
       try {
-        mappingContext = globalThis.ResumeDomainMemory?.fieldMetadata({ labels, section: semanticSection,
+        mappingContext = globalThis.ResumeDomainMemory?.fieldMetadata({ labels, section: fieldSection,
           index: explicitRepeat?.index ?? null, kind: radio ? "radio" : control.tagName.toLowerCase(),
           options: radio ? radioOptions.map(item => radioOptionLabel(item, !!group?.antUnnamed))
             : control instanceof HTMLSelectElement ? [...control.options].map(option => option.textContent) : [] });
@@ -1048,7 +1049,7 @@
       } else if (!labels.length) {
         result.reason = "unlabelled_field";
       } else if (legacyMatch.reason === "ambiguous_label"
-        || (semanticSection && !cmsSection(control) && semantic.status === "manual" && !remembered)) {
+        || (fieldSection && !cmsSection(control) && semantic.status === "manual" && !remembered)) {
         result.reason = legacyMatch.reason === "ambiguous_label" ? "ambiguous_label" : semantic.reason;
         result.semanticStatus = "manual";
       } else if ((semantic.status === "mapped" && (!legacyMatch.key || semantic.context)) || remembered) {
@@ -1087,6 +1088,7 @@
         if (selection.index < 0) result.reason = selection.reason;
       }
       if (result.reason === "ready") result.reason = controlConstraint(control, result.answer, atsControlTargets.has(control)) || "ready";
+      if (["unconfirmed_profile_value", "unlabelled_field"].includes(result.reason)) result.semanticStatus = "manual";
       return result;
     });
     markDuplicateTargets(entries);
@@ -2583,7 +2585,7 @@
         sendResponse(reply);
       });
     return true;
-  };chrome.runtime.onMessage.addListener(engineListener);globalThis.__resumeQuickFillEngineListener=engineListener;globalThis.__resumeQuickFillEngineRevision=12;}
+  };chrome.runtime.onMessage.addListener(engineListener);globalThis.__resumeQuickFillEngineListener=engineListener;globalThis.__resumeQuickFillEngineRevision=13;}
   globalThis.ResumeQuickFillGthInspect = (profile) => {
     if (`${location.origin}${location.pathname}` !== "https://hr.gtht.com/resume/edit/")
       throw new Error("gth_inspect_wrong_page");

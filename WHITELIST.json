@@ -252,6 +252,14 @@
     "tests/zoo/rate.spec.mjs",
     "tests/zoo/fixtures/rate.html",
     "tests/zoo/fixtures/rate.js",
+    "src/content/controls/transfer-controls.js",
+    "tests/l1-transfer-controls.test.mjs",
+    "tests/l1-transfer-write-route.test.mjs",
+    "tests/fixtures/transfer-harness.mjs",
+    "tests/zoo/transfer.spec.mjs",
+    "tests/zoo/fixtures/transfer.html",
+    "tests/zoo/fixtures/transfer.js",
+    "docs/ATS_TRANSFER_CONTROLS.md",
     "docs/ATS_RATE_CONTROLS.md"
   ],
   "productPaths": [
@@ -407,7 +415,8 @@
     "src/content/controls/date-range-controls.js",
     "src/content/controls/tree-select-controls.js",
     "src/content/controls/slider-controls.js",
-    "src/content/controls/rate-controls.js"
+    "src/content/controls/rate-controls.js",
+    "src/content/controls/transfer-controls.js"
   ],
   "excluded": [
     "No directory-wide copy of repository/tests/exports/dist.",

@@ -70,6 +70,7 @@ $files = @(
   'src/content/controls/tree-select-controls.js',
   'src/content/controls/slider-controls.js',
   'src/content/controls/rate-controls.js',
+  'src/content/controls/transfer-controls.js',
   'src/content/controls/resume-form.js',
   'src/background/worker.mjs',
   'src/background/bg-ping.mjs',

@@ -2,7 +2,7 @@
 // instances or handlers to the extension. No events, setters or network calls.
 (() => {
   'use strict';
-  if (globalThis.ResumeControlModel?.version === 1 && globalThis.ResumeControlModel.revision === 7) return;
+  if (globalThis.ResumeControlModel?.version === 1 && globalThis.ResumeControlModel.revision === 8) return;
   const norm = value => String(value ?? '').normalize('NFKC').replace(/\s+/gu, ' ').trim();
   function serial(value, depth = 0) {
     if (value == null || ['string', 'number', 'boolean'].includes(typeof value)) return value ?? null;
@@ -50,7 +50,7 @@
     }
     return serial(value);
   }
-  const knownVue = /^(El(Input|Select|Option|Radio(Group)?|Checkbox(Group)?|Switch|DatePicker|Cascader)|A(Input|Textarea|Select|Radio(Group)?|Checkbox(Group)?|Switch|DatePicker|MonthPicker|Cascader)|iSelect|CalendarPicker)$/u;
+  const knownVue = /^(El(Input|Autocomplete|Select|Option|Radio(Group)?|Checkbox(Group)?|Switch|DatePicker|Cascader)|A(Input|Textarea|AutoComplete|Select|Radio(Group)?|Checkbox(Group)?|Switch|DatePicker|MonthPicker|Cascader)|iSelect|CalendarPicker)$/u;
   const knownReact = /^(Ud|Phoenix)(Select|DatePicker|Cascader)$/u;
   const valueControls = root => root?.nodeType === 1 ? [
     ...(root.matches('input:not([type="hidden"]),textarea,select') ? [root] : []),
@@ -69,13 +69,14 @@
     return true;
   }
   function ownsSelect(root, el, name) {
-    const selector = { ElSelect: '.el-select', ASelect: '.ant-select', iSelect: '.ivu-select' }[name];
+    const selector = { ElSelect: '.el-select', ASelect: '.ant-select', iSelect: '.ivu-select',
+      ElAutocomplete: '.el-autocomplete', AAutoComplete: '.ant-select-auto-complete' }[name];
     if (!root?.matches?.(selector) || !ownsControl(root, el, true)) return false;
     // Search/display inputs may share one widget model. A native select or a
     // neighbouring editor in a shared form row cannot borrow that model.
     return valueControls(root).every(input => input.matches('input')
       && ['text', 'search'].includes(input.type)
-      && input.closest('.el-select,.ant-select,.ivu-select') === root);
+      && input.closest('.el-select,.ant-select,.ivu-select,.el-autocomplete') === root);
   }
   function ownsCascader(root, el, name) {
     const selector = name === 'ElCascader' ? '.el-cascader' : '.ant-cascader-picker';
@@ -120,14 +121,18 @@
     if (!el || el.nodeType !== 1) return {};
     const seen = new Set();
     let inputFallback, choiceFallback, frameworkFallback, reactValueFallback, reactNamedFallback, vueFallback;
+    let autocompleteUnconfirmed = false;
     for (let node = el, count = 0; node && count++ < 40; node = node.parentElement) {
       let vm = node.__vue__;
       for (let level = 0; vm && level++ < 20 && !seen.has(vm); vm = vm.$parent) {
         seen.add(vm);
         const name = vm.$options?.name || vm.$options?._componentTag || '';
+        const autoOwner = /autocomplete/iu.test(name) || vm.$el?.matches?.('.el-autocomplete,.ant-select-auto-complete')
+          || vm.$parent?.$el === vm.$el && /autocomplete/iu.test(vm.$parent?.$options?.name || '');
+        if (autoOwner) autocompleteUnconfirmed = true;
         frameworkFallback ||= { element: el, framework: 'vue2', props: {} };
         const multiple = /(?:Select|DatePicker|MonthPicker|CalendarPicker|Cascader|RadioGroup|CheckboxGroup)$/u.test(name);
-        const owns = /^(?:ElSelect|ASelect|iSelect)$/u.test(name)
+        const owns = /^(?:ElSelect|ASelect|iSelect|ElAutocomplete|AAutoComplete)$/u.test(name)
           ? ownsSelect(vm.$el, el, name) : /^(?:ElCascader|ACascader)$/u.test(name)
             ? ownsCascader(vm.$el, el, name) : ownsControl(vm.$el, el, multiple);
         if (knownVue.test(name) && owns) {
@@ -135,11 +140,12 @@
           const found = { ...owner, props: owner.vm.$props || {}, element: owner.vm.$el, componentName: name, framework: 'vue2' };
           // Display/search inputs belong to their Select/DatePicker/Cascader.
           // Keep a plain Input only if no owning complex component is present.
-          if (/^(?:ElInput|AInput|ATextarea)$/u.test(name)) inputFallback ||= found;
+          if (/^(?:ElInput|AInput|ATextarea)$/u.test(name)
+            || /^(?:ElSelect|ASelect|iSelect)$/u.test(name) && autoOwner) inputFallback ||= found;
           else if (/^(?:El|A)(?:Radio|Checkbox)$/u.test(name)) choiceFallback ||= found;
           else return found;
         }
-        if (!/^(?:ElSelect|ASelect|iSelect|ElCascader|ACascader)$/u.test(name) && ownsControl(vm.$el, el)) vueFallback ||= {
+        if (!/^(?:ElSelect|ASelect|iSelect|ElAutocomplete|AAutoComplete|ElCascader|ACascader)$/u.test(name) && ownsControl(vm.$el, el)) vueFallback ||= {
           vm, props: vm.$props || {}, element: vm.$el, componentName: name, framework: 'vue2'
         };
       }
@@ -179,6 +185,7 @@
         }
       }
     }
+    if (autocompleteUnconfirmed) return frameworkFallback || { element: el, framework: 'vue2', props: {} };
     return choiceFallback || inputFallback || vueFallback || reactNamedFallback || reactValueFallback || frameworkFallback
       || { element: el, framework: 'native', props: {} };
   }
@@ -214,6 +221,11 @@
     let rawOptions = props.options;
     if (!Array.isArray(rawOptions) && componentName === 'ElSelect') rawOptions = vm?.options;
     if (!Array.isArray(rawOptions) && componentName === 'ASelect') rawOptions = vm?.$slots?.default;
+    if (componentName === 'ElAutocomplete') rawOptions = (vm?.suggestions || []).map(option => ({
+      value: option?.[props.valueKey || 'value'], label: option?.[props.valueKey || 'value'] }));
+    if (componentName === 'AAutoComplete') rawOptions = Array.isArray(props.dataSource)
+      ? props.dataSource.map(option => typeof option === 'string' ? option : { value: option?.value, label: option?.text })
+      : vm?.$slots?.dataSource;
     if (!Array.isArray(rawOptions) && componentName === 'iSelect') rawOptions = vm?.$slots?.default;
     // Ant v1 MonthPicker's public model defaults to Moment and its display to
     // YYYY-MM. The day serializer would erase the control's month precision.
@@ -253,11 +265,11 @@
         componentName === 'ElSwitch' ? props.inactiveValue ?? false
           : componentName === 'ElCheckbox' ? props.falseLabel ?? false : false].every(optionValueSupported)
       } : {}),
-      type: props.type || null, filterable: !!(props.filterable || props.showSearch),
+      type: props.type || null, filterable: !!(props.filterable || props.showSearch || /Autocomplete|AutoComplete/u.test(componentName)),
       remote: !!(props.remote || (props.showSearch && props.filterOption === false)),
       lazy, disabled: !!(props.disabled || vm?.disabled || input?.disabled),
       readonly: !!props.readonly, controlRoot: root,
-      multiple: !!props.multiple, separator: typeof props.separator === 'string' ? props.separator : null,
+      multiple: !!props.multiple || ['multiple', 'tags'].includes(props.mode), separator: typeof props.separator === 'string' ? props.separator : null,
       ...(cascader ? { separator: componentName === 'ElCascader' ? props.separator ?? ' / ' : ' / ',
         showAllLevels: props.showAllLevels !== false,
         cascaderUnsupported: !!(props.multiple || config.multiple || config.emitPath === false || config.checkStrictly
@@ -265,5 +277,5 @@
           || props.displayRender || vm?.$scopedSlots?.displayRender || vm?.$scopedSlots?.default || customFields) } : {}),
       versionEvidence: version ? 'page_library_export' : 'version_unconfirmed' };
   }
-  globalThis.ResumeControlModel = Object.freeze({ version: 1, revision: 7, inspect, resolve, serial, optionsOf });
+  globalThis.ResumeControlModel = Object.freeze({ version: 1, revision: 8, inspect, resolve, serial, optionsOf });
 })();

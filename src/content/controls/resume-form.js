@@ -2,7 +2,7 @@
 // Entry routes are observations, never permission to activate page handlers.
 (() => {
   'use strict';
-  if (globalThis.ResumeFormFlow?.version === 1 && globalThis.ResumeFormFlow.revision === 2) return;
+  if (globalThis.ResumeFormFlow?.version === 1 && globalThis.ResumeFormFlow.revision === 3) return;
   const normalize = value => String(value ?? '').normalize('NFKC').replace(/\s+/gu, '').trim();
   const actions = new Map([
     ['创建简历', 'create'], ['新建简历', 'create'],
@@ -36,6 +36,82 @@
   const navigationFlags = Object.freeze({ readOnly: true, activation: 'manual',
     navigationAttempted: false, writeStarted: false, writeAttempted: false,
     saved: false, skippedSave: true, liveSupportClaimed: false });
+  // Page-state evidence is independent of profile values, field semantics and hosts.
+  // No events, frame access, navigation, validation or business actions are invoked.
+  const editors = 'input,select,textarea,[contenteditable],[role="textbox"],[role="combobox"],'
+    + '[role="listbox"],[role="spinbutton"],[role="checkbox"],[role="radio"],[role="switch"],[role="slider"]';
+  const requiredRegion = '[required],[aria-required="true"],[data-required="true"],'
+    + '.ant-form-item-required,.el-form-item.is-required,.ivu-form-item-required';
+  const rendered = node => visible(node) && node.getClientRects().length > 0;
+  const unavailable = node => node.matches(':disabled') || node.closest('[aria-disabled="true"],[aria-readonly="true"],fieldset[disabled]');
+  function inspectReadiness({ confirmedEditable = [] } = {}) {
+    const result = (status, reason, counts = {}) => ({ status, reason,
+      visibleControlCount: 0, editableControlCount: 0, visibleRequiredCount: 0, editableRequiredCount: 0,
+      ...counts, ...navigationFlags, neverSave: true, saveAttempted: false });
+    if (document.visibilityState !== 'visible') return result('form_not_ready', 'page_hidden');
+    const all = [...new Set([...document.querySelectorAll(editors), ...confirmedEditable])].filter(node => rendered(node)
+      && !confirmedEditable.some(root => root !== node && root.contains(node))
+      && !node.matches('input[type="hidden"],input[type="button"],input[type="submit"],input[type="reset"],input[type="image"]'));
+    const text = node => String(node.textContent || '').normalize('NFKC').replace(/\s+/gu, ' ').trim();
+    const loginCaption = /^(?:登录|登陆|立即登录|用户登录|账号登录|账户登录|手机登录|验证码登录|扫码登录|重新登录|sign\s*in|log\s*in)$/iu;
+    const sessionExpired = /(?:请先|需要|尚未|未|重新)(?:登录|登陆)|登录(?:已)?(?:失效|过期)|会话(?:已)?(?:失效|过期)|session\s+expired|please\s+(?:sign|log)\s*in|sign\s*in\s+(?:to\s+continue|required)/iu;
+    const loginScopes = [...document.querySelectorAll('form,[role="form"],[role="dialog"],[aria-modal="true"]')].filter(rendered);
+    const loginForm = loginScopes.some(scope => {
+      const controls = all.filter(node => scope.contains(node));
+      const caption = [...scope.querySelectorAll('h1,h2,h3,legend,button,[role="button"],input[type="submit"]')]
+        .some(node => rendered(node) && loginCaption.test(node.value || text(node)));
+      return controls.some(node => node.matches('input[type="password"][autocomplete="current-password"]'))
+        || caption && controls.some(node => node.matches('input[type="password"],input[autocomplete="username"],input[autocomplete="one-time-code"],input[type="tel"],input[type="email"]'));
+    });
+    const loginWall = [...document.querySelectorAll('h1,h2,[role="alert"],[role="dialog"],main > p,body > p')]
+      .some(node => rendered(node) && text(node).length < 240 && sessionExpired.test(text(node)));
+    const loginPage = all.some(node => node.matches('input[type="password"]'))
+      && [...document.querySelectorAll('h1,h2')].some(node => rendered(node)
+        && !node.closest('header,nav,aside') && loginCaption.test(text(node)));
+    if (loginForm || loginWall || loginPage || all.some(node => node.matches('input[autocomplete="current-password"]')))
+      return result('login_required', 'visible_login_wall');
+    const controls = all.filter(node => !node.closest('header,nav,[role="navigation"],[role="search"]')
+      && !node.matches('input[type="password"],input[type="search"]:not([role="combobox"])')
+      && (node.closest('form,[role="form"]') || node.matches(requiredRegion)
+        || node.labels?.length || node.hasAttribute('aria-label') || node.hasAttribute('aria-labelledby')));
+    const regions = [...document.querySelectorAll(requiredRegion)].filter(node => rendered(node)
+      && !node.closest('header,nav,[role="navigation"],[role="search"]'));
+    const ownsRequired = (region, node) => region === node || region.contains(node)
+      || node.labels && [...node.labels].includes(region)
+      || region.matches('label.ant-form-item-required') && region.closest('.ant-form-item')?.contains(node);
+    const required = node => regions.some(region => ownsRequired(region, node)) || !!node.closest(requiredRegion)
+      || [...(node.labels || [])].some(label => label.matches(requiredRegion)
+        || label.querySelector('[aria-hidden="true"]')?.textContent.trim() === '*');
+    const writable = node => !unavailable(node) && !node.closest('[aria-busy="true"]')
+      && (confirmedEditable.includes(node) || (node.matches('input,select,textarea') ? !node.readOnly
+        : node.hasAttribute('contenteditable') && ['', 'true', 'plaintext-only'].includes(node.getAttribute('contenteditable').toLowerCase())));
+    const editable = controls.filter(writable), requiredControls = controls.filter(required);
+    const counts = { visibleControlCount: controls.length, editableControlCount: editable.length,
+      visibleRequiredCount: requiredControls.length, editableRequiredCount: requiredControls.filter(writable).length };
+    const forms = [...document.querySelectorAll('form,[role="form"]')].filter(rendered);
+    if ([...document.querySelectorAll('[aria-busy="true"],[role="progressbar"]')].some(node => rendered(node)
+      && !node.closest('header,nav,[role="navigation"],[role="search"]')))
+      return result('form_not_ready', 'form_loading', counts);
+    if ([...document.querySelectorAll('iframe,[data-captcha],.g-recaptcha,.h-captcha,input[autocomplete="one-time-code"]')].some(rendered))
+      return result('manual', 'iframe_or_captcha_manual', counts);
+    if (regions.some(region => !controls.some(node => ownsRequired(region, node))))
+      return result('form_not_ready', 'required_region_empty', counts);
+    const unknown = node => !node.matches('input,select,textarea,[contenteditable]')
+      || node.readOnly && (node.getAttribute('role') === 'combobox' || node.hasAttribute('aria-haspopup'));
+    if (requiredControls.some(node => unknown(node) && !writable(node)))
+      return result('manual', 'required_control_unrecognized', counts);
+    if (requiredControls.length && !counts.editableRequiredCount)
+      return result('form_not_ready', 'required_region_read_only', counts);
+    if (editable.length) return result('ready', 'visible_editable_form', counts);
+    if (controls.some(unknown)) return result('manual', 'control_unrecognized', counts);
+    if (controls.length) return result('form_not_ready', 'form_read_only', counts);
+    if (forms.length) return result('form_not_ready', 'form_shell', counts);
+    const hasText = node => [...(node?.childNodes || [])].some(child => child.nodeType === 3 && child.textContent.trim());
+    const content = hasText(document.body) || [...document.querySelectorAll('body *')].some(node => rendered(node)
+      && !node.closest('script,style,template') && (hasText(node) || node.matches('img,svg,canvas,video,button,a')));
+    if (!all.length && !content) return result('form_not_ready', 'page_shell', counts);
+    return result('manual', 'form_unrecognized', counts);
+  }
   const navigationControls = 'a,button,[role="tab"],[role="button"],input[type="button"],input[type="submit"]';
   const navigationGroups = 'nav,aside,[role="navigation"],[role="tablist"],[data-wizard],[data-stepper]';
   const uniqueId = id => {
@@ -177,5 +253,6 @@
     }
   }
   const navigation = Object.freeze({ version: 1, inspect: inspectNavigation, plan: navigationPlan, liveSupportClaimed: false });
-  globalThis.ResumeFormFlow = Object.freeze({ version: 1, revision: 2, inspect, ensure, navigation, liveSupportClaimed: false });
+  const readiness = Object.freeze({ version: 1, inspect: inspectReadiness, liveSupportClaimed: false });
+  globalThis.ResumeFormFlow = Object.freeze({ version: 1, revision: 3, inspect, ensure, navigation, readiness, liveSupportClaimed: false });
 })();

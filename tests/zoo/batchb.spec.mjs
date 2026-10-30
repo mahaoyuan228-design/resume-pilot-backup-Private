@@ -177,3 +177,39 @@ for (const variant of ['routes', 'manual']) {
     } finally { await zoo.close(); }
   });
 }
+
+test('generic form readiness stays passive in MAIN and ISOLATED worlds', async ({}, testInfo) => {
+  const zoo = await startZoo('batchb-navigation', 'routes');
+  try {
+    for (const world of ['MAIN', 'ISOLATED']) await zoo.inject([flow], world);
+    const cases = [
+      ['required editor', '<form><label>Name<input required value="KEEP"></label></form>', 'ready', 1],
+      ['hidden required', '<form><div hidden><input required></div><label>Name<input value="KEEP"></label></form>', 'ready', 0],
+      ['login wall', '<form><h2>Sign in</h2><input autocomplete="username"><input type="password" autocomplete="current-password"><button>Sign in</button></form>', 'login_required', 0],
+      ['read only', '<form><label>Name<input readonly required value="KEEP"></label></form>', 'form_not_ready', 1],
+      ['empty shell', '<form></form>', 'form_not_ready', 0],
+      ['loading form', '<form aria-busy="true"><label>Name<input required></label></form>', 'form_not_ready', 1],
+      ['unknown page', '<article><h2>Offline content</h2><p>No identifiable form</p></article>', 'manual', 0],
+    ];
+    const results = [];
+    for (const [name, markup, status, visibleRequiredCount] of cases) {
+      await zoo.execute(markup => { document.querySelector('#app').innerHTML = markup; }, [markup], 'MAIN');
+      const before = await zoo.readback(), beforeDom = await zoo.page.content(), observations = {};
+      for (const world of ['MAIN', 'ISOLATED']) {
+        const result = await zoo.execute(() => ResumeFormFlow.readiness.inspect(), [], world);
+        expect(result, name).toMatchObject({ status, visibleRequiredCount,
+          readOnly: true, neverSave: true, navigationAttempted: false,
+          writeStarted: false, writeAttempted: false, saveAttempted: false,
+          saved: false, skippedSave: true, liveSupportClaimed: false });
+        observations[world] = result;
+      }
+      expect(observations.MAIN, name).toEqual(observations.ISOLATED);
+      expect(await zoo.page.content(), name).toBe(beforeDom);
+      expect(await zoo.readback(), name).toEqual(before);
+      results.push({ name, ...observations });
+    }
+    const reads = await record(testInfo, zoo, results);
+    expect(reads.snapshot.effects).toEqual({ blacklistClicks: 0, entryClicks: [], inputEvents: 0,
+      preHydrationInputEvents: 0, navigationEvents: 0, navigationHandlerCalls: 0 });
+  } finally { await zoo.close(); }
+});

@@ -8,7 +8,7 @@
   if(nativeMessages.hasListeners?.()===false)globalThis.__resumeNativeListenersResetObserved=true;
   if(globalThis.__resumeQuickFillInstalled){
     existingListenerAlive=!!ownedListener&&nativeMessages.hasListener?.(ownedListener)===true;
-    if(existingListenerAlive&&globalThis.__resumeQuickFillEngineRevision===21&&typeof globalThis.ResumeQuickFillGthInspect==='function')return;
+    if(existingListenerAlive&&globalThis.__resumeQuickFillEngineRevision===22&&typeof globalThis.ResumeQuickFillGthInspect==='function')return;
     if(existingListenerAlive){if(fillState.pending)throw Error('profile_write_context_busy');nativeMessages.removeListener(ownedListener);existingListenerAlive=false;}
     else if(!ownedListener&&nativeMessages.hasListeners?.()===true&&!globalThis.__resumeNativeListenersResetObserved)throw Error('extension_reload_required');
   }
@@ -1477,7 +1477,12 @@
       fields: [...entries.map(publicEntry), ...cmsUncollectedQuestions(entries)],
       entry: globalThis.ResumeFormFlow?.inspect() || null,
       navigation: globalThis.ResumeFormFlow?.navigation?.inspect() || null,
+      formReadiness: currentFormReadiness(),
       ...(validationGaps ? { validationGaps } : {}) };
+  }
+
+  function currentFormReadiness() {
+    return globalThis.ResumeFormFlow?.readiness?.inspect({ confirmedEditable: [...atsControlTargets.keys()] }) || null;
   }
 
   function setNativeValue(control, value) {
@@ -2115,6 +2120,9 @@
       requireVisibleFillPage();
     }
     const formFlow = globalThis.ResumeFormFlow;
+    const initialReadiness = currentFormReadiness();
+    if (initialReadiness?.status === 'login_required') throw Object.assign(Error('login_required'), {
+      fillNotStarted: true, writeStarted: false, readiness: initialReadiness });
     const formReady = () => collect(profile, attachment).some(entry => entry.reason === 'ready'
       && entry.path && entry.path !== 'sessionAttachment' && entry.answer != null
       && (!entry.control.readOnly || atsControlTargets.has(entry.control)) && !entry.control.disabled
@@ -2131,6 +2139,9 @@
       if (!readiness.ok) throw Object.assign(Error(readiness.reason), {
         fillNotStarted: true, writeStarted: false, readiness });
     }
+    const formReadiness = currentFormReadiness();
+    if (formReadiness && formReadiness.status !== 'ready') throw Object.assign(Error(formReadiness.status), {
+      fillNotStarted: true, writeStarted: false, readiness: formReadiness });
     const results = atsEngineWriteEnabled ? [] : await ensureRepeatRows(profile);
     let decodedAttachment = null;
     const processed = new Set();
@@ -2730,6 +2741,7 @@
       })
       .then((data) => ({ ok: true, data }),
         (error) => ({ ok: false, error: String(error?.message || error),
+          ...(error?.readiness ? { readiness: error.readiness } : {}),
           ...(error?.fillNotStarted === true ? { fillNotStarted: true, writeStarted: false } : {}),
           ...(message.type === "GTH_SALARY_TRIAL"
             && typeof error?.writeStarted === "boolean"
@@ -2748,7 +2760,7 @@
         sendResponse(reply);
       });
     return true;
-  };chrome.runtime.onMessage.addListener(engineListener);globalThis.__resumeQuickFillEngineListener=engineListener;globalThis.__resumeQuickFillEngineRevision=21;}
+  };chrome.runtime.onMessage.addListener(engineListener);globalThis.__resumeQuickFillEngineListener=engineListener;globalThis.__resumeQuickFillEngineRevision=22;}
   globalThis.ResumeQuickFillGthInspect = (profile) => {
     if (`${location.origin}${location.pathname}` !== "https://hr.gtht.com/resume/edit/")
       throw new Error("gth_inspect_wrong_page");

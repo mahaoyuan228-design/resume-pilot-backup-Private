@@ -148,7 +148,7 @@ function safe(result) {
     assert.equal(row.probeOnly, true);
   }
   assert.equal(result.livePassClaimed, false);
-  assert.equal(result.booked, 58);
+  assert.equal(result.booked, 70);
   assert.equal(result.restoration, 'not_needed_no_interaction');
   assert.equal(JSON.stringify(result).includes(PRIVATE), false);
 }

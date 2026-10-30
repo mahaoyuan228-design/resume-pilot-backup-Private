@@ -39,7 +39,7 @@ function assertSafety(evidence) {
     for (const [key, expected] of Object.entries(FLAGS)) assert.equal(row[key], expected, key);
   }
   assert.equal(evidence.livePassClaimed, false);
-  assert.equal(evidence.booked, 58);
+  assert.equal(evidence.booked, 70);
   assert.equal(evidence.probeOnly, true);
   assert.equal(evidence.visibilityBasis, 'attributes_only');
   assert.equal(evidence.restoration, 'not_needed_no_interaction');
@@ -207,6 +207,36 @@ function modeledTwelveFieldInspection() {
   return inspection;
 }
 
+// Sanitizer models only. Component/DOM ownership is tested in the inspector's
+// own synthetic fixtures; these envelopes cannot constitute new live evidence.
+function locationProof() {
+  return { hostCount: 2, cascaderCount: 1, hostsArePeers: true,
+    cascaderOwnsBoth: true, hostsNearestCascaderSame: true, optionsHostSlot: 0,
+    hosts: [0, 1].map(hostSlot => ({ hostSlot, comboOwned: true, selectionIsCombo: true,
+      inputOwned: true, inputWithinCombo: true, inputSearchHelper: true,
+      attributeAvailable: true, ariaOwnerCount: 1, referenceCount: 1,
+      ariaBindingObserved: true, listState: 'target_missing' })) };
+}
+function secondaryInspection(id, metadata) {
+  const inspection = noDocumentInspection();
+  inspection.reason = 'row_d_preflight_incomplete';
+  Object.assign(inspection.fields.find(row => row.wrapperId === id), metadata);
+  return inspection;
+}
+function locationSuccessMetadata() {
+  return { ok: true, status: 'observed', reason: 'read_only_location_preflight',
+    observedOptionCount: 30, samplePrefixMatched: true,
+    optionsReadiness: 'target_missing', optionsEvidenceSource: 'owned_react_props', optionsFramework: 'react',
+    currentOptionsIndependentlyObserved: true, locationSelectionVerified: false,
+    locationCompositeEvidence: locationProof() };
+}
+function calendarSuccessMetadata() {
+  return { ok: true, status: 'observed', reason: 'read_only_calendar_preflight',
+    calendarStructureObserved: true, calendarFramework: 'react',
+    calendarEvidenceSource: 'owned_react_props', calendarPickerKind: 'month',
+    calendarFormat: 'YYYY-MM', calendarMode: 'month', calendarOpen: false };
+}
+
 for (const requestMethod of ['GET', 'POST']) {
   for (const pending of [false, true]) test(`one Fetch decision per repeated ${requestMethod} interception (pending=${pending})`, async () => {
     const calls = [];
@@ -296,7 +326,7 @@ test('a reused GET interception cannot authorize continuing a later POST', async
   assert.equal(guard.failed(), true);
 });
 
-test('baseline and initial evidence preserve Never-Save, no live PASS, and booked 58 with D unbooked', () => {
+test('initial evidence preserves Never-Save and the parent-booked 70 without a new acceptance claim', () => {
   assert.equal(ROW_D_LIVE_BASE_TIP, '23c0ce54b759aa1fc42516ecaf7c851bd63e785c');
   const evidence = rowDProbeEvidence();
   assertSafety(evidence);
@@ -1658,6 +1688,213 @@ test('malformed or misplaced structural diagnostics reject Runtime evidence', as
   }
 });
 
+for (const id of ['13_100701_0', '13_100702_0']) {
+  test(`typed independent compound-location proof survives sanitizing for ${id}`, async () => {
+    const metadata = locationSuccessMetadata();
+    const inspection = secondaryInspection(id, metadata);
+    const evidence = await fakeCdp({ evaluate: () => inspection }).run();
+    assertSafety(evidence);
+    assert.equal(evidence.probeCompleted, true);
+    const row = evidence.fields.find(field => field.wrapperId === id);
+    assert.equal(row.ok, true);
+    assert.equal(row.reason, 'read_only_location_preflight');
+    assert.equal(row.optionsComplete, false, 'preflight does not complete the historical dictionary');
+    assert.deepEqual(row.locationCompositeEvidence, metadata.locationCompositeEvidence);
+    assert.equal(row.currentOptionsIndependentlyObserved, true);
+    assert.equal(row.locationSelectionVerified, false);
+    if (id === '13_100702_0') {
+      assert.equal(row.independentOptionsEvidence, false, 'historical harvest reuse remains explicit');
+      assert.equal(row.reusedFrom, '13_100701_0');
+    }
+    assert.equal(evidence.ok, false, 'other incomplete fields retain their own verdict');
+  });
+}
+
+test('typed month component and owned calendar panels survive sanitizing without a fill claim', async () => {
+  for (const changes of [
+    {},
+    { calendarFramework: 'vue', calendarEvidenceSource: 'owned_calendar_vnodes' },
+    { calendarEvidenceSource: 'aria_controls_calendar_dom', calendarPanelKind: 'month', calendarCellCount: 12, calendarOpen: true },
+    { calendarEvidenceSource: 'aria_controls_calendar_dom', calendarPanelKind: 'date', calendarCellCount: 35, calendarOpen: true }
+  ]) {
+    const metadata = { ...calendarSuccessMetadata(), ...changes };
+    const evidence = await fakeCdp({ evaluate: () => secondaryInspection('16_65_0', metadata) }).run();
+    assertSafety(evidence);
+    assert.equal(evidence.probeCompleted, true);
+    const row = evidence.fields.find(field => field.wrapperId === '16_65_0');
+    assert.equal(row.ok, true);
+    assert.equal(row.reason, 'read_only_calendar_preflight');
+    assert.equal(row.optionsComplete, false);
+    for (const name of Object.keys(metadata)) assert.equal(row[name], metadata[name], name);
+  }
+});
+
+test('new typed preflights can complete a modeled snapshot without new acceptance flags', async () => {
+  const dom = syntheticDom();
+  try {
+    const inspection = clone(dom.window.eval(buildCmsRowDOptionsProbeExpression()));
+    for (const id of ['13_100701_0', '13_100702_0']) {
+      const row = inspection.fields.find(field => field.wrapperId === id);
+      delete row.controlKindIssue;
+      Object.assign(row, locationSuccessMetadata());
+    }
+    const calendar = inspection.fields.find(field => field.wrapperId === '16_65_0');
+    delete calendar.calendarDefinitionIssue;
+    Object.assign(calendar, calendarSuccessMetadata());
+    inspection.ok = true;
+    inspection.reason = 'read_only_preflight';
+    const evidence = await fakeCdp({ evaluate: () => inspection }).run();
+    assertSafety(evidence);
+    assert.equal(evidence.ok, true);
+    assert.equal(evidence.fields.filter(row => row.ok).length, 16);
+    assert.equal(Object.hasOwn(evidence, 'PASS_PREFLIGHT'), false);
+    assert.equal(Object.hasOwn(evidence, 'bookD'), false);
+  } finally { dom.window.close(); }
+});
+
+test('compound-location successes reject missing, foreign, malformed and value-bearing proof', async () => {
+  const cases = [
+    metadata => { delete metadata.locationCompositeEvidence; },
+    metadata => { delete metadata.currentOptionsIndependentlyObserved; },
+    metadata => { metadata.currentOptionsIndependentlyObserved = false; },
+    metadata => { delete metadata.locationSelectionVerified; },
+    metadata => { metadata.locationSelectionVerified = true; },
+    metadata => { metadata.observedOptionCount = 29; },
+    metadata => { metadata.samplePrefixMatched = false; },
+    metadata => { metadata.locationCompositeEvidence.hostCount = 3; },
+    metadata => { metadata.locationCompositeEvidence.cascaderCount = 2; },
+    metadata => { metadata.locationCompositeEvidence.cascaderOwnsBoth = false; },
+    metadata => { metadata.locationCompositeEvidence.optionsHostSlot = 1; },
+    metadata => { metadata.locationCompositeEvidence.value = PRIVATE; },
+    metadata => { metadata.locationCompositeEvidence.hosts[0].inputOwned = false; },
+    metadata => { metadata.locationCompositeEvidence.hosts[1].hostSlot = 0; },
+    metadata => { metadata.locationCompositeEvidence.hosts[0].ariaOwnerCount = 2; },
+    metadata => { metadata.locationCompositeEvidence.hosts[0].listState = 'linked_structure_observed'; },
+    metadata => { metadata.locationCompositeEvidence.hosts[0].selectedValue = PRIVATE; },
+    metadata => { delete metadata.locationCompositeEvidence.hosts[0]; },
+    metadata => { metadata.locationCompositeEvidence.hosts.extra = PRIVATE; },
+    metadata => { Object.defineProperty(metadata.locationCompositeEvidence, 'hostsArePeers', {
+      enumerable: true, get() { throw new Error(PRIVATE); } }); },
+    metadata => { Object.defineProperty(metadata.locationCompositeEvidence.hosts[0], 'inputOwned', {
+      enumerable: true, get() { throw new Error(PRIVATE); } }); }
+  ];
+  for (const [index, tamper] of cases.entries()) {
+    const metadata = locationSuccessMetadata();
+    tamper(metadata);
+    const inspection = secondaryInspection('13_100701_0', metadata);
+    const evidence = await fakeCdp({ evaluate: () => inspection }).run();
+    assertSafety(evidence);
+    assert.equal(evidence.reason, 'inspection_failed', String(index));
+    assert.equal(evidence.probeCompleted, false, String(index));
+  }
+  const getterInspection = secondaryInspection('13_100701_0', locationSuccessMetadata());
+  Object.defineProperty(getterInspection.fields.find(row => row.wrapperId === '13_100701_0'),
+    'locationSelectionVerified', { enumerable: true, get() { throw new Error(PRIVATE); } });
+  const getterEvidence = await fakeCdp({ evaluate: () => getterInspection }).run();
+  assertSafety(getterEvidence);
+  assert.equal(getterEvidence.reason, 'inspection_failed');
+  for (const id of ['13_43_0', '16_65_0']) {
+    const evidence = await fakeCdp({ evaluate: () => secondaryInspection(id, locationSuccessMetadata()) }).run();
+    assertSafety(evidence);
+    assert.equal(evidence.reason, 'inspection_failed');
+  }
+});
+
+test('month preflight rejects missing, foreign, contradictory and value-bearing calendar evidence', async () => {
+  const cases = [
+    metadata => { delete metadata.calendarStructureObserved; },
+    metadata => { delete metadata.calendarEvidenceSource; },
+    metadata => { delete metadata.calendarFramework; },
+    metadata => { metadata.calendarFramework = 'vue'; },
+    metadata => { metadata.calendarPickerKind = 'date'; },
+    metadata => { delete metadata.calendarMode; },
+    metadata => { metadata.calendarMode = 'date'; },
+    metadata => { delete metadata.calendarFormat; },
+    metadata => { metadata.calendarFormat = PRIVATE; },
+    metadata => { metadata.calendarOpen = PRIVATE; },
+    metadata => { metadata.calendarDefinitionIssue = 'calendar_format_missing'; },
+    metadata => { metadata.calendarValue = PRIVATE; },
+    metadata => { metadata.calendarPanelKind = 'month'; metadata.calendarCellCount = 12; },
+    metadata => { metadata.calendarEvidenceSource = 'aria_controls_calendar_dom'; },
+    metadata => { metadata.calendarEvidenceSource = 'aria_controls_calendar_dom';
+      metadata.calendarPanelKind = 'month'; metadata.calendarCellCount = 11; },
+    metadata => { metadata.calendarEvidenceSource = 'aria_controls_calendar_dom';
+      metadata.calendarPanelKind = 'date'; metadata.calendarCellCount = 30; },
+    metadata => { metadata.calendarEvidenceSource = 'aria_controls_calendar_dom';
+      metadata.calendarPanelKind = 'month'; metadata.calendarCellCount = 12; metadata.calendarOpen = false; }
+  ];
+  for (const [index, tamper] of cases.entries()) {
+    const metadata = calendarSuccessMetadata();
+    tamper(metadata);
+    const evidence = await fakeCdp({ evaluate: () => secondaryInspection('16_65_0', metadata) }).run();
+    assertSafety(evidence);
+    assert.equal(evidence.reason, 'inspection_failed', String(index));
+    assert.equal(evidence.probeCompleted, false, String(index));
+  }
+  const getterInspection = secondaryInspection('16_65_0', calendarSuccessMetadata());
+  Object.defineProperty(getterInspection.fields.find(row => row.wrapperId === '16_65_0'), 'calendarFormat', {
+    enumerable: true, get() { throw new Error(PRIVATE); } });
+  const getterEvidence = await fakeCdp({ evaluate: () => getterInspection }).run();
+  assertSafety(getterEvidence);
+  assert.equal(getterEvidence.reason, 'inspection_failed');
+  for (const id of ['13_43_0', '13_100701_0']) {
+    const evidence = await fakeCdp({ evaluate: () => secondaryInspection(id, calendarSuccessMetadata()) }).run();
+    assertSafety(evidence);
+    assert.equal(evidence.reason, 'inspection_failed');
+  }
+});
+
+test('calendar diagnostics retain a missing-evidence verdict and never become proof', async () => {
+  const metadata = { calendarStructureObserved: true, calendarFramework: 'react',
+    calendarDefinitionIssue: 'calendar_format_missing', reason: 'calendar_live_evidence_missing' };
+  const evidence = await fakeCdp({ evaluate: () => secondaryInspection('16_65_0', metadata) }).run();
+  assertSafety(evidence);
+  assert.equal(evidence.probeCompleted, true);
+  const row = evidence.fields.find(field => field.wrapperId === '16_65_0');
+  assert.equal(row.ok, false);
+  assert.equal(row.calendarDefinitionIssue, 'calendar_format_missing');
+  assert.equal(row.calendarEvidenceSource, undefined);
+});
+
+test('verified location structure survives later honest control and option refusals', async () => {
+  for (const changes of [
+    { reason: 'control_kind_mismatch', controlKindIssue: 'mixed_choice_controls' },
+    { reason: 'control_not_unique' },
+    { reason: 'control_not_available', availabilityIssue: 'hidden_control' },
+    { reason: 'dropdown_reference_missing_or_ambiguous' },
+    { reason: 'dropdown_owner_not_unique' },
+    { reason: 'dropdown_target_not_unique' },
+    { reason: 'dropdown_scope_mismatch' },
+    { reason: 'option_ownership_mismatch' },
+    { reason: 'option_not_available' }
+  ]) {
+    const metadata = { ...changes, locationSelectionVerified: false, locationCompositeEvidence: locationProof() };
+    const evidence = await fakeCdp({ evaluate: () => secondaryInspection('13_100701_0', metadata) }).run();
+    assertSafety(evidence);
+    assert.equal(evidence.probeCompleted, true, changes.reason);
+    const row = evidence.fields.find(field => field.wrapperId === '13_100701_0');
+    assert.equal(row.ok, false);
+    assert.equal(row.reason, changes.reason);
+    assert.equal(row.locationCompositeEvidence.hostCount, 2);
+    assert.equal(row.currentOptionsIndependentlyObserved, undefined);
+  }
+});
+
+test('new location host diagnostics remain scoped honest refusals', async () => {
+  for (const metadata of [
+    { reason: 'control_kind_mismatch', controlKindIssue: 'location_host_structure_unverified' },
+    { reason: 'control_not_available', availabilityIssue: 'location_host_unavailable' }
+  ]) {
+    const evidence = await fakeCdp({ evaluate: () => secondaryInspection('13_100701_0', metadata) }).run();
+    assertSafety(evidence);
+    assert.equal(evidence.probeCompleted, true);
+    assert.equal(evidence.fields.find(field => field.wrapperId === '13_100701_0').reason, metadata.reason);
+    const foreign = await fakeCdp({ evaluate: () => secondaryInspection('13_43_0', metadata) }).run();
+    assertSafety(foreign);
+    assert.equal(foreign.reason, 'inspection_failed');
+  }
+});
+
 for (const id of ['13_100701_0', '13_100702_0', '16_65_0']) {
   test(`forged observed success cannot promote incomplete/reused/calendar field ${id}`, async () => {
     const inspection = noDocumentInspection();
@@ -1862,7 +2099,7 @@ test('--help and unknown CLI arguments cannot attach or write evidence', t => {
     assert.equal(child.stderr, '');
     assert.equal(child.stdout, HELP);
     assert.match(child.stdout, /No live PASS claimed/);
-    assert.match(child.stdout, /Booked stays 58/);
+    assert.match(child.stdout, /Booked stays 70/);
   }
   for (const args of [['--unknown'], ['--help', '--unknown']]) {
     const child = spawnSync(process.execPath, ['--import', pathToFileURL(preload).href, runner, ...args], { cwd: root, env, encoding: 'utf8', timeout: 10000 });

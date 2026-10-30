@@ -5,7 +5,8 @@
  * may preserve the inspection verdict. Every non-GET is still aborted.
  * The merged inspector never opens, focuses, blurs, emits events, reads current
  * values, or mutates controls. Originals therefore need no restoration writes.
- * See cms-row-d-live.md. No live PASS/support claim; booked remains 58 (not D).
+ * No live PASS/support claim. Parent accepted PASS_PREFLIGHT/bookD at 575abee8;
+ * the existing booked total stays 70. This runner makes no acceptance decision.
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -423,7 +424,8 @@ const INSPECTION_REASONS = new Set([
   'dropdown_owner_not_unique', 'current_options_unavailable', 'dropdown_target_not_unique',
   'dropdown_scope_mismatch', 'option_ownership_mismatch', 'option_not_available',
   'option_list_ambiguous', 'option_dictionary_mismatch', 'reused_dictionary_unverified',
-  'option_dictionary_incomplete', 'read_only_options_preflight', 'read_only_preflight',
+  'option_dictionary_incomplete', 'read_only_options_preflight', 'read_only_calendar_preflight',
+  'read_only_location_preflight', 'read_only_preflight',
   'row_d_preflight_incomplete', 'document_read_failed', 'unknown_field',
   'request_type_invalid', 'request_empty', 'duplicate_option', 'option_unknown'
 ]);
@@ -432,11 +434,12 @@ const INSPECTION_TOP_REASONS = new Set([
   'unknown_request_field', 'read_only_preflight', 'row_d_preflight_incomplete', 'document_read_failed'
 ]);
 const AVAILABILITY_ISSUES = new Set([
-  'collapsed_ancestor', 'disabled_attribute_or_class', 'hidden_control', 'hidden_non_search_input'
+  'collapsed_ancestor', 'disabled_attribute_or_class', 'hidden_control', 'hidden_non_search_input',
+  'location_host_unavailable'
 ]);
 const CONTROL_KIND_ISSUES = new Set([
   'conflicting_picker', 'unexpected_interactive_control', 'select_not_unique',
-  'mixed_choice_controls', 'input_outside_select', 'unexpected_input_kind'
+  'mixed_choice_controls', 'input_outside_select', 'unexpected_input_kind', 'location_host_structure_unverified'
 ]);
 const OPTIONS_DEFINITION_ISSUES = new Set([
   'root_anchor_missing', 'current_root_unverified', 'current_chain_unverified',
@@ -448,8 +451,68 @@ const OPTIONS_DEFINITION_ISSUES = new Set([
 const ENUMERATED_OPTIONS_REASONS = new Set([
   'option_list_ambiguous', 'option_dictionary_mismatch', 'reused_dictionary_unverified',
   'option_dictionary_incomplete', 'read_only_options_preflight', 'request_type_invalid',
-  'request_empty', 'duplicate_option', 'option_unknown'
+  'request_empty', 'duplicate_option', 'option_unknown', 'read_only_location_preflight'
 ]);
+const LOCATION_PROOF_REASONS = new Set([...ENUMERATED_OPTIONS_REASONS,
+  'control_kind_mismatch', 'control_not_unique', 'control_not_available',
+  'dropdown_reference_missing_or_ambiguous', 'dropdown_owner_not_unique',
+  'current_options_unavailable', 'dropdown_target_not_unique', 'dropdown_scope_mismatch',
+  'option_ownership_mismatch', 'option_not_available'
+]);
+const CALENDAR_DEFINITION_ISSUES = new Set([
+  'calendar_owner_unverified', 'current_root_unverified', 'current_chain_unverified',
+  'current_props_unverified', 'root_anchor_missing', 'month_component_unrecognized',
+  'calendar_props_unsupported', 'calendar_reference_ambiguous',
+  'calendar_portal_owner_unverified', 'calendar_portal_ambiguous', 'calendar_portal_hidden',
+  'calendar_panel_shape_unsupported', 'calendar_open_state_mismatch', 'calendar_format_missing',
+  'calendar_data_unavailable'
+]);
+const CALENDAR_METADATA = new Set([
+  'calendarStructureObserved', 'calendarFramework', 'calendarEvidenceSource',
+  'calendarPickerKind', 'calendarFormat', 'calendarMode', 'calendarOpen',
+  'calendarPanelKind', 'calendarCellCount', 'calendarDefinitionIssue'
+]);
+
+// New compound-control evidence is a fixed own-data envelope. Unknown fields,
+// getters, sparse arrays and current-value payloads cannot become provenance.
+function ownInspectionData(value, name) {
+  const descriptor = Object.getOwnPropertyDescriptor(value, name);
+  if (!descriptor || !Object.hasOwn(descriptor, 'value')) throw new TypeError('inspection_invalid');
+  return descriptor.value;
+}
+function exactInspectionData(value, names) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)
+    || Reflect.ownKeys(value).length !== names.length
+    || Reflect.ownKeys(value).some(name => typeof name !== 'string' || !names.includes(name))) {
+    throw new TypeError('inspection_invalid');
+  }
+  const result = {};
+  for (const name of names) result[name] = ownInspectionData(value, name);
+  return result;
+}
+function cleanLocationComposite(value) {
+  const result = exactInspectionData(value, ['hostCount', 'cascaderCount', 'hostsArePeers',
+    'cascaderOwnsBoth', 'hostsNearestCascaderSame', 'optionsHostSlot', 'hosts']);
+  if (result.hostCount !== 2 || result.cascaderCount !== 1 || result.hostsArePeers !== true
+    || result.cascaderOwnsBoth !== true || result.hostsNearestCascaderSame !== true
+    || result.optionsHostSlot !== 0 || !Array.isArray(result.hosts)
+    || ownInspectionData(result.hosts, 'length') !== 2
+    || Reflect.ownKeys(result.hosts).length !== 3) throw new TypeError('inspection_invalid');
+  result.hosts = [0, 1].map(slot => {
+    const host = exactInspectionData(ownInspectionData(result.hosts, String(slot)), [
+      'hostSlot', 'comboOwned', 'selectionIsCombo', 'inputOwned', 'inputWithinCombo',
+      'inputSearchHelper', 'attributeAvailable', 'ariaOwnerCount', 'referenceCount',
+      'ariaBindingObserved', 'listState']);
+    if (host.hostSlot !== slot || host.ariaOwnerCount !== 1 || host.referenceCount !== 1
+      || !['comboOwned', 'selectionIsCombo', 'inputOwned', 'inputWithinCombo',
+        'inputSearchHelper', 'attributeAvailable', 'ariaBindingObserved'].every(name => host[name] === true)
+      || !['target_missing', 'linked_structure_observed'].includes(host.listState)) {
+      throw new TypeError('inspection_invalid');
+    }
+    return host;
+  });
+  return result;
+}
 
 /** Copy allowlisted metadata only; never serialize arbitrary Runtime results. */
 function cleanInspection(value) {
@@ -462,15 +525,21 @@ function cleanInspection(value) {
   }
   const fields = value.fields.map((row, index) => {
     const spec = ROW_D_FIELDS[index];
+    const location = ['firstWorkLocation', 'secondWorkLocation'].includes(spec.key);
+    const locationSuccess = row.reason === 'read_only_location_preflight';
+    const calendarSuccess = row.reason === 'read_only_calendar_preflight';
+    const optionsSuccess = row.reason === 'read_only_options_preflight';
     if (!safeFlags(row) || row.wrapperId !== spec.wrapperId || row.key !== spec.key
       || row.sectionId !== spec.sectionId || row.controlKind !== spec.controlKind
       || typeof row.ok !== 'boolean' || !['observed', 'skipped'].includes(row.status)
       || !INSPECTION_REASONS.has(row.reason)) throw new TypeError('inspection_invalid');
     if (row.ok !== (row.status === 'observed')
-      || row.ok !== (row.reason === 'read_only_options_preflight')
+      || row.ok !== (optionsSuccess || locationSuccess || calendarSuccess)
       || (row.reason === 'calendar_live_evidence_missing' && spec.controlKind !== 'ant-calendar-picker')
-      || (row.ok && (!spec.optionsComplete || spec.reusedFrom
-        || spec.controlKind === 'ant-calendar-picker'))) throw new TypeError('inspection_invalid');
+      || (optionsSuccess && (!spec.optionsComplete || spec.reusedFrom
+        || spec.controlKind === 'ant-calendar-picker'))
+      || (locationSuccess && !location)
+      || (calendarSuccess && spec.key !== 'englishExamDate')) throw new TypeError('inspection_invalid');
     if ((Object.hasOwn(row, 'optionsComplete') && row.optionsComplete !== spec.optionsComplete)
       || (Object.hasOwn(row, 'evidenceSource') && row.evidenceSource !== spec.evidenceSource)) {
       throw new TypeError('inspection_invalid');
@@ -478,8 +547,9 @@ function cleanInspection(value) {
     const metadata = {};
     const optional = (name, valid) => {
       if (!Object.hasOwn(row, name)) return;
-      if (!valid(row[name])) throw new TypeError('inspection_invalid');
-      metadata[name] = row[name];
+      const entry = ownInspectionData(row, name);
+      if (!valid(entry)) throw new TypeError('inspection_invalid');
+      metadata[name] = entry;
     };
     const count = (number, maximum) => Number.isSafeInteger(number) && number >= 0 && number <= maximum;
     optional('hiddenSearchInputCount', number => spec.controlKind === 'ant-select' && count(number, 1));
@@ -519,9 +589,67 @@ function cleanInspection(value) {
       && Object.hasOwn(row, 'observedOptionCount')
       && (!matched || row.observedOptionCount >= spec.options.length));
     optional('calendarStructureObserved', observed => spec.controlKind === 'ant-calendar-picker'
-      && typeof observed === 'boolean' && (!observed || row.reason === 'calendar_live_evidence_missing'));
-    optional('availabilityIssue', issue => row.reason === 'control_not_available' && AVAILABILITY_ISSUES.has(issue));
-    optional('controlKindIssue', issue => row.reason === 'control_kind_mismatch' && CONTROL_KIND_ISSUES.has(issue));
+      && typeof observed === 'boolean'
+      && (!observed || row.reason === 'calendar_live_evidence_missing' || calendarSuccess));
+    for (const name of Reflect.ownKeys(row)) {
+      if (typeof name === 'string' && name.startsWith('calendar') && !CALENDAR_METADATA.has(name)) {
+        throw new TypeError('inspection_invalid');
+      }
+    }
+    optional('calendarFramework', framework => spec.key === 'englishExamDate'
+      && (calendarSuccess || row.reason === 'calendar_live_evidence_missing')
+      && ['react', 'vue'].includes(framework));
+    optional('calendarDefinitionIssue', issue => spec.key === 'englishExamDate'
+      && row.reason === 'calendar_live_evidence_missing'
+      && metadata.calendarStructureObserved === true && CALENDAR_DEFINITION_ISSUES.has(issue));
+    optional('calendarEvidenceSource', source => calendarSuccess
+      && ['owned_react_props', 'owned_calendar_vnodes', 'aria_controls_calendar_dom'].includes(source));
+    optional('calendarPickerKind', kind => calendarSuccess && kind === 'month');
+    optional('calendarFormat', format => calendarSuccess && ['YYYY-MM', 'YYYY/MM', 'YYYY年MM月'].includes(format));
+    optional('calendarMode', mode => calendarSuccess && mode === 'month');
+    optional('calendarOpen', open => calendarSuccess && typeof open === 'boolean');
+    optional('calendarPanelKind', kind => calendarSuccess && ['month', 'date'].includes(kind));
+    optional('calendarCellCount', cells => calendarSuccess && count(cells, 42));
+    if (calendarSuccess) {
+      const source = metadata.calendarEvidenceSource;
+      const panel = source === 'aria_controls_calendar_dom';
+      if (metadata.calendarStructureObserved !== true || metadata.calendarPickerKind !== 'month'
+        || metadata.calendarMode !== 'month' || !source
+        || !['react', 'vue'].includes(metadata.calendarFramework)
+        || (source === 'owned_react_props' && metadata.calendarFramework !== 'react')
+        || (source === 'owned_calendar_vnodes' && metadata.calendarFramework !== 'vue')
+        || (!panel && (!Object.hasOwn(metadata, 'calendarFormat')
+          || Object.hasOwn(metadata, 'calendarPanelKind') || Object.hasOwn(metadata, 'calendarCellCount')))
+        || (panel && (metadata.calendarOpen === false || !['month', 'date'].includes(metadata.calendarPanelKind)
+          || (metadata.calendarPanelKind === 'month' ? metadata.calendarCellCount !== 12
+            : ![28, 35, 42].includes(metadata.calendarCellCount))))
+        || Object.hasOwn(row, 'calendarDefinitionIssue')) throw new TypeError('inspection_invalid');
+    } else if (Object.hasOwn(row, 'calendarFramework') && !metadata.calendarDefinitionIssue) {
+      throw new TypeError('inspection_invalid');
+    }
+    optional('currentOptionsIndependentlyObserved', observed => locationSuccess && observed === true);
+    optional('locationSelectionVerified', verified => location && verified === false);
+    if (Object.hasOwn(row, 'locationCompositeEvidence')) {
+      if (!location || !LOCATION_PROOF_REASONS.has(row.reason) || metadata.locationSelectionVerified !== false) {
+        throw new TypeError('inspection_invalid');
+      }
+      metadata.locationCompositeEvidence = cleanLocationComposite(ownInspectionData(row, 'locationCompositeEvidence'));
+    }
+    if (Object.hasOwn(row, 'locationSelectionVerified') && !metadata.locationCompositeEvidence) {
+      throw new TypeError('inspection_invalid');
+    }
+    if (locationSuccess && (metadata.currentOptionsIndependentlyObserved !== true
+      || metadata.locationSelectionVerified !== false || !metadata.locationCompositeEvidence
+      || metadata.observedOptionCount !== 30 || metadata.samplePrefixMatched !== true
+      || !['aria_controls_dom', 'owned_select_vnodes', 'owned_react_props'].includes(metadata.optionsEvidenceSource)
+      || metadata.locationCompositeEvidence.hosts[0].listState !==
+        (metadata.optionsReadiness === 'target_missing' ? 'target_missing' : 'linked_structure_observed'))) {
+      throw new TypeError('inspection_invalid');
+    }
+    optional('availabilityIssue', issue => row.reason === 'control_not_available' && AVAILABILITY_ISSUES.has(issue)
+      && (issue !== 'location_host_unavailable' || location));
+    optional('controlKindIssue', issue => row.reason === 'control_kind_mismatch' && CONTROL_KIND_ISSUES.has(issue)
+      && (issue !== 'location_host_structure_unverified' || location));
     return { ...safety(), key: spec.key, wrapperId: spec.wrapperId, sectionId: spec.sectionId,
       controlKind: spec.controlKind, ok: row.ok, status: row.status, reason: row.reason,
       optionsComplete: spec.optionsComplete, evidenceSource: spec.evidenceSource,
@@ -538,7 +666,7 @@ function cleanInspection(value) {
 
 export function rowDProbeEvidence(reason = 'not_started') {
   return { version: 1, kind: 'cms_row_d_live_never_save_probe', ...safety(),
-    baseTip: ROW_D_LIVE_BASE_TIP, booked: 58, visibilityBasis: 'attributes_only',
+    baseTip: ROW_D_LIVE_BASE_TIP, booked: 70, visibilityBasis: 'attributes_only',
     visibilityKeeper: { targetActivated: false, pageBroughtToFront: false,
       focusEmulationEnabled: false, focusEmulationCleared: false },
     inspectionGate: { status: 'not_reached', checkpoints: [] },
@@ -811,7 +939,8 @@ neverSave=true liveSupportClaimed=false livePassClaimed=false writeStarted=false
 mutationAllowed=false valuesExposed=false probeOnly=true
 Visibility uses attributes only; stylesheet/layout visibility is not verified.
 Guarded CDP activation retains focus emulation through the inspection window.
-No live PASS claimed until parent runs real CDP Never-Save. Booked stays 58 (not D).
+No live PASS claimed. Parent accepted PASS_PREFLIGHT/bookD at tip 575abee8.
+Booked stays 70; this probe does not make another acceptance or booking decision.
 PORT defaults to 9242; STEP_TIMEOUT_MS defaults to 10000 (1000..30000).
 OPTIONS_WAIT_MS defaults to 2000 (0..5000); OPTIONS_POLL_MS to 100 (25..500).
 Options wait uses bounded host reads only; missing dormant lists remain skips.

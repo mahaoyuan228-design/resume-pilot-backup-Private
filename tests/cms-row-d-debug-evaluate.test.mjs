@@ -4,7 +4,7 @@
  * throwOnSideEffect boundary, not Blink's native DOM API allowlist or live CMS.
  * neverSave=true, liveSupportClaimed=false, livePassClaimed=false,
  * writeStarted=false, mutationAllowed=false, valuesExposed=false, probeOnly=true.
- * booked=58 (not D). No live PASS, fill/support claim, or D+12 follows from this test.
+ * booked=70 preserves the parent's prior booking. No new acceptance or live claim follows.
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -215,7 +215,7 @@ function safety(result) {
   const evidence = { ...rowDProbeEvidence(result.reason), fields: result.fields };
   assert.equal(evidence.livePassClaimed, false);
   assert.equal(evidence.probeOnly, true);
-  assert.equal(evidence.booked, 58);
+  assert.equal(evidence.booked, 70);
   assert.equal(evidence.probeCompleted, false, 'offline inspector results do not claim live completion');
   assert.equal(result.visibilityBasis, 'attributes_only');
   const output = JSON.stringify(evidence);

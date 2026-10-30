@@ -6,6 +6,8 @@
  * samples rather than a complete live DOM. A passing structural check cannot
  * turn those samples into independent evidence or a live-support claim.
  */
+import { inspectCmsRowDCalendarEvidence } from './cms-row-d-calendar.mjs';
+
 export const ROW_D_BASE_TIP = 'ef771fc02415a9249bfe86dd9d20afca7f6c130d';
 export const ROW_D_HARVEST = 'cms-row-d-open-harvest-2026-10-24-1445';
 export const ROW_D_PAGE = 'https://wecruit.hotjob.cn/SU629dbc0c0dcad452299bc0f7/pb/resumeOperation.html';
@@ -562,8 +564,8 @@ const ownedSelectVNodeLabels = (select, reference, diagnostic = {}, item = null)
  * Visibility here only rejects explicit attribute/inline-style hiding. It
  * cannot verify stylesheet visibility, layout, clipping or on-screen geometry.
  * The result labels this limit; structural observation grants no write/support
- * permission. Calendar structure is inspected, but date/popup behavior remains
- * unevidenced and cannot pass this preflight.
+ * permission. Calendar structure alone cannot pass: current owned MonthPicker
+ * definitions or an already visible owned panel must supply separate evidence.
  */
 export function inspectCmsRowDOptions(doc, requests = {}) {
   const fields = [];
@@ -724,9 +726,14 @@ export function inspectCmsRowDOptions(doc, requests = {}) {
           push(false, 'control_not_available', { availabilityIssue: !enabled(pickers[0]) || !enabled(inputs[0])
             ? 'disabled_attribute_or_class' : 'hidden_control' }); continue;
         }
-        // This establishes a uniquely owned, attribute-available text picker,
-        // without reading its value or assuming calendar/date semantics.
-        push(false, 'calendar_live_evidence_missing', { calendarStructureObserved: true }); continue;
+        // The independent helper adds only current owned MonthPicker evidence;
+        // it cannot infer month semantics from this text-input structure.
+        if (resolution) {
+          push(false, resolution.reason, { calendarStructureObserved: true }); continue;
+        }
+        const calendar = inspectCmsRowDCalendarEvidence(pickers[0], inputs[0], item, doc);
+        push(calendar.ok, calendar.ok ? 'read_only_calendar_preflight' : 'calendar_live_evidence_missing',
+          mergeProbeData({ calendarStructureObserved: true }, calendar)); continue;
       }
       if (owned('.ant-calendar-picker,.ant-picker,.ant-cascader-picker').length) {
         // The recorded location classifier prioritized any .ant-select and
@@ -739,14 +746,100 @@ export function inspectCmsRowDOptions(doc, requests = {}) {
       const optionLabels = [];
       if (field.controlKind === 'ant-select') {
         const selects = owned('.ant-select');
-        if (selects.length !== 1) {
+        const locationComposite = ['13_100701_0', '13_100702_0'].includes(field.wrapperId)
+          && selects.length === 2;
+        if (selects.length !== 1 && !locationComposite) {
           push(false, 'control_kind_mismatch', { controlKindIssue: 'select_not_unique' }); continue;
+        }
+        if (locationComposite) {
+          // The location diagnostic independently records this exact composite
+          // topology. Slots describe DOM order only; neither is a proven
+          // province/city level, and this preflight never inspects selections.
+          const cascaders = snapshot(item.querySelectorAll('.cascader-plugins-wrap'));
+          const locationInputs = owned('input');
+          if (cascaders.length !== 1 || !owns(cascaders[0])
+            || selects[0].contains(selects[1]) || selects[1].contains(selects[0])
+            || !selects.every(node => closest(node, '.cascader-plugins-wrap') === cascaders[0])
+            || locationInputs.length !== 2 || locationInputs.some(node => !selects.some(host => host.contains(node)))) {
+            push(false, 'control_kind_mismatch', { controlKindIssue: 'select_not_unique' }); continue;
+          }
+          const hostProofs = [];
+          const failures = [];
+          for (let hostSlot = 0; hostSlot < 2; hostSlot += 1) {
+            const host = selects[hostSlot];
+            const hostCombos = snapshot(host.querySelectorAll('[role="combobox"]'));
+            const selections = snapshot(host.querySelectorAll('.ant-select-selection--single'));
+            const hostInputs = snapshot(host.querySelectorAll('input'));
+            if (hostCombos.length !== 1 || selections.length !== 1 || hostInputs.length !== 1
+              || selections[0] !== hostCombos[0] || !matches(hostCombos[0], '.ant-select-selection')
+              || !owns(hostCombos[0]) || !owns(hostInputs[0])
+              || closest(hostCombos[0], '.ant-select') !== host
+              || closest(hostInputs[0], '.ant-select') !== host
+              || !hostCombos[0].contains(hostInputs[0])
+              || inputType(hostInputs[0]) !== 'text'
+              || !matches(hostInputs[0], '.ant-select-search__field')
+              || !closest(hostInputs[0], '.ant-select-search')
+              || !hostCombos[0].contains(closest(hostInputs[0], '.ant-select-search'))) {
+              failures.push({ reason: 'control_kind_mismatch', controlKindIssue: 'location_host_structure_unverified' }); break;
+            }
+            if (!available(host) || !available(hostCombos[0]) || !enabled(hostInputs[0])
+              || visible(hostInputs[0]) || collapsed(hostInputs[0])) {
+              failures.push({ reason: 'control_not_available', availabilityIssue: 'location_host_unavailable' }); break;
+            }
+            if (host.getAttribute('aria-busy') === 'true' || hostCombos[0].getAttribute('aria-busy') === 'true'
+              || matches(host, '.ant-select-loading') || host.querySelector('.ant-select-arrow .anticon-loading')) {
+              observation.optionsReadiness = 'loading';
+              failures.push({ reason: 'current_options_unavailable' }); break;
+            }
+            const surfaces = [host, hostCombos[0], hostInputs[0]];
+            const references = [];
+            for (let surfaceIndex = 0; surfaceIndex < surfaces.length; surfaceIndex += 1) {
+              const tokens = listTokens(surfaces[surfaceIndex].getAttribute('aria-controls'));
+              if (tokens.length > 1) { references.push(null); break; }
+              if (tokens.length === 1 && !references.includes(tokens[0])) references.push(tokens[0]);
+            }
+            if (references.length !== 1 || references[0] === null) {
+              failures.push({ reason: 'dropdown_reference_missing_or_ambiguous' }); break;
+            }
+            const owners = snapshot(doc.querySelectorAll('[aria-controls]'))
+              .filter(node => listTokens(node.getAttribute('aria-controls')).includes(references[0]));
+            if (owners.length !== 1 || !surfaces.includes(owners[0])) {
+              failures.push({ reason: 'dropdown_owner_not_unique' }); break;
+            }
+            const targets = exactIds(references[0]);
+            if (targets.length > 1) { failures.push({ reason: 'dropdown_target_not_unique' }); break; }
+            if (targets.length === 1) {
+              const target = targets[0];
+              const portal = closest(target, '.ant-select-dropdown');
+              const scoped = node => (!closest(node, '.ant-form-item') || closest(node, '.ant-form-item') === item)
+                && (!closest(node, '.form-cell') || closest(node, '.form-cell') === section)
+                && (!nearestNamedWrapper(node) || nearestNamedWrapper(node) === wrapper);
+              if (!target.isConnected || target.getAttribute('role') !== 'listbox'
+                || !matches(target, '.ant-select-dropdown-menu') || !portal
+                || closest(portal.parentElement, '.ant-select-dropdown') || target.querySelector('.ant-select-dropdown')
+                || !scoped(target) || !scoped(portal)) {
+                failures.push({ reason: 'dropdown_scope_mismatch' }); break;
+              }
+            }
+            hostProofs.push({ hostSlot, comboOwned: true, selectionIsCombo: true, inputOwned: true,
+              inputWithinCombo: true, inputSearchHelper: true, attributeAvailable: true,
+              ariaOwnerCount: 1, referenceCount: 1, ariaBindingObserved: true,
+              listState: targets.length ? 'linked_structure_observed' : 'target_missing' });
+          }
+          if (failures.length) {
+            const failure = failures[0];
+            push(false, failure.reason, failure); continue;
+          }
+          observation.locationCompositeEvidence = { hostCount: 2, cascaderCount: 1,
+            hostsArePeers: true, cascaderOwnsBoth: true, hostsNearestCascaderSame: true,
+            optionsHostSlot: 0, hosts: hostProofs };
+          observation.locationSelectionVerified = false;
         }
         if (owned('.ant-radio-group,.ant-checkbox-group,input[type="radio"],input[type="checkbox"]').length) {
           push(false, 'control_kind_mismatch', { controlKindIssue: 'mixed_choice_controls' }); continue;
         }
         const select = selects[0];
-        const inputs = owned('input');
+        const inputs = locationComposite ? owned('input').filter(node => select.contains(node)) : owned('input');
         if (inputs.some(node => !select.contains(node))) {
           push(false, 'control_kind_mismatch', { controlKindIssue: 'input_outside_select' }); continue;
         }
@@ -785,12 +878,17 @@ export function inspectCmsRowDOptions(doc, requests = {}) {
           observation.optionsReadiness = 'loading';
           push(false, 'current_options_unavailable'); continue;
         }
-        const references = listTokens(combo.getAttribute('aria-controls'));
+        const references = locationComposite
+          ? [select, combo, inputs[0]].map(node => listTokens(node.getAttribute('aria-controls')))
+            .filter(tokens => tokens.length === 1)[0]
+          : listTokens(combo.getAttribute('aria-controls'));
         if (references.length !== 1) { push(false, 'dropdown_reference_missing_or_ambiguous'); continue; }
         const reference = references[0];
         const owners = snapshot(doc.querySelectorAll('[aria-controls]'))
           .filter(node => listTokens(node.getAttribute('aria-controls')).includes(reference));
-        if (owners.length !== 1 || owners[0] !== combo) { push(false, 'dropdown_owner_not_unique'); continue; }
+        if (owners.length !== 1 || (locationComposite ? ![select, combo, inputs[0]].includes(owners[0]) : owners[0] !== combo)) {
+          push(false, 'dropdown_owner_not_unique'); continue;
+        }
         const targets = exactIds(reference);
         if (!targets.length) {
           observation.optionsReadiness = 'target_missing';
@@ -886,6 +984,14 @@ export function inspectCmsRowDOptions(doc, requests = {}) {
         push(false, 'option_dictionary_mismatch'); continue;
       }
       if (resolution && !resolution.ok) { push(false, resolution.reason); continue; }
+      if (observation.locationCompositeEvidence) {
+        // A current, independently owned slot-0 definition/list has now
+        // matched count 30 and every known prefix label. This supports only
+        // the composite read-only preflight: the final five labels and the
+        // selected path remain unknown, and no complete dictionary is claimed.
+        observation.currentOptionsIndependentlyObserved = true;
+        push(true, 'read_only_location_preflight'); continue;
+      }
       if (field.reusedFrom) { push(false, 'reused_dictionary_unverified'); continue; }
       if (!field.optionsComplete) { push(false, 'option_dictionary_incomplete'); continue; }
       push(true, 'read_only_options_preflight');
@@ -941,6 +1047,7 @@ export function buildCmsRowDOptionsProbeExpression(requests = {}) {
     `const classifyOptionRoot = ${classifyOptionRoot.toString()};`,
     `const ownedSelectDefinitionLabels = ${ownedSelectDefinitionLabels.toString()};`,
     `const ownedSelectVNodeLabels = ${ownedSelectVNodeLabels.toString()};`,
+    `const inspectCmsRowDCalendarEvidence = ${inspectCmsRowDCalendarEvidence.toString()};`,
     `const resolveCmsRowDOption = ${resolveCmsRowDOption.toString()};`,
     `const inspectCmsRowDOptions = ${inspectCmsRowDOptions.toString()};`,
     `return inspectCmsRowDOptions(globalThis.document, ${JSON.stringify(canonical)});`,

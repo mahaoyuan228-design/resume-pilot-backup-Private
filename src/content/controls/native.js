@@ -148,8 +148,11 @@
   });
   register({ name: 'upload', type: 'upload', priority: 1000,
     matches: el => el?.tagName === 'INPUT' && el.type === 'file',
-    readModel: (el, probe) => ({ ...base(el, probe, ''), manual: true, manualReason: 'upload_manual' }),
-    plan: () => ({ status: 'manual', skip: true, reason: 'upload_manual' }),
+    readModel: (el, probe) => ({ ...base(el, probe, ''), manual: true, manualReason: 'upload_manual',
+      ...(globalThis.ResumeUploadControls?.inspect(el) || {}) }),
+    plan: (_fact, model) => ({ status: 'manual', skip: true,
+      reason: model.status === 'manual' ? model.reason : 'upload_manual',
+      writeStarted: false, liveSupportClaimed: false }),
     performWrite: () => noWrite('upload_manual')
   });
 })();

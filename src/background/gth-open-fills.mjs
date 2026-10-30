@@ -211,6 +211,23 @@ export function acceptGthMonthInPage(payload){
     }
     return null;
   };
+  const findPanelPick=panel=>{
+    let vue=panel.__vue__;
+    const direct=findPick(vue,0);
+    if(direct)return direct;
+    const inside=node=>!!node&&(node===panel||panel.contains(node));
+    // A popup root can expose its month-table child rather than the picker.
+    // Follow only parents whose own DOM stays in this bound popup; a shared
+    // form or another editor must never supply the month handler.
+    for(let depth=0;vue&&depth<5;depth+=1){
+      if(!inside(vue.$el))break;
+      const parent=vue.$parent;
+      if(!parent||!inside(parent.$el))break;
+      if(typeof parent.handleMonthPick==='function'&&parent.selectionMode==='month')return parent;
+      vue=parent;
+    }
+    return null;
+  };
   const visuallyShown=node=>{
     if(!node?.isConnected||node.hasAttribute('hidden'))return false;
     let style=null;
@@ -266,7 +283,7 @@ export function acceptGthMonthInPage(payload){
     if(panel){
       const shownYear=headerYear(panel);
       if(shownYear==null||shownYear!==year)return fail('bad-year');
-      pick=findPick(panel.__vue__,0);
+      pick=findPanelPick(panel);
       if(!pick&&editorVue?.picker)pick=findPick(editorVue.picker,0);
     }else if(editorVue?.picker){
       pick=findPick(editorVue.picker,0);

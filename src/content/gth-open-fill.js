@@ -619,6 +619,8 @@
     // husk is not a second editor. Two active month panels (a month table and
     // one year each) still fail closed.
     // picked and emitted accept the model. dual, bad-year, and mismatch stop.
+    // Work end-month writes require picked/emitted before readback; a surviving
+    // DOM paint or typed fallback cannot stand in for popup model acceptance.
     // If the panel node is gone and neither pick nor emit runs, stop. After
     // dismiss, a blank or different value stops readback_mismatch. If the
     // bridge is unavailable, a still-empty input may be typed, and a painted
@@ -839,7 +841,7 @@
         return null;
       });
     }
-    async function fillOneMonth(item, input, trigger, answer, markWrite, guard, peers = []) {
+    async function fillOneMonth(item, input, trigger, answer, markWrite, guard, peers = [], requireModelAcceptance = false) {
       const company = [input, ...peers].filter(Boolean);
       const editor = input.closest('.el-date-editor');
       let monthInput = input;
@@ -959,7 +961,7 @@
         if (monthInput.isConnected) {
           accepted = await acceptMonthInPage(panel, monthInput, answer, company);
         }
-        if (accepted === 'stop') {
+        if (accepted === 'stop' || (requireModelAcceptance && accepted !== 'ok')) {
           await dismissMonthSurfaces(company);
           stop(pendingMonthConflict(panel) ? 'control_not_supported' : 'readback_mismatch');
         }
@@ -1004,7 +1006,7 @@
       refresh();
       if (norm(inputs[0].value) !== fact.start || norm(inputs[1].value) !== before[1])
         stop('readback_mismatch');
-      await fillOneMonth(target.item, inputs[1], target.triggers[1], fact.end, markWrite, guard, [inputs[0]]);
+      await fillOneMonth(target.item, inputs[1], target.triggers[1], fact.end, markWrite, guard, [inputs[0]], spec.fact === 'experience');
       refresh();
       const read = `${norm(inputs[0].value)} | ${norm(inputs[1].value)}`;
       if (read !== `${fact.start} | ${fact.end}`) stop('readback_mismatch');

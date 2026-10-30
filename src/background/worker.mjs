@@ -5,6 +5,7 @@ import {installCmsDNetworkGuard} from './cms-row-d-network-guard.mjs';
 
 import {installCmsEducationTaskRunner} from './cms-education-task-runner.mjs';
 import {installProfileBindingBridge} from '../profile/profile-lifecycle.js';
+import {installControlWriteBridge} from './controls-write.mjs';
 import {installEducationTaskRunner} from './education-task-runner.mjs';
 import {installBasicTaskRunner} from './basic-task-runner.mjs';
 import {installGthDraftTaskRunner} from './gth-draft-task-runner.mjs';
@@ -33,6 +34,7 @@ function boot(name, install) {
 }
 
 boot('profile-binding', installProfileBindingBridge);
+boot('ats-control-write', installControlWriteBridge);
 boot('education-task', installEducationTaskRunner);
 boot('basic-task', installBasicTaskRunner);
 boot('gth-draft-metadata', registerGthDraftMetadataBridge);

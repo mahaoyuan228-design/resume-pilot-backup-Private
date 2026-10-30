@@ -12,6 +12,8 @@
   'use strict';
   const name = window.__ZOO_CASE__ || new URL(location.href).searchParams.get('case') || 'cms-month';
   const variant = window.__ZOO_VARIANT__ || new URL(location.href).searchParams.get('variant') || '';
+  if (name.startsWith('extended-')) { window.createExtendedZoo(name, variant); return; }
+  if (name === 'write-route') { window.createWriteRouteZoo(); return; }
   const titles = ['基本信息', '教育经历', '求职意向', '工作经验', '职业技能与特长', '附件简历', '其他信息'];
   const forbidden = ['保存', '提交', '下一步', '投递', '删除'];
   const effects = { blacklistClicks: 0, autosaveAttempts: 0, searchRequests: 0, pluginLevel1: 0, pluginLevel2: 0 };

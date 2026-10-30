@@ -183,7 +183,18 @@
     "tests/zoo/l1-shadow-expectations.json",
     "tests/zoo/l1.spec.mjs",
     "tests/product-paths-whitelist.test.mjs",
-    "scripts/build-paid.ps1"
+    "scripts/build-paid.ps1",
+    "src/background/controls-write.mjs",
+    "src/content/controls/extended-controls.js",
+    "src/core/domain-memory.js",
+    "tests/zoo/extended.spec.mjs",
+    "tests/zoo/write-route.spec.mjs",
+    "tests/zoo/fixtures/extended.js",
+    "src/popup/field-memory.js",
+    "docs/ATS_ENGINE_R2.md",
+    "tests/l1-extended-controls.test.mjs",
+    "tests/l1-write-route.test.mjs",
+    "tests/l2-semantics-memory.test.mjs"
   ],
   "productPaths": [
     "manifest.json",
@@ -326,7 +337,11 @@
     "src/content/controls/model.js",
     "src/content/controls/registry.js",
     "src/content/controls/native.js",
-    "src/content/controls/vue-controls.js"
+    "src/content/controls/vue-controls.js",
+    "src/background/controls-write.mjs",
+    "src/content/controls/extended-controls.js",
+    "src/core/domain-memory.js",
+    "src/popup/field-memory.js"
   ],
   "excluded": [
     "No directory-wide copy of repository/tests/exports/dist.",

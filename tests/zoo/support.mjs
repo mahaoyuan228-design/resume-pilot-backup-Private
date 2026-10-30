@@ -11,6 +11,7 @@ import { canonicalProfileHash } from '../../src/profile/profile-lifecycle.js';
 export const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 export const CMS = 'https://wecruit.hotjob.cn/SU629dbc0c0dcad452299bc0f7/pb/resumeOperation.html';
 export const GTH = 'https://hr.gtht.com/resume/edit/';
+export const WRITE_ROUTE = 'https://offline.mokahr.com/zoo/';
 const assets = {
   '/vendor/vue.js': 'node_modules/vue/dist/vue.js',
   '/vendor/moment.js': 'node_modules/moment/min/moment.min.js',
@@ -18,6 +19,12 @@ const assets = {
   '/vendor/antd.css': 'node_modules/ant-design-vue/dist/antd.css',
   '/vendor/element.js': 'node_modules/element-ui/lib/index.js',
   '/vendor/element.css': 'node_modules/element-ui/lib/theme-chalk/index.css',
+  '/vendor/iview.js': 'node_modules/iview/dist/iview.js',
+  '/vendor/iview.css': 'node_modules/iview/dist/styles/iview.css',
+  '/vendor/fonts/ionicons.woff2': 'node_modules/iview/dist/styles/fonts/ionicons.woff2',
+  '/vendor/fonts/ionicons.woff': 'node_modules/iview/dist/styles/fonts/ionicons.woff',
+  '/vendor/fonts/ionicons.ttf': 'node_modules/iview/dist/styles/fonts/ionicons.ttf',
+  '/fixtures/extended.js': 'tests/zoo/fixtures/extended.js',
   '/vendor/fonts/element-icons.woff': 'node_modules/element-ui/lib/theme-chalk/fonts/element-icons.woff',
   '/vendor/fonts/element-icons.ttf': 'node_modules/element-ui/lib/theme-chalk/fonts/element-icons.ttf',
   '/fixtures/zoo.js': 'tests/zoo/fixtures/zoo.js',
@@ -80,10 +87,10 @@ export async function startZoo(caseName, variant = '') {
         await route.fulfill({ status: 200, contentType: contentType(file), body: fs.readFileSync(path.join(extension, file)) });
         return;
       }
-      if (![new URL(CMS).origin, new URL(GTH).origin].includes(url.origin)) {
+      if (![new URL(CMS).origin, new URL(GTH).origin, new URL(WRITE_ROUTE).origin].includes(url.origin)) {
         routing.rejected.push(`${url.origin}${url.pathname}`); await route.abort('blockedbyclient'); return;
       }
-      const file = url.href === CMS || url.href === GTH ? 'tests/zoo/fixtures/index.html' : assets[url.pathname];
+      const file = url.href === CMS || url.href === GTH || url.href === WRITE_ROUTE ? 'tests/zoo/fixtures/index.html' : assets[url.pathname];
       if (!file) {
         // Browsers may ask for an icon; it is still supplied locally.
         if (url.pathname === '/favicon.ico') { await route.fulfill({ status: 204, body: '' }); return; }
@@ -114,7 +121,7 @@ export async function startZoo(caseName, variant = '') {
     for (const event of events) cdp.on(event, params => guard.onEvent({ method: event, params }));
     await cdp.send('Network.enable');
     await cdp.send('Fetch.enable', { patterns: [{ urlPattern: '*', requestStage: 'Request' }] });
-    const url = caseName.startsWith('gth-') ? GTH : CMS;
+    const url = caseName === 'write-route' ? WRITE_ROUTE : caseName.startsWith('gth-') ? GTH : CMS;
     await page.goto(url);
     await page.bringToFront();
     await page.waitForFunction(() => window.__zoo?.ready === true);

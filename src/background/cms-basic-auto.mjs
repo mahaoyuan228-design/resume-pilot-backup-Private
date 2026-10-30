@@ -281,7 +281,7 @@ export function createCmsBasicAutoRunner({api=globalThis.chrome,verifyBeforeFill
       await api.storage.local.set({[pendingKey(tab.id)]:{tabId:tab.id,origin:ORIGIN,at:Date.now(),requestId,
         kind:'cms_basic_auto',profileBinding:binding,auto:true}});
     },lifecycleOptions);
-    const files=['src/core/matcher.js','src/content/cms-date-picker.js','src/content/cms-validation-gaps.js',
+    const files=['src/core/matcher.js','src/core/domain-memory.js','src/content/cms-date-picker.js','src/content/cms-validation-gaps.js',
       'src/content/cms-session.js','src/content/cms-school-search.js','src/content/cms-region.js',
       'src/content/cms-education-dates.js','src/content/cms-checkboxes.js','src/content/engine.js'];
     await bounded(()=>dispatchBoundSource(api.storage.local,binding,()=>api.scripting.executeScript({target:{tabId:tab.id},files}),lifecycleOptions),20000);

@@ -117,6 +117,8 @@ test('GET-only guard rejects a synthetic autosave and marks its attempt failed',
     expect(evidence.nonGetBlocked).toBe(1);
     expect(evidence.responseToNonGet).toBe(0);
     expect(evidence.guardFailed).toBe(true);
+    expect(evidence.batchAssessment).toMatchObject({ status: 'FAIL', neverSave: true,
+      liveSupportClaimed: false, sites: [{ status: 'FAIL', reason: 'non_get_attempted' }] });
     expect(evidence.blacklistClickAttempts).toBe(0);
     expect(evidence.routing.nonGetReachedRoute).toBe(0);
     await fs.writeFile(testInfo.outputPath('autosave-failure.json'), JSON.stringify({ casePass: false, reason: 'non_get_attempted', evidence }, null, 2));

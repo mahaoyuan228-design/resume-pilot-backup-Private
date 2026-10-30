@@ -69,6 +69,8 @@ for (const enabled of [false, true]) for (const preselected of [false, true]) {
           <label for="birth-year">年</label><select id="birth-year"><option value="-1">年</option><option value="1996">1996年</option></select>
           <label for="birth-month">月</label><select id="birth-month"><option value="0">月</option><option value="02">2月</option></select>
           <label for="birth-day">日</label><select id="birth-day"><option value="日">日</option><option value="29">29日</option></select>
+          <label for="dash-year">年</label><select id="dash-year"><option value="-1">----</option><option value="1996">1996年</option></select>
+          <label for="whole-birthday">生日</label><select id="whole-birthday"><option value="0">----</option><option value="1996">1996年</option></select>
           <label for="real-year">年份</label><select id="real-year"><option value="1996">1996</option></select>
           <label for="frequency">频率</label><select id="frequency"><option value="month">Month</option><option value="year">Year</option></select>`);
         window.__selectRouteEffects = [];
@@ -98,11 +100,16 @@ for (const enabled of [false, true]) for (const preselected of [false, true]) {
         else expect(field.adapter).toBeUndefined();
         expect(await zoo.page.locator(`#${id}`).inputValue()).toBe(value);
       }
-      for (const data of [before.data, result.data]) for (const id of ['birth-year', 'birth-month', 'birth-day']) {
-        expect(data.fields.find(row => row.id === id)).toMatchObject({ semanticStatus: 'manual', currentValue: '' });
-        expect(data.fields.find(row => row.id === id).path).toBeUndefined();
+      for (const data of [before.data, result.data]) {
+        for (const id of ['birth-year', 'birth-month', 'birth-day', 'dash-year']) {
+          expect(data.fields.find(row => row.id === id)).toMatchObject({ semanticStatus: 'manual', currentValue: '' });
+          expect(data.fields.find(row => row.id === id).path).toBeUndefined();
+        }
+        expect(data.fields.find(row => row.id === 'whole-birthday')).toMatchObject({ semanticStatus: 'manual',
+          currentValue: '', path: 'birthDate', reason: 'option_not_found' });
+        expect(data.fields.find(row => row.id === 'whole-birthday').status).not.toBe('verified');
       }
-      for (const [id, value] of [['birth-year', '-1'], ['birth-month', '0'], ['birth-day', '日'], ['real-year', '1996'],
+      for (const [id, value] of [['birth-year', '-1'], ['birth-month', '0'], ['birth-day', '日'], ['dash-year', '-1'], ['whole-birthday', '0'], ['real-year', '1996'],
         ['frequency', 'month'], ['fullName', 'KEEP_EXISTING_NAME'], ['neighbor', 'ZOO_NEIGHBOR_KEEP']]) {
         expect(await zoo.page.locator(`#${id}`).inputValue()).toBe(value);
       }
@@ -116,6 +123,70 @@ for (const enabled of [false, true]) for (const preselected of [false, true]) {
         nonGetBlocked: 0, blacklistClickAttempts: 0, blacklistClicks: 0, guardFailed: false });
       expect(evidence.routing).toMatchObject({ rejected: [], nonGetReachedRoute: 0 });
       await fs.writeFile(testInfo.outputPath('select-readback-evidence.json'), JSON.stringify({ enabled, preselected, before, result, effects, evidence }, null, 2));
+    } finally { await zoo.close(); }
+  });
+}
+
+for (const enabled of [false, true]) for (const itemClass of ['form-item', 'ant-form-item']) {
+  test(`ordinary shared-row value ownership: enabled=${enabled}, class=${itemClass}`, async ({}, testInfo) => {
+    const zoo = await startZoo('write-route');
+    try {
+      await zoo.page.evaluate(itemClass => {
+        document.querySelector('#fullName').value = 'KEEP_EXISTING_NAME';
+        const label = (id, text) => itemClass === 'ant-form-item'
+          ? `<div class="ant-form-item-label"><label for="${id}">${text}</label></div>`
+          : `<label for="${id}">${text}</label>`;
+        document.querySelector('form').insertAdjacentHTML('afterbegin', `
+          <div class="${itemClass}">${label('phone', '手机号')}
+            <select id="prefix"><option value="+86">中国 (+86)</option></select><input id="phone" type="tel"></div>
+          <div class="${itemClass}">${label('birthday', '生日')}
+            <select id="year"><option value="-1">----</option><option value="1996">1996年</option></select><input id="birthday"></div>
+          <label for="owned-prefix">国家码</label><select id="owned-prefix"><option value="+86">中国 (+86)</option></select>`);
+        window.__ownershipEffects = [];
+        for (const type of ['input', 'change', 'click', 'submit']) document.addEventListener(type,
+          event => window.__ownershipEffects.push([type, event.target.id]), true);
+      }, itemClass);
+      const profile = { schemaVersion: 1, phone: '13800138000', birthDate: '1996-02-29',
+        customAnswers: { 国家码: '+86' }, customFacts: [{ question: '国家码', answer: '+86',
+          sitePageUrl: zoo.page.url(), sectionName: 'form:single', rowContext: 'none' }],
+        confirmedFields: ['phone', 'birthDate', 'customAnswers.国家码'] };
+      const profileBinding = await zoo.bind(profile);
+      await zoo.worker.evaluate(enabled => chrome.storage.local.set({ resumeAtsEngineWriteEnabled: enabled }), enabled);
+      await zoo.inject(['src/core/matcher.js', 'src/core/domain-memory.js', 'src/content/engine.js']);
+      const invoke = type => zoo.worker.evaluate(async ({ tabId, type, profile, profileBinding }) =>
+        chrome.tabs.sendMessage(tabId, { type, profile, profileBinding }), { tabId: zoo.tabId, type, profile, profileBinding });
+      const before = await invoke('RESUME_INSPECT');
+      expect(await zoo.page.evaluate(() => window.__ownershipEffects)).toEqual([]);
+      const result = await invoke('RESUME_FILL');
+      for (const data of [before, result]) {
+        expect(data.ok, JSON.stringify(data)).toBe(true);
+        for (const id of ['prefix', 'year']) {
+          const field = data.data.fields.find(row => row.id === id);
+          expect(field.path, JSON.stringify(field)).toBeUndefined();
+          expect(field.semanticStatus).toBe('manual');
+          expect(field.status).not.toBe('verified');
+        }
+        expect(data.data.fields.find(row => row.id === 'year').currentValue).toBe('');
+      }
+      const unconfirmedFramework = enabled && itemClass === 'ant-form-item';
+      for (const [id, path, value] of [['phone', 'phone', '13800138000'], ['birthday', 'birthDate', '1996-02-29']]) {
+        expect(before.data.fields.find(row => row.id === id)).toMatchObject({ path, currentValue: '' });
+        expect(result.data.fields.find(row => row.id === id)).toMatchObject({ path,
+          currentValue: unconfirmedFramework ? '' : value, status: unconfirmedFramework ? 'skipped' : 'verified',
+          ...(unconfirmedFramework ? { reason: 'control_or_version_unconfirmed' } : {}) });
+        expect(await zoo.page.locator(`#${id}`).inputValue()).toBe(unconfirmedFramework ? '' : value);
+      }
+      expect(result.data.fields.find(row => row.id === 'owned-prefix')).toMatchObject({ path: 'customAnswers.国家码', status: 'verified' });
+      for (const [id, value] of [['prefix', '+86'], ['year', '-1'], ['fullName', 'KEEP_EXISTING_NAME'], ['neighbor', 'ZOO_NEIGHBOR_KEEP']])
+        expect(await zoo.page.locator(`#${id}`).inputValue()).toBe(value);
+      const effects = await zoo.page.evaluate(() => window.__ownershipEffects);
+      expect(effects.every(([type, id]) => ['input', 'change'].includes(type) && ['phone', 'birthday'].includes(id))).toBe(true);
+      if (unconfirmedFramework) expect(effects).toEqual([]);
+      const evidence = await zoo.evidence();
+      expect(evidence).toMatchObject({ neverSave: true, liveSupportClaimed: false, nonGetObserved: 0, responseToNonGet: 0,
+        nonGetBlocked: 0, blacklistClickAttempts: 0, blacklistClicks: 0, guardFailed: false });
+      expect(evidence.routing).toMatchObject({ rejected: [], nonGetReachedRoute: 0 });
+      await fs.writeFile(testInfo.outputPath('shared-row-ownership-evidence.json'), JSON.stringify({ enabled, itemClass, before, result, effects, evidence }, null, 2));
     } finally { await zoo.close(); }
   });
 }

@@ -2,7 +2,7 @@
 // instances or handlers to the extension. No events, setters or network calls.
 (() => {
   'use strict';
-  if (globalThis.ResumeControlModel?.version === 1 && globalThis.ResumeControlModel.revision === 4) return;
+  if (globalThis.ResumeControlModel?.version === 1 && globalThis.ResumeControlModel.revision === 5) return;
   const norm = value => String(value ?? '').normalize('NFKC').replace(/\s+/gu, ' ').trim();
   function serial(value, depth = 0) {
     if (value == null || ['string', 'number', 'boolean'].includes(typeof value)) return value ?? null;
@@ -66,6 +66,15 @@
       && (requested.length !== owned.length || requested.some(control => !owned.includes(control)))) return false;
     return true;
   }
+  function ownsSelect(root, el, name) {
+    const selector = { ElSelect: '.el-select', ASelect: '.ant-select', iSelect: '.ivu-select' }[name];
+    if (!root?.matches?.(selector) || !ownsControl(root, el, true)) return false;
+    // Search/display inputs may share one widget model. A native select or a
+    // neighbouring editor in a shared form row cannot borrow that model.
+    return valueControls(root).every(input => input.matches('input')
+      && ['text', 'search'].includes(input.type)
+      && input.closest('.el-select,.ant-select,.ivu-select') === root);
+  }
   function fiberRoots(fiber) {
     if (fiber?.stateNode?.nodeType === 1) return [fiber.stateNode];
     const roots = [], queue = fiber?.child ? [fiber.child] : [], seen = new Set();
@@ -110,7 +119,9 @@
         const name = vm.$options?.name || vm.$options?._componentTag || '';
         frameworkFallback ||= { element: el, framework: 'vue2', props: {} };
         const multiple = /(?:Select|DatePicker|MonthPicker|CalendarPicker|Cascader|RadioGroup|CheckboxGroup)$/u.test(name);
-        if (knownVue.test(name) && ownsControl(vm.$el, el, multiple)) {
+        const owns = /^(?:ElSelect|ASelect|iSelect)$/u.test(name)
+          ? ownsSelect(vm.$el, el, name) : ownsControl(vm.$el, el, multiple);
+        if (knownVue.test(name) && owns) {
           const owner = name === 'AMonthPicker' ? monthOwner(vm) : { vm };
           const found = { ...owner, props: owner.vm.$props || {}, element: owner.vm.$el, componentName: name, framework: 'vue2' };
           // Display/search inputs belong to their Select/DatePicker/Cascader.
@@ -118,7 +129,7 @@
           if (/^(?:ElInput|AInput|ATextarea)$/u.test(name)) inputFallback ||= found;
           else return found;
         }
-        if (ownsControl(vm.$el, el)) vueFallback ||= {
+        if (!/^(?:ElSelect|ASelect|iSelect)$/u.test(name) && ownsControl(vm.$el, el)) vueFallback ||= {
           vm, props: vm.$props || {}, element: vm.$el, componentName: name, framework: 'vue2'
         };
       }
@@ -221,5 +232,5 @@
       multiple: !!props.multiple, separator: typeof props.separator === 'string' ? props.separator : null,
       versionEvidence: version ? 'page_library_export' : 'version_unconfirmed' };
   }
-  globalThis.ResumeControlModel = Object.freeze({ version: 1, revision: 4, inspect, resolve, serial, optionsOf });
+  globalThis.ResumeControlModel = Object.freeze({ version: 1, revision: 5, inspect, resolve, serial, optionsOf });
 })();

@@ -92,29 +92,87 @@ test('ordinary country-code and phone selects compare the selected option, prese
   }
 });
 
+test('ordinary shared rows bind explicit labels only to their own value controls', async t => {
+  for (const enabled of [false, true]) for (const itemClass of ['form-item', 'ant-form-item']) {
+    const label = (id, text) => itemClass === 'ant-form-item'
+      ? `<div class="ant-form-item-label"><label for="${id}">${text}</label></div>`
+      : `<label for="${id}">${text}</label>`;
+    const h = await harness({ enabled, html: `<form>
+      <div class="${itemClass}">${label('phone', '手机号')}
+        <select id="prefix"><option value="+86">中国 (+86)</option></select><input id="phone" type="tel"></div>
+      <div class="${itemClass}">${label('birthday', '生日')}
+        <select id="year"><option value="-1">----</option><option value="1996">1996年</option></select><input id="birthday"></div>
+      <label for="owned-prefix">国家码</label><select id="owned-prefix"><option value="+86">中国 (+86)</option></select>
+      <input id="neighbor" value="KEEP"><button type="submit">保存</button></form>` });
+    t.after(() => h.dom.window.close());
+    h.data.resumeProfile = { schemaVersion: 1, phone: '13800138000', birthDate: '1996-02-29',
+      customAnswers: { 国家码: '+86' }, customFacts: [{ question: '国家码', answer: '+86',
+        sitePageUrl: h.tab.url, sectionName: 'form:single', rowContext: 'none' }],
+      confirmedFields: ['phone', 'birthDate', 'customAnswers.国家码'] };
+    const effects = [];
+    for (const type of ['input', 'change', 'blur', 'click', 'submit'])
+      h.window.document.addEventListener(type, event => effects.push([type, event.target.id]), true);
+    const before = await h.inspect();
+    const filled = await h.fill();
+    for (const result of [before, filled]) {
+      assert.equal(result.ok, true, JSON.stringify(result));
+      for (const id of ['prefix', 'year']) {
+        const field = result.data.fields.find(row => row.id === id);
+        assert.equal(field.path, undefined, JSON.stringify(field));
+        assert.equal(field.semanticStatus, 'manual');
+        assert.notEqual(field.status, 'verified');
+      }
+      assert.equal(result.data.fields.find(row => row.id === 'year').currentValue, '');
+    }
+    const after = await h.inspect();
+    const unconfirmedFramework = enabled && itemClass === 'ant-form-item';
+    for (const [id, path, value] of [['phone', 'phone', '13800138000'], ['birthday', 'birthDate', '1996-02-29']]) {
+      assert.equal(before.data.fields.find(row => row.id === id).currentValue, '');
+      assert.equal(after.data.fields.find(row => row.id === id).path, path);
+      assert.equal(after.data.fields.find(row => row.id === id).currentValue, unconfirmedFramework ? '' : value);
+      const field = filled.data.fields.find(row => row.id === id);
+      assert.equal(field.status, unconfirmedFramework ? 'skipped' : 'verified');
+      if (unconfirmedFramework) assert.equal(field.reason, 'control_or_version_unconfirmed');
+      assert.equal(h.window.document.getElementById(id).value, unconfirmedFramework ? '' : value);
+    }
+    assert.equal(after.data.fields.find(row => row.id === 'owned-prefix').path, 'customAnswers.国家码');
+    assert.equal(h.window.document.getElementById('prefix').value, '+86');
+    assert.equal(h.window.document.getElementById('year').value, '-1');
+    assert.equal(h.window.document.getElementById('neighbor').value, 'KEEP');
+    assert.equal(effects.every(([type, id]) => ['input', 'change', 'blur'].includes(type) && ['phone', 'birthday'].includes(id)), true);
+    if (unconfirmedFramework) assert.deepEqual(effects, [], 'class-only frameworks must not fall through to native writes');
+  }
+});
+
 test('ordinary birthday part placeholders read empty while unbound parts remain manual', async t => {
   const h = await harness({ enabled: true, html: `<form><label for="year">年</label><select id="year"><option value="-1">年</option><option value="1996">1996</option></select>
     <label for="month">月</label><select id="month"><option value="0">月</option><option value="02">2</option></select>
     <label for="day">日</label><select id="day"><option value="日">日</option><option value="29">29</option></select>
+    <label for="dash">年</label><select id="dash"><option value="-1">----</option><option value="1996">1996年</option></select>
+    <label for="whole-birthday">生日</label><select id="whole-birthday"><option value="0">----</option><option value="1996">1996年</option></select>
     <label for="selected">年份</label><select id="selected"><option value="1996">1996</option></select>
     <label for="frequency">周期</label><select id="frequency"><option value="month">Month</option><option value="week">Week</option></select>
     <input id="neighbor" value="KEEP"></form>` });
   t.after(() => h.dom.window.close());
   h.data.resumeProfile = { schemaVersion: 1, birthDate: '1996-02-29', confirmedFields: ['birthDate'] };
   const previousListener = h.window.__resumeQuickFillEngineListener;
-  h.window.__resumeQuickFillEngineRevision = 14;
+  h.window.__resumeQuickFillEngineRevision = 15;
   h.window.eval(source('src/content/engine.js'));
-  assert.equal(h.window.__resumeQuickFillEngineRevision, 15);
+  assert.equal(h.window.__resumeQuickFillEngineRevision, 16);
   assert.notEqual(h.window.__resumeQuickFillEngineListener, previousListener);
   let events = 0;
   for (const type of ['input', 'change', 'click']) h.window.document.addEventListener(type, () => events++);
   for (const result of [await h.inspect(), await h.fill()]) {
     assert.equal(result.ok, true, JSON.stringify(result));
-    for (const id of ['year', 'month', 'day']) {
+    for (const id of ['year', 'month', 'day', 'dash']) {
       const row = result.data.fields.find(field => field.id === id);
       assert.equal(row.currentValue, ''); assert.equal(row.semanticStatus, 'manual');
       assert.equal(row.path, undefined);
     }
+    const wholeBirthday = result.data.fields.find(row => row.id === 'whole-birthday');
+    assert.equal(wholeBirthday.currentValue, ''); assert.equal(wholeBirthday.path, 'birthDate');
+    assert.equal(wholeBirthday.reason, 'option_not_found'); assert.equal(wholeBirthday.semanticStatus, 'manual');
+    assert.notEqual(wholeBirthday.status, 'verified');
     assert.equal(result.data.fields.find(row => row.id === 'selected').currentValue, '1996');
     assert.equal(result.data.fields.find(row => row.id === 'frequency').currentValue, 'Month');
   }
@@ -206,6 +264,28 @@ test('ordinary opt-in route leaves unknown My97 configuration manual without leg
   assert.equal(row.adapterStatus, 'manual', JSON.stringify(result));
   assert.equal(h.window.document.getElementById('date').value, '');
   assert.equal(events, 0);
+});
+
+test('unassociated row labels and nested labels cannot bind multiple editors', async t => {
+  const editors = '<select id="prefix"><option value="+86">China (+86)</option></select><input id="phone" type="tel">';
+  for (const enabled of [false, true]) for (const html of [
+    `<div class="form-item"><label>手机号</label>${editors}</div>`, `<label>手机号${editors}</label>`,
+  ]) {
+    const h = await harness({ enabled, html: `<form>${html}</form>` });
+    t.after(() => h.dom.window.close());
+    h.data.resumeProfile = { schemaVersion: 1, phone: '13800138000', confirmedFields: ['phone'] };
+    const effects = [];
+    for (const type of ['input', 'change', 'blur', 'click', 'submit'])
+      h.window.document.addEventListener(type, event => effects.push(type), true);
+    for (const result of [await h.inspect(), await h.fill()]) for (const field of result.data.fields) {
+      assert.equal(field.path, undefined, JSON.stringify(field));
+      assert.equal(field.semanticStatus, 'manual');
+      assert.notEqual(field.status, 'verified');
+    }
+    assert.equal(h.window.document.getElementById('prefix').value, '+86');
+    assert.equal(h.window.document.getElementById('phone').value, '');
+    assert.deepEqual(effects, []);
+  }
 });
 
 test('enabled route fails closed without falling back to the legacy native setter', async t => {

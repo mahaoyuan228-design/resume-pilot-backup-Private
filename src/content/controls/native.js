@@ -6,7 +6,7 @@
   const api = globalThis.ResumeControls;
   if (!api) throw new Error('control_registry_missing');
   if (api.list?.().some(adapter => adapter.name === 'native-text')) return;
-  const { norm, equal, nativeSet, safeClick, tick } = api.helpers;
+  const { norm, equal, prose, proseEqual, richtextValue, nativeSet, safeClick, tick } = api.helpers;
   const textTypes = new Set(['text', 'email', 'tel', 'url', 'search', 'number']);
   const frameworkClass = /(?:^|\s)(?:el|ant|ivu|ud|phoenix|atsx|am)-[^\s]+/u;
   const complexClass = /(?:^|\s)[^\s]*(?:cascader|picker|select-wrap|plugin-dialog)[^\s]*/u;
@@ -14,7 +14,7 @@
   // A class-only or unrecognised framework widget must not become native text.
   // That includes its readonly display input and its hidden search input.
   function plain(el, probe, searchable = false) {
-    if (!el || !el.matches?.('input,textarea,select')) return false;
+    if (!el || !el.matches?.('input,textarea,select,[contenteditable]')) return false;
     if (probe?.lib && probe.lib !== 'native') return false;
     if (probe?.framework && probe.framework !== 'native') return false;
     for (let node = el; node && node !== document.body; node = node.parentElement) {
@@ -261,14 +261,89 @@
   });
   register({ name: 'native-textarea', type: 'textarea',
     matches: (el, probe) => plain(el, probe) && el.tagName === 'TEXTAREA',
-    readModel: (el, probe) => base(el, probe, el.value),
+    readModel: (el, probe) => ({ ...base(el, probe, el.value), maxLength: el.maxLength,
+      disabled: disabled(el) || !!el.closest('[aria-disabled="true"],[inert]'),
+      readonly: !!el.readOnly || !!el.closest('[aria-readonly="true"]') }),
     async performWrite(el, instruction, ctx) {
       const reason = guards(el);
       if (reason) return noWrite(reason);
-      const value = String(targetValue(instruction) ?? '');
-      if (el.value && !equal(el.value, value)) return noWrite('existing_value');
-      if (equal(el.value, value)) return { strategy: 'native', attempts: 0 };
-      await nativeSet(el, value, ctx);
+      if (el.closest('[aria-disabled="true"],[inert]')) return noWrite('disabled');
+      if (el.closest('[aria-readonly="true"]')) return noWrite('readonly');
+      if (typeof targetValue(instruction) !== 'string') return noWrite('invalid_text_value');
+      const value = prose(targetValue(instruction));
+      if (el.maxLength >= 0 && value.length > el.maxLength) return noWrite('value_too_long');
+      if (el.value && !proseEqual(el.value, value)) return noWrite('existing_value');
+      if (proseEqual(el.value, value)) return { strategy: 'native', attempts: 0 };
+      await nativeSet(el, value, { ...ctx, async check() {
+        await ctx.check();
+        const reason = guards(el);
+        if (reason) throw Error(reason);
+        if (el.closest('[aria-disabled="true"],[inert]')) throw Error('disabled');
+        if (el.closest('[aria-readonly="true"]')) throw Error('readonly');
+        if (el.maxLength >= 0 && value.length > el.maxLength) throw Error('value_too_long');
+        if (el.value && !proseEqual(el.value, value)) throw Error('existing_value');
+      } });
+      await tick();
+      return { strategy: 'native', attempts: 1 };
+    }
+  });
+
+  function richtextRoot(el, probe) {
+    const editable = el?.getAttribute?.('contenteditable')?.toLowerCase();
+    if (!['', 'true', 'plaintext-only'].includes(editable)
+      || !el.matches('div,p,span,pre,blockquote,section,article') || !plain(el, probe)) return false;
+    // Only an explicit editing host owns this value. Nested editors and unknown
+    // runtime models stay manual; a role or CSS class alone grants no writer.
+    for (let parent = el.parentElement; parent; parent = parent.parentElement) {
+      const value = parent.getAttribute('contenteditable')?.toLowerCase();
+      if (['', 'true', 'plaintext-only'].includes(value)) return false;
+      if (value === 'false') break;
+    }
+    return true;
+  }
+  function richtextModel(el, probe) {
+    const nodes = [el, ...el.querySelectorAll('*')];
+    const safeTags = /^(?:DIV|P|SPAN|BR|B|STRONG|I|EM|U|S|STRIKE|UL|OL|LI|BLOCKQUOTE|PRE|CODE|H[1-6]|SECTION|ARTICLE)$/u;
+    const block = /^(?:DIV|P|LI|UL|OL|BLOCKQUOTE|PRE|H[1-6]|SECTION|ARTICLE)$/u;
+    const available = richtextRoot(el, probe) && nodes.every(node => {
+      const style = getComputedStyle(node);
+      const displays = node === el ? ['', 'block', 'inline', 'inline-block', 'flow-root', 'list-item']
+        : block.test(node.tagName) ? ['', 'block', 'list-item', 'flow-root'] : ['', 'inline'];
+      return safeTags.test(node.tagName) && (node === el || !node.hasAttribute('contenteditable'))
+        && !node.matches('[hidden],[aria-hidden="true"],[inert]') && style.display !== 'none'
+        && !['hidden', 'collapse'].includes(style.visibility) && displays.includes(style.display);
+    });
+    const value = richtextValue(el);
+    return { ...base(el, probe, value), available,
+      disabled: !!el.closest('[aria-disabled="true"],[inert]'),
+      readonly: !!el.closest('[aria-readonly="true"]'), readbackSource: 'editable_plain_text' };
+  }
+  register({ name: 'native-richtext', type: 'richtext', priority: 15,
+    matches: richtextRoot, readModel: richtextModel,
+    async performWrite(el, instruction, ctx) {
+      if (typeof targetValue(instruction) !== 'string') return noWrite('invalid_text_value');
+      const value = prose(targetValue(instruction));
+      const owned = { ...ctx, async check() {
+        await ctx.check();
+        const model = richtextModel(el, globalThis.ResumeControlModel.inspect(el));
+        if (!model.available || model.disabled || model.readonly || !api.helpers.clickAllowed(el)) throw Error('control_not_writable');
+        if (model.value !== '' && !proseEqual(model.value, value)) throw Error('existing_value');
+      } };
+      await api.helpers.check(owned);
+      if (proseEqual(richtextValue(el), value)) return { strategy: 'native', attempts: 0 };
+      // Plain text only: never parse profile text as HTML or invoke editor APIs.
+      const fragment = document.createDocumentFragment();
+      value.split('\n').forEach((line, index) => {
+        if (index) fragment.append(document.createElement('br'));
+        fragment.append(document.createTextNode(line));
+      });
+      el.replaceChildren(fragment);
+      for (const type of ['input', 'change', 'blur']) {
+        await api.helpers.check(owned);
+        const EventType = type === 'input' ? InputEvent : Event;
+        el.dispatchEvent(new EventType(type, { bubbles: true,
+          ...(type === 'input' ? { inputType: 'insertText', data: value } : {}) }));
+      }
       await tick();
       return { strategy: 'native', attempts: 1 };
     }

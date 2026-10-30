@@ -158,7 +158,7 @@ test('ordinary birthday part placeholders read empty while unbound parts remain 
   const previousListener = h.window.__resumeQuickFillEngineListener;
   h.window.__resumeQuickFillEngineRevision = 15;
   h.window.eval(source('src/content/engine.js'));
-  assert.equal(h.window.__resumeQuickFillEngineRevision, 17);
+  assert.equal(h.window.__resumeQuickFillEngineRevision, 18);
   assert.notEqual(h.window.__resumeQuickFillEngineListener, previousListener);
   let events = 0;
   for (const type of ['input', 'change', 'click']) h.window.document.addEventListener(type, () => events++);
@@ -544,5 +544,111 @@ test('intent arrays project only individually confirmed entries into the opt-in 
     assert.equal(h.window.document.getElementById('intent').value, 'confirmed-code');
     const write = h.calls.find(call => call.func?.name === 'writeControlInPage');
     assert.deepEqual(write.args[0].value, ['已确认选项']);
+  }
+});
+
+test('ordinary textarea routes retain line breaks, spaces and terminal blank lines', async t => {
+  const value = '第一行  内容\r\n第二行\r\n\r\n';
+  for (const component of ['native', 'ElInput', 'ATextarea']) {
+    const h = await harness({ enabled: true, html: '<form><label for="prose">自我评价</label><textarea id="prose"></textarea><input id="neighbor" value="KEEP"></form>' });
+    t.after(() => h.dom.window.close());
+    h.data.resumeProfile = { schemaVersion: 1, selfEvaluation: value, confirmedFields: ['selfEvaluation'] };
+    const el = h.window.document.getElementById('prose');
+    let props;
+    if (component !== 'native') {
+      const lib = component === 'ElInput' ? 'ELEMENT' : 'antd';
+      h.window[lib] = { version: component === 'ElInput' ? '2.15.14' : '1.7.8' };
+      props = { value: '', type: 'textarea' };
+      el.__vue__ = { $el: el, $options: { name: component }, $props: props };
+      el.addEventListener('input', () => { props.value = el.value; });
+    }
+    const result = await h.fill(), row = result.data.fields.find(field => field.id === 'prose');
+    assert.equal(row.status, 'verified', JSON.stringify(result));
+    assert.equal(row.adapter, component === 'native' ? 'native-textarea' : component === 'ElInput' ? 'el-textarea' : 'antdv1-textarea');
+    assert.equal(el.value, value.replace(/\r\n?/gu, '\n'));
+    assert.equal(row.currentValue, el.value);
+    if (props) assert.equal(props.value, el.value);
+    assert.equal(h.window.document.getElementById('neighbor').value, 'KEEP');
+    assert.equal(result.data.liveSupportClaimed, false);
+    assert.equal(h.calls.filter(call => call.func?.name === 'writeControlInPage').length, 1);
+  }
+});
+
+test('ordinary richtext discovery requires opt-in and preserves plain prose without HTML interpretation', async t => {
+  const value = '<b>保留文字</b>  第一行\n第二行\n\n';
+  for (const enabled of [undefined, false, true]) for (const label of ['for', 'aria']) {
+    const h = await harness({ enabled, html: `<form>${label === 'for' ? '<label for="prose">自我评价</label>' : ''}<div id="prose" contenteditable="true"${label === 'aria' ? ' aria-label="自我评价"' : ''}></div><input id="neighbor" value="KEEP"><button type="submit">提交</button><button type="button">保存</button></form>` });
+    t.after(() => h.dom.window.close());
+    h.data.resumeProfile = { schemaVersion: 1, selfEvaluation: value, confirmedFields: ['selfEvaluation'] };
+    let forbidden = 0;
+    for (const type of ['click', 'submit']) h.window.document.addEventListener(type, () => forbidden++);
+    const result = await h.fill(), el = h.window.document.getElementById('prose');
+    assert.equal(result.ok, true, JSON.stringify(result));
+    if (enabled) {
+      const row = result.data.fields.find(field => field.id === 'prose');
+      assert.equal(row.status, 'verified', JSON.stringify(result));
+      assert.equal(row.adapter, 'native-richtext');
+      assert.equal(row.currentValue, value);
+      assert.equal(h.window.ResumeControls.helpers.richtextValue(el), value);
+      assert.equal(el.querySelectorAll('br').length, value.split('\n').length - 1);
+      assert.equal(el.firstChild.nodeType, h.window.Node.TEXT_NODE);
+      assert.equal(result.data.liveSupportClaimed, false);
+      assert.equal(h.calls.filter(call => call.func?.name === 'writeControlInPage').length, 1);
+    } else {
+      assert.equal(el.textContent, '');
+      assert.equal(h.calls.filter(call => call.func?.name === 'writeControlInPage').length, 0);
+    }
+    assert.equal(h.window.document.getElementById('neighbor').value, 'KEEP');
+    assert.equal(forbidden, 0);
+  }
+});
+
+test('ordinary prose existing-value checks distinguish flattened lines and preserve formatted richtext', async t => {
+  for (const html of ['<textarea id="prose">第一行 第二行</textarea>',
+    '<div id="prose" contenteditable="true"><p>第一行</p><p>第二行</p></div>']) {
+    const richtext = html.includes('contenteditable');
+    const h = await harness({ enabled: true, html: `<form><label for="prose">自我评价</label>${html}</form>` });
+    t.after(() => h.dom.window.close());
+    h.data.resumeProfile = { schemaVersion: 1, selfEvaluation: '第一行\n第二行', confirmedFields: ['selfEvaluation'] };
+    const el = h.window.document.getElementById('prose'), before = el.innerHTML;
+    let effects = 0;
+    for (const type of ['input', 'change', 'blur']) el.addEventListener(type, () => effects++);
+    const result = await h.fill(), row = result.data.fields.find(field => field.id === 'prose');
+    assert.equal(row.reason, richtext ? 'preexisting_same_value' : 'existing_value', JSON.stringify(result));
+    assert.equal(row.status, richtext ? 'verified' : 'skipped', JSON.stringify(result));
+    assert.equal(el.innerHTML, before);
+    assert.equal(effects, 0);
+  }
+});
+
+test('ordinary richtext final readback detects a later line flattening without retry', async t => {
+  const h = await harness({ enabled: true, html: '<form><div id="prose" contenteditable="true" aria-label="自我评价"></div><label for="phone">手机号</label><input id="phone"></form>' });
+  t.after(() => h.dom.window.close());
+  h.data.resumeProfile = { schemaVersion: 1, selfEvaluation: '第一行\n第二行', phone: '13800138000', confirmedFields: ['selfEvaluation', 'phone'] };
+  const el = h.window.document.getElementById('prose');
+  let inputs = 0;
+  el.addEventListener('input', () => inputs++);
+  h.window.document.getElementById('phone').addEventListener('input', () => { el.textContent = '第一行 第二行'; });
+  const result = await h.fill(), row = result.data.fields.find(field => field.id === 'prose');
+  assert.equal(row.status, 'failed', JSON.stringify(result));
+  assert.equal(row.reason, 'readback_mismatch');
+  assert.equal(row.adapterStatus, 'reverted');
+  assert.equal(row.currentValue, '第一行 第二行');
+  assert.equal(inputs, 1);
+  assert.equal(h.calls.filter(call => call.func?.name === 'writeControlInPage' && call.args[0].selector === '#prose').length, 1);
+});
+
+test('ordinary richtext candidates reject nested, disabled and unconfirmed framework surfaces', async t => {
+  for (const html of ['<div id="prose" contenteditable="false"></div>',
+    '<div id="prose" contenteditable="true" aria-disabled="true"></div>',
+    '<div contenteditable="true"><div id="prose" contenteditable="true"></div></div>',
+    '<div class="ant-editor"><div id="prose" contenteditable="true"></div></div>']) {
+    const h = await harness({ enabled: true, html: `<form>${html.replace('id="prose"', 'id="prose" aria-label="自我评价"')}</form>` });
+    t.after(() => h.dom.window.close());
+    h.data.resumeProfile = { schemaVersion: 1, selfEvaluation: '安全边界', confirmedFields: ['selfEvaluation'] };
+    const result = await h.fill();
+    assert.equal(result.ok, true, JSON.stringify(result));
+    assert.equal(h.window.document.getElementById('prose').textContent, '');
+    assert.equal(h.calls.filter(call => call.func?.name === 'writeControlInPage').length, 0);
   }
 });

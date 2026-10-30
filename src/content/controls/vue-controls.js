@@ -96,7 +96,14 @@
     }
     const monthInputs = probe.lib === 'ant-design-vue' && probe.componentName === 'AMonthPicker'
       ? all(root, 'input:not([type="hidden"])') : null;
+    const textarea = probe.componentName === 'ATextarea' || probe.componentName === 'ElInput' && probe.type === 'textarea';
+    const input = textarea ? valueInput(root) : null;
     return { ...probe, options, domValue,
+      ...(textarea ? { available: probe.available && input?.tagName === 'TEXTAREA',
+        disabled: probe.disabled || !!input?.disabled || !!input?.matches(':disabled')
+          || !!input?.closest('[aria-disabled="true"],[inert]'),
+        readonly: probe.readonly || !!input?.readOnly || !!input?.closest('[aria-readonly="true"]'),
+        maxLength: input?.maxLength ?? -1 } : {}),
       ...(monthInputs && monthInputs.length !== 1 ? { available: false, modelReason: 'month_ownership_unconfirmed' } : {}) };
   }
 
@@ -116,8 +123,29 @@
   }
 
   async function writeInput(el, instruction, ctx) {
-    const input = valueInput(rootOf(el, inspect(el)));
+    const probe = inspect(el), root = rootOf(el, probe), input = valueInput(root);
     if (!input || input.readOnly || input.disabled) return unsupported('control_guard');
+    if (probe.componentName === 'ATextarea' || probe.componentName === 'ElInput' && probe.type === 'textarea') {
+      if (input.tagName !== 'TEXTAREA' || typeof instruction.value !== 'string') return unsupported('invalid_textarea_value');
+      const value = H.prose(instruction.value), initial = modelFor(el, probe), owner = resolve(el).vm;
+      if (!initial.available || initial.disabled || initial.readonly) return unsupported('control_guard');
+      if ((!empty(initial.value) && !H.proseEqual(initial.value, value))
+        || (!empty(initial.domValue) && !H.proseEqual(initial.domValue, value))) return unsupported('existing_value');
+      if (initial.maxLength >= 0 && value.length > initial.maxLength) return unsupported('value_too_long');
+      const same = (a, b) => a === b || H.proseEqual(a, b);
+      const guarded = { ...ctx, async check() {
+        await ctx.check();
+        const current = modelFor(el, inspect(el));
+        if (!input.isConnected || resolve(el).vm !== owner || current.controlRoot !== root
+          || valueInput(root) !== input || current.version !== probe.version
+          || !current.available || current.disabled || current.readonly
+          || current.maxLength >= 0 && value.length > current.maxLength) throw Error('control_changed');
+        if ((!same(current.value, initial.value) && !H.proseEqual(current.value, value))
+          || (!same(current.domValue, initial.domValue) && !H.proseEqual(current.domValue, value))) throw Error('existing_value');
+      } };
+      await H.nativeSet(input, value, guarded);
+      return { strategy: 'native', attempts: 1 };
+    }
     await H.nativeSet(input, String(instruction.value), ctx);
     return { strategy: 'native', attempts: 1 };
   }

@@ -14,9 +14,10 @@ export function readControlCandidatesInPage(expectedUrl, timeOrigin) {
   if (registry?.version !== 1 || registry.liveSupportClaimed !== false) throw Error('control_registry_missing');
   const names = new Set(['ivu-select', 'ivu-date', 'ud-select', 'ud-date', 'ud-cascader', 'phoenix-select', 'phoenix-cascader', 'phoenix-date',
     'native-date', 'native-month', 'my97-date', 'my97-datetime', 'antdv1-month',
-    'native-combobox-search', 'el-autocomplete', 'antdv1-autocomplete', 'el-select-search', 'antdv1-select-search']);
+    'native-combobox-search', 'el-autocomplete', 'antdv1-autocomplete', 'el-select-search', 'antdv1-select-search',
+    'native-textarea', 'el-textarea', 'antdv1-textarea', 'native-richtext']);
   const candidates = [];
-  for (const element of [...document.querySelectorAll('input,textarea')].slice(0, 300)) {
+  for (const element of [...document.querySelectorAll('input,textarea,[contenteditable]')].slice(0, 300)) {
     if (['hidden', 'password', 'file', 'submit', 'button', 'reset', 'image'].includes(element.type)
       || element.disabled || element.getRootNode() !== document) continue;
     const inspection = registry.inspect(element), model = inspection.model;
@@ -62,7 +63,7 @@ export async function writeControlInPage(payload) {
     // Existing intent facts are a list of individually confirmed answers. A
     // single-choice control may consume only an exactly-one projection.
     const value = Array.isArray(payload.value) && payload.value.length === 1
-      && ['text', 'textarea', 'select', 'select-search', 'radio'].includes(selectedAdapter?.type)
+      && ['text', 'textarea', 'richtext', 'select', 'select-search', 'radio'].includes(selectedAdapter?.type)
       ? payload.value[0] : payload.value;
     const plan = registry.plan(element, { value });
     if (!['planned', 'success'].includes(plan.status)) return { ...plan, writeStarted: false, liveSupportClaimed: false };

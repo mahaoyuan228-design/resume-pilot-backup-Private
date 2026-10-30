@@ -1,5 +1,5 @@
-import { extractResumeText } from './parser.mjs';
-import { detectResumeCandidates, mergeResumeCandidates } from './candidates.mjs';
+import { parseResumeProfile } from './parser.mjs';
+import { mergeResumeCandidates } from './candidates.mjs';
 import { loadProfile, saveProfile } from '../profile/store.js';
 import { clearAttachment, loadAttachment, MAX_ATTACHMENT_BYTES, saveAttachment } from './attachment-store.js';
 import {createSelectionOwner} from './selection-owner.mjs';
@@ -84,12 +84,11 @@ $('resume-file').addEventListener('change', async (event) => {
   setStatus('import-status', '');
   setStatus('status', '正在本机提取文字…');
   try {
-    const result = await owner.parse(token,file,extractResumeText);
-    const analysis = detectResumeCandidates(result.text);
+    const result = await owner.parse(token,file,parseResumeProfile);
     $('extracted-text').value = result.text;
-    renderWarnings([...result.warnings, ...analysis.warnings]);
-    renderCandidates(analysis.candidates);
-    setStatus('status', `已读取 ${result.format}，提取 ${result.text.length} 个文字，找到 ${analysis.candidates.length} 项候选。`, 'success');
+    renderWarnings(result.warnings);
+    renderCandidates(result.candidates);
+    setStatus('status', `已读取 ${result.format}，提取 ${result.text.length} 个文字，找到 ${result.candidates.length} 项候选。`, 'success');
   } catch (error) {
     if(selectionToken===token)setStatus('status', error?.message || '简历读取失败，请检查文件。', 'error');
   } finally {

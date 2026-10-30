@@ -153,6 +153,7 @@ test('native Blink accepts owned never-opened Vue/Ant option VNodes under the st
     const pending = new Set();
     const requests = [];
     const errors = [];
+    const contexts = [];
     let child, session, testFailed = false;
     try {
       child = spawn(chrome, ['--headless=new', '--disable-gpu', '--disable-background-networking',
@@ -172,6 +173,7 @@ test('native Blink accepts owned never-opened Vue/Ant option VNodes under the st
       assert.equal(pages.length, 1, 'only the freshly launched blank page is selected');
       assert.equal(new URL(pages[0].webSocketDebuggerUrl).port, String(port));
       session = await connectCdp(pages[0].webSocketDebuggerUrl, { timeoutMs: 5000, onEvent(event) {
+        if (event.method === 'Runtime.executionContextCreated') contexts.push(event.params.context);
         if (event.method !== 'Fetch.requestPaused') return;
         const { requestId, request } = event.params;
         const asset = request.method === 'GET' ? assets.get(request.url) : undefined;
@@ -206,7 +208,20 @@ test('native Blink accepts owned never-opened Vue/Ant option VNodes under the st
       assert.equal(status.portalCount, 0, 'a never-opened real Ant select has no dropdown portal');
       assert.equal(status.optionDomCount, 0);
       assert.equal(status.selectedNodeCount, 1, 'the private selected display is protected by getters');
-      const strict = { returnByValue: true, awaitPromise: false, userGesture: false,
+      await session.send('Runtime.enable');
+      const frame = (await session.send('Page.getFrameTree')).frameTree.frame;
+      const main = contexts.filter(context => context.auxData?.isDefault === true && context.auxData.frameId === frame.id);
+      assert.equal(main.length, 1);
+      const isolated = await session.send('Page.createIsolatedWorld', { frameId: frame.id, worldName: 'row-d-offline-utility' });
+      const worldExpression = `({count:document.querySelectorAll('.ant-select').length,
+        vue:!!Object.getOwnPropertyDescriptor(document.querySelector('.ant-select'),'__vue__')})`;
+      for (const [contextId, vue] of [[main[0].id, true], [isolated.executionContextId, false]]) {
+        const world = await session.send('Runtime.evaluate', { expression: worldExpression, contextId,
+          throwOnSideEffect: true, returnByValue: true });
+        assert.equal(world.exceptionDetails, undefined);
+        assert.deepEqual(world.result.value, { count: 1, vue });
+      }
+      const strict = { contextId: main[0].id, returnByValue: true, awaitPromise: false, userGesture: false,
         throwOnSideEffect: true, timeout: 5000 };
       const reply = await session.send('Runtime.evaluate', {
         ...strict, expression: buildCmsRowDOptionsProbeExpression()
@@ -243,7 +258,12 @@ test('native Blink accepts owned never-opened Vue/Ant option VNodes under the st
         ...strict, expression: buildCmsRowDOptionsProbeExpression()
       });
       assert.equal(recovered.exceptionDetails, undefined, JSON.stringify(recovered.exceptionDetails));
-      assert.deepEqual(recovered.result.value, inspection,
+      const expectedRecovery = structuredClone(inspection);
+      const rootDiagnostic = expectedRecovery.fields[0].optionsRootDiagnostic;
+      rootDiagnostic.selectVue = 'absent';
+      rootDiagnostic.pathData -= 1;
+      rootDiagnostic.pathAbsent += 1;
+      assert.deepEqual(recovered.result.value, expectedRecovery,
         'strict full inspector recovers the same definitions through current local ancestor VNodes');
       const after = await session.send('Runtime.evaluate', { returnByValue: true,
         expression: `({ effects: globalThis.__ownedOptionsFixture.effects,

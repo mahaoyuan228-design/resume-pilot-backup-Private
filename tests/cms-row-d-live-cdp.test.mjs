@@ -71,6 +71,9 @@ async function cdpStub(t, {
         if (message.method === 'Emulation.setFocusEmulationEnabled') focusEnabled = message.params.enabled;
         if (message.method === visibilityNonGetAt && message.params.enabled !== false) requestEvents('POST');
       }
+      if (message.method === 'Runtime.enable') socket.send(JSON.stringify({ method: 'Runtime.executionContextCreated',
+        params: { context: { id: 71, auxData: { isDefault: true, frameId: 'top-frame' } } } }));
+      if (message.method === 'Page.getFrameTree') { reply({ frameTree: { frame: { id: 'top-frame', url: ROW_D_PAGE } } }); return; }
       if (message.method === 'Runtime.evaluate') {
         evaluationCount += 1;
         const names = calls.map(call => call.method);
@@ -224,8 +227,8 @@ test('actual loopback transport avoids a short final read when completed inspect
   assert.equal(result.traffic.commandFailed, false);
   assert.deepEqual(result.traffic.keeperAssessment, { status: 'no_non_get', reasons: [] });
   assert.equal(stub.calls.filter(call => call.method === 'Runtime.evaluate').length, 1);
-  assert.deepEqual(stub.calls.slice(-3).map(call => call.method), [
-    'Emulation.setFocusEmulationEnabled', 'Fetch.disable', 'Network.disable'
+  assert.deepEqual(stub.calls.slice(-4).map(call => call.method), [
+    'Emulation.setFocusEmulationEnabled', 'Runtime.disable', 'Fetch.disable', 'Network.disable'
   ]);
 });
 
@@ -253,10 +256,10 @@ test('actual loopback missing readiness reply preserves cleanup and the latest i
   assert.equal(evaluations.length, 2);
   assert.ok(evaluations.every(call => call.params.throwOnSideEffect === true));
   assert.ok(evaluations[1].params.timeout <= 75);
-  assert.deepEqual(stub.calls.slice(-3).map(call => call.method), [
-    'Emulation.setFocusEmulationEnabled', 'Fetch.disable', 'Network.disable'
+  assert.deepEqual(stub.calls.slice(-4).map(call => call.method), [
+    'Emulation.setFocusEmulationEnabled', 'Runtime.disable', 'Fetch.disable', 'Network.disable'
   ]);
-  assert.deepEqual(stub.calls.at(-3).params, { enabled: false });
+  assert.deepEqual(stub.calls.at(-4).params, { enabled: false });
 });
 
 // These timings model an omitted synchronous evaluation reply and an abort
@@ -281,6 +284,9 @@ async function inspectionTimeoutStub(t, { lateReply = false, blockFails = false 
       const message = JSON.parse(String(raw));
       calls.push(message);
       const reply = result => send({ id: message.id, result });
+      if (message.method === 'Runtime.enable') socket.send(JSON.stringify({ method: 'Runtime.executionContextCreated',
+        params: { context: { id: 71, auxData: { isDefault: true, frameId: 'top-frame' } } } }));
+      if (message.method === 'Page.getFrameTree') { reply({ frameTree: { frame: { id: 'top-frame', url: ROW_D_PAGE } } }); return; }
       if (message.method === 'Runtime.evaluate') {
         evaluations += 1;
         assert.equal(message.params.throwOnSideEffect, true);
@@ -644,6 +650,9 @@ async function keeperSettlementStub(t, mode) {
       if (message.method === 'Emulation.setFocusEmulationEnabled' && !message.params.enabled
         && mode === 'cleanup_pair') pause();
       if (message.method === 'Fetch.disable' && mode === 'teardown_pair') pause();
+      if (message.method === 'Runtime.enable') socket.send(JSON.stringify({ method: 'Runtime.executionContextCreated',
+        params: { context: { id: 71, auxData: { isDefault: true, frameId: 'top-frame' } } } }));
+      if (message.method === 'Page.getFrameTree') { reply({ frameTree: { frame: { id: 'top-frame', url: ROW_D_PAGE } } }); return; }
       if (message.method === 'Runtime.evaluate') {
         trace.push('inspection');
         assert.equal(networkSeen && pauseSeen && blockAcked && !fatalSeen, true,

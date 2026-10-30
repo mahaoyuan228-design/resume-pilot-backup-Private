@@ -102,6 +102,9 @@ function fakeCdp({ targets = [target()], evaluate = () => noDocumentInspection()
       calls.push({ method, params, ...(options ? { options } : {}) });
       const override = onSend?.(method, params, { emit, calls });
       if (override !== undefined) return override;
+      if (method === 'Runtime.enable') emit({ method: 'Runtime.executionContextCreated', params: {
+        context: { id: 71, auxData: { isDefault: true, frameId: 'top-frame' } } } });
+      if (method === 'Page.getFrameTree') return { frameTree: { frame: { id: 'top-frame', url: ROW_D_PAGE } } };
       if (method === 'Runtime.evaluate') return { result: { value: evaluate(params.expression) } };
       return {};
     },
@@ -128,6 +131,53 @@ function fakeCdp({ targets = [target()], evaluate = () => noDocumentInspection()
 }
 
 const methods = fake => fake.calls.map(call => call.method);
+
+test('main world selection excludes utility worlds and default subframes', async () => {
+  const fake = fakeCdp({ onSend(method, params, { emit }) {
+    if (method === 'Runtime.enable') {
+      for (const context of [
+        { id: 9, auxData: { isDefault: false, frameId: 'top-frame' } },
+        { id: 10, auxData: { isDefault: true, frameId: 'child-frame' } },
+        { id: 71, auxData: { isDefault: true, frameId: 'top-frame' } }
+      ]) emit({ method: 'Runtime.executionContextCreated', params: { context } });
+      return {};
+    }
+  } });
+  const evidence = await fake.run();
+  assert.deepEqual(evidence.mainWorld, { status: 'pinned', contextId: 71 });
+  const evaluation = fake.calls.find(call => call.method === 'Runtime.evaluate');
+  assert.equal(evaluation.params.contextId, 71);
+  assert.equal(evaluation.params.throwOnSideEffect, true);
+  assertSafety(evidence);
+});
+
+for (const mode of ['missing', 'utility_only', 'duplicate', 'wrong_frame_url', 'destroyed', 'cleared']) {
+  test(`main world ${mode} fails closed without an unpinned fallback`, async () => {
+    const fake = fakeCdp({ onSend(method, params, { emit }) {
+      if (method === 'Runtime.enable' && mode !== 'wrong_frame_url') {
+        const event = context => emit({ method: 'Runtime.executionContextCreated', params: { context } });
+        if (mode !== 'missing') event({ id: 71, auxData: { isDefault: mode !== 'utility_only', frameId: 'top-frame' } });
+        if (mode === 'duplicate') event({ id: 72, auxData: { isDefault: true, frameId: 'top-frame' } });
+        return {};
+      }
+      if (method === 'Page.getFrameTree' && mode === 'wrong_frame_url') {
+        return { frameTree: { frame: { id: 'top-frame', url: 'https://example.invalid/' } } };
+      }
+      if (method === 'Runtime.evaluate' && ['destroyed', 'cleared'].includes(mode)) {
+        emit({ method: mode === 'destroyed' ? 'Runtime.executionContextDestroyed' : 'Runtime.executionContextsCleared',
+          params: { executionContextId: 71 } });
+      }
+    } });
+    const evidence = await fake.run();
+    assert.equal(evidence.ok, false);
+    assert.equal(evidence.probeCompleted, false);
+    assert.equal(evidence.reason, ['destroyed', 'cleared'].includes(mode) ? 'main_world_invalidated' : 'main_world_unavailable');
+    assert.equal(fake.calls.filter(call => call.method === 'Runtime.evaluate').length, ['destroyed', 'cleared'].includes(mode) ? 1 : 0);
+    assert.equal(evidence.visibilityKeeper.focusEmulationCleared, true);
+    assert.equal(evidence.traffic.commandFailed, false);
+    assertSafety(evidence);
+  });
+}
 const paused = (method, url = `https://example.invalid/private?token=${PRIVATE}`, requestId = 'synthetic-request') =>
   ({ method: 'Fetch.requestPaused', params: { requestId, request: { method, url } } });
 const keeperRequest = (id = 'keeper', method = 'POST', url = keeperUrl) => {
@@ -1051,8 +1101,8 @@ test('real serialized inspector preserves incomplete fields without current-valu
     assert.equal(evaluation.params.awaitPromise, false);
     assert.deepEqual(methods(fake), ['getTargets', 'connect', 'Network.enable', 'Fetch.enable',
       'Target.activateTarget', 'Page.bringToFront', 'Emulation.setFocusEmulationEnabled',
-      'Runtime.evaluate', 'wait', 'Emulation.setFocusEmulationEnabled',
-      'wait', 'Fetch.disable', 'Network.disable', 'close']);
+      'Runtime.enable', 'Page.getFrameTree', 'Runtime.evaluate', 'wait', 'Emulation.setFocusEmulationEnabled',
+      'wait', 'Runtime.disable', 'Fetch.disable', 'Network.disable', 'close']);
     assert.deepEqual(fake.calls.find(row => row.method === 'Fetch.enable').params,
       { patterns: [{ urlPattern: '*', requestStage: 'Request' }] });
   } finally { dom.window.close(); }

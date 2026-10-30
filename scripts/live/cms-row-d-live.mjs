@@ -487,7 +487,7 @@ function cleanInspection(value) {
     optional('optionsReadiness', status => spec.controlKind === 'ant-select'
       && (['target_missing', 'list_empty'].includes(status)
         ? row.reason === 'current_options_unavailable'
-          || (row.optionsEvidenceSource === 'owned_select_vnodes' && row.observedOptionCount > 0
+          || (['owned_select_vnodes', 'owned_react_props'].includes(row.optionsEvidenceSource) && row.observedOptionCount > 0
             && ENUMERATED_OPTIONS_REASONS.has(row.reason))
         : status === 'loading'
           ? row.reason === 'current_options_unavailable'
@@ -502,7 +502,18 @@ function cleanInspection(value) {
     optional('optionsEvidenceSource', source => spec.controlKind === 'ant-select'
       && row.observedOptionCount > 0 && ENUMERATED_OPTIONS_REASONS.has(row.reason)
       && (source === 'aria_controls_dom' ? row.optionsReadiness === 'observed'
-        : source === 'owned_select_vnodes' && ['target_missing', 'list_empty'].includes(row.optionsReadiness)));
+        : ['owned_select_vnodes', 'owned_react_props'].includes(source) && ['target_missing', 'list_empty'].includes(row.optionsReadiness)));
+    optional('optionsFramework', framework => spec.controlKind === 'ant-select' && framework === 'react');
+    if (Object.hasOwn(row, 'optionsRootDiagnostic')) {
+      const raw = row.optionsRootDiagnostic;
+      const shapes = ['node_absent', 'absent', 'accessor', 'nullish', 'data'];
+      if (spec.controlKind !== 'ant-select' || !['target_missing', 'list_empty'].includes(row.optionsReadiness)
+        || !raw || !shapes.includes(raw.selectVue) || !shapes.includes(raw.appVue)
+        || !['pathData', 'pathAccessor', 'pathAbsent', 'pathNullish'].every(key => count(raw[key], 32))
+        || raw.pathData + raw.pathAccessor + raw.pathAbsent + raw.pathNullish > 32) throw new TypeError('inspection_invalid');
+      metadata.optionsRootDiagnostic = { selectVue: raw.selectVue, appVue: raw.appVue,
+        pathData: raw.pathData, pathAccessor: raw.pathAccessor, pathAbsent: raw.pathAbsent, pathNullish: raw.pathNullish };
+    }
     optional('samplePrefixMatched', matched => spec.controlKind !== 'ant-calendar-picker'
       && spec.optionsComplete === false && typeof matched === 'boolean'
       && Object.hasOwn(row, 'observedOptionCount')
@@ -531,6 +542,7 @@ export function rowDProbeEvidence(reason = 'not_started') {
     visibilityKeeper: { targetActivated: false, pageBroughtToFront: false,
       focusEmulationEnabled: false, focusEmulationCleared: false },
     inspectionGate: { status: 'not_reached', checkpoints: [] },
+    mainWorld: { status: 'not_reached' },
     optionsReadiness: { status: 'not_reached', attempts: 0, waitRounds: 0,
       initialUnavailableCount: 0, finalUnavailableCount: 0 },
     probeCompleted: false, ok: false, reason, restoration: 'not_needed_no_interaction', fields: [] };
@@ -552,10 +564,21 @@ export async function runCmsRowDLive({ port = 9242, timeoutMs = 10000, requests 
   let session;
   let fetchEnabled = false;
   let networkEnabled = false;
+  let runtimeEnabled = false;
   let focusEmulationAttempted = false;
   let keeperCleanupFailed = false;
   let stage = 'target_discovery';
   const guard = createRowDNetworkGuard((method, params) => session.send(method, params));
+  const contexts = new Map();
+  const onEvent = event => {
+    guard.onEvent(event);
+    if (event.method === 'Runtime.executionContextCreated') {
+      const context = event.params?.context;
+      if (Number.isSafeInteger(context?.id)) contexts.set(context.id, context);
+    } else if (event.method === 'Runtime.executionContextDestroyed') {
+      contexts.delete(event.params?.executionContextId);
+    } else if (event.method === 'Runtime.executionContextsCleared') contexts.clear();
+  };
   const keeperCheckpoint = async checkpoint => {
     const settlement = await guard.settleKeeper();
     evidence.inspectionGate.checkpoints.push({ checkpoint, ...settlement });
@@ -571,7 +594,7 @@ export async function runCmsRowDLive({ port = 9242, timeoutMs = 10000, requests 
     const choice = selectRowDTarget(await getTargets(port, '/json/list', { timeoutMs, step: stage }), port);
     if (!choice.ok) { evidence.reason = choice.reason; return evidence; }
     stage = 'connect';
-    session = await connect(choice.target.webSocketDebuggerUrl, { timeoutMs, step: stage, onEvent: guard.onEvent });
+    session = await connect(choice.target.webSocketDebuggerUrl, { timeoutMs, step: stage, onEvent });
     stage = 'network_guard';
     await session.send('Network.enable');
     networkEnabled = true;
@@ -597,6 +620,27 @@ export async function runCmsRowDLive({ port = 9242, timeoutMs = 10000, requests 
     }
     if (!await keeperCheckpoint('before_inspection')) return evidence;
     evidence.inspectionGate.status = 'allowed';
+    stage = 'main_world';
+    await session.send('Runtime.enable');
+    runtimeEnabled = true;
+    const frame = (await session.send('Page.getFrameTree'))?.frameTree?.frame;
+    const mainContexts = [...contexts.values()].filter(context => context.auxData?.isDefault === true
+      && context.auxData.frameId === frame?.id);
+    if (!frame?.id || typeof frame.url !== 'string' || frame.url.split(/[?#]/u, 1)[0] !== ROW_D_PAGE
+      || mainContexts.length !== 1) {
+      evidence.mainWorld.status = 'missing_or_ambiguous';
+      evidence.reason = 'main_world_unavailable';
+      return evidence;
+    }
+    const context = mainContexts[0];
+    evidence.mainWorld = { status: 'pinned', contextId: context.id };
+    const contextReady = () => {
+      if (contexts.get(context.id) === context) return true;
+      evidence.mainWorld.status = 'invalidated';
+      evidence.ok = false;
+      evidence.reason = 'main_world_invalidated';
+      return false;
+    };
     stage = 'inspection';
     const readiness = evidence.optionsReadiness;
     const unavailableCount = inspection => inspection.fields.filter(row =>
@@ -605,10 +649,11 @@ export async function runCmsRowDLive({ port = 9242, timeoutMs = 10000, requests 
       || (inspection.reason === 'row_d_preflight_incomplete' && unavailableCount(inspection) > 0);
     let longestInspectionMs = 0;
     const evaluate = async evaluationTimeout => {
+      if (!contextReady()) return undefined;
       const started = now();
       readiness.attempts += 1;
       const reply = await session.send('Runtime.evaluate', {
-        expression, returnByValue: true, awaitPromise: false, userGesture: false,
+        expression, contextId: context.id, returnByValue: true, awaitPromise: false, userGesture: false,
         // Every sample retains this boundary. No page observer, timer, promise,
         // event, control open, or interaction is installed to await options.
         throwOnSideEffect: true, timeout: evaluationTimeout
@@ -616,6 +661,7 @@ export async function runCmsRowDLive({ port = 9242, timeoutMs = 10000, requests 
       // misses the host deadline, stop inspection but retain the guards/socket
       // for focus reset and drain. Never retry or authorize that timed-out read.
       }, { timeoutMs: evaluationTimeout, step: 'inspection', closeOnTimeout: false });
+      if (!contextReady()) return undefined;
       if (reply?.exceptionDetails) {
         readiness.status = 'inspection_failed';
         evidence.ok = false;
@@ -727,6 +773,10 @@ export async function runCmsRowDLive({ port = 9242, timeoutMs = 10000, requests 
       // Disable only CDP domains enabled by this session, after all known
       // paused requests received their decisions.
       guard.setKeeperActive(false);
+      if (runtimeEnabled) {
+        try { await session.send('Runtime.disable'); }
+        catch (error) { guard.commandFailure('Runtime.disable', error); }
+      }
       if (fetchEnabled) {
         try { await session.send('Fetch.disable'); }
         catch (error) { guard.commandFailure('Fetch.disable', error); }

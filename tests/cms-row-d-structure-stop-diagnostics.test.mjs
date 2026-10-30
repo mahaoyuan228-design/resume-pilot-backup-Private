@@ -36,6 +36,8 @@ function fake(t,{structure,onSend,onWait,errorKind}={}){
       observer=options.onEvent;
       return {close(){calls.push('close');},async send(method,params){
         calls.push(method);const value=await onSend?.(method,params,{emit});if(value!==undefined)return value;
+        if(method==='Runtime.enable')emit({method:'Runtime.executionContextCreated',params:{context:{id:71,auxData:{isDefault:true,frameId:'top-frame'}}}});
+        if(method==='Page.getFrameTree')return {frameTree:{frame:{id:'top-frame',url:ROW_D_PAGE}}};
         if(method!=='Runtime.evaluate')return {};
         assert.equal(params.throwOnSideEffect,true);assert.equal(params.awaitPromise,false);assert.equal(params.userGesture,false);
         const reply={result:{value:dom.window.eval(params.expression)}};

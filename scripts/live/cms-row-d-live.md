@@ -105,6 +105,25 @@ enough time for a complete strict sample; an exhausted readiness budget keeps
 the latest incomplete snapshot, while actual command failures remain failures.
 See [root-anchor notes](../../tests/cms-row-d-options-root-anchor-r1-notes.md).
 
+The main-world/dictionary revision starts at `df3c1fc2` (#223). The runner
+enables Runtime, identifies the top frame with `Page.getFrameTree`, and requires
+exactly one execution context with matching `auxData.frameId` and
+`auxData.isDefault=true`. Every strict inspection carries its `contextId`;
+destroyed/replaced/cleared contexts stop inspection without an unpinned retry.
+`mainWorld` records the selection status and numeric context ID only.
+
+The guarded main-world diagnosis on 2026-10-30 found React instance anchors on
+the real CMS selects, no own Vue descriptor on their select-to-item paths,
+and no `#app` node. A world mismatch was a hypothesis; the observed framework
+mismatch explains the failed Vue recovery. A separate React definition path
+now authenticates the committed branch through `root.current` and forward
+child links, requires the exact host and SelectTrigger ARIA association, then
+reads only primitive labels in that Select's current option definitions.
+It does not inspect form values, state, retained Trigger options, arbitrary
+application stores or response bodies. The official guarded run recovered
+13/16 fields; both location controls and the calendar remain skips, `ok=false`
+and exit 2. See [evidence and limits](../../tests/cms-row-d-mainworld-dict-r1-notes.md).
+
 ## Run
 
 From the repository root in PowerShell:
@@ -222,10 +241,12 @@ metadata and current values are discarded.
 
 Per-select `optionsReadiness` distinguishes `target_missing`, `list_empty`,
 and `observed` DOM option nodes. After current labels have been enumerated,
-`optionsEvidenceSource` records either `aria_controls_dom` or
-`owned_select_vnodes`. The latter is a separate evidence source: a missing or
+`optionsEvidenceSource` records `aria_controls_dom`, `owned_select_vnodes`, or
+`owned_react_props`. Component definitions are separate evidence sources: a missing or
 empty DOM list remains recorded even when current component definitions match
-the dictionary. Neither source exposes labels or current selected values.
+the dictionary. None exposes labels or current selected values. Definition
+fallbacks also record `optionsRootDiagnostic`: Vue descriptor shape enums and
+bounded select-to-item counts. React anchors add `optionsFramework=react`.
 
 The component path accepts only a bounded, exact-root Ant Select render chain
 whose current SelectTrigger matches the unique current `aria-controls`

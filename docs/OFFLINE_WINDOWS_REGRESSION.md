@@ -1,5 +1,26 @@
 # Offline regression on Windows
 
+The `Windows clean-checkout smoke` GitHub Actions workflow runs on `windows-latest`
+for pull requests, baseline pushes, and manual dispatch. It uses Node 24 and
+Windows PowerShell 5.1, with no Dev login, browser profile, signing secrets, or
+license service. Reproduce its checks in a fresh checkout with Node 24, from
+Windows PowerShell 5.1:
+
+```powershell
+npm ci --ignore-scripts --no-audit --no-fund
+./scripts/build-internal.ps1
+./scripts/build-paid.ps1 -LicenseServiceUrl https://license-ci.invalid
+node scripts/build-paid-smoke.mjs
+npm run test:windows-smoke
+```
+
+`test:windows-smoke` includes the paid rebuild/whitelist guards, all L1 unit tests,
+license gates and activation, and actual `build-paid.ps1 -Offline` ZIP tests.
+Those tests generate disposable Ed25519 keys in temporary directories and verify
+the signed-only config, exact ZIP allowlist, and hashes without ignored local PEMs.
+The `.invalid` URL is build configuration only; no request is made to it.
+`liveSupportClaimed=false`; these checks do not establish live site support.
+
 Use a fresh isolated checkout. Clone with `git -c core.autocrlf=false clone ...` so frozen-source byte checks see the exact Git blob line endings on Windows and Linux.
 
 1. Run `npm ci --ignore-scripts --no-audit --no-fund`.

@@ -207,7 +207,12 @@ for(const stage of ['activation','settlement','cleanup'])test(`guard/final clean
     if(stage==='cleanup'&&method==='Emulation.setFocusEmulationEnabled'&&params.enabled===false)throw Error(PRIVATE);
   },onWait(index,{emit}){if(stage==='settlement'&&index===1)emit(post);}});
   const result=await f.run();assert.equal(result.captured,false);assert.equal(result.structure,undefined);
-  assert.equal(result.official.reason,stage==='cleanup'?'visibility_keeper_cleanup_failed':'non_get_or_guard_failure');
+  assert.equal(result.official.reason,'non_get_or_guard_failure');
+  if(stage==='cleanup'){
+    assert.equal(result.official.traffic.commandFailed,true);
+    assert.equal(result.official.visibilityKeeper.focusEmulationCleared,false);
+    assert.ok(result.official.traffic.keeperAssessment.reasons.includes('guard_command_failed'));
+  }
   assert.equal(f.calls.filter(call=>call.method==='Runtime.evaluate').length,stage==='activation'?0:1);safe(result);
 });
 test('actual correlated keeper events qualify only after immediate blocking and all checkpoints',async t=>{

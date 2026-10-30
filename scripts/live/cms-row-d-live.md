@@ -84,6 +84,15 @@ or prove that waiting alone can populate a dormant portal.
 
 Every result keeps `neverSave=true`, `liveSupportClaimed=false`, `livePassClaimed=false`, `writeStarted=false`, `mutationAllowed=false`, `valuesExposed=false`, and `probeOnly=true`. A successful preflight does not grant mutation permission or establish live fill support. Education is outside this probe's scope.
 
+The commandFailed / Fetch revision starts at `05d54285` (#221). Inspection
+timeouts now retain the guarded session for bounded focus cleanup; they remain
+inspection failures, and late replies cannot authorize another sample. Fetch
+decisions are deduplicated by interception ID without relaxing correlation or
+non-GET blocking. Searchable single-select definitions use the same verified
+read-only ownership path; loading stays unavailable. Fixed diagnostics separate
+inspection, command and option-proof failures without exposing private data.
+See [evidence and validation notes](../../tests/cms-row-d-commandfailed-fetch-r1-notes.md).
+
 ## Run
 
 From the repository root in PowerShell:

@@ -45,7 +45,7 @@ function offlineFixture() {
               h('div', { class: 'ant-form-item' }, [
                 h('div', { class: 'ant-form-item-label' }, [h('label', ${JSON.stringify(field.label)})]),
                 h('div', { class: 'ant-form-item-control' }, [
-                  h(antd.Select, { props: { value: ${JSON.stringify(PRIVATE)} } },
+                  h(antd.Select, { props: { value: ${JSON.stringify(PRIVATE)}, showSearch: true, filterOption: true } },
                     labels.map(label => h(antd.Select.Option,
                       { key: label, props: { value: label } }, [label])))
                 ])
@@ -108,6 +108,7 @@ function offlineFixture() {
             const props = own(own(selectComponent, '$options'), 'propsData');
             Object.defineProperty(props, 'value', { configurable: true, get: forbid('reads') });
             Object.defineProperty(selectComponent, '_optionsInfo', { configurable: true, get: forbid('reads') });
+            Object.defineProperty(selectComponent, '_inputValue', { configurable: true, get: forbid('reads') });
             const definitions = own(props, 'children');
             for (let index = 0; index < definitions.length; index += 1) {
               const optionProps = own(own(definitions[index], 'componentOptions'), 'propsData');

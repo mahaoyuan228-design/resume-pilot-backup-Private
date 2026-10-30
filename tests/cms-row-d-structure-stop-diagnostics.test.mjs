@@ -122,7 +122,13 @@ for(const when of ['early','late','cleanup'])test(`unsafe ${when} official stop 
   },onWait(index,{emit}){if(when==='late'&&index===1)emit(post);}}),result=await cli(t,f);
   assert.equal(result.status.stopCause,'official_stop');assert.equal(fs.existsSync(path.join(result.out,'structure.json')),false);
   const official=JSON.parse(fs.readFileSync(path.join(result.out,'cms-row-d-live.json'),'utf8'));
-  assert.equal(official.reason,when==='cleanup'?'visibility_keeper_cleanup_failed':'non_get_or_guard_failure');safe(official);
+  assert.equal(official.reason,'non_get_or_guard_failure');
+  if(when==='cleanup'){
+    assert.equal(official.traffic.commandFailed,true);
+    assert.equal(official.visibilityKeeper.focusEmulationCleared,false);
+    assert.ok(official.traffic.keeperAssessment.reasons.includes('guard_command_failed'));
+  }
+  safe(official);
 });
 test('valid earlier structure is also suppressed by a late unsafe official result',async t=>{
   const f=fake(t,{onWait(index,{emit}){if(index===1)emit(post);}}),result=await f.run();
@@ -152,7 +158,7 @@ test('successful official verdict and retained structure stay identical to R10',
   const sidecar=JSON.parse(fs.readFileSync(path.join(written.out,'structure.json'),'utf8'));
   assert.deepEqual(sidecar.diagnostics,result.structure);assert.equal(sidecar.dictionaryComplete,false);assert.equal(sidecar.bookD,false);
 });
-test('success schema and final guard remain unchanged; revised options/runner pins and other dependencies stay exact',()=>{
+test('success schema and final guard remain unchanged; reviewed options/runner/CDP pins and errors stay exact',()=>{
   const file='scripts/live/cms-row-d-location-structure.mjs',old=execFileSync('git',['show',BASE+':'+file],{cwd:ROOT,encoding:'utf8'}),now=fs.readFileSync(path.join(ROOT,file),'utf8');
   for(const [start,end] of [['export function validateStructure','\nexport function buildLocationStructureExpression'],
     ['export function cleanCaptureAllowed','\n// getJson owns']]){
@@ -161,9 +167,15 @@ test('success schema and final guard remain unchanged; revised options/runner pi
   for(const file of Object.keys(SOURCE_PINS)){
     const current=fs.readFileSync(path.join(ROOT,file),'utf8').replace(/\r\n/gu,'\n');
     if(file==='scripts/live/cms-row-d-live.mjs'||file==='scripts/lib/cms-row-d-options.mjs'){
-      // Options readiness revises these two reviewed dependencies. Keep their
-      // deployed CRLF bytes pinned and the CDP/error dependencies unchanged.
+      // Keep the reviewed options/runner dependencies' deployed CRLF bytes pinned.
       assert.equal(createHash('sha256').update(current.replace(/\n/gu,'\r\n')).digest('hex'),SOURCE_PINS[file]);
+      continue;
+    }
+    if(file==='tools/live-harvest/cdp-client.mjs'){
+      // The reviewed timeout cleanup change uses the actual deployed LF bytes.
+      const bytes=fs.readFileSync(path.join(ROOT,file));
+      assert.equal(bytes.toString('utf8'),current);
+      assert.equal(createHash('sha256').update(bytes).digest('hex'),SOURCE_PINS[file]);
       continue;
     }
     const base=execFileSync('git',['show',BASE+':'+file],{cwd:ROOT,encoding:'utf8'}).replace(/\r\n/gu,'\n');

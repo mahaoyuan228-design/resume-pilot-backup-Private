@@ -75,13 +75,14 @@ function observed(row, source = 'owned_select_vnodes', readiness = 'target_missi
   assert.equal(row.optionsReadiness, readiness);
   assert.equal(row.observedOptionCount, 2);
 }
-function unavailable(row, readiness = 'target_missing') {
+function unavailable(row, readiness = 'target_missing', issue) {
   safe(row);
   assert.equal(row.ok, false);
   assert.equal(row.reason, 'current_options_unavailable');
   assert.equal(row.optionsReadiness, readiness);
   assert.equal(Object.hasOwn(row, 'optionsEvidenceSource'), false);
   assert.equal(Object.hasOwn(row, 'observedOptionCount'), false);
+  if (issue) assert.equal(row.optionsDefinitionIssue, issue);
 }
 function portal(fixture, labels) {
   const dropdown = document.createElement('div');
@@ -98,6 +99,82 @@ function portal(fixture, labels) {
 for (const slots of [false, true]) test(`installed Ant/Vue dormant ${slots ? 'slotted' : 'options-prop'} definition supplies separate current evidence`, async () => {
   const f = await fixture({ slots });
   try { observed(f.read()); } finally { f.close(); }
+});
+
+for (const filterOption of [undefined, false, true]) {
+  test(`installed searchable single-select keeps full owned definitions with built-in filter=${filterOption}`, async () => {
+    const f = await fixture({ props: { showSearch: true, filterOption } });
+    const restore = [];
+    let reads = 0;
+    try {
+      // Definitions do not require consulting or disclosing any current
+      // search/selection state, even when searching is enabled by the app.
+      for (const key of ['_inputValue', '_value', '_optionsInfo']) {
+        const before = Object.getOwnPropertyDescriptor(f.component, key);
+        Object.defineProperty(f.component, key, { configurable: true,
+          get() { reads += 1; throw new Error(PRIVATE); } });
+        restore.push(() => before ? Object.defineProperty(f.component, key, before) : delete f.component[key]);
+      }
+      observed(f.read());
+      assert.equal(reads, 0);
+      assert.equal(document.querySelectorAll('.ant-select-dropdown').length, 0);
+    } finally { for (const reset of restore) reset(); f.close(); }
+  });
+}
+
+test('installed custom search filters remain unavailable without invoking application callbacks', async () => {
+  let calls = 0;
+  const f = await fixture({ props: { showSearch: true,
+    filterOption() { calls += 1; throw new Error(PRIVATE); } } });
+  try { unavailable(f.read(), 'target_missing', 'search_filter_unsupported'); assert.equal(calls, 0); }
+  finally { f.close(); }
+});
+
+test('installed incomplete or loading definitions cannot upgrade harvested labels into ready options', async () => {
+  for (const labels of [[], FIELD.options.slice(0, 1)]) {
+    const f = await fixture({ labels });
+    try {
+      const row = f.read(); safe(row); assert.equal(row.ok, false);
+      assert.equal(row.reason, labels.length ? 'option_dictionary_mismatch' : 'current_options_unavailable');
+    } finally { f.close(); }
+  }
+  const f = await fixture({ props: { loading: true } });
+  try {
+    unavailable(f.read(), 'loading');
+    portal(f, FIELD.options);
+    unavailable(f.read(), 'loading');
+  } finally { f.close(); }
+});
+
+test('loading current props reject retained matching definitions even without a loading DOM icon', async () => {
+  const f = await fixture();
+  const before = Object.getOwnPropertyDescriptor(f.propsData, 'loading');
+  try {
+    Object.defineProperty(f.propsData, 'loading', { configurable: true, value: true });
+    unavailable(f.read(), 'target_missing', 'loading');
+  } finally {
+    if (before) Object.defineProperty(f.propsData, 'loading', before); else delete f.propsData.loading;
+    f.close();
+  }
+});
+
+test('installed loading root cannot pass retained portal labels when a custom suffix icon masks the spinner', async () => {
+  const f = await fixture({ props: { loading: true, suffixIcon: 'offline-static-icon' } });
+  try {
+    assert.equal(f.select.classList.contains('ant-select-loading'), true);
+    assert.equal(f.select.querySelector('.anticon-loading'), null);
+    portal(f, FIELD.options);
+    unavailable(f.read(), 'loading');
+  } finally { f.close(); }
+});
+
+test('missing current Vue anchor reports only a fixed rejection enum and never a dictionary substitute', async () => {
+  const f = await fixture();
+  const before = Object.getOwnPropertyDescriptor(f.select, '__vue__');
+  try {
+    delete f.select.__vue__;
+    unavailable(f.read(), 'target_missing', 'root_anchor_missing');
+  } finally { Object.defineProperty(f.select, '__vue__', before); f.close(); }
 });
 
 test('installed current option definition updates with the current render and never falls back to the dictionary alone', async () => {
@@ -167,7 +244,6 @@ for (const [name, config] of [
   ['disabled option', { optionProps: { disabled: true } }],
   ['duplicate labels', { labels: [FIELD.options[0], FIELD.options[0]] }],
   ['empty label', { labels: ['', FIELD.options[1]] }],
-  ['custom search mode', { props: { showSearch: true } }],
   ['option group', { group: true }],
   ['custom dropdown renderer', { props: { dropdownRender: menu => menu } }]
 ]) test(`installed unsupported ${name} remains unavailable`, async () => {
@@ -273,6 +349,7 @@ test('serialized definition branch completes with real V8 throwOnSideEffect enab
   const f = await fixture();
   const session = new inspector.Session(); session.connect();
   const originalChildren = Object.getOwnPropertyDescriptor(f.propsData, 'children');
+  const originalLoading = Object.getOwnPropertyDescriptor(f.propsData, 'loading');
   try {
     // Jsdom DOM methods have caches and are outside this V8-only regression.
     // The installed component graph stays untouched; replace only document
@@ -285,12 +362,17 @@ test('serialized definition branch completes with real V8 throwOnSideEffect enab
     globalThis.__rowDOwnedFixtureReference = f.combo.getAttribute('aria-controls');
     const declarations = expression.slice(expression.indexOf('const trimProbeText ='), finish);
     const evaluate = () => new Promise((resolve, reject) => session.post('Runtime.evaluate', {
-      expression: `(() => { ${declarations}\nconst labels = ownedSelectVNodeLabels(globalThis.__rowDOwnedFixtureSelect,globalThis.__rowDOwnedFixtureReference); return { count: labels ? labels.length : 0, matched: Boolean(labels && labels[0] === ${JSON.stringify(FIELD.options[0])} && labels[1] === ${JSON.stringify(FIELD.options[1])}) }; })()`,
+      expression: `(() => { ${declarations}\nconst diagnostic = {}; const labels = ownedSelectVNodeLabels(globalThis.__rowDOwnedFixtureSelect,globalThis.__rowDOwnedFixtureReference,diagnostic); return { count: labels ? labels.length : 0, matched: Boolean(labels && labels[0] === ${JSON.stringify(FIELD.options[0])} && labels[1] === ${JSON.stringify(FIELD.options[1])}), issue: diagnostic.optionsDefinitionIssue || null }; })()`,
       throwOnSideEffect: true, returnByValue: true, awaitPromise: false, userGesture: false
     }, (error, result) => error ? reject(error) : resolve(result)));
     const response = await evaluate();
     assert.equal(response.exceptionDetails, undefined, 'the real V8 guard accepted only data-descriptor traversal');
-    assert.deepEqual(response.result.value, { count: 2, matched: true });
+    assert.deepEqual(response.result.value, { count: 2, matched: true, issue: null });
+    Object.defineProperty(f.propsData, 'loading', { configurable: true, value: true });
+    const loading = await evaluate();
+    assert.equal(loading.exceptionDetails, undefined, 'failure diagnostics write only evaluation-local metadata under the same guard');
+    assert.deepEqual(loading.result.value, { count: 0, matched: false, issue: 'loading' });
+    if (originalLoading) Object.defineProperty(f.propsData, 'loading', originalLoading); else delete f.propsData.loading;
     const effects = { writes: 0 };
     Object.defineProperty(f.propsData, 'children', { configurable: true, value: new Proxy(originalChildren.value, {
       getOwnPropertyDescriptor(target, key) { effects.writes += 1; return Reflect.getOwnPropertyDescriptor(target, key); }
@@ -300,6 +382,7 @@ test('serialized definition branch completes with real V8 throwOnSideEffect enab
     assert.equal(effects.writes, 0);
   } finally {
     Object.defineProperty(f.propsData, 'children', originalChildren);
+    if (originalLoading) Object.defineProperty(f.propsData, 'loading', originalLoading); else delete f.propsData.loading;
     delete globalThis.__rowDOwnedFixtureSelect; delete globalThis.__rowDOwnedFixtureReference;
     session.disconnect(); f.close();
   }

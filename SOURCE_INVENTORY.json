@@ -976,14 +976,14 @@
     },
     {
       "path": "package.json",
-      "sha256": "3aeb84f7e3878c9a1d95b4a219463cbf229a44c4578378e30386474ef3be95c0",
-      "sourceSha256": "3aeb84f7e3878c9a1d95b4a219463cbf229a44c4578378e30386474ef3be95c0",
+      "sha256": "a213d37c6284b2626fccaecb35f1aa4158cd8bcd2099f558f807b53bd64c07dc",
+      "sourceSha256": "a213d37c6284b2626fccaecb35f1aa4158cd8bcd2099f558f807b53bd64c07dc",
       "kind": "selected-zoo-offline-regression"
     },
     {
       "path": "tests/zoo/README.md",
-      "sha256": "73d2643858a369304805858c30f4a6bd95ee32868cb80b981046d4f722f14890",
-      "sourceSha256": "73d2643858a369304805858c30f4a6bd95ee32868cb80b981046d4f722f14890",
+      "sha256": "0d3a16e2b4010ce536d710d7ddc47840bb3b28421739271649ac1e187bb41e71",
+      "sourceSha256": "0d3a16e2b4010ce536d710d7ddc47840bb3b28421739271649ac1e187bb41e71",
       "kind": "selected-zoo-offline-regression"
     },
     {
@@ -1026,6 +1026,192 @@
       "path": "tests/zoo/support.mjs",
       "sha256": "52845d8c9af419466f20e679d2e8ae4cadcf6c2c4026757efb7fd3e307aad23e",
       "sourceSha256": "52845d8c9af419466f20e679d2e8ae4cadcf6c2c4026757efb7fd3e307aad23e",
+      "kind": "selected-zoo-offline-regression"
+    },
+    {
+      "path": "scripts/capture-zoo-cms.mjs",
+      "sha256": "d8d04359b2d8e3aca65cd6840599fdaccfc65aceb1965600521eaaf4d5e22b31",
+      "sourceSha256": "d8d04359b2d8e3aca65cd6840599fdaccfc65aceb1965600521eaaf4d5e22b31",
+      "kind": "selected-zoo-offline-regression"
+    },
+    {
+      "path": "scripts/lib/zoo-cms-read.mjs",
+      "sha256": "8d3213816c1942fe048c1ac45be387f27ec4484e431687ec00b67544a21da7e7",
+      "sourceSha256": "8d3213816c1942fe048c1ac45be387f27ec4484e431687ec00b67544a21da7e7",
+      "kind": "selected-zoo-offline-regression"
+    },
+    {
+      "path": "scripts/lib/zoo-sanitize.mjs",
+      "sha256": "af319d8a66b873ccbe237a9d85941b2f399979edaaf6d3dd0ee45fa0b13794c5",
+      "sourceSha256": "af319d8a66b873ccbe237a9d85941b2f399979edaaf6d3dd0ee45fa0b13794c5",
+      "kind": "selected-zoo-offline-regression"
+    },
+    {
+      "path": "tests/zoo/.gitattributes",
+      "sha256": "6f44c8d8baf454b5c8042e855ed45efbd0656ca1de2b97be684632de09862213",
+      "sourceSha256": "6f44c8d8baf454b5c8042e855ed45efbd0656ca1de2b97be684632de09862213",
+      "kind": "selected-zoo-offline-regression"
+    },
+    {
+      "path": "tests/zoo/capture.test.mjs",
+      "sha256": "50861c3ae032d13ce93dc20621e850e9bdda3efccf7d5176ee2af0862bd86c51",
+      "sourceSha256": "50861c3ae032d13ce93dc20621e850e9bdda3efccf7d5176ee2af0862bd86c51",
+      "kind": "selected-zoo-offline-regression"
+    },
+    {
+      "path": "tests/zoo/offline.mjs",
+      "sha256": "8ea3d64a9c75f75d98cb1ff9f039593d6528d6e81bced863c12a22e611e74d84",
+      "sourceSha256": "8ea3d64a9c75f75d98cb1ff9f039593d6528d6e81bced863c12a22e611e74d84",
+      "kind": "selected-zoo-offline-regression"
+    },
+    {
+      "path": "tests/zoo/offline.test.mjs",
+      "sha256": "9b2b5fb1307899928fd9cef1f54e87c26f60f5e44ad6dc34692dfcbeff816e7a",
+      "sourceSha256": "9b2b5fb1307899928fd9cef1f54e87c26f60f5e44ad6dc34692dfcbeff816e7a",
+      "kind": "selected-zoo-offline-regression"
+    },
+    {
+      "path": "tests/zoo/privacy.test.mjs",
+      "sha256": "69560dfd285a80ec0257bbf90fcccc4a1f4b6fabf2759308c2de6f0c613102f5",
+      "sourceSha256": "69560dfd285a80ec0257bbf90fcccc4a1f4b6fabf2759308c2de6f0c613102f5",
+      "kind": "selected-zoo-offline-regression"
+    },
+    {
+      "path": "tests/zoo/real/cms-hotjob-pb/README.md",
+      "sha256": "5e9958d447086b26c0c9e1426be60d8933ee7c5a77d5344a9a70f4cfcfddb626",
+      "sourceSha256": "5e9958d447086b26c0c9e1426be60d8933ee7c5a77d5344a9a70f4cfcfddb626",
+      "kind": "selected-zoo-offline-regression"
+    },
+    {
+      "path": "tests/zoo/real/cms-hotjob-pb/assets.json",
+      "sha256": "ea8ffbcc7bbd3ea7a7f217757555bdb173ebd1398ca759f4ac3310b85cdc6767",
+      "sourceSha256": "ea8ffbcc7bbd3ea7a7f217757555bdb173ebd1398ca759f4ac3310b85cdc6767",
+      "kind": "selected-zoo-offline-regression"
+    },
+    {
+      "path": "tests/zoo/real/cms-hotjob-pb/assets/13b2459446c3-font_1296996_yvf7779ctv.ttf",
+      "sha256": "a10c6a95736baecd79ff95519ed8525d74cf7caea70e0105a97a3fb9c3bd9fe6",
+      "sourceSha256": "a10c6a95736baecd79ff95519ed8525d74cf7caea70e0105a97a3fb9c3bd9fe6",
+      "kind": "selected-zoo-offline-regression"
+    },
+    {
+      "path": "tests/zoo/real/cms-hotjob-pb/assets/2ba8bb5763d1-kdxfrobot.png",
+      "sha256": "eeca42505a8549cf3f9504def39bff18a3d6fc11c6c8360a7eeb86e08edda677",
+      "sourceSha256": "eeca42505a8549cf3f9504def39bff18a3d6fc11c6c8360a7eeb86e08edda677",
+      "kind": "selected-zoo-offline-regression"
+    },
+    {
+      "path": "tests/zoo/real/cms-hotjob-pb/assets/2e86ca96468e-font_1296996_rl878tq22u.eot",
+      "sha256": "bbc74d1ae129607d95828a72be21f7f65868c941aa27f1479740ffca23dfa291",
+      "sourceSha256": "bbc74d1ae129607d95828a72be21f7f65868c941aa27f1479740ffca23dfa291",
+      "kind": "selected-zoo-offline-regression"
+    },
+    {
+      "path": "tests/zoo/real/cms-hotjob-pb/assets/62371e829024-font_1296996_yvf7779ctv.woff2",
+      "sha256": "f7e0853cb1d6a02df0c96043c9e06c93d185f84a1392b47b634ffdcb169b91b4",
+      "sourceSha256": "f7e0853cb1d6a02df0c96043c9e06c93d185f84a1392b47b634ffdcb169b91b4",
+      "kind": "selected-zoo-offline-regression"
+    },
+    {
+      "path": "tests/zoo/real/cms-hotjob-pb/assets/67f63a499008-vendor.js",
+      "sha256": "9e66c8330e1a979826d01fc9360b6174e4363687dc1861b53910f323e3be3df8",
+      "sourceSha256": "9e66c8330e1a979826d01fc9360b6174e4363687dc1861b53910f323e3be3df8",
+      "kind": "selected-zoo-offline-regression"
+    },
+    {
+      "path": "tests/zoo/real/cms-hotjob-pb/assets/84e4a967dc77-bg_vector.png",
+      "sha256": "bd4900993229168b934d681e7ae28a1f7674907cfec7f1a5994e3cc78f81194b",
+      "sourceSha256": "bd4900993229168b934d681e7ae28a1f7674907cfec7f1a5994e3cc78f81194b",
+      "kind": "selected-zoo-offline-regression"
+    },
+    {
+      "path": "tests/zoo/real/cms-hotjob-pb/assets/88982560299a-font_1296996_rl878tq22u.eot",
+      "sha256": "bbc74d1ae129607d95828a72be21f7f65868c941aa27f1479740ffca23dfa291",
+      "sourceSha256": "bbc74d1ae129607d95828a72be21f7f65868c941aa27f1479740ffca23dfa291",
+      "kind": "selected-zoo-offline-regression"
+    },
+    {
+      "path": "tests/zoo/real/cms-hotjob-pb/assets/903f0983292b-font_1296996_rl878tq22u.svg",
+      "sha256": "478967c8612fd14ffa4f0286138db3b4e0f76a167d119dc29289c103d4ddd8e6",
+      "sourceSha256": "478967c8612fd14ffa4f0286138db3b4e0f76a167d119dc29289c103d4ddd8e6",
+      "kind": "selected-zoo-offline-regression"
+    },
+    {
+      "path": "tests/zoo/real/cms-hotjob-pb/assets/a5a5d8dbc9fb-font_1296996_yvf7779ctv.woff",
+      "sha256": "7f35baf7ce2d30b2daf30caca74ac35344ae4445fd95e863e7da68af07670f90",
+      "sourceSha256": "7f35baf7ce2d30b2daf30caca74ac35344ae4445fd95e863e7da68af07670f90",
+      "kind": "selected-zoo-offline-regression"
+    },
+    {
+      "path": "tests/zoo/real/cms-hotjob-pb/assets/c1ffcb025985-resumeOperation.js",
+      "sha256": "b538af37e44fe195b06f00d3f0ad19b47ce48bb0c9a714644640096491c8cd1b",
+      "sourceSha256": "b538af37e44fe195b06f00d3f0ad19b47ce48bb0c9a714644640096491c8cd1b",
+      "kind": "selected-zoo-offline-regression"
+    },
+    {
+      "path": "tests/zoo/real/cms-hotjob-pb/assets/d713e7d8c27c-vendor.css",
+      "sha256": "ec6f09122b943277754891c93e3a8c1064c08b175ad51dc868a14f9b14171875",
+      "sourceSha256": "ec6f09122b943277754891c93e3a8c1064c08b175ad51dc868a14f9b14171875",
+      "kind": "selected-zoo-offline-regression"
+    },
+    {
+      "path": "tests/zoo/real/cms-hotjob-pb/assets/e592c36e0b12-resumeOperation.css",
+      "sha256": "d306b4ea7a3960441e660962024e58f96dfbfb4a09b67b6bf50b78741ee17d55",
+      "sourceSha256": "d306b4ea7a3960441e660962024e58f96dfbfb4a09b67b6bf50b78741ee17d55",
+      "kind": "selected-zoo-offline-regression"
+    },
+    {
+      "path": "tests/zoo/real/cms-hotjob-pb/controls.json",
+      "sha256": "69e08cb5fbd4bdb7a2cb9113dd89d8dee658314c58daabf996f134006cc06c67",
+      "sourceSha256": "69e08cb5fbd4bdb7a2cb9113dd89d8dee658314c58daabf996f134006cc06c67",
+      "kind": "selected-zoo-offline-regression"
+    },
+    {
+      "path": "tests/zoo/real/cms-hotjob-pb/dictionaries.json",
+      "sha256": "861e97623a17722fa17c4e4e5d8043137ca39301921dd566a3a40b6ca72e5056",
+      "sourceSha256": "861e97623a17722fa17c4e4e5d8043137ca39301921dd566a3a40b6ca72e5056",
+      "kind": "selected-zoo-offline-regression"
+    },
+    {
+      "path": "tests/zoo/real/cms-hotjob-pb/discarded-retry.json",
+      "sha256": "c8a15557943fbe4e8984a1eecf5630d9efad1cdf3f64a1e6007b982e747506cc",
+      "sourceSha256": "c8a15557943fbe4e8984a1eecf5630d9efad1cdf3f64a1e6007b982e747506cc",
+      "kind": "selected-zoo-offline-regression"
+    },
+    {
+      "path": "tests/zoo/real/cms-hotjob-pb/index.html",
+      "sha256": "be0fe329da9dc84005666c435af642ff0476b698413646955d4eeb15ae0b231b",
+      "sourceSha256": "be0fe329da9dc84005666c435af642ff0476b698413646955d4eeb15ae0b231b",
+      "kind": "selected-zoo-offline-regression"
+    },
+    {
+      "path": "tests/zoo/real/cms-hotjob-pb/infoItemList.json",
+      "sha256": "a31f8c66623c77b948912a49928cfd5f785253b5e4879c0d3be5e7c53f9e1097",
+      "sourceSha256": "a31f8c66623c77b948912a49928cfd5f785253b5e4879c0d3be5e7c53f9e1097",
+      "kind": "selected-zoo-offline-regression"
+    },
+    {
+      "path": "tests/zoo/real/cms-hotjob-pb/manifest.json",
+      "sha256": "ec7a8e2149321822133981befa3a955d6206f9f94d96a3f6c2c895c5aa4d2c1e",
+      "sourceSha256": "ec7a8e2149321822133981befa3a955d6206f9f94d96a3f6c2c895c5aa4d2c1e",
+      "kind": "selected-zoo-offline-regression"
+    },
+    {
+      "path": "tests/zoo/real/cms-hotjob-pb/offline-verification.json",
+      "sha256": "86da79a9f0bbc9cea7f161442fd808166115baeb8d86c6ec9f0446bd22cd4212",
+      "sourceSha256": "86da79a9f0bbc9cea7f161442fd808166115baeb8d86c6ec9f0446bd22cd4212",
+      "kind": "selected-zoo-offline-regression"
+    },
+    {
+      "path": "tests/zoo/real/cms-hotjob-pb/outerHTML.html",
+      "sha256": "be0fe329da9dc84005666c435af642ff0476b698413646955d4eeb15ae0b231b",
+      "sourceSha256": "be0fe329da9dc84005666c435af642ff0476b698413646955d4eeb15ae0b231b",
+      "kind": "selected-zoo-offline-regression"
+    },
+    {
+      "path": "tests/zoo/scope.json",
+      "sha256": "118665e87ba451d62d3ec125d2d64c4cc46539f7277ab89bc434248022ca222d",
+      "sourceSha256": "118665e87ba451d62d3ec125d2d64c4cc46539f7277ab89bc434248022ca222d",
       "kind": "selected-zoo-offline-regression"
     }
   ]

@@ -1,0 +1,3362 @@
+{
+  "source": "MAIN-world committed React metadata and rendered choice labels",
+  "controls": [
+    {
+      "wrapperId": "11_2_0",
+      "label": "姓名*",
+      "options": [],
+      "optionsSource": "none",
+      "controlKind": "text",
+      "itemId": "11_2",
+      "required": true,
+      "fillType": 1
+    },
+    {
+      "wrapperId": "11_20_0",
+      "label": "性别*",
+      "options": [
+        {
+          "label": "男"
+        },
+        {
+          "label": "女"
+        }
+      ],
+      "optionsSource": "rendered_choice_labels",
+      "controlKind": "radio",
+      "itemId": "11_20",
+      "required": true,
+      "fillType": 3
+    },
+    {
+      "wrapperId": "11_21_0",
+      "label": "出生日期*",
+      "options": [],
+      "optionsSource": "none",
+      "controlKind": "date",
+      "itemId": "11_21",
+      "required": true,
+      "fillType": 2
+    },
+    {
+      "wrapperId": "11_247_0",
+      "label": "身高*?",
+      "options": [
+        {
+          "code": "0/1270/1271",
+          "name": "日班",
+          "order": 1
+        },
+        {
+          "code": "0/1270/1272",
+          "name": "夜班",
+          "order": 2
+        },
+        {
+          "code": "0/1270/1273",
+          "name": "周末班",
+          "order": 3
+        }
+      ],
+      "optionsSource": "main_world_template_dictionary",
+      "controlKind": "text",
+      "itemId": "11_247",
+      "required": true,
+      "fillType": 1
+    },
+    {
+      "wrapperId": "11_22_0",
+      "label": "国籍/地区*",
+      "options": [
+        {
+          "value": "0/619/839",
+          "label": "中国"
+        },
+        {
+          "value": "0/619/627",
+          "label": "中国香港"
+        },
+        {
+          "value": "0/619/628",
+          "label": "中国澳门"
+        },
+        {
+          "value": "0/619/626",
+          "label": "中国台湾"
+        },
+        {
+          "value": "0/619/752",
+          "label": "阿尔巴尼亚"
+        },
+        {
+          "value": "0/619/807",
+          "label": "阿尔及利亚"
+        },
+        {
+          "value": "0/619/630",
+          "label": "阿富汗"
+        },
+        {
+          "value": "0/619/862",
+          "label": "阿根廷"
+        },
+        {
+          "value": "0/619/797",
+          "label": "爱尔兰"
+        },
+        {
+          "value": "0/619/809",
+          "label": "埃及"
+        },
+        {
+          "value": "0/619/815",
+          "label": "埃塞俄比亚"
+        },
+        {
+          "value": "0/619/738",
+          "label": "爱沙尼亚"
+        },
+        {
+          "value": "0/619/629",
+          "label": "阿拉伯联合酋长国"
+        },
+        {
+          "value": "0/619/650",
+          "label": "阿曼"
+        },
+        {
+          "value": "0/619/625",
+          "label": "安道尔"
+        },
+        {
+          "value": "0/619/818",
+          "label": "安哥拉"
+        },
+        {
+          "value": "0/619/631",
+          "label": "安提瓜和巴布达"
+        },
+        {
+          "value": "0/619/891",
+          "label": "澳大利亚"
+        },
+        {
+          "value": "0/619/748",
+          "label": "奥地利"
+        },
+        {
+          "value": "0/619/705",
+          "label": "阿塞拜疆"
+        },
+        {
+          "value": "0/619/877",
+          "label": "巴巴多斯"
+        },
+        {
+          "value": "0/619/897",
+          "label": "巴布亚新几内亚"
+        },
+        {
+          "value": "0/619/868",
+          "label": "巴哈马"
+        },
+        {
+          "value": "0/619/728",
+          "label": "白俄罗斯"
+        },
+        {
+          "value": "0/619/635",
+          "label": "巴基斯坦"
+        },
+        {
+          "value": "0/619/883",
+          "label": "巴拉圭"
+        },
+        {
+          "value": "0/619/654",
+          "label": "巴勒斯坦"
+        },
+        {
+          "value": "0/619/637",
+          "label": "巴林"
+        },
+        {
+          "value": "0/619/869",
+          "label": "巴拿马"
+        },
+        {
+          "value": "0/619/737",
+          "label": "保加利亚"
+        },
+        {
+          "value": "0/619/861",
+          "label": "巴西"
+        },
+        {
+          "value": "0/619/801",
+          "label": "贝宁"
+        },
+        {
+          "value": "0/619/789",
+          "label": "比利时"
+        },
+        {
+          "value": "0/619/741",
+          "label": "冰岛"
+        },
+        {
+          "value": "0/619/813",
+          "label": "博茨瓦纳"
+        },
+        {
+          "value": "0/619/734",
+          "label": "波黑"
+        },
+        {
+          "value": "0/619/795",
+          "label": "波兰"
+        },
+        {
+          "value": "0/619/870",
+          "label": "玻利维亚"
+        },
+        {
+          "value": "0/619/875",
+          "label": "伯利兹"
+        },
+        {
+          "value": "0/619/716",
+          "label": "不丹"
+        },
+        {
+          "value": "0/619/847",
+          "label": "布基纳法索"
+        },
+        {
+          "value": "0/619/826",
+          "label": "布隆迪"
+        },
+        {
+          "value": "0/619/707",
+          "label": "朝鲜"
+        },
+        {
+          "value": "0/619/653",
+          "label": "赤道几内亚"
+        },
+        {
+          "value": "0/619/746",
+          "label": "丹麦"
+        },
+        {
+          "value": "0/619/740",
+          "label": "德国"
+        },
+        {
+          "value": "0/619/634",
+          "label": "东帝汶"
+        },
+        {
+          "value": "0/619/849",
+          "label": "多哥"
+        },
+        {
+          "value": "0/619/879",
+          "label": "多米尼加"
+        },
+        {
+          "value": "0/619/886",
+          "label": "多米尼克"
+        },
+        {
+          "value": "0/619/871",
+          "label": "厄瓜多尔"
+        },
+        {
+          "value": "0/619/823",
+          "label": "厄立特里亚"
+        },
+        {
+          "value": "0/619/798",
+          "label": "俄罗斯"
+        },
+        {
+          "value": "0/619/794",
+          "label": "法国"
+        },
+        {
+          "value": "0/619/750",
+          "label": "梵蒂冈"
+        },
+        {
+          "value": "0/619/893",
+          "label": "斐济"
+        },
+        {
+          "value": "0/619/651",
+          "label": "菲律宾"
+        },
+        {
+          "value": "0/619/753",
+          "label": "芬兰"
+        },
+        {
+          "value": "0/619/850",
+          "label": "佛得角"
+        },
+        {
+          "value": "0/619/812",
+          "label": "冈比亚"
+        },
+        {
+          "value": "0/619/832",
+          "label": "刚果共和国"
+        },
+        {
+          "value": "0/619/840",
+          "label": "刚果民主共和国"
+        },
+        {
+          "value": "0/619/878",
+          "label": "格林纳达"
+        },
+        {
+          "value": "0/619/713",
+          "label": "格鲁吉亚"
+        },
+        {
+          "value": "0/619/884",
+          "label": "哥伦比亚"
+        },
+        {
+          "value": "0/619/860",
+          "label": "哥斯达黎加"
+        },
+        {
+          "value": "0/619/874",
+          "label": "古巴"
+        },
+        {
+          "value": "0/619/882",
+          "label": "圭亚那"
+        },
+        {
+          "value": "0/619/881",
+          "label": "海地"
+        },
+        {
+          "value": "0/619/632",
+          "label": "韩国"
+        },
+        {
+          "value": "0/619/645",
+          "label": "哈萨克斯坦"
+        },
+        {
+          "value": "0/619/739",
+          "label": "黑山共和国"
+        },
+        {
+          "value": "0/619/747",
+          "label": "荷兰"
+        },
+        {
+          "value": "0/619/859",
+          "label": "洪都拉斯"
+        },
+        {
+          "value": "0/619/817",
+          "label": "加纳"
+        },
+        {
+          "value": "0/619/856",
+          "label": "加拿大"
+        },
+        {
+          "value": "0/619/702",
+          "label": "柬埔寨"
+        },
+        {
+          "value": "0/619/810",
+          "label": "加蓬"
+        },
+        {
+          "value": "0/619/803",
+          "label": "吉布提"
+        },
+        {
+          "value": "0/619/731",
+          "label": "捷克"
+        },
+        {
+          "value": "0/619/715",
+          "label": "吉尔吉斯斯坦"
+        },
+        {
+          "value": "0/619/895",
+          "label": "基里巴斯"
+        },
+        {
+          "value": "0/619/830",
+          "label": "津巴布韦"
+        },
+        {
+          "value": "0/619/811",
+          "label": "几内亚"
+        },
+        {
+          "value": "0/619/831",
+          "label": "几内亚比绍"
+        },
+        {
+          "value": "0/619/834",
+          "label": "喀麦隆"
+        },
+        {
+          "value": "0/619/641",
+          "label": "卡塔尔"
+        },
+        {
+          "value": "0/619/729",
+          "label": "克罗地亚"
+        },
+        {
+          "value": "0/619/842",
+          "label": "科摩罗"
+        },
+        {
+          "value": "0/619/819",
+          "label": "肯尼亚"
+        },
+        {
+          "value": "0/619/821",
+          "label": "科特迪瓦"
+        },
+        {
+          "value": "0/619/703",
+          "label": "科威特"
+        },
+        {
+          "value": "0/619/896",
+          "label": "库克群岛"
+        },
+        {
+          "value": "0/619/835",
+          "label": "莱索托"
+        },
+        {
+          "value": "0/619/701",
+          "label": "老挝"
+        },
+        {
+          "value": "0/619/745",
+          "label": "拉托维亚"
+        },
+        {
+          "value": "0/619/652",
+          "label": "黎巴嫩"
+        },
+        {
+          "value": "0/619/846",
+          "label": "利比里亚"
+        },
+        {
+          "value": "0/619/827",
+          "label": "利比亚"
+        },
+        {
+          "value": "0/619/800",
+          "label": "列支敦士登"
+        },
+        {
+          "value": "0/619/736",
+          "label": "立陶宛"
+        },
+        {
+          "value": "0/619/744",
+          "label": "罗马尼亚"
+        },
+        {
+          "value": "0/619/735",
+          "label": "卢森堡"
+        },
+        {
+          "value": "0/619/820",
+          "label": "卢旺达"
+        },
+        {
+          "value": "0/619/824",
+          "label": "马达加斯加"
+        },
+        {
+          "value": "0/619/720",
+          "label": "马尔代夫"
+        },
+        {
+          "value": "0/619/749",
+          "label": "马耳他"
+        },
+        {
+          "value": "0/619/721",
+          "label": "马来西亚"
+        },
+        {
+          "value": "0/619/851",
+          "label": "马拉维"
+        },
+        {
+          "value": "0/619/825",
+          "label": "马里"
+        },
+        {
+          "value": "0/619/845",
+          "label": "毛里求斯"
+        },
+        {
+          "value": "0/619/808",
+          "label": "毛里塔尼亚"
+        },
+        {
+          "value": "0/619/727",
+          "label": "马其顿"
+        },
+        {
+          "value": "0/619/892",
+          "label": "马绍尔群岛"
+        },
+        {
+          "value": "0/619/854",
+          "label": "美国"
+        },
+        {
+          "value": "0/619/700",
+          "label": "蒙古"
+        },
+        {
+          "value": "0/619/643",
+          "label": "孟加拉国"
+        },
+        {
+          "value": "0/619/646",
+          "label": "缅甸"
+        },
+        {
+          "value": "0/619/902",
+          "label": "密克罗尼西亚"
+        },
+        {
+          "value": "0/619/855",
+          "label": "秘鲁"
+        },
+        {
+          "value": "0/619/799",
+          "label": "摩尔多瓦"
+        },
+        {
+          "value": "0/619/843",
+          "label": "摩洛哥"
+        },
+        {
+          "value": "0/619/742",
+          "label": "摩纳哥"
+        },
+        {
+          "value": "0/619/837",
+          "label": "莫桑比克"
+        },
+        {
+          "value": "0/619/857",
+          "label": "墨西哥"
+        },
+        {
+          "value": "0/619/853",
+          "label": "纳米比亚"
+        },
+        {
+          "value": "0/619/802",
+          "label": "南非"
+        },
+        {
+          "value": "0/619/889",
+          "label": "瑙鲁"
+        },
+        {
+          "value": "0/619/640",
+          "label": "尼泊尔"
+        },
+        {
+          "value": "0/619/872",
+          "label": "尼加拉瓜"
+        },
+        {
+          "value": "0/619/804",
+          "label": "尼日尔"
+        },
+        {
+          "value": "0/619/806",
+          "label": "尼日利亚"
+        },
+        {
+          "value": "0/619/788",
+          "label": "挪威"
+        },
+        {
+          "value": "0/619/888",
+          "label": "帕劳"
+        },
+        {
+          "value": "0/619/790",
+          "label": "葡萄牙"
+        },
+        {
+          "value": "0/619/903",
+          "label": "其它"
+        },
+        {
+          "value": "0/619/633",
+          "label": "日本"
+        },
+        {
+          "value": "0/619/724",
+          "label": "瑞典"
+        },
+        {
+          "value": "0/619/723",
+          "label": "瑞士"
+        },
+        {
+          "value": "0/619/865",
+          "label": "萨尔瓦多"
+        },
+        {
+          "value": "0/619/730",
+          "label": "塞尔维亚共和国"
+        },
+        {
+          "value": "0/619/822",
+          "label": "塞拉利昂"
+        },
+        {
+          "value": "0/619/814",
+          "label": "塞内加尔"
+        },
+        {
+          "value": "0/619/704",
+          "label": "塞浦路斯"
+        },
+        {
+          "value": "0/619/836",
+          "label": "塞舌尔"
+        },
+        {
+          "value": "0/619/894",
+          "label": "萨摩亚"
+        },
+        {
+          "value": "0/619/636",
+          "label": "沙特阿拉伯"
+        },
+        {
+          "value": "0/619/848",
+          "label": "圣多美和普林西比"
+        },
+        {
+          "value": "0/619/873",
+          "label": "圣基茨和尼维斯"
+        },
+        {
+          "value": "0/619/866",
+          "label": "圣卢西亚"
+        },
+        {
+          "value": "0/619/792",
+          "label": "圣马力诺"
+        },
+        {
+          "value": "0/619/887",
+          "label": "圣文森特和格林纳丁斯"
+        },
+        {
+          "value": "0/619/712",
+          "label": "斯里兰卡"
+        },
+        {
+          "value": "0/619/751",
+          "label": "斯洛伐克"
+        },
+        {
+          "value": "0/619/793",
+          "label": "斯洛文尼亚"
+        },
+        {
+          "value": "0/619/829",
+          "label": "斯威士兰"
+        },
+        {
+          "value": "0/619/833",
+          "label": "苏丹"
+        },
+        {
+          "value": "0/619/864",
+          "label": "苏里南"
+        },
+        {
+          "value": "0/619/901",
+          "label": "所罗门群岛"
+        },
+        {
+          "value": "0/619/828",
+          "label": "索马里"
+        },
+        {
+          "value": "0/619/639",
+          "label": "泰国"
+        },
+        {
+          "value": "0/619/706",
+          "label": "塔吉克斯坦"
+        },
+        {
+          "value": "0/619/898",
+          "label": "汤加"
+        },
+        {
+          "value": "0/619/838",
+          "label": "坦桑尼亚"
+        },
+        {
+          "value": "0/619/880",
+          "label": "特立尼达和多巴哥"
+        },
+        {
+          "value": "0/619/642",
+          "label": "土耳其"
+        },
+        {
+          "value": "0/619/699",
+          "label": "土库曼斯坦"
+        },
+        {
+          "value": "0/619/844",
+          "label": "突尼斯"
+        },
+        {
+          "value": "0/619/890",
+          "label": "图瓦卢"
+        },
+        {
+          "value": "0/619/900",
+          "label": "瓦努阿图"
+        },
+        {
+          "value": "0/619/885",
+          "label": "危地马拉"
+        },
+        {
+          "value": "0/619/858",
+          "label": "委内瑞拉"
+        },
+        {
+          "value": "0/619/708",
+          "label": "文莱"
+        },
+        {
+          "value": "0/619/852",
+          "label": "乌干达"
+        },
+        {
+          "value": "0/619/743",
+          "label": "乌克兰"
+        },
+        {
+          "value": "0/619/876",
+          "label": "乌拉圭"
+        },
+        {
+          "value": "0/619/722",
+          "label": "乌兹别克斯坦"
+        },
+        {
+          "value": "0/619/796",
+          "label": "西班牙"
+        },
+        {
+          "value": "0/619/732",
+          "label": "希腊"
+        },
+        {
+          "value": "0/619/710",
+          "label": "新加坡"
+        },
+        {
+          "value": "0/619/899",
+          "label": "新西兰"
+        },
+        {
+          "value": "0/619/791",
+          "label": "匈牙利"
+        },
+        {
+          "value": "0/619/719",
+          "label": "叙利亚"
+        },
+        {
+          "value": "0/619/863",
+          "label": "牙买加"
+        },
+        {
+          "value": "0/619/698",
+          "label": "亚美尼亚"
+        },
+        {
+          "value": "0/619/717",
+          "label": "也门"
+        },
+        {
+          "value": "0/619/726",
+          "label": "意大利"
+        },
+        {
+          "value": "0/619/711",
+          "label": "伊拉克"
+        },
+        {
+          "value": "0/619/709",
+          "label": "伊朗"
+        },
+        {
+          "value": "0/619/714",
+          "label": "印度"
+        },
+        {
+          "value": "0/619/725",
+          "label": "英国"
+        },
+        {
+          "value": "0/619/638",
+          "label": "印尼"
+        },
+        {
+          "value": "0/619/718",
+          "label": "以色列"
+        },
+        {
+          "value": "0/619/648",
+          "label": "越南"
+        },
+        {
+          "value": "0/619/805",
+          "label": "赞比亚"
+        },
+        {
+          "value": "0/619/841",
+          "label": "乍得"
+        },
+        {
+          "value": "0/619/867",
+          "label": "智利"
+        },
+        {
+          "value": "0/619/816",
+          "label": "中非共和国"
+        }
+      ],
+      "optionsSource": "committed_react_option_definitions",
+      "controlKind": "select",
+      "itemId": "11_22",
+      "required": true,
+      "fillType": 4
+    },
+    {
+      "wrapperId": "11_23_0",
+      "label": "民族*",
+      "options": [
+        {
+          "value": "0/72/74",
+          "label": "汉族"
+        },
+        {
+          "value": "0/72/80",
+          "label": "傣族"
+        },
+        {
+          "value": "0/72/84",
+          "label": "德昂族"
+        },
+        {
+          "value": "0/72/85",
+          "label": "侗族"
+        },
+        {
+          "value": "0/72/87",
+          "label": "东乡族"
+        },
+        {
+          "value": "0/72/89",
+          "label": "独龙族"
+        },
+        {
+          "value": "0/72/91",
+          "label": "鄂伦春族"
+        },
+        {
+          "value": "0/72/92",
+          "label": "俄罗斯族"
+        },
+        {
+          "value": "0/72/94",
+          "label": "鄂温克族"
+        },
+        {
+          "value": "0/72/96",
+          "label": "高山族"
+        },
+        {
+          "value": "0/72/97",
+          "label": "仡佬族"
+        },
+        {
+          "value": "0/72/99",
+          "label": "朝鲜族"
+        },
+        {
+          "value": "0/72/101",
+          "label": "哈尼族"
+        },
+        {
+          "value": "0/72/103",
+          "label": "哈萨克族"
+        },
+        {
+          "value": "0/72/105",
+          "label": "赫哲族"
+        },
+        {
+          "value": "0/72/107",
+          "label": "回族"
+        },
+        {
+          "value": "0/72/108",
+          "label": "基诺族"
+        },
+        {
+          "value": "0/72/110",
+          "label": "京族"
+        },
+        {
+          "value": "0/72/112",
+          "label": "景颇族"
+        },
+        {
+          "value": "0/72/113",
+          "label": "柯尔克孜族"
+        },
+        {
+          "value": "0/72/114",
+          "label": "拉祜族"
+        },
+        {
+          "value": "0/72/116",
+          "label": "黎族"
+        },
+        {
+          "value": "0/72/118",
+          "label": "阿昌族"
+        },
+        {
+          "value": "0/72/120",
+          "label": "傈僳族"
+        },
+        {
+          "value": "0/72/121",
+          "label": "珞巴族"
+        },
+        {
+          "value": "0/72/123",
+          "label": "满族"
+        },
+        {
+          "value": "0/72/124",
+          "label": "毛南族"
+        },
+        {
+          "value": "0/72/126",
+          "label": "门巴族"
+        },
+        {
+          "value": "0/72/127",
+          "label": "蒙古族"
+        },
+        {
+          "value": "0/72/129",
+          "label": "苗族"
+        },
+        {
+          "value": "0/72/132",
+          "label": "仫佬族"
+        },
+        {
+          "value": "0/72/134",
+          "label": "纳西族"
+        },
+        {
+          "value": "0/72/136",
+          "label": "怒族"
+        },
+        {
+          "value": "0/72/137",
+          "label": "白族"
+        },
+        {
+          "value": "0/72/140",
+          "label": "普米族"
+        },
+        {
+          "value": "0/72/142",
+          "label": "羌族"
+        },
+        {
+          "value": "0/72/143",
+          "label": "撒拉族"
+        },
+        {
+          "value": "0/72/145",
+          "label": "畲族"
+        },
+        {
+          "value": "0/72/147",
+          "label": "水族"
+        },
+        {
+          "value": "0/72/149",
+          "label": "塔吉克族"
+        },
+        {
+          "value": "0/72/150",
+          "label": "塔塔尔族"
+        },
+        {
+          "value": "0/72/152",
+          "label": "土族"
+        },
+        {
+          "value": "0/72/154",
+          "label": "土家族"
+        },
+        {
+          "value": "0/72/155",
+          "label": "佤族"
+        },
+        {
+          "value": "0/72/157",
+          "label": "保安族"
+        },
+        {
+          "value": "0/72/158",
+          "label": "维吾尔族"
+        },
+        {
+          "value": "0/72/160",
+          "label": "乌兹别克族"
+        },
+        {
+          "value": "0/72/161",
+          "label": "锡伯族"
+        },
+        {
+          "value": "0/72/163",
+          "label": "瑶族"
+        },
+        {
+          "value": "0/72/165",
+          "label": "彝族"
+        },
+        {
+          "value": "0/72/166",
+          "label": "裕固族"
+        },
+        {
+          "value": "0/72/167",
+          "label": "藏族"
+        },
+        {
+          "value": "0/72/168",
+          "label": "壮族"
+        },
+        {
+          "value": "0/72/169",
+          "label": "布朗族"
+        },
+        {
+          "value": "0/72/170",
+          "label": "布依族"
+        },
+        {
+          "value": "0/72/171",
+          "label": "达斡尔族"
+        }
+      ],
+      "optionsSource": "committed_react_option_definitions",
+      "controlKind": "select",
+      "itemId": "11_23",
+      "required": true,
+      "fillType": 4
+    },
+    {
+      "wrapperId": "11_24_0",
+      "label": "婚姻状况*",
+      "options": [
+        {
+          "value": "0/209/849682642",
+          "label": "未婚"
+        },
+        {
+          "value": "0/209/212",
+          "label": "已婚"
+        },
+        {
+          "value": "0/209/216",
+          "label": "离异"
+        },
+        {
+          "value": "0/209/849684242",
+          "label": "丧偶"
+        }
+      ],
+      "optionsSource": "committed_react_option_definitions",
+      "controlKind": "select",
+      "itemId": "11_24",
+      "required": true,
+      "fillType": 4
+    },
+    {
+      "wrapperId": "11_25_0",
+      "label": "政治面貌*",
+      "options": [
+        {
+          "value": "0/194/195",
+          "label": "中共党员"
+        },
+        {
+          "value": "0/194/14001",
+          "label": "中共预备党员"
+        },
+        {
+          "value": "0/194/14000",
+          "label": "民主党派"
+        },
+        {
+          "value": "0/194/197",
+          "label": "无党派人士"
+        },
+        {
+          "value": "0/194/107802",
+          "label": "共青团员"
+        },
+        {
+          "value": "0/194/198",
+          "label": "群众"
+        },
+        {
+          "value": "0/194/196",
+          "label": "其他"
+        }
+      ],
+      "optionsSource": "committed_react_option_definitions",
+      "controlKind": "select",
+      "itemId": "11_25",
+      "required": true,
+      "fillType": 4
+    },
+    {
+      "wrapperId": "11_28_0",
+      "label": "证件类型*",
+      "options": [
+        {
+          "value": "0/199/201",
+          "label": "[REDACTED]"
+        },
+        {
+          "value": "0/199/202",
+          "label": "护照"
+        },
+        {
+          "value": "0/199/203",
+          "label": "军官证"
+        },
+        {
+          "value": "0/199/205",
+          "label": "香港[REDACTED]"
+        },
+        {
+          "value": "0/199/206",
+          "label": "其它"
+        },
+        {
+          "value": "0/199/94184",
+          "label": "台湾[REDACTED]"
+        }
+      ],
+      "optionsSource": "committed_react_option_definitions",
+      "controlKind": "select",
+      "itemId": "11_28",
+      "required": true,
+      "fillType": 4
+    },
+    {
+      "wrapperId": "11_29_0",
+      "label": "证件号码*",
+      "options": [],
+      "optionsSource": "none",
+      "controlKind": "text",
+      "itemId": "11_29",
+      "required": true,
+      "fillType": 1
+    },
+    {
+      "wrapperId": "11_26_0",
+      "label": "现居住地*",
+      "options": [
+        {
+          "value": "0/4/121101",
+          "label": "全部地区"
+        },
+        {
+          "value": "0/4/7",
+          "label": "北京市"
+        },
+        {
+          "value": "0/4/10",
+          "label": "上海市"
+        },
+        {
+          "value": "0/4/12",
+          "label": "天津市"
+        },
+        {
+          "value": "0/4/14",
+          "label": "重庆市"
+        },
+        {
+          "value": "0/4/17",
+          "label": "河北省"
+        },
+        {
+          "value": "0/4/43",
+          "label": "山西省"
+        },
+        {
+          "value": "0/4/57",
+          "label": "内蒙古自治区"
+        },
+        {
+          "value": "0/4/77",
+          "label": "辽宁省"
+        },
+        {
+          "value": "0/4/100",
+          "label": "吉林省"
+        },
+        {
+          "value": "0/4/115",
+          "label": "黑龙江省"
+        },
+        {
+          "value": "0/4/135",
+          "label": "江苏省"
+        },
+        {
+          "value": "0/4/204",
+          "label": "浙江省"
+        },
+        {
+          "value": "0/4/229",
+          "label": "安徽省"
+        },
+        {
+          "value": "0/4/248",
+          "label": "福建省"
+        },
+        {
+          "value": "0/4/298",
+          "label": "江西省"
+        },
+        {
+          "value": "0/4/302",
+          "label": "山东省"
+        },
+        {
+          "value": "0/4/331",
+          "label": "河南省"
+        },
+        {
+          "value": "0/4/343",
+          "label": "湖北省"
+        },
+        {
+          "value": "0/4/372",
+          "label": "湖南省"
+        },
+        {
+          "value": "0/4/396",
+          "label": "广东省"
+        },
+        {
+          "value": "0/4/439",
+          "label": "广西壮族自治区"
+        },
+        {
+          "value": "0/4/450",
+          "label": "海南省"
+        },
+        {
+          "value": "0/4/455",
+          "label": "四川省"
+        },
+        {
+          "value": "0/4/468",
+          "label": "贵州省"
+        },
+        {
+          "value": "0/4/473",
+          "label": "云南省"
+        },
+        {
+          "value": "0/4/482",
+          "label": "西藏自治区"
+        },
+        {
+          "value": "0/4/489",
+          "label": "陕西省"
+        },
+        {
+          "value": "0/4/513",
+          "label": "甘肃省"
+        },
+        {
+          "value": "0/4/553",
+          "label": "青海省"
+        },
+        {
+          "value": "0/4/560",
+          "label": "宁夏回族自治区"
+        },
+        {
+          "value": "0/4/574",
+          "label": "新疆维吾尔自治区"
+        },
+        {
+          "value": "0/4/595",
+          "label": "中国香港"
+        },
+        {
+          "value": "0/4/596",
+          "label": "澳门"
+        },
+        {
+          "value": "0/4/597",
+          "label": "台湾省"
+        },
+        {
+          "value": "0/4/598",
+          "label": "其它"
+        },
+        {
+          "value": "0/4/23000",
+          "label": "其他国家/地区"
+        },
+        {
+          "value": "0/4/51410248",
+          "label": "美国"
+        },
+        {
+          "value": "0/4/51410251",
+          "label": "英国"
+        },
+        {
+          "value": "0/4/51410256",
+          "label": "法国"
+        },
+        {
+          "value": "0/4/51410260",
+          "label": "新加坡"
+        },
+        {
+          "value": "0/4/51410265",
+          "label": "日本"
+        },
+        {
+          "value": "0/4/51410267",
+          "label": "韩国"
+        },
+        {
+          "value": "0/4/51410270",
+          "label": "加拿大"
+        },
+        {
+          "value": "0/4/51413205",
+          "label": "澳大利亚"
+        }
+      ],
+      "optionsSource": "committed_react_option_definitions",
+      "controlKind": "select",
+      "itemId": "11_26",
+      "required": true,
+      "fillType": 9
+    },
+    {
+      "wrapperId": "11_51414234_0",
+      "label": "联系地址*",
+      "options": [
+        {
+          "code": "0/49170838/49170848",
+          "name": "成人教育"
+        },
+        {
+          "code": "0/49170838/49170844",
+          "name": "函授"
+        },
+        {
+          "code": "0/49170838/49170840",
+          "name": "全日制"
+        },
+        {
+          "code": "0/49170838/49170850",
+          "name": "其他"
+        },
+        {
+          "code": "0/49170838/49170846",
+          "name": "自学考试"
+        },
+        {
+          "code": "0/49170838/49170842",
+          "name": "在职"
+        }
+      ],
+      "optionsSource": "main_world_template_dictionary",
+      "controlKind": "text",
+      "itemId": "11_51414234",
+      "required": true,
+      "fillType": 1
+    },
+    {
+      "wrapperId": "11_245_0",
+      "label": "籍贯*",
+      "options": [
+        {
+          "value": "0/4/121101",
+          "label": "全部地区"
+        },
+        {
+          "value": "0/4/7",
+          "label": "北京市"
+        },
+        {
+          "value": "0/4/10",
+          "label": "上海市"
+        },
+        {
+          "value": "0/4/12",
+          "label": "天津市"
+        },
+        {
+          "value": "0/4/14",
+          "label": "重庆市"
+        },
+        {
+          "value": "0/4/17",
+          "label": "河北省"
+        },
+        {
+          "value": "0/4/43",
+          "label": "山西省"
+        },
+        {
+          "value": "0/4/57",
+          "label": "内蒙古自治区"
+        },
+        {
+          "value": "0/4/77",
+          "label": "辽宁省"
+        },
+        {
+          "value": "0/4/100",
+          "label": "吉林省"
+        },
+        {
+          "value": "0/4/115",
+          "label": "黑龙江省"
+        },
+        {
+          "value": "0/4/135",
+          "label": "江苏省"
+        },
+        {
+          "value": "0/4/204",
+          "label": "浙江省"
+        },
+        {
+          "value": "0/4/229",
+          "label": "安徽省"
+        },
+        {
+          "value": "0/4/248",
+          "label": "福建省"
+        },
+        {
+          "value": "0/4/298",
+          "label": "江西省"
+        },
+        {
+          "value": "0/4/302",
+          "label": "山东省"
+        },
+        {
+          "value": "0/4/331",
+          "label": "河南省"
+        },
+        {
+          "value": "0/4/343",
+          "label": "湖北省"
+        },
+        {
+          "value": "0/4/372",
+          "label": "湖南省"
+        },
+        {
+          "value": "0/4/396",
+          "label": "广东省"
+        },
+        {
+          "value": "0/4/439",
+          "label": "广西壮族自治区"
+        },
+        {
+          "value": "0/4/450",
+          "label": "海南省"
+        },
+        {
+          "value": "0/4/455",
+          "label": "四川省"
+        },
+        {
+          "value": "0/4/468",
+          "label": "贵州省"
+        },
+        {
+          "value": "0/4/473",
+          "label": "云南省"
+        },
+        {
+          "value": "0/4/482",
+          "label": "西藏自治区"
+        },
+        {
+          "value": "0/4/489",
+          "label": "陕西省"
+        },
+        {
+          "value": "0/4/513",
+          "label": "甘肃省"
+        },
+        {
+          "value": "0/4/553",
+          "label": "青海省"
+        },
+        {
+          "value": "0/4/560",
+          "label": "宁夏回族自治区"
+        },
+        {
+          "value": "0/4/574",
+          "label": "新疆维吾尔自治区"
+        },
+        {
+          "value": "0/4/595",
+          "label": "中国香港"
+        },
+        {
+          "value": "0/4/596",
+          "label": "澳门"
+        },
+        {
+          "value": "0/4/597",
+          "label": "台湾省"
+        },
+        {
+          "value": "0/4/598",
+          "label": "其它"
+        },
+        {
+          "value": "0/4/23000",
+          "label": "其他国家/地区"
+        },
+        {
+          "value": "0/4/51410248",
+          "label": "美国"
+        },
+        {
+          "value": "0/4/51410251",
+          "label": "英国"
+        },
+        {
+          "value": "0/4/51410256",
+          "label": "法国"
+        },
+        {
+          "value": "0/4/51410260",
+          "label": "新加坡"
+        },
+        {
+          "value": "0/4/51410265",
+          "label": "日本"
+        },
+        {
+          "value": "0/4/51410267",
+          "label": "韩国"
+        },
+        {
+          "value": "0/4/51410270",
+          "label": "加拿大"
+        },
+        {
+          "value": "0/4/51413205",
+          "label": "澳大利亚"
+        }
+      ],
+      "optionsSource": "committed_react_option_definitions",
+      "controlKind": "select",
+      "itemId": "11_245",
+      "required": true,
+      "fillType": 9
+    },
+    {
+      "wrapperId": "11_32_0",
+      "label": "毕业院校*",
+      "options": [],
+      "optionsSource": "none",
+      "controlKind": "select",
+      "itemId": "11_32",
+      "required": true,
+      "fillType": 1
+    },
+    {
+      "wrapperId": "11_32_0",
+      "label": "毕业院校*",
+      "options": [],
+      "optionsSource": "none",
+      "controlKind": "text",
+      "itemId": "11_32",
+      "required": true,
+      "fillType": 1
+    },
+    {
+      "wrapperId": "11_244_0",
+      "label": "学位*",
+      "options": [
+        {
+          "value": "0/435/477",
+          "label": "无"
+        },
+        {
+          "value": "0/435/479",
+          "label": "学士"
+        },
+        {
+          "value": "0/435/485",
+          "label": "双学士"
+        },
+        {
+          "value": "0/435/486",
+          "label": "硕士"
+        },
+        {
+          "value": "0/435/1133",
+          "label": "双硕士"
+        },
+        {
+          "value": "0/435/487",
+          "label": "博士"
+        }
+      ],
+      "optionsSource": "committed_react_option_definitions",
+      "controlKind": "select",
+      "itemId": "11_244",
+      "required": true,
+      "fillType": 4
+    },
+    {
+      "wrapperId": "11_30_0",
+      "label": "学历*",
+      "options": [
+        {
+          "value": "0/606/607",
+          "label": "初中及以下"
+        },
+        {
+          "value": "0/606/608",
+          "label": "高中"
+        },
+        {
+          "value": "0/606/609",
+          "label": "技校/职高"
+        },
+        {
+          "value": "0/606/610",
+          "label": "中专"
+        },
+        {
+          "value": "0/606/611",
+          "label": "大专"
+        },
+        {
+          "value": "0/606/612",
+          "label": "本科"
+        },
+        {
+          "value": "0/606/614",
+          "label": "双学位"
+        },
+        {
+          "value": "0/606/615",
+          "label": "硕士研究生"
+        },
+        {
+          "value": "0/606/616",
+          "label": "MBA"
+        },
+        {
+          "value": "0/606/617",
+          "label": "EMBA"
+        },
+        {
+          "value": "0/606/618",
+          "label": "MPA"
+        },
+        {
+          "value": "0/606/620",
+          "label": "法律硕士"
+        },
+        {
+          "value": "0/606/621",
+          "label": "博士研究生"
+        },
+        {
+          "value": "0/606/622",
+          "label": "其它"
+        }
+      ],
+      "optionsSource": "committed_react_option_definitions",
+      "controlKind": "select",
+      "itemId": "11_30",
+      "required": true,
+      "fillType": 4
+    },
+    {
+      "wrapperId": "11_51414236_0",
+      "label": "专业名称*",
+      "options": [
+        {
+          "code": "0/49170838/49170848",
+          "name": "成人教育"
+        },
+        {
+          "code": "0/49170838/49170844",
+          "name": "函授"
+        },
+        {
+          "code": "0/49170838/49170840",
+          "name": "全日制"
+        },
+        {
+          "code": "0/49170838/49170850",
+          "name": "其他"
+        },
+        {
+          "code": "0/49170838/49170846",
+          "name": "自学考试"
+        },
+        {
+          "code": "0/49170838/49170842",
+          "name": "在职"
+        }
+      ],
+      "optionsSource": "main_world_template_dictionary",
+      "controlKind": "text",
+      "itemId": "11_51414236",
+      "required": true,
+      "fillType": 1
+    },
+    {
+      "wrapperId": "11_31_0",
+      "label": "毕业时间*?",
+      "options": [],
+      "optionsSource": "none",
+      "controlKind": "date",
+      "itemId": "11_31",
+      "required": true,
+      "fillType": 2
+    },
+    {
+      "wrapperId": "11_36_0",
+      "label": "移动电话（请填写中国大陆移动电话，以便接收短信通知）*",
+      "options": [
+        {
+          "code": "0/150002/150003",
+          "name": "管理序列"
+        },
+        {
+          "code": "0/150002/150004",
+          "name": "专业序列 - 非销售"
+        },
+        {
+          "code": "0/150002/150005",
+          "name": "专业序列 - 销售"
+        }
+      ],
+      "optionsSource": "main_world_template_dictionary",
+      "controlKind": "text",
+      "itemId": "11_36",
+      "required": true,
+      "fillType": 1
+    },
+    {
+      "wrapperId": "11_37_0",
+      "label": "电子邮箱（请尽量使用163、qq等常见邮箱，尽量不要用gmail、hotmail等境外邮箱或学校邮箱）*",
+      "options": [
+        {
+          "code": "0/150002/150003",
+          "name": "管理序列"
+        },
+        {
+          "code": "0/150002/150004",
+          "name": "专业序列 - 非销售"
+        },
+        {
+          "code": "0/150002/150005",
+          "name": "专业序列 - 销售"
+        }
+      ],
+      "optionsSource": "main_world_template_dictionary",
+      "controlKind": "text",
+      "itemId": "11_37",
+      "required": true,
+      "fillType": 1
+    },
+    {
+      "wrapperId": "11_1003214127_0",
+      "label": "期望面试地点（供参考，实际安排将根据笔试通过名单确定）*",
+      "options": [
+        {
+          "value": "0/1003214166/1003214162",
+          "label": "北京"
+        },
+        {
+          "value": "0/1003214166/1003214160",
+          "label": "上海"
+        },
+        {
+          "value": "0/1003214166/1003214137",
+          "label": "深圳"
+        },
+        {
+          "value": "0/1003214166/114601",
+          "label": "中国香港（限招证国际岗位）"
+        },
+        {
+          "value": "0/1003214166/114602",
+          "label": "广州（限分支机构岗位）"
+        },
+        {
+          "value": "0/1003214166/114603",
+          "label": "成都（限分支机构岗位）"
+        },
+        {
+          "value": "0/1003214166/114604",
+          "label": "武汉（限分支机构岗位）"
+        }
+      ],
+      "optionsSource": "committed_react_option_definitions",
+      "controlKind": "select",
+      "itemId": "11_1003214127",
+      "required": true,
+      "fillType": 4
+    },
+    {
+      "wrapperId": "11_41_0",
+      "label": "照片*",
+      "options": [],
+      "optionsSource": "none",
+      "controlKind": "upload",
+      "itemId": "11_41",
+      "required": true,
+      "fillType": 8
+    },
+    {
+      "wrapperId": "11_41_0",
+      "label": "照片*",
+      "options": [],
+      "optionsSource": "none",
+      "controlKind": "text",
+      "itemId": "11_41",
+      "required": true,
+      "fillType": 8
+    },
+    {
+      "wrapperId": "12_42_0",
+      "label": "评价内容*",
+      "options": [],
+      "optionsSource": "none",
+      "controlKind": "textarea",
+      "itemId": "12_42",
+      "required": true,
+      "fillType": 6
+    },
+    {
+      "wrapperId": "13_43_0",
+      "label": "期望工作性质*",
+      "options": [
+        {
+          "value": "0/461/578",
+          "label": "全职"
+        },
+        {
+          "value": "0/461/580",
+          "label": "实习"
+        }
+      ],
+      "optionsSource": "committed_react_option_definitions",
+      "controlKind": "select",
+      "itemId": "13_43",
+      "required": true,
+      "fillType": 4
+    },
+    {
+      "wrapperId": "13_100701_0",
+      "label": "意向一：期望工作地点*",
+      "options": [
+        {
+          "value": "0/103501/103513",
+          "label": "北京"
+        },
+        {
+          "value": "0/103501/103560",
+          "label": "上海"
+        },
+        {
+          "value": "0/103501/103601",
+          "label": "广东"
+        },
+        {
+          "value": "0/103501/103521",
+          "label": "广西"
+        },
+        {
+          "value": "0/103501/103539",
+          "label": "江苏"
+        },
+        {
+          "value": "0/103501/103531",
+          "label": "湖北"
+        },
+        {
+          "value": "0/103501/103509",
+          "label": "安徽"
+        },
+        {
+          "value": "0/103501/103552",
+          "label": "山东"
+        },
+        {
+          "value": "0/103501/103555",
+          "label": "陕西"
+        },
+        {
+          "value": "0/103501/103550",
+          "label": "宁夏"
+        },
+        {
+          "value": "0/103501/103518",
+          "label": "甘肃"
+        },
+        {
+          "value": "0/103501/103564",
+          "label": "新疆"
+        },
+        {
+          "value": "0/103501/103515",
+          "label": "福建"
+        },
+        {
+          "value": "0/103501/103568",
+          "label": "浙江"
+        },
+        {
+          "value": "0/103501/103537",
+          "label": "湖南"
+        },
+        {
+          "value": "0/103501/103562",
+          "label": "四川"
+        },
+        {
+          "value": "0/103501/103573",
+          "label": "重庆"
+        },
+        {
+          "value": "0/103501/103566",
+          "label": "云南"
+        },
+        {
+          "value": "0/103501/103544",
+          "label": "江西"
+        },
+        {
+          "value": "0/103501/104361",
+          "label": "河南"
+        },
+        {
+          "value": "0/103501/104367",
+          "label": "河北"
+        },
+        {
+          "value": "0/103501/104370",
+          "label": "天津"
+        },
+        {
+          "value": "0/103501/104372",
+          "label": "山西"
+        },
+        {
+          "value": "0/103501/104374",
+          "label": "辽宁"
+        },
+        {
+          "value": "0/103501/104380",
+          "label": "吉林"
+        },
+        {
+          "value": "0/103501/103527",
+          "label": "黑龙江"
+        },
+        {
+          "value": "0/103501/103548",
+          "label": "内蒙古"
+        },
+        {
+          "value": "0/103501/104384",
+          "label": "贵州"
+        },
+        {
+          "value": "0/103501/104386",
+          "label": "海南"
+        },
+        {
+          "value": "0/103501/113204",
+          "label": "中国香港"
+        }
+      ],
+      "optionsSource": "committed_react_option_definitions",
+      "controlKind": "select",
+      "itemId": "13_100701",
+      "required": true,
+      "fillType": 9
+    },
+    {
+      "wrapperId": "13_100702_0",
+      "label": "意向二：期望工作地点*",
+      "options": [
+        {
+          "value": "0/103501/103513",
+          "label": "北京"
+        },
+        {
+          "value": "0/103501/103560",
+          "label": "上海"
+        },
+        {
+          "value": "0/103501/103601",
+          "label": "广东"
+        },
+        {
+          "value": "0/103501/103521",
+          "label": "广西"
+        },
+        {
+          "value": "0/103501/103539",
+          "label": "江苏"
+        },
+        {
+          "value": "0/103501/103531",
+          "label": "湖北"
+        },
+        {
+          "value": "0/103501/103509",
+          "label": "安徽"
+        },
+        {
+          "value": "0/103501/103552",
+          "label": "山东"
+        },
+        {
+          "value": "0/103501/103555",
+          "label": "陕西"
+        },
+        {
+          "value": "0/103501/103550",
+          "label": "宁夏"
+        },
+        {
+          "value": "0/103501/103518",
+          "label": "甘肃"
+        },
+        {
+          "value": "0/103501/103564",
+          "label": "新疆"
+        },
+        {
+          "value": "0/103501/103515",
+          "label": "福建"
+        },
+        {
+          "value": "0/103501/103568",
+          "label": "浙江"
+        },
+        {
+          "value": "0/103501/103537",
+          "label": "湖南"
+        },
+        {
+          "value": "0/103501/103562",
+          "label": "四川"
+        },
+        {
+          "value": "0/103501/103573",
+          "label": "重庆"
+        },
+        {
+          "value": "0/103501/103566",
+          "label": "云南"
+        },
+        {
+          "value": "0/103501/103544",
+          "label": "江西"
+        },
+        {
+          "value": "0/103501/104361",
+          "label": "河南"
+        },
+        {
+          "value": "0/103501/104367",
+          "label": "河北"
+        },
+        {
+          "value": "0/103501/104370",
+          "label": "天津"
+        },
+        {
+          "value": "0/103501/104372",
+          "label": "山西"
+        },
+        {
+          "value": "0/103501/104374",
+          "label": "辽宁"
+        },
+        {
+          "value": "0/103501/104380",
+          "label": "吉林"
+        },
+        {
+          "value": "0/103501/103527",
+          "label": "黑龙江"
+        },
+        {
+          "value": "0/103501/103548",
+          "label": "内蒙古"
+        },
+        {
+          "value": "0/103501/104384",
+          "label": "贵州"
+        },
+        {
+          "value": "0/103501/104386",
+          "label": "海南"
+        },
+        {
+          "value": "0/103501/113204",
+          "label": "中国香港"
+        }
+      ],
+      "optionsSource": "committed_react_option_definitions",
+      "controlKind": "select",
+      "itemId": "13_100702",
+      "required": true,
+      "fillType": 9
+    },
+    {
+      "wrapperId": "13_102402_0",
+      "label": "期望工作地是否服从分配*",
+      "options": [
+        {
+          "label": "是"
+        },
+        {
+          "label": "否"
+        }
+      ],
+      "optionsSource": "rendered_choice_labels",
+      "controlKind": "radio",
+      "itemId": "13_102402",
+      "required": true,
+      "fillType": 3
+    },
+    {
+      "wrapperId": "13_47_0",
+      "label": "期望年薪*",
+      "options": [
+        {
+          "value": "0/108701/108801",
+          "label": "10万以下"
+        },
+        {
+          "value": "0/108701/108901",
+          "label": "11-20万"
+        },
+        {
+          "value": "0/108701/108506",
+          "label": "21-30万"
+        },
+        {
+          "value": "0/108701/108702",
+          "label": "31-40万"
+        },
+        {
+          "value": "0/108701/109001",
+          "label": "41-50万"
+        },
+        {
+          "value": "0/108701/108703",
+          "label": "51-60万"
+        },
+        {
+          "value": "0/108701/108802",
+          "label": "61-70万"
+        },
+        {
+          "value": "0/108701/109101",
+          "label": "71-80万"
+        },
+        {
+          "value": "0/108701/108704",
+          "label": "81-90万"
+        },
+        {
+          "value": "0/108701/108902",
+          "label": "91-100万"
+        },
+        {
+          "value": "0/108701/109102",
+          "label": "101-150万"
+        },
+        {
+          "value": "0/108701/108903",
+          "label": "151万以上"
+        }
+      ],
+      "optionsSource": "committed_react_option_definitions",
+      "controlKind": "select",
+      "itemId": "13_47",
+      "required": true,
+      "fillType": 4
+    },
+    {
+      "wrapperId": "13_195_0",
+      "label": "到岗时间*",
+      "options": [
+        {
+          "value": "0/448/529",
+          "label": "一周"
+        },
+        {
+          "value": "0/448/530",
+          "label": "两周"
+        },
+        {
+          "value": "0/448/531",
+          "label": "三周"
+        },
+        {
+          "value": "0/448/532",
+          "label": "一个月"
+        },
+        {
+          "value": "0/448/533",
+          "label": "两个月"
+        },
+        {
+          "value": "0/448/534",
+          "label": "三个月"
+        },
+        {
+          "value": "0/448/535",
+          "label": "六个月"
+        },
+        {
+          "value": "0/448/32526",
+          "label": "随时"
+        }
+      ],
+      "optionsSource": "committed_react_option_definitions",
+      "controlKind": "select",
+      "itemId": "13_195",
+      "required": true,
+      "fillType": 4
+    },
+    {
+      "wrapperId": "13_102501_0",
+      "label": "如应聘研究发展中心行业研究类岗位请勾选（建议仅勾选3~5项）*",
+      "options": [
+        {
+          "label": "非研究类岗位，不涉及"
+        },
+        {
+          "label": "宏观"
+        },
+        {
+          "label": "策略"
+        },
+        {
+          "label": "债券"
+        },
+        {
+          "label": "银行"
+        },
+        {
+          "label": "非银行金融"
+        },
+        {
+          "label": "房地产"
+        },
+        {
+          "label": "量化"
+        },
+        {
+          "label": "基金评价"
+        },
+        {
+          "label": "金属及材料（有色金属）"
+        },
+        {
+          "label": "化工"
+        },
+        {
+          "label": "交通运输"
+        },
+        {
+          "label": "生物医药"
+        },
+        {
+          "label": "汽车"
+        },
+        {
+          "label": "机械"
+        },
+        {
+          "label": "军工"
+        },
+        {
+          "label": "电力设备及新能源"
+        },
+        {
+          "label": "建材"
+        },
+        {
+          "label": "食品饮料"
+        },
+        {
+          "label": "轻工纺服"
+        },
+        {
+          "label": "纺服化妆品"
+        },
+        {
+          "label": "农林牧渔"
+        },
+        {
+          "label": "家电"
+        },
+        {
+          "label": "商业（零售+社会服务）"
+        },
+        {
+          "label": "电子"
+        },
+        {
+          "label": "传媒"
+        },
+        {
+          "label": "通信"
+        },
+        {
+          "label": "计算机"
+        },
+        {
+          "label": "中小盘"
+        },
+        {
+          "label": "环保及公用事业"
+        },
+        {
+          "label": "煤炭开采"
+        },
+        {
+          "label": "智库研究"
+        }
+      ],
+      "optionsSource": "rendered_choice_labels",
+      "controlKind": "checkbox",
+      "itemId": "13_102501",
+      "required": true,
+      "fillType": 5
+    },
+    {
+      "wrapperId": "14_49_0",
+      "label": "开始时间*",
+      "options": [],
+      "optionsSource": "none",
+      "controlKind": "date",
+      "itemId": "14_49",
+      "required": true,
+      "fillType": 2
+    },
+    {
+      "wrapperId": "14_50_0",
+      "label": "结束时间*",
+      "options": [],
+      "optionsSource": "none",
+      "controlKind": "date",
+      "itemId": "14_50",
+      "required": true,
+      "fillType": 2
+    },
+    {
+      "wrapperId": "14_51_0",
+      "label": "学校*",
+      "options": [],
+      "optionsSource": "none",
+      "controlKind": "select",
+      "itemId": "14_51",
+      "required": true,
+      "fillType": 1
+    },
+    {
+      "wrapperId": "14_51_0",
+      "label": "学校*",
+      "options": [],
+      "optionsSource": "none",
+      "controlKind": "text",
+      "itemId": "14_51",
+      "required": true,
+      "fillType": 1
+    },
+    {
+      "wrapperId": "14_52_0",
+      "label": "城市*",
+      "options": [
+        {
+          "value": "0/4/121101",
+          "label": "全部地区"
+        },
+        {
+          "value": "0/4/7",
+          "label": "北京市"
+        },
+        {
+          "value": "0/4/10",
+          "label": "上海市"
+        },
+        {
+          "value": "0/4/12",
+          "label": "天津市"
+        },
+        {
+          "value": "0/4/14",
+          "label": "重庆市"
+        },
+        {
+          "value": "0/4/17",
+          "label": "河北省"
+        },
+        {
+          "value": "0/4/43",
+          "label": "山西省"
+        },
+        {
+          "value": "0/4/57",
+          "label": "内蒙古自治区"
+        },
+        {
+          "value": "0/4/77",
+          "label": "辽宁省"
+        },
+        {
+          "value": "0/4/100",
+          "label": "吉林省"
+        },
+        {
+          "value": "0/4/115",
+          "label": "黑龙江省"
+        },
+        {
+          "value": "0/4/135",
+          "label": "江苏省"
+        },
+        {
+          "value": "0/4/204",
+          "label": "浙江省"
+        },
+        {
+          "value": "0/4/229",
+          "label": "安徽省"
+        },
+        {
+          "value": "0/4/248",
+          "label": "福建省"
+        },
+        {
+          "value": "0/4/298",
+          "label": "江西省"
+        },
+        {
+          "value": "0/4/302",
+          "label": "山东省"
+        },
+        {
+          "value": "0/4/331",
+          "label": "河南省"
+        },
+        {
+          "value": "0/4/343",
+          "label": "湖北省"
+        },
+        {
+          "value": "0/4/372",
+          "label": "湖南省"
+        },
+        {
+          "value": "0/4/396",
+          "label": "广东省"
+        },
+        {
+          "value": "0/4/439",
+          "label": "广西壮族自治区"
+        },
+        {
+          "value": "0/4/450",
+          "label": "海南省"
+        },
+        {
+          "value": "0/4/455",
+          "label": "四川省"
+        },
+        {
+          "value": "0/4/468",
+          "label": "贵州省"
+        },
+        {
+          "value": "0/4/473",
+          "label": "云南省"
+        },
+        {
+          "value": "0/4/482",
+          "label": "西藏自治区"
+        },
+        {
+          "value": "0/4/489",
+          "label": "陕西省"
+        },
+        {
+          "value": "0/4/513",
+          "label": "甘肃省"
+        },
+        {
+          "value": "0/4/553",
+          "label": "青海省"
+        },
+        {
+          "value": "0/4/560",
+          "label": "宁夏回族自治区"
+        },
+        {
+          "value": "0/4/574",
+          "label": "新疆维吾尔自治区"
+        },
+        {
+          "value": "0/4/595",
+          "label": "中国香港"
+        },
+        {
+          "value": "0/4/596",
+          "label": "澳门"
+        },
+        {
+          "value": "0/4/597",
+          "label": "台湾省"
+        },
+        {
+          "value": "0/4/598",
+          "label": "其它"
+        },
+        {
+          "value": "0/4/23000",
+          "label": "其他国家/地区"
+        },
+        {
+          "value": "0/4/51410248",
+          "label": "美国"
+        },
+        {
+          "value": "0/4/51410251",
+          "label": "英国"
+        },
+        {
+          "value": "0/4/51410256",
+          "label": "法国"
+        },
+        {
+          "value": "0/4/51410260",
+          "label": "新加坡"
+        },
+        {
+          "value": "0/4/51410265",
+          "label": "日本"
+        },
+        {
+          "value": "0/4/51410267",
+          "label": "韩国"
+        },
+        {
+          "value": "0/4/51410270",
+          "label": "加拿大"
+        },
+        {
+          "value": "0/4/51413205",
+          "label": "澳大利亚"
+        }
+      ],
+      "optionsSource": "committed_react_option_definitions",
+      "controlKind": "select",
+      "itemId": "14_52",
+      "required": true,
+      "fillType": 9
+    },
+    {
+      "wrapperId": "14_248_0",
+      "label": "学位*",
+      "options": [
+        {
+          "value": "0/435/477",
+          "label": "无"
+        },
+        {
+          "value": "0/435/479",
+          "label": "学士"
+        },
+        {
+          "value": "0/435/485",
+          "label": "双学士"
+        },
+        {
+          "value": "0/435/486",
+          "label": "硕士"
+        },
+        {
+          "value": "0/435/1133",
+          "label": "双硕士"
+        },
+        {
+          "value": "0/435/487",
+          "label": "博士"
+        }
+      ],
+      "optionsSource": "committed_react_option_definitions",
+      "controlKind": "select",
+      "itemId": "14_248",
+      "required": true,
+      "fillType": 4
+    },
+    {
+      "wrapperId": "14_53_0",
+      "label": "学历*",
+      "options": [
+        {
+          "value": "0/606/607",
+          "label": "初中及以下"
+        },
+        {
+          "value": "0/606/608",
+          "label": "高中"
+        },
+        {
+          "value": "0/606/609",
+          "label": "技校/职高"
+        },
+        {
+          "value": "0/606/610",
+          "label": "中专"
+        },
+        {
+          "value": "0/606/611",
+          "label": "大专"
+        },
+        {
+          "value": "0/606/612",
+          "label": "本科"
+        },
+        {
+          "value": "0/606/614",
+          "label": "双学位"
+        },
+        {
+          "value": "0/606/615",
+          "label": "硕士研究生"
+        },
+        {
+          "value": "0/606/616",
+          "label": "MBA"
+        },
+        {
+          "value": "0/606/617",
+          "label": "EMBA"
+        },
+        {
+          "value": "0/606/618",
+          "label": "MPA"
+        },
+        {
+          "value": "0/606/620",
+          "label": "法律硕士"
+        },
+        {
+          "value": "0/606/621",
+          "label": "博士研究生"
+        },
+        {
+          "value": "0/606/622",
+          "label": "其它"
+        }
+      ],
+      "optionsSource": "committed_react_option_definitions",
+      "controlKind": "select",
+      "itemId": "14_53",
+      "required": true,
+      "fillType": 4
+    },
+    {
+      "wrapperId": "14_51513929_0",
+      "label": "专业名称*",
+      "options": [
+        {
+          "code": "0/49170838/49170848",
+          "name": "成人教育"
+        },
+        {
+          "code": "0/49170838/49170844",
+          "name": "函授"
+        },
+        {
+          "code": "0/49170838/49170840",
+          "name": "全日制"
+        },
+        {
+          "code": "0/49170838/49170850",
+          "name": "其他"
+        },
+        {
+          "code": "0/49170838/49170846",
+          "name": "自学考试"
+        },
+        {
+          "code": "0/49170838/49170842",
+          "name": "在职"
+        }
+      ],
+      "optionsSource": "main_world_template_dictionary",
+      "controlKind": "text",
+      "itemId": "14_51513929",
+      "required": true,
+      "fillType": 1
+    },
+    {
+      "wrapperId": "14_55_0",
+      "label": "专业描述",
+      "options": [],
+      "optionsSource": "none",
+      "controlKind": "textarea",
+      "itemId": "14_55",
+      "required": false,
+      "fillType": 6
+    },
+    {
+      "wrapperId": "14_102301_0",
+      "label": "专业排名*",
+      "options": [
+        {
+          "value": "0/107701/107801",
+          "label": "前5%"
+        },
+        {
+          "value": "0/107701/107901",
+          "label": "前10%"
+        },
+        {
+          "value": "0/107701/108001",
+          "label": "前20%"
+        },
+        {
+          "value": "0/107701/108002",
+          "label": "前30%"
+        },
+        {
+          "value": "0/107701/108101",
+          "label": "前50%"
+        },
+        {
+          "value": "0/107701/107702",
+          "label": "前70%"
+        },
+        {
+          "value": "0/107701/108201",
+          "label": "后30%"
+        },
+        {
+          "value": "0/107701/107703",
+          "label": "无排名"
+        }
+      ],
+      "optionsSource": "committed_react_option_definitions",
+      "controlKind": "select",
+      "itemId": "14_102301",
+      "required": true,
+      "fillType": 4
+    },
+    {
+      "wrapperId": "16_63_0",
+      "label": "英语证书名称*",
+      "options": [
+        {
+          "value": "0/454/550",
+          "label": "大学英语四级考试"
+        },
+        {
+          "value": "0/454/551",
+          "label": "大学英语六级考试"
+        },
+        {
+          "value": "0/454/552",
+          "label": "大学生英语专业四级考试"
+        },
+        {
+          "value": "0/454/555",
+          "label": "大学生英语专业八级考试"
+        },
+        {
+          "value": "0/454/100501",
+          "label": "雅思"
+        },
+        {
+          "value": "0/454/100502",
+          "label": "托福"
+        },
+        {
+          "value": "0/454/100503",
+          "label": "其他"
+        }
+      ],
+      "optionsSource": "committed_react_option_definitions",
+      "controlKind": "select",
+      "itemId": "16_63",
+      "required": true,
+      "fillType": 4
+    },
+    {
+      "wrapperId": "16_64_0",
+      "label": "成绩",
+      "options": [
+        {
+          "value": "0/457/557",
+          "label": "未通过"
+        },
+        {
+          "value": "0/457/558",
+          "label": "通过"
+        },
+        {
+          "value": "0/457/559",
+          "label": "优秀"
+        }
+      ],
+      "optionsSource": "committed_react_option_definitions",
+      "controlKind": "select",
+      "itemId": "16_64",
+      "required": false,
+      "fillType": 4
+    },
+    {
+      "wrapperId": "16_65_0",
+      "label": "获得时间*",
+      "options": [
+        {
+          "code": "0/437/495",
+          "name": "英语",
+          "order": 1
+        },
+        {
+          "code": "0/437/496",
+          "name": "韩语",
+          "order": 2
+        },
+        {
+          "code": "0/437/503",
+          "name": "日语",
+          "order": 3
+        },
+        {
+          "code": "0/437/504",
+          "name": "德语",
+          "order": 4
+        },
+        {
+          "code": "0/437/505",
+          "name": "法语",
+          "order": 5
+        },
+        {
+          "code": "0/437/506",
+          "name": "西班牙语",
+          "order": 6
+        },
+        {
+          "code": "0/437/507",
+          "name": "俄语",
+          "order": 7
+        },
+        {
+          "code": "0/437/508",
+          "name": "朝鲜语",
+          "order": 8
+        },
+        {
+          "code": "0/437/509",
+          "name": "阿拉伯语",
+          "order": 9
+        },
+        {
+          "code": "0/437/50773",
+          "name": "粤语",
+          "order": 9
+        },
+        {
+          "code": "0/437/517",
+          "name": "其它",
+          "order": 10
+        },
+        {
+          "code": "0/437/518",
+          "name": "无",
+          "order": 11
+        }
+      ],
+      "optionsSource": "main_world_template_dictionary",
+      "controlKind": "date",
+      "itemId": "16_65",
+      "required": true,
+      "fillType": 2
+    },
+    {
+      "wrapperId": "49170501_49170508_0",
+      "label": "开始时间",
+      "options": [
+        {
+          "code": "0/1270/1271",
+          "name": "日班",
+          "order": 1
+        },
+        {
+          "code": "0/1270/1272",
+          "name": "夜班",
+          "order": 2
+        },
+        {
+          "code": "0/1270/1273",
+          "name": "周末班",
+          "order": 3
+        }
+      ],
+      "optionsSource": "main_world_template_dictionary",
+      "controlKind": "date",
+      "itemId": "49170501_49170508",
+      "required": false,
+      "fillType": 2
+    },
+    {
+      "wrapperId": "49170501_49170510_0",
+      "label": "结束时间",
+      "options": [
+        {
+          "code": "0/1270/1271",
+          "name": "日班",
+          "order": 1
+        },
+        {
+          "code": "0/1270/1272",
+          "name": "夜班",
+          "order": 2
+        },
+        {
+          "code": "0/1270/1273",
+          "name": "周末班",
+          "order": 3
+        }
+      ],
+      "optionsSource": "main_world_template_dictionary",
+      "controlKind": "date",
+      "itemId": "49170501_49170510",
+      "required": false,
+      "fillType": 2
+    },
+    {
+      "wrapperId": "49170501_49170514_0",
+      "label": "企业名称",
+      "options": [
+        {
+          "code": "0/1270/1271",
+          "name": "日班",
+          "order": 1
+        },
+        {
+          "code": "0/1270/1272",
+          "name": "夜班",
+          "order": 2
+        },
+        {
+          "code": "0/1270/1273",
+          "name": "周末班",
+          "order": 3
+        }
+      ],
+      "optionsSource": "main_world_template_dictionary",
+      "controlKind": "text",
+      "itemId": "49170501_49170514",
+      "required": false,
+      "fillType": 1
+    },
+    {
+      "wrapperId": "49170501_49170517_0",
+      "label": "工作性质",
+      "options": [
+        {
+          "value": "0/461/578",
+          "label": "全职"
+        },
+        {
+          "value": "0/461/580",
+          "label": "实习"
+        }
+      ],
+      "optionsSource": "committed_react_option_definitions",
+      "controlKind": "select",
+      "itemId": "49170501_49170517",
+      "required": false,
+      "fillType": 4
+    },
+    {
+      "wrapperId": "49170501_49170519_0",
+      "label": "职位名称",
+      "options": [
+        {
+          "code": "0/1270/1271",
+          "name": "日班",
+          "order": 1
+        },
+        {
+          "code": "0/1270/1272",
+          "name": "夜班",
+          "order": 2
+        },
+        {
+          "code": "0/1270/1273",
+          "name": "周末班",
+          "order": 3
+        }
+      ],
+      "optionsSource": "main_world_template_dictionary",
+      "controlKind": "text",
+      "itemId": "49170501_49170519",
+      "required": false,
+      "fillType": 1
+    },
+    {
+      "wrapperId": "49170501_49170523_0",
+      "label": "工作描述",
+      "options": [
+        {
+          "code": "0/1270/1271",
+          "name": "日班",
+          "order": 1
+        },
+        {
+          "code": "0/1270/1272",
+          "name": "夜班",
+          "order": 2
+        },
+        {
+          "code": "0/1270/1273",
+          "name": "周末班",
+          "order": 3
+        }
+      ],
+      "optionsSource": "main_world_template_dictionary",
+      "controlKind": "textarea",
+      "itemId": "49170501_49170523",
+      "required": false,
+      "fillType": 6
+    },
+    {
+      "wrapperId": "49170503_49170533_0",
+      "label": "证券从业资格考试*",
+      "options": [
+        {
+          "value": "0/49170527/49170529",
+          "label": "通过"
+        },
+        {
+          "value": "0/49170527/49170531",
+          "label": "未通过"
+        }
+      ],
+      "optionsSource": "committed_react_option_definitions",
+      "controlKind": "select",
+      "itemId": "49170503_49170533",
+      "required": true,
+      "fillType": 4
+    },
+    {
+      "wrapperId": "49170503_49170536_0",
+      "label": "说明（通过科目）",
+      "options": [
+        {
+          "code": "0/49170527/49170529",
+          "name": "通过"
+        },
+        {
+          "code": "0/49170527/49170531",
+          "name": "未通过"
+        }
+      ],
+      "optionsSource": "main_world_template_dictionary",
+      "controlKind": "textarea",
+      "itemId": "49170503_49170536",
+      "required": false,
+      "fillType": 6
+    },
+    {
+      "wrapperId": "49170503_49170539_0",
+      "label": "注册会计师考试*",
+      "options": [
+        {
+          "value": "0/49170527/49170529",
+          "label": "通过"
+        },
+        {
+          "value": "0/49170527/49170531",
+          "label": "未通过"
+        }
+      ],
+      "optionsSource": "committed_react_option_definitions",
+      "controlKind": "select",
+      "itemId": "49170503_49170539",
+      "required": true,
+      "fillType": 4
+    },
+    {
+      "wrapperId": "49170503_49170541_0",
+      "label": "说明（通过科目）",
+      "options": [
+        {
+          "code": "0/49170527/49170529",
+          "name": "通过"
+        },
+        {
+          "code": "0/49170527/49170531",
+          "name": "未通过"
+        }
+      ],
+      "optionsSource": "main_world_template_dictionary",
+      "controlKind": "textarea",
+      "itemId": "49170503_49170541",
+      "required": false,
+      "fillType": 6
+    },
+    {
+      "wrapperId": "49170503_49170543_0",
+      "label": "国家司法考试*",
+      "options": [
+        {
+          "value": "0/49170527/49170529",
+          "label": "通过"
+        },
+        {
+          "value": "0/49170527/49170531",
+          "label": "未通过"
+        }
+      ],
+      "optionsSource": "committed_react_option_definitions",
+      "controlKind": "select",
+      "itemId": "49170503_49170543",
+      "required": true,
+      "fillType": 4
+    },
+    {
+      "wrapperId": "49170503_49170545_0",
+      "label": "说明（通过科目）",
+      "options": [
+        {
+          "code": "0/49170527/49170529",
+          "name": "通过"
+        },
+        {
+          "code": "0/49170527/49170531",
+          "name": "未通过"
+        }
+      ],
+      "optionsSource": "main_world_template_dictionary",
+      "controlKind": "textarea",
+      "itemId": "49170503_49170545",
+      "required": false,
+      "fillType": 6
+    },
+    {
+      "wrapperId": "49170503_899097553_0",
+      "label": "FRM*",
+      "options": [
+        {
+          "value": "0/49170527/49170529",
+          "label": "通过"
+        },
+        {
+          "value": "0/49170527/49170531",
+          "label": "未通过"
+        }
+      ],
+      "optionsSource": "committed_react_option_definitions",
+      "controlKind": "select",
+      "itemId": "49170503_899097553",
+      "required": true,
+      "fillType": 4
+    },
+    {
+      "wrapperId": "49170503_899060591_0",
+      "label": "说明（通过科目）",
+      "options": [
+        {
+          "code": "0/150002/150003",
+          "name": "管理序列"
+        },
+        {
+          "code": "0/150002/150004",
+          "name": "专业序列 - 非销售"
+        },
+        {
+          "code": "0/150002/150005",
+          "name": "专业序列 - 销售"
+        }
+      ],
+      "optionsSource": "main_world_template_dictionary",
+      "controlKind": "textarea",
+      "itemId": "49170503_899060591",
+      "required": false,
+      "fillType": 6
+    },
+    {
+      "wrapperId": "49170503_899059679_0",
+      "label": "CFA*",
+      "options": [
+        {
+          "value": "0/49170527/49170529",
+          "label": "通过"
+        },
+        {
+          "value": "0/49170527/49170531",
+          "label": "未通过"
+        }
+      ],
+      "optionsSource": "committed_react_option_definitions",
+      "controlKind": "select",
+      "itemId": "49170503_899059679",
+      "required": true,
+      "fillType": 4
+    },
+    {
+      "wrapperId": "49170503_899059416_0",
+      "label": "说明（通过科目）",
+      "options": [
+        {
+          "code": "0/150002/150003",
+          "name": "管理序列"
+        },
+        {
+          "code": "0/150002/150004",
+          "name": "专业序列 - 非销售"
+        },
+        {
+          "code": "0/150002/150005",
+          "name": "专业序列 - 销售"
+        }
+      ],
+      "optionsSource": "main_world_template_dictionary",
+      "controlKind": "textarea",
+      "itemId": "49170503_899059416",
+      "required": false,
+      "fillType": 6
+    },
+    {
+      "wrapperId": "49170505_49170547_0",
+      "label": "个人照片*",
+      "options": [
+        {
+          "code": "0/49170527/49170529",
+          "name": "通过"
+        },
+        {
+          "code": "0/49170527/49170531",
+          "name": "未通过"
+        }
+      ],
+      "optionsSource": "main_world_template_dictionary",
+      "controlKind": "upload",
+      "itemId": "49170505_49170547",
+      "required": true,
+      "fillType": 8
+    },
+    {
+      "wrapperId": "49170505_49170547_0",
+      "label": "个人照片*",
+      "options": [
+        {
+          "code": "0/49170527/49170529",
+          "name": "通过"
+        },
+        {
+          "code": "0/49170527/49170531",
+          "name": "未通过"
+        }
+      ],
+      "optionsSource": "main_world_template_dictionary",
+      "controlKind": "text",
+      "itemId": "49170505_49170547",
+      "required": true,
+      "fillType": 8
+    }
+  ]
+}

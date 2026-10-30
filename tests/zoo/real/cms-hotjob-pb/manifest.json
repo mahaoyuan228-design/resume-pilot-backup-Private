@@ -1,0 +1,84 @@
+{
+  "version": 1,
+  "site": "cms-hotjob-pb",
+  "sourceUrl": "https://wecruit.hotjob.cn/SU629dbc0c0dcad452299bc0f7/pb/resumeOperation.html",
+  "capturedAt": "2026-10-30T11:11:36.026Z",
+  "captureFinishedAt": "2026-10-30T11:11:54.577Z",
+  "baseTip": "f07879e1caa24e6f7f09bf6c59e30b7098d89b6b",
+  "safety": {
+    "neverSave": true,
+    "liveSupportClaimed": false,
+    "livePassClaimed": false,
+    "readOnly": true,
+    "clicks": 0,
+    "typing": 0,
+    "controlOpens": 0,
+    "navigation": 0,
+    "login": 0,
+    "submit": 0,
+    "save": 0,
+    "existingGuardPreserved": true,
+    "throwOnSideEffect": true
+  },
+  "mainWorld": {
+    "status": "pinned",
+    "contextId": 8
+  },
+  "traffic": {
+    "observedNonGetCount": 0,
+    "interceptedNonGetCount": 0,
+    "blockedNonGetCount": 0,
+    "infoEditObservedCount": 0,
+    "infoEditBlockedCount": 0,
+    "responseToNonGetCount": 0,
+    "commandFailed": false,
+    "truncated": false,
+    "records": [],
+    "commandFailures": [],
+    "assessment": {
+      "status": "no_non_get",
+      "reasons": []
+    }
+  },
+  "assets": {
+    "requested": 12,
+    "saved": 12,
+    "missing": 0,
+    "requestMethod": "GET",
+    "cookiesSent": false,
+    "authorizationSent": false
+  },
+  "schema": {
+    "committedFiberCount": 4539,
+    "formItemCount": 71,
+    "mainWorld": true,
+    "keyedFieldCount": 63,
+    "unlabelledActionRowCount": 8
+  },
+  "counts": {
+    "sections": 15,
+    "infoItems": 93,
+    "controls": 63,
+    "dictionaries": 28
+  },
+  "replay": {
+    "entry": "index.html",
+    "outerHTML": "outerHTML.html",
+    "scripts": "archived_inert",
+    "hydration": false,
+    "selectedValues": "removed",
+    "calendarPanelEvidence": false,
+    "claim": "structure_and_metadata_only"
+  },
+  "privacy": {
+    "rawCapturePersisted": false,
+    "personalValuesRemoved": true,
+    "namePhoneEmailIdentityAndResumeIdentifiersRemoved": true,
+    "inputValuesCleared": true,
+    "selectedLabelsCleared": true,
+    "photosAndAttachmentsRemoved": true,
+    "cookiesOrStorageCaptured": false,
+    "selectionIndicatorsCleared": true
+  },
+  "offlineSanitizedAt": "2026-10-30T11:15:51.546Z"
+}

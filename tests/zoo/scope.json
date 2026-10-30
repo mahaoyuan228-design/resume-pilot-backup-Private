@@ -1,0 +1,37 @@
+{
+  "version": 1,
+  "matrixDate": "2026-10-30",
+  "notes": [
+    {
+      "name": "TEST_MATRIX_V2_2026-10-30.md",
+      "sha256": "c083787d047fef65adad9ba8ebd8c8a02a9cbeb096dbfae16780a361c138b6f4"
+    },
+    {
+      "name": "ATS_FIELDS_NOLOGIN_SAMPLE_2026-10-30.md",
+      "sha256": "7851fde71ccbe0408ee6a97b6f5f3e81626bbefdfae8a04a186dacc1fadc95f4"
+    },
+    {
+      "name": "REAL_USE_CMS_ROW_D_PROBE_f07879e1_2026-10-30.md",
+      "sha256": "e9c815456750e861286e3f083165aa9ad27c1f484d279b6a4305c69a383176c2"
+    },
+    {
+      "name": "COMMERCIAL_SCORECARD_V2.md",
+      "sha256": "e7b43be98b0b444e3136be60b53667430dbfd26f19e7bd307e6af7ee20f92401"
+    }
+  ],
+  "matrixRows": 45,
+  "runnableRows": 1,
+  "runnableLoggedInPages": [
+    {
+      "site": "cms-hotjob-pb",
+      "company": "招商证券(CMS回归)",
+      "zone": "hotjob",
+      "sourceUrl": "https://wecruit.hotjob.cn/SU629dbc0c0dcad452299bc0f7/pb/resumeOperation.html",
+      "status": "yes(已登录)"
+    }
+  ],
+  "runnablePublicNoLoginPages": [],
+  "publicNoLoginSnapshotsCaptured": 0,
+  "liveSupportClaimed": false,
+  "reason": "The supplied matrix marks only the already logged-in CMS editor runnable. Public landing pages with account-gated application forms are marked no and are not captured as runnable forms."
+}

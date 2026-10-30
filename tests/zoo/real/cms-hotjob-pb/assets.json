@@ -1,0 +1,124 @@
+{
+  "assets": [
+    {
+      "url": "https://wecruit.hotjob.cn/pb/css/vendor.css?a1541cf6cc9fe092be2a",
+      "method": "GET",
+      "required": true,
+      "path": "assets/d713e7d8c27c-vendor.css",
+      "mimeType": "text/css",
+      "status": 200,
+      "bytes": 338361,
+      "sha256": "ec6f09122b943277754891c93e3a8c1064c08b175ad51dc868a14f9b14171875"
+    },
+    {
+      "url": "https://wecruit.hotjob.cn/pb/img/kdxfrobot.png?e9ed2323831cfebce980f321f17c41c6",
+      "method": "GET",
+      "required": false,
+      "path": "assets/2ba8bb5763d1-kdxfrobot.png",
+      "mimeType": "image/png",
+      "status": 200,
+      "bytes": 43436,
+      "sha256": "eeca42505a8549cf3f9504def39bff18a3d6fc11c6c8360a7eeb86e08edda677"
+    },
+    {
+      "url": "https://at.alicdn.com/t/font_1296996_rl878tq22u.eot",
+      "method": "GET",
+      "required": false,
+      "path": "assets/88982560299a-font_1296996_rl878tq22u.eot",
+      "mimeType": "application/octet-stream",
+      "status": 200,
+      "bytes": 7576,
+      "sha256": "bbc74d1ae129607d95828a72be21f7f65868c941aa27f1479740ffca23dfa291"
+    },
+    {
+      "url": "https://at.alicdn.com/t/font_1296996_rl878tq22u.eot?",
+      "method": "GET",
+      "required": false,
+      "path": "assets/2e86ca96468e-font_1296996_rl878tq22u.eot",
+      "mimeType": "application/octet-stream",
+      "status": 200,
+      "bytes": 7576,
+      "sha256": "bbc74d1ae129607d95828a72be21f7f65868c941aa27f1479740ffca23dfa291"
+    },
+    {
+      "url": "https://at.alicdn.com/t/c/font_1296996_yvf7779ctv.woff2?t=1741238942909",
+      "method": "GET",
+      "required": false,
+      "path": "assets/62371e829024-font_1296996_yvf7779ctv.woff2",
+      "mimeType": "font/woff2",
+      "status": 200,
+      "bytes": 20040,
+      "sha256": "f7e0853cb1d6a02df0c96043c9e06c93d185f84a1392b47b634ffdcb169b91b4"
+    },
+    {
+      "url": "https://at.alicdn.com/t/c/font_1296996_yvf7779ctv.woff?t=1741238942909",
+      "method": "GET",
+      "required": false,
+      "path": "assets/a5a5d8dbc9fb-font_1296996_yvf7779ctv.woff",
+      "mimeType": "application/octet-stream",
+      "status": 200,
+      "bytes": 23848,
+      "sha256": "7f35baf7ce2d30b2daf30caca74ac35344ae4445fd95e863e7da68af07670f90"
+    },
+    {
+      "url": "https://at.alicdn.com/t/c/font_1296996_yvf7779ctv.ttf?t=1741238942909",
+      "method": "GET",
+      "required": false,
+      "path": "assets/13b2459446c3-font_1296996_yvf7779ctv.ttf",
+      "mimeType": "application/octet-stream",
+      "status": 200,
+      "bytes": 40596,
+      "sha256": "a10c6a95736baecd79ff95519ed8525d74cf7caea70e0105a97a3fb9c3bd9fe6"
+    },
+    {
+      "url": "https://at.alicdn.com/t/font_1296996_rl878tq22u.svg",
+      "method": "GET",
+      "required": false,
+      "path": "assets/903f0983292b-font_1296996_rl878tq22u.svg",
+      "mimeType": "application/octet-stream",
+      "status": 200,
+      "bytes": 24278,
+      "sha256": "478967c8612fd14ffa4f0286138db3b4e0f76a167d119dc29289c103d4ddd8e6"
+    },
+    {
+      "url": "https://wecruit.hotjob.cn/pb/img/bg_vector.png?7495c20d291bd756af41a24c3e674b1c",
+      "method": "GET",
+      "required": false,
+      "path": "assets/84e4a967dc77-bg_vector.png",
+      "mimeType": "image/png",
+      "status": 200,
+      "bytes": 83450,
+      "sha256": "bd4900993229168b934d681e7ae28a1f7674907cfec7f1a5994e3cc78f81194b"
+    },
+    {
+      "url": "https://wecruit.hotjob.cn/pb/css/resumeOperation.css?a1541cf6cc9fe092be2a",
+      "method": "GET",
+      "required": true,
+      "path": "assets/e592c36e0b12-resumeOperation.css",
+      "mimeType": "text/css",
+      "status": 200,
+      "bytes": 123487,
+      "sha256": "d306b4ea7a3960441e660962024e58f96dfbfb4a09b67b6bf50b78741ee17d55"
+    },
+    {
+      "url": "https://wecruit.hotjob.cn/pb/js/vendor.js?a1541cf6cc9fe092be2a",
+      "method": "GET",
+      "required": true,
+      "path": "assets/67f63a499008-vendor.js",
+      "mimeType": "application/javascript",
+      "status": 200,
+      "bytes": 3946916,
+      "sha256": "9e66c8330e1a979826d01fc9360b6174e4363687dc1861b53910f323e3be3df8"
+    },
+    {
+      "url": "https://wecruit.hotjob.cn/pb/js/resumeOperation.js?a1541cf6cc9fe092be2a",
+      "method": "GET",
+      "required": true,
+      "path": "assets/c1ffcb025985-resumeOperation.js",
+      "mimeType": "application/javascript",
+      "status": 200,
+      "bytes": 621179,
+      "sha256": "b538af37e44fe195b06f00d3f0ad19b47ce48bb0c9a714644640096491c8cd1b"
+    }
+  ]
+}

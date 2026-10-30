@@ -1,0 +1,62 @@
+{
+  "site": "cms-hotjob-pb",
+  "verifiedAt": "2026-10-30T11:17:37.139Z",
+  "browser": "Playwright Chromium",
+  "offline": true,
+  "scriptExecution": false,
+  "responseToNonGet": 0,
+  "externalRequests": 0,
+  "resourceFailures": 0,
+  "localGetRequests": 6,
+  "liveSupportClaimed": false,
+  "metadataControls": 63,
+  "matchedWrappers": 63,
+  "verifiedAssets": 12,
+  "cssComputedStyleDifferences": 220,
+  "dom": {
+    "title": "简历操作",
+    "controls": 147,
+    "formItems": 71,
+    "bodyTextLength": 1585,
+    "localStylesheets": 2,
+    "loadedStylesheets": 4,
+    "parsedCssRules": 3535,
+    "scrollWidth": 1280,
+    "scrollHeight": 8496
+  },
+  "entrypoints": [
+    {
+      "entry": "index.html",
+      "matchedWrappers": 63,
+      "cssComputedStyleDifferences": 220,
+      "dom": {
+        "title": "简历操作",
+        "controls": 147,
+        "formItems": 71,
+        "bodyTextLength": 1585,
+        "localStylesheets": 2,
+        "loadedStylesheets": 4,
+        "parsedCssRules": 3535,
+        "scrollWidth": 1280,
+        "scrollHeight": 8496
+      }
+    },
+    {
+      "entry": "outerHTML.html",
+      "matchedWrappers": 63,
+      "cssComputedStyleDifferences": 220,
+      "dom": {
+        "title": "简历操作",
+        "controls": 147,
+        "formItems": 71,
+        "bodyTextLength": 1585,
+        "localStylesheets": 2,
+        "loadedStylesheets": 4,
+        "parsedCssRules": 3535,
+        "scrollWidth": 1280,
+        "scrollHeight": 8496
+      }
+    }
+  ],
+  "captureAt": "2026-10-30T11:11:36.026Z"
+}

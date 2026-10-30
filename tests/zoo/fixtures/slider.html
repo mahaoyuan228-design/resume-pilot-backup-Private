@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Offline generic sliders</title>
+  <link rel="stylesheet" href="/vendor/antd.css">
+  <link rel="stylesheet" href="/vendor/element.css">
+  <link rel="stylesheet" href="/fixtures/zoo.css">
+  <style>
+    .slider-row { width: 460px; padding: 18px 24px; }
+    .slider-row input[type="range"] { width: 400px; }
+    .slider-row .el-slider, .slider-row .ant-slider { width: 400px; }
+  </style>
+</head>
+<body>
+  <aside>Disposable sliders; Never-Save; liveSupportClaimed=false</aside>
+  <form id="slider-form">
+    <div class="slider-row"><label for="slider-native">Native range</label>
+      <input id="slider-native" type="range" min="0" max="100" step="5" value="10"></div>
+    <main id="app"></main>
+    <div class="slider-row"><label for="slider-native-disabled">Disabled range</label>
+      <input id="slider-native-disabled" type="range" min="0" max="100" step="5" value="10" disabled></div>
+    <div class="slider-row"><label for="slider-native-readonly">Readonly range</label>
+      <input id="slider-native-readonly" type="range" min="0" max="100" step="5" value="10" aria-readonly="true"></div>
+    <input id="neighbor" value="ZOO_NEIGHBOR_KEEP">
+    <input id="disabled-neighbor" value="ZOO_DISABLED_KEEP" disabled>
+    <div class="safety-buttons"><button type="button">保存</button><button type="button">提交</button><button type="button">下一步</button><button type="button">投递</button><button type="button">删除</button></div>
+  </form>
+  <script src="/vendor/vue.js"></script>
+  <script src="/vendor/moment.js"></script>
+  <script src="/vendor/antd.js"></script>
+  <script src="/vendor/element.js"></script>
+  <script src="/fixtures/slider.js"></script>
+</body>
+</html>

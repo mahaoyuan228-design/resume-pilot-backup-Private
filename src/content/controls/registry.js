@@ -5,7 +5,7 @@
   'use strict';
   // Rebuild old registries so reinjection installs current dropdown readback
   // contracts as well as the current model resolver.
-  if (globalThis.ResumeControls?.version === 1 && globalThis.ResumeControls.revision === 18) return;
+  if (globalThis.ResumeControls?.version === 1 && globalThis.ResumeControls.revision === 19) return;
   const adapters = new Map();
   // Executable dropdown/choice plans stay bound to their original widget in MAIN.
   // Serialized shadow observations carry no authority to write another root.
@@ -227,7 +227,7 @@
     if (Array.isArray(value)) return value.slice(0, 1000).map(v => clean(v, depth + 1));
     if (typeof value !== 'object' || value.nodeType || value instanceof Map) return null;
     const out = {};
-    for (const [key, val] of Object.entries(value)) if (!['controlRoot', 'numberInput', 'vm', 'props', 'rangeInputs', 'rangeRoots', 'rangeOwners', 'treeOwners'].includes(key) && typeof val !== 'function') out[key] = clean(val, depth + 1);
+    for (const [key, val] of Object.entries(value)) if (!['controlRoot', 'numberInput', 'sliderInput', 'sliderTrack', 'sliderThumb', 'vm', 'props', 'rangeInputs', 'rangeRoots', 'rangeOwners', 'treeOwners'].includes(key) && typeof val !== 'function') out[key] = clean(val, depth + 1);
     if (selectBindings.has(value)) selectBindings.set(out, selectBindings.get(value));
     if (choiceBindings.has(value)) choiceBindings.set(out, choiceBindings.get(value));
     if (searchSelections.has(value)) searchSelections.set(out, searchSelections.get(value));
@@ -238,20 +238,24 @@
     const readModel = spec.readModel || ((el, probe) => ({ ...probe }));
     const multiline = ['textarea', 'richtext'].includes(spec.type);
     const numeric = spec.type === 'number';
+    const slider = spec.type === 'slider';
     const time = spec.type === 'time';
     const range = spec.type === 'date-range';
     const tree = spec.type === 'tree-select';
     const toggle = spec.type === 'switch';
     const multi = spec.type === 'multi-select';
-    const boundControl = tree || range || time || numeric || multiline || ['select', 'select-search', 'multi-select', 'cascader', 'radio', 'checkbox', 'checkbox-group', 'switch'].includes(spec.type);
+    const boundControl = slider || tree || range || time || numeric || multiline || ['select', 'select-search', 'multi-select', 'cascader', 'radio', 'checkbox', 'checkbox-group', 'switch'].includes(spec.type);
     const choice = ['radio', 'checkbox', 'checkbox-group', 'switch'].includes(spec.type);
-    const ownerBound = tree || range || time || numeric || multiline || choice || ['select-search', 'multi-select'].includes(spec.type);
+    const ownerBound = slider || tree || range || time || numeric || multiline || choice || ['select-search', 'multi-select'].includes(spec.type);
     const valueEqual = multiline ? proseEqual : ownerBound ? choiceEqual : equal;
-    const domEqual = numeric ? choiceEqual : multiline ? proseEqual : equal;
+    const domEqual = numeric || slider ? choiceEqual : multiline ? proseEqual : equal;
     const validInstruction = instruction => ['planned', 'success'].includes(instruction?.status) && instruction.adapter === spec.name
       && (!numeric || instruction.type === 'number' && Number.isFinite(instruction.value)
         && instruction.value === instruction.modelValue && instruction.value === instruction.domValue
         && ['set', 'inc', 'dec'].includes(instruction.operation))
+      && (!slider || instruction.type === 'slider' && Number.isFinite(instruction.value)
+        && instruction.value === instruction.modelValue && instruction.value === instruction.domValue
+        && ['set', 'click', 'drag'].includes(instruction.operation))
       && (!multi || instruction.type === spec.type && Array.isArray(instruction.value)
         && choiceEqual(instruction.value, instruction.modelValue) && equal(instruction.labels, instruction.domValue))
       && (!multiline || instruction.type === spec.type && proseEqual(instruction.value, instruction.modelValue)
@@ -286,6 +290,10 @@
         && (!numeric || owner.numberPlan === JSON.stringify(clean(instruction))
           && owner.numberInput === model.numberInput
           && owner.numberConstraints === JSON.stringify(clean(model.numberConstraints)))
+        && (!slider || owner.sliderPlan === JSON.stringify(clean(instruction))
+          && owner.sliderInput === model.sliderInput && owner.sliderTrack === model.sliderTrack
+          && owner.sliderThumb === model.sliderThumb
+          && owner.sliderConstraints === JSON.stringify(clean(model.sliderConstraints)))
         && (!toggle || owner.switchPlan === JSON.stringify(clean(instruction))
           && owner.framework === ref.framework && owner.componentType === ref.componentType
           && owner.switchTarget === model.switchTarget && owner.switchInput === model.switchInput
@@ -315,6 +323,9 @@
             ...(toggle ? { switchPlan: JSON.stringify(clean(plan)), switchTarget: model.switchTarget, switchInput: model.switchInput,
               switchOrigin: [model.value, model.domValue],
               switchContract: JSON.stringify([model.checkedValue ?? true, model.uncheckedValue ?? false]) } : {}),
+            ...(slider ? { sliderInput: model.sliderInput, sliderTrack: model.sliderTrack, sliderThumb: model.sliderThumb,
+              sliderPlan: JSON.stringify(clean(plan)), sliderOrigin: [model.value, model.domValue],
+              sliderConstraints: JSON.stringify(clean(model.sliderConstraints)) } : {}),
             ...(numeric ? { numberInput: model.numberInput, numberPlan: JSON.stringify(clean(plan)), numberConstraints: JSON.stringify(clean(model.numberConstraints)) } : {}) });
         }
         if (spec.type === 'select-search') searchSelections.set(plan, {
@@ -332,13 +343,16 @@
         if (resolve(el)?.name !== spec.name) return { status: 'unsupported', reason: 'control_or_version_changed', strategy: 'none', attempts: 0 };
         const model = adapter.readModel(el);
         if (boundControl && (!model.controlRoot || selectBindings.get(instruction) !== model.controlRoot || !sameOwner(el, instruction, model))) return { status: 'unsupported', reason: 'control_target_changed', strategy: 'none', attempts: 0 };
-        if ((numeric || toggle) && model.available && model.choiceConsistent !== false && !model.disabled && !model.readonly
+        if ((numeric || toggle || slider) && model.available && model.choiceConsistent !== false && !model.disabled && !model.readonly && (!slider || !model.sliderBusy)
           && model.value === instruction.value && model.domValue === instruction.domValue)
           return { status: 'success', reason: 'preexisting_same_value', strategy: 'none', attempts: 0 };
         if (toggle && !choiceEqual(choiceBindings.get(instruction).switchOrigin, [model.value, model.domValue]))
           return { status: 'unsupported', reason: 'instruction_stale', strategy: 'none', attempts: 0 };
-        const current = adapter.plan((numeric || toggle) && instruction.operation !== 'set'
-          ? { operation: instruction.operation } : { value: instruction.value }, model, { modelValue: true });
+        if (slider && !choiceEqual(choiceBindings.get(instruction).sliderOrigin, [model.value, model.domValue]))
+          return { status: 'unsupported', reason: 'instruction_stale', strategy: 'none', attempts: 0 };
+        const current = adapter.plan(slider ? { operation: instruction.operation, value: instruction.value }
+          : (numeric || toggle) && instruction.operation !== 'set'
+            ? { operation: instruction.operation } : { value: instruction.value }, model, { modelValue: true });
         if (!['planned', 'success'].includes(current.status)) return { status: 'unsupported', reason: current.reason, strategy: 'none', attempts: 0 };
         if (!valueEqual(current.value, instruction.value) || !domEqual(current.domValue, instruction.domValue)) return { status: 'unsupported', reason: 'instruction_stale', strategy: 'none', attempts: 0 };
         if (current.status === 'success') return { status: 'success', reason: 'preexisting_same_value', strategy: 'none', attempts: 0 };
@@ -350,6 +364,7 @@
           if (live.controlRoot !== selectBindings.get(instruction) || !sameOwner(el, instruction, live)) throw Error('control_target_changed');
           if (toggle && (!live.available || live.choiceConsistent === false || live.disabled || live.readonly
             || !switchLabelSafe(live.switchTarget || live.controlRoot))) throw Error('control_changed');
+          if (slider && (!live.available || live.disabled || live.readonly)) throw Error('control_changed');
         } };
         return spec.performWrite(el, instruction, ownedCtx);
       },
@@ -358,7 +373,8 @@
         const sample = () => {
           if (!el?.isConnected) return { ok: false, unsupported: true, reason: 'target_detached' };
           const model = adapter.readModel(el);
-          if ((tree || range || time || numeric || multiline || toggle) && (model.disabled || model.readonly)) return { ok: false, unsupported: true, reason: 'control_not_writable' };
+          if (slider && model.sliderBusy) return { ok: false, unsupported: true, reason: 'slider_busy' };
+          if ((slider || tree || range || time || numeric || multiline || toggle) && (model.disabled || model.readonly)) return { ok: false, unsupported: true, reason: 'control_not_writable' };
           if (boundControl && (resolve(el)?.name !== spec.name || !model.controlRoot
             || selectBindings.get(instruction) !== model.controlRoot || !sameOwner(el, instruction, model))) return { ok: false, unsupported: true, reason: 'control_target_changed' };
           const search = searchSelections.get(instruction), selection = search?.selection;
@@ -413,7 +429,7 @@
     } catch { return { ...manual('component_probe_failed'), adapter: null }; }
   }
   const helpers = Object.freeze({ norm, equal, prose, proseEqual, richtextValue, empty, tick, makePlan, switchPlan, safeClick, nativeSet, confirmSearchOption, confirmTreeNode, check, clickAllowed, clean, validDate });
-  globalThis.ResumeControls = Object.freeze({ version: 1, revision: 18, mode: 'shadow', liveSupportClaimed: false,
+  globalThis.ResumeControls = Object.freeze({ version: 1, revision: 19, mode: 'shadow', liveSupportClaimed: false,
     register, createAdapter, resolve, inspect, plan, helpers, list: () => ordered().map(a => ({ name: a.name, lib: a.lib, type: a.type, priority: a.priority || 0 })),
     verify: (el, instruction, ctx) => resolve(el)?.verify(el, instruction, ctx) || Promise.resolve({ status: 'unsupported', reason: 'control_or_version_unconfirmed' }) });
 })();

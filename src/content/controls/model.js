@@ -2,7 +2,7 @@
 // instances or handlers to the extension. No events, setters or network calls.
 (() => {
   'use strict';
-  if (globalThis.ResumeControlModel?.version === 1 && globalThis.ResumeControlModel.revision === 13) return;
+  if (globalThis.ResumeControlModel?.version === 1 && globalThis.ResumeControlModel.revision === 14) return;
   const norm = value => String(value ?? '').normalize('NFKC').replace(/\s+/gu, ' ').trim();
   function serial(value, depth = 0) {
     if (value == null || ['string', 'number', 'boolean'].includes(typeof value)) return value ?? null;
@@ -50,7 +50,7 @@
     }
     return serial(value);
   }
-  const knownVue = /^(El(InputNumber|Input|Autocomplete|Select|Option|Radio(Group)?|Checkbox(Group)?|Switch|DatePicker|TimePicker|Cascader)|A(InputNumber|Input|Textarea|AutoComplete|Select|TreeSelect|Radio(Group)?|Checkbox(Group)?|Switch|DatePicker|MonthPicker|RangePicker|TimePicker|Cascader)|iSelect|CalendarPicker)$/u;
+  const knownVue = /^(El(InputNumber|Input|Autocomplete|Select|Option|Radio(Group)?|Checkbox(Group)?|Switch|Slider|DatePicker|TimePicker|Cascader)|A(InputNumber|Input|Textarea|AutoComplete|Select|TreeSelect|Radio(Group)?|Checkbox(Group)?|Switch|Slider|DatePicker|MonthPicker|RangePicker|TimePicker|Cascader)|iSelect|CalendarPicker)$/u;
   const knownReact = /^(Ud|Phoenix)(Select|DatePicker|Cascader)$/u;
   const valueControls = root => root?.nodeType === 1 ? [
     ...(root.matches('input:not([type="hidden"]),textarea,select') ? [root] : []),
@@ -83,6 +83,12 @@
     return root?.matches?.(selector) && ownsControl(root, el, true)
       && valueControls(root).every(input => input.matches('input') && ['text', 'search'].includes(input.type)
         && input.closest('.el-cascader,.ant-cascader-picker') === root);
+  }
+  function ownsSlider(root, el, name) {
+    // The thumb/rail may carry the requested target, but a surrounding form
+    // cannot borrow the slider model simply because it contains the widget.
+    return root?.matches?.(name === 'ElSlider' ? '.el-slider' : '.ant-slider')
+      && (root === el || root.contains(el)) && ownsControl(root, el, true);
   }
   function fiberRoots(fiber) {
     if (fiber?.stateNode?.nodeType === 1) return [fiber.stateNode];
@@ -134,7 +140,8 @@
         const multiple = /(?:Select|DatePicker|MonthPicker|RangePicker|CalendarPicker|Cascader|RadioGroup|CheckboxGroup)$/u.test(name);
         const owns = /^(?:ElSelect|ASelect|ATreeSelect|iSelect|ElAutocomplete|AAutoComplete)$/u.test(name)
           ? ownsSelect(vm.$el, el, name) : /^(?:ElCascader|ACascader)$/u.test(name)
-            ? ownsCascader(vm.$el, el, name) : ownsControl(vm.$el, el, multiple);
+            ? ownsCascader(vm.$el, el, name) : /^(?:ElSlider|ASlider)$/u.test(name)
+              ? ownsSlider(vm.$el, el, name) : ownsControl(vm.$el, el, multiple);
         if (knownVue.test(name) && owns) {
           const owner = /^(?:ADatePicker|AMonthPicker|ARangePicker|ATimePicker)$/u.test(name) ? pickerOwner(vm) : { vm };
           const found = { ...owner, props: owner.vm.$props || {}, element: owner.vm.$el, componentName: name, framework: 'vue2' };
@@ -282,5 +289,5 @@
           || props.displayRender || vm?.$scopedSlots?.displayRender || vm?.$scopedSlots?.default || customFields) } : {}),
       versionEvidence: version ? 'page_library_export' : 'version_unconfirmed' };
   }
-  globalThis.ResumeControlModel = Object.freeze({ version: 1, revision: 13, inspect, resolve, serial, optionsOf });
+  globalThis.ResumeControlModel = Object.freeze({ version: 1, revision: 14, inspect, resolve, serial, optionsOf });
 })();

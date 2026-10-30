@@ -68,6 +68,7 @@ $files = @(
   'src/content/controls/vue-controls.js',
   'src/content/controls/date-range-controls.js',
   'src/content/controls/tree-select-controls.js',
+  'src/content/controls/slider-controls.js',
   'src/content/controls/resume-form.js',
   'src/background/worker.mjs',
   'src/background/bg-ping.mjs',

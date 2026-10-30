@@ -10,6 +10,7 @@ export const CONTROL_FILES = Object.freeze([
   'src/content/controls/time-controls.js',
   'src/content/controls/vue-controls.js',
   'src/content/controls/extended-controls.js',
+  'src/content/controls/date-range-controls.js',
 ]);
 
 export function readShadowRequests(requests, expectedUrl) {

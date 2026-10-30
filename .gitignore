@@ -8,6 +8,9 @@ dist/auto-runs/
 dist/edge-paid-*/
 dist/edge-internal-*/
 dist/*.zip
+dist/zoo-runs/
+test-results/
+playwright-report/
 *.map
 .DS_Store
 Thumbs.db

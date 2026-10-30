@@ -157,7 +157,18 @@
     "tests/gth-work-fill.test.mjs",
     "src/background/cms-row-d-network-guard.mjs",
     "src/popup/cms-row-d-guard.html",
-    "src/popup/cms-row-d-guard.js"
+    "src/popup/cms-row-d-guard.js",
+    "THIRD_PARTY_NOTICES.md",
+    "package-lock.json",
+    "package.json",
+    "tests/zoo/README.md",
+    "tests/zoo/fixtures/index.html",
+    "tests/zoo/fixtures/zoo.css",
+    "tests/zoo/fixtures/zoo.js",
+    "tests/zoo/legacy-baseline.json",
+    "tests/zoo/legacy.spec.mjs",
+    "tests/zoo/playwright.config.mjs",
+    "tests/zoo/support.mjs"
   ],
   "productPaths": [
     "manifest.json",

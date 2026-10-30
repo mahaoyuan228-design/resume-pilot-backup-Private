@@ -5,7 +5,7 @@
   'use strict';
   // Rebuild old registries so reinjection installs current dropdown readback
   // contracts as well as the current model resolver.
-  if (globalThis.ResumeControls?.version === 1 && globalThis.ResumeControls.revision === 21) return;
+  if (globalThis.ResumeControls?.version === 1 && globalThis.ResumeControls.revision === 22) return;
   const adapters = new Map();
   // Executable dropdown/choice plans stay bound to their original widget in MAIN.
   // Serialized shadow observations carry no authority to write another root.
@@ -240,6 +240,7 @@
     const readModel = spec.readModel || ((el, probe) => ({ ...probe }));
     const multiline = ['textarea', 'richtext'].includes(spec.type);
     const numeric = spec.type === 'number';
+    const masked = spec.type === 'input-mask';
     const slider = spec.type === 'slider';
     const rate = spec.type === 'rate';
     const time = spec.type === 'time';
@@ -248,12 +249,14 @@
     const transfer = spec.type === 'transfer';
     const toggle = spec.type === 'switch';
     const multi = spec.type === 'multi-select';
-    const boundControl = transfer || rate || slider || tree || range || time || numeric || multiline || ['select', 'select-search', 'multi-select', 'cascader', 'radio', 'checkbox', 'checkbox-group', 'switch'].includes(spec.type);
+    const boundControl = masked || transfer || rate || slider || tree || range || time || numeric || multiline || ['select', 'select-search', 'multi-select', 'cascader', 'radio', 'checkbox', 'checkbox-group', 'switch'].includes(spec.type);
     const choice = ['radio', 'checkbox', 'checkbox-group', 'switch'].includes(spec.type);
-    const ownerBound = transfer || rate || slider || tree || range || time || numeric || multiline || choice || ['select-search', 'multi-select'].includes(spec.type);
+    const ownerBound = masked || transfer || rate || slider || tree || range || time || numeric || multiline || choice || ['select-search', 'multi-select'].includes(spec.type);
     const valueEqual = transfer ? setEqual : multiline ? proseEqual : ownerBound ? choiceEqual : equal;
     const domEqual = transfer ? setEqual : numeric || slider || rate ? choiceEqual : multiline ? proseEqual : equal;
     const validInstruction = instruction => ['planned', 'success'].includes(instruction?.status) && instruction.adapter === spec.name
+      && (!masked || instruction.type === 'input-mask' && typeof instruction.value === 'string'
+        && instruction.value === instruction.modelValue && instruction.value === instruction.domValue)
       && (!numeric || instruction.type === 'number' && Number.isFinite(instruction.value)
         && instruction.value === instruction.modelValue && instruction.value === instruction.domValue
         && ['set', 'inc', 'dec'].includes(instruction.operation))
@@ -299,6 +302,9 @@
           && owner[key].length === model[key].length && owner[key].every((part, index) => part === model[key][index]))
         && model.rangeOwners.every(vm => !vm?._isDestroyed && !vm?._isBeingDestroyed);
       return !!owner && owner.root === model.controlRoot && owner.vm === ref.vm && owner.version === model.version
+        && (!masked || owner.maskPlan === JSON.stringify(clean(instruction)) && owner.maskContract === model.maskContract
+          && owner.maskInput === model.maskInput && owner.framework === ref.framework && owner.componentType === ref.componentType
+          && !ref.vm?._isDestroyed && !ref.vm?._isBeingDestroyed)
         && (!time || owner.timePlan === JSON.stringify(clean(instruction))
           && owner.timeContract === JSON.stringify([model.format, model.valueFormat, model.modelKind, model.timeConstraints]))
         && (!numeric || owner.numberPlan === JSON.stringify(clean(instruction))
@@ -333,6 +339,7 @@
           const ref = globalThis.ResumeControlModel.resolve(model.controlRoot);
           choiceBindings.set(plan, { root: model.controlRoot, vm: ref.vm, framework: ref.framework,
             componentType: ref.componentType, version: model.version,
+            ...(masked ? { maskPlan: JSON.stringify(clean(plan)), maskContract: model.maskContract, maskInput: model.maskInput } : {}),
             ...(transfer ? { transferPlan: JSON.stringify(clean(plan)), transferContract: model.transferContract,
               transferOrigin: [model.value, model.domValue], transferOwners: model.transferOwners.slice() } : {}),
             ...(tree ? { treePlan: JSON.stringify(clean(plan)), treeContract: model.treeContract,
@@ -406,7 +413,7 @@
           if (slider && model.sliderBusy) return { ok: false, unsupported: true, reason: 'slider_busy' };
           if (rate && model.rateBusy) return { ok: false, unsupported: true, reason: 'rate_busy' };
           if (rate && !model.rateInteractable) return { ok: false, unsupported: true, reason: 'rate_not_interactable' };
-          if ((transfer || rate || slider || tree || range || time || numeric || multiline || toggle) && (model.disabled || model.readonly)) return { ok: false, unsupported: true, reason: 'control_not_writable' };
+          if ((masked || transfer || rate || slider || tree || range || time || numeric || multiline || toggle) && (model.disabled || model.readonly)) return { ok: false, unsupported: true, reason: 'control_not_writable' };
           if (boundControl && (resolve(el)?.name !== spec.name || !model.controlRoot
             || selectBindings.get(instruction) !== model.controlRoot || !sameOwner(el, instruction, model))) return { ok: false, unsupported: true, reason: 'control_target_changed' };
           const search = searchSelections.get(instruction), selection = search?.selection;
@@ -461,7 +468,7 @@
     } catch { return { ...manual('component_probe_failed'), adapter: null }; }
   }
   const helpers = Object.freeze({ norm, equal, prose, proseEqual, richtextValue, empty, tick, makePlan, switchPlan, safeClick, nativeSet, confirmSearchOption, confirmTreeNode, check, clickAllowed, clean, validDate });
-  globalThis.ResumeControls = Object.freeze({ version: 1, revision: 21, mode: 'shadow', liveSupportClaimed: false,
+  globalThis.ResumeControls = Object.freeze({ version: 1, revision: 22, mode: 'shadow', liveSupportClaimed: false,
     register, createAdapter, resolve, inspect, plan, helpers, list: () => ordered().map(a => ({ name: a.name, lib: a.lib, type: a.type, priority: a.priority || 0 })),
     verify: (el, instruction, ctx) => resolve(el)?.verify(el, instruction, ctx) || Promise.resolve({ status: 'unsupported', reason: 'control_or_version_unconfirmed' }) });
 })();

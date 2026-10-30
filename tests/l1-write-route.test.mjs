@@ -103,6 +103,127 @@ test('ordinary time batch readback catches a later field reverting the value wit
   assert.equal(h.calls.filter(call => call.func?.name === 'writeControlInPage' && call.args[0].selector === '#arrival').length, 1);
 });
 
+test('ordinary masked phone discovery writes raw once and verifies formatted readback without saving', async t => {
+  const h = await harness({ enabled: true, html: '<form><label for="phone">手机号</label><input id="phone" type="tel" data-mask="### #### ####"><input id="neighbor" value="KEEP"><button type="submit">提交</button><button type="button">保存</button></form>' });
+  t.after(() => h.dom.window.close());
+  h.data.resumeProfile = { schemaVersion: 1, phone: '13800138000', confirmedFields: ['phone'] };
+  const el = h.window.document.getElementById('phone'), rawInputs = [];
+  el.addEventListener('input', () => {
+    rawInputs.push(el.value);
+    el.value = el.value.replace(/^(\d{3})(\d{4})(\d{4})$/u, '$1 $2 $3');
+  });
+  let forbidden = 0;
+  for (const type of ['click', 'submit']) h.window.document.addEventListener(type, () => forbidden++);
+  const before = await h.inspect();
+  assert.equal(before.ok, true, JSON.stringify(before));
+  assert.deepEqual(rawInputs, []);
+  const candidates = await h.invoke({ type: CONTROL_CANDIDATES_MESSAGE, timeOrigin: h.window.performance.timeOrigin });
+  await Promise.resolve();
+  assert.equal(candidates.ok, true, JSON.stringify(candidates));
+  assert.ok(candidates.candidates.some(row => row.adapter === 'native-input-mask' && row.type === 'input-mask'));
+  assert.equal(candidates.writeStarted, false);
+  assert.equal(candidates.liveSupportClaimed, false);
+  const result = await h.fill(), row = result.data.fields.find(field => field.id === 'phone');
+  assert.equal(result.ok, true, JSON.stringify(result));
+  assert.equal(row.status, 'verified', JSON.stringify(result));
+  assert.equal(row.adapter, 'native-input-mask');
+  assert.equal(row.adapterStatus, 'success');
+  assert.equal(el.value, '138 0013 8000');
+  assert.deepEqual(rawInputs, ['13800138000']);
+  assert.equal(result.data.liveSupportClaimed, false);
+  assert.equal(h.calls.filter(call => call.func?.name === 'writeControlInPage').length, 1);
+  assert.equal(h.calls.filter(call => call.func?.name === 'verifyControlInPage').length, 1);
+  const repeated = await h.fill(), repeatedRow = repeated.data.fields.find(field => field.id === 'phone');
+  assert.equal(repeatedRow.status, 'verified', JSON.stringify(repeated));
+  assert.equal(repeatedRow.reason, 'preexisting_same_value');
+  assert.deepEqual(rawInputs, ['13800138000']);
+  assert.equal(h.window.document.getElementById('neighbor').value, 'KEEP');
+  assert.equal(forbidden, 0);
+});
+
+test('masked write bridge projects an individually confirmed custom-answer singleton array', async t => {
+  const question = '备用掩码号码', answer = ['138 0013 8000'];
+  const h = await harness({ enabled: true, html: `<form><label for="masked">${question}</label><input id="masked" type="tel" data-mask="### #### ####"><input id="neighbor" value="KEEP"><button type="submit">保存</button></form>` });
+  t.after(() => h.dom.window.close());
+  h.data.resumeProfile = { schemaVersion: 1, customAnswers: { [question]: answer },
+    customFacts: [{ question, answer, sitePageUrl: h.tab.url, sectionName: 'form:single', rowContext: 'none' }],
+    confirmedFields: [`customAnswers.${question}`] };
+  const el = h.window.document.getElementById('masked'), rawInputs = [];
+  el.addEventListener('input', () => {
+    rawInputs.push(el.value);
+    el.value = el.value.replace(/^(\d{3})(\d{4})(\d{4})$/u, '$1 $2 $3');
+  });
+  let forbidden = 0;
+  for (const type of ['click', 'submit']) h.window.document.addEventListener(type, () => forbidden++);
+  const request = { type: CONTROL_WRITE_MESSAGE, selector: '#masked', path: `customAnswers.${question}`, value: answer,
+    profileBinding: await captureProfileBinding(h.window.chrome.storage.local), timeOrigin: h.window.performance.timeOrigin };
+  const result = await h.invoke(request);
+  await Promise.resolve();
+  assert.equal(result.ok, true, JSON.stringify(result));
+  assert.equal(result.status, 'success', JSON.stringify(result));
+  assert.equal(result.adapter, 'native-input-mask');
+  assert.equal(el.value, '138 0013 8000');
+  assert.deepEqual(rawInputs, ['13800138000']);
+  const write = h.calls.find(call => call.func?.name === 'writeControlInPage');
+  assert.deepEqual(write.args[0].value, answer);
+  assert.equal(result.liveSupportClaimed, false);
+  const readback = await h.invoke({ ...request, type: CONTROL_VERIFY_MESSAGE, readbackId: result.readbackId });
+  await Promise.resolve();
+  assert.equal(readback.status, 'success', JSON.stringify(readback));
+  assert.equal(readback.writeStarted, false);
+  assert.equal(readback.liveSupportClaimed, false);
+  assert.equal(h.calls.filter(call => call.func?.name === 'verifyControlInPage').length, 1);
+  assert.equal(h.window.document.getElementById('neighbor').value, 'KEEP');
+  assert.equal(forbidden, 0);
+});
+
+test('ordinary masked phone final batch readback catches a later reversion without replay', async t => {
+  const h = await harness({ enabled: true, html: '<form><label for="phone">手机号</label><input id="phone" type="tel" data-mask="### #### ####"><label for="name">姓名</label><input id="name"><button type="submit">保存</button></form>' });
+  t.after(() => h.dom.window.close());
+  h.data.resumeProfile = { schemaVersion: 1, phone: '13800138000', fullName: '离线姓名', confirmedFields: ['phone', 'fullName'] };
+  const el = h.window.document.getElementById('phone');
+  let inputs = 0, forbidden = 0;
+  el.addEventListener('input', () => { inputs++; el.value = el.value.replace(/^(\d{3})(\d{4})(\d{4})$/u, '$1 $2 $3'); });
+  h.window.document.getElementById('name').addEventListener('input', () => { el.value = '139 0013 8000'; });
+  for (const type of ['click', 'submit']) h.window.document.addEventListener(type, () => forbidden++);
+  const result = await h.fill(), row = result.data.fields.find(field => field.id === 'phone');
+  assert.equal(row.status, 'failed', JSON.stringify(result));
+  assert.equal(row.adapterStatus, 'reverted');
+  assert.equal(row.reason, 'readback_mismatch');
+  assert.equal(inputs, 1);
+  assert.equal(h.calls.filter(call => call.func?.name === 'writeControlInPage' && call.args[0].selector === '#phone').length, 1);
+  assert.equal(result.data.liveSupportClaimed, false);
+  assert.equal(forbidden, 0);
+});
+
+test('enabled masked discovery retains unsupported contracts on the manual L1 path without effects', async t => {
+  for (const scenario of ['format', 'owner']) {
+    const h = await harness({ enabled: true, html: `<form><label for="phone">手机号</label><input id="phone" type="tel" data-mask="${scenario === 'format' ? '###.####.####' : '### #### ####'}"><input id="neighbor" value="KEEP"><button type="submit">保存</button></form>` });
+    t.after(() => h.dom.window.close());
+    h.data.resumeProfile = { schemaVersion: 1, phone: '13800138000', confirmedFields: ['phone'] };
+    const el = h.window.document.getElementById('phone');
+    if (scenario === 'owner') el.__vue__ = { $el: el, $options: { name: 'UnreviewedMaskInput' }, $props: { value: '' } };
+    let effects = 0;
+    for (const type of ['input', 'change', 'blur', 'click', 'submit']) h.window.document.addEventListener(type, () => effects++, true);
+    const candidates = await h.invoke({ type: CONTROL_CANDIDATES_MESSAGE, timeOrigin: h.window.performance.timeOrigin });
+    await Promise.resolve();
+    assert.equal(candidates.ok, true, JSON.stringify(candidates));
+    const candidate = candidates.candidates.find(row => h.window.document.querySelector(row.selector) === el);
+    assert.equal(candidate?.adapter, scenario === 'format' ? 'native-input-mask' : 'input-mask-unknown');
+    assert.equal(candidate.type, 'input-mask');
+    const result = await h.fill(), row = result.data.fields.find(field => field.id === 'phone');
+    assert.equal(result.ok, true, JSON.stringify(result));
+    assert.equal(row.status, 'skipped', JSON.stringify(result));
+    assert.equal(row.adapterStatus, 'manual');
+    assert.equal(row.reason, 'input_mask_contract_unconfirmed');
+    assert.equal(row.adapter, candidate.adapter);
+    assert.equal(result.data.liveSupportClaimed, false);
+    assert.equal(el.value, '');
+    assert.equal(h.window.document.getElementById('neighbor').value, 'KEEP');
+    assert.equal(effects, 0);
+  }
+});
+
 test('ordinary country-code and phone selects compare the selected option, preserving distinct labels and values', async t => {
   // Legacy selectedIndex writes are covered in Chromium: jsdom 26 leaves its
   // previously accessed selectedOptions collection stale after that setter.
@@ -206,7 +327,7 @@ test('ordinary birthday part placeholders read empty while unbound parts remain 
   const previousListener = h.window.__resumeQuickFillEngineListener;
   h.window.__resumeQuickFillEngineRevision = 15;
   h.window.eval(source('src/content/engine.js'));
-  assert.equal(h.window.__resumeQuickFillEngineRevision, 23);
+  assert.equal(h.window.__resumeQuickFillEngineRevision, 24);
   assert.notEqual(h.window.__resumeQuickFillEngineListener, previousListener);
   let events = 0;
   for (const type of ['input', 'change', 'click']) h.window.document.addEventListener(type, () => events++);

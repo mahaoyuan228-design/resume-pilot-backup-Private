@@ -124,6 +124,17 @@ application stores or response bodies. The official guarded run recovered
 13/16 fields; both location controls and the calendar remain skips, `ok=false`
 and exit 2. See [evidence and limits](../../tests/cms-row-d-mainworld-dict-r1-notes.md).
 
+The secondary revision starts at `575abee8` (#224). It addresses only the
+two location fields and the English exam calendar. A location may contain
+two peer selects under one owned cascader wrapper; their current bindings
+and the first host's independently observed option definitions are checked
+without opening either select. A passing location observation preserves the
+partial harvested dictionary and does not verify a province/city selection.
+Calendar structure alone still cannot pass. The calendar must additionally
+have a current owned MonthPicker definition or an already visible, uniquely
+owned calendar panel. No popup interaction is needed for either route.
+See [secondary evidence and limits](../../tests/cms-row-d-secondary-r1-notes.md).
+
 ## Run
 
 From the repository root in PowerShell:
@@ -335,7 +346,12 @@ field result. See [R4 notes](../../tests/cms-row-d-preflight-r4-notes.md).
 
 Exit `0` means complete preflight. Exit `2` means incomplete, blocked, or error; a completed probe can still be incomplete because of these intentional skips. Inspect the result reasons rather than treating execution alone as a pass.
 
-No live PASS, live fill/support, or site support is claimed by this probe. The parent must re-probe 9242 with the new tip. Booked stays **58** (E included, D unbooked); this work does not book **+12**. Historical reports above retain their original booked count of 53.
+No live PASS, live fill/support, or site support is claimed by this probe.
+The parent accepted the `575abee8` Never-Save run as PASS_PREFLIGHT with
+`bookD=yes`, while preserving its honest `ok=false` and 13/16 fields.
+Booked remains **70**; this revision adds no booking. Historical reports
+retain their original counts and verdicts. A new tip needs a new guarded
+probe before its field observations can be described as live evidence.
 
 ## Offline validation
 

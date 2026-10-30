@@ -305,7 +305,11 @@ test('native Blink/V8 strict combined evaluation on an exclusively owned synthet
     await session.send('Page.navigate',{url:fixtureUrl});await ready;
     const params={expression:buildLocationStructureExpression(fixtureUrl),returnByValue:true,awaitPromise:false,userGesture:false,throwOnSideEffect:true,timeout:5000};
     const reply=await session.send('Runtime.evaluate',params);assert.equal(reply.exceptionDetails,undefined,JSON.stringify(reply.exceptionDetails));
-    const envelope=reply.result.value;assert.equal(envelope.inspection.reason,'row_d_preflight_incomplete');
+    // The new composite options path reaches this fixture's deliberately
+    // protected option text. It must refuse that read without weakening the
+    // strict guard or turning the independent structure capture into a pass.
+    const envelope=reply.result.value;assert.equal(envelope.inspection.reason,'document_read_failed');
+    assert.equal(envelope.inspection.ok,false);safe(envelope.inspection);
     validateStructure(envelope.structure);assert.equal(envelope.structure.locations[0].hosts[0].reason,'linked_structure_observed');safe(envelope.structure);
     const refused=await session.send('Runtime.evaluate',{...params,expression:"document.body.setAttribute('data-r10-side-effect','forbidden')"});
     assert.ok(refused.exceptionDetails,'V8 must reject a deliberate mutation; never retry loosely');

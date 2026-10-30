@@ -40,7 +40,10 @@
       const input = valueInput(root);
       domValue = input ? input.value : n(root.textContent);
     }
-    return { ...probe, options, domValue };
+    const monthInputs = probe.lib === 'ant-design-vue' && probe.componentName === 'AMonthPicker'
+      ? all(root, 'input:not([type="hidden"])') : null;
+    return { ...probe, options, domValue,
+      ...(monthInputs && monthInputs.length !== 1 ? { available: false, modelReason: 'month_ownership_unconfirmed' } : {}) };
   }
 
   function librarySpec(lib, major, names) {
@@ -152,6 +155,9 @@
   function datePlan(fact, model, type) {
     const value = fact.value;
     const month = type === 'month';
+    const antMonth = month && model.lib === 'ant-design-vue' && model.componentName === 'AMonthPicker';
+    if (antMonth && model.format !== 'YYYY-MM') return { status: 'manual', reason: 'display_format_unverified' };
+    if (antMonth && model.valueFormat !== 'YYYY-MM') return { status: 'manual', reason: 'value_format_unverified' };
     const expectedFormat = month ? /^(?:YYYY-MM|yyyy-MM)$/u : /^(?:YYYY-MM-DD|yyyy-MM-dd)$/u;
     if (!expectedFormat.test(model.valueFormat || '')) return unsupported('value_format_unverified');
     if (typeof value !== 'string' || !(month ? /^\d{4}-\d{2}$/u : /^\d{4}-\d{2}-\d{2}$/u).test(value))
@@ -160,11 +166,13 @@
     const date = new Date(Date.UTC(year, m - 1, d));
     if (year < 1900 || year > 2100 || date.getUTCFullYear() !== year
       || date.getUTCMonth() !== m - 1 || date.getUTCDate() !== d) return unsupported('invalid_date');
+    if (antMonth && !empty(model.domValue) && !H.equal(model.domValue, value)) return unsupported('existing_value');
     return H.makePlan(fact, model, { type });
   }
 
   async function writeMonthUi(el, instruction, ctx) {
     const p = inspect(el), root = rootOf(el, p), input = valueInput(root);
+    const owner = resolve(el);
     const selector = p.lib === 'element-ui' ? '.el-picker-panel' : '.ant-calendar-picker-container';
     if (all(document, selector).some(shown)) return unsupported('control_busy');
     if (!input) return unsupported('control_guard');
@@ -177,14 +185,32 @@
       await pause(20);
     }
     if (!panel) return unsupported('calendar_not_open');
+    const owned = () => {
+      const current = modelFor(el, inspect(el)), currentOwner = resolve(el);
+      const panels = all(document, selector).filter(shown);
+      return el.isConnected && rootOf(el, current) === root && currentOwner.vm === owner.vm
+        && current.componentName === p.componentName && current.version === p.version
+        && current.available && !current.disabled && !current.readonly
+        && current.format === p.format && current.valueFormat === p.valueFormat
+        && (empty(current.value) || H.equal(current.value, instruction.value))
+        && (empty(current.domValue) || H.equal(current.domValue, instruction.domValue ?? instruction.value))
+        && panels.length === 1 && panels[0] === panel;
+    };
+    const ownedCtx = { ...ctx, check: async () => {
+      await ctx.check();
+      if (!owned()) throw Error('control_changed');
+    } };
     const [year, month] = instruction.value.split('-').map(Number);
     const yearText = () => {
-      const node = panel.querySelector(p.lib === 'element-ui' ? '.el-date-picker__header-label'
-        : '.ant-calendar-month-panel-year-select-content');
-      const found = n(node?.textContent).match(/(?:^|\D)(\d{4})(?:\D|$)/u);
+      const nodes = all(panel, p.lib === 'element-ui' ? '.el-date-picker__header-label'
+        : '.ant-calendar-month-panel-year-select-content').filter(shown);
+      if (nodes.length !== 1) return null;
+      const found = n(nodes[0].textContent).match(/^(\d{4})(?:\s*年)?$/u);
       return found ? Number(found[1]) : null;
     };
     for (let count = 0; count < 32; count++) {
+      await H.check(ctx);
+      if (!owned()) return unsupported('control_changed');
       const current = yearText();
       if (current == null) return unsupported('calendar_year_unverified');
       if (current === year) break;
@@ -193,18 +219,22 @@
         : current > year ? '.ant-calendar-month-panel-prev-year-btn' : '.ant-calendar-month-panel-next-year-btn';
       const buttons = all(panel, selector).filter(shown);
       if (buttons.length !== 1) return unsupported('calendar_navigation_unavailable');
-      await H.safeClick(buttons[0], ctx);
+      await H.safeClick(buttons[0], ownedCtx);
       await H.tick();
+      if (!owned()) return unsupported('control_changed');
       if (yearText() === current) return unsupported('calendar_navigation_stalled');
     }
+    await H.check(ctx);
+    if (!owned()) return unsupported('control_changed');
     if (yearText() !== year) return unsupported('calendar_year_limit');
     const cells = p.lib === 'element-ui' ? all(panel, '.el-month-table td')
       : all(panel, 'td.ant-calendar-month-panel-cell');
     if (cells.length !== 12) return unsupported('calendar_month_structure');
     const target = cells[month - 1];
-    if (!target || target.matches('.disabled,.ant-calendar-month-panel-cell-disabled'))
+    if (!target || target.matches('.disabled,.ant-calendar-month-panel-cell-disabled,[aria-disabled="true"]')
+      || target.querySelector('[aria-disabled="true"],button:disabled'))
       return unsupported('date_disabled');
-    await H.safeClick(target.querySelector('a') || target, ctx);
+    await H.safeClick(target.querySelector('a') || target, ownedCtx);
     await H.tick();
     const closing = await waitOwnedClosed(el, panel, selector, ctx);
     if (closing) return closing;
@@ -218,6 +248,9 @@
     if (checked.status !== 'planned' && checked.status !== 'success') return checked;
     if (type === 'month') {
       const ui = await writeMonthUi(el, instruction, ctx);
+      // MonthPicker without valueFormat consumes a Moment, never a string.
+      // Its calendar is also the only reviewed way to respect disabledDate.
+      if (p.componentName === 'AMonthPicker') return ui;
       if (ui.strategy || ['control_busy', 'overlay_ambiguous', 'date_disabled', 'owned_overlay_cleanup_timeout', 'control_changed'].includes(ui.reason)) return ui;
       // A partially opened UI must not survive an internal fallback. Element's
       // picker has a documented instance lifecycle; other shapes fail closed.

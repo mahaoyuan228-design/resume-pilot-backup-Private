@@ -136,6 +136,60 @@ test('real AMonthPicker preserves YYYY-MM through UI writes and parent model upd
   assert.equal(f.R.plan(el, { value: '2025-07' }).status, 'success');
 });
 
+test('real Element month calendar uses its visible year label and preserves UI writes', async t => {
+  const f = boot({ libraries: true }); t.after(() => f.close());
+  const app = f.mount('<main id="app"><el-date-picker id="month" v-model="value" type="month" value-format="yyyy-MM" format="yyyy-MM" :editable="false"></el-date-picker></main>', { value: '' });
+  await f.window.Vue.nextTick();
+  const el = f.get('month'), instruction = f.R.plan(el, { value: '2024-02' });
+  const result = await f.R.resolve(el).write(el, instruction, { allowWrite: true, check: async () => {} });
+  assert.equal(result.strategy, 'ui', JSON.stringify(result));
+  assert.equal(app.value, '2024-02');
+  assert.equal((await f.R.verify(el, instruction, { settleMs: 0 })).status, 'success');
+});
+
+test('real AMonthPicker defaults preserve month precision in a Moment-backed model', async t => {
+  const f = boot({ libraries: true }); t.after(() => f.close());
+  const app = f.mount('<main id="app"><a-month-picker id="month" v-model="value" :input-read-only="true"></a-month-picker></main>', { value: null });
+  await f.window.Vue.nextTick();
+  const el = f.get('month'), model = f.M.inspect(el), owner = f.M.resolve(el).vm;
+  assert.equal(model.valueFormat, 'YYYY-MM');
+  assert.equal(model.format, 'YYYY-MM');
+  assert.equal(model.valueFormatEvidence, 'component_default');
+  assert.equal(model.modelKind, 'moment');
+  const instruction = f.R.plan(el, { value: '2024-02' });
+  assert.equal(instruction.status, 'planned');
+  const written = await f.R.resolve(el).write(el, instruction, { allowWrite: true, check: async () => {} });
+  assert.equal(written.strategy, 'ui', JSON.stringify(written));
+  await f.window.Vue.nextTick();
+  assert.equal(f.window.moment.isMoment(app.value), true);
+  assert.equal(f.M.resolve(el).vm, owner, 'calendar navigation keeps the public model owner');
+  assert.equal(app.value.format('YYYY-MM'), '2024-02');
+  assert.equal(f.M.inspect(el).value, '2024-02');
+  assert.equal((await f.R.verify(el, instruction, { settleMs: 0 })).status, 'success');
+  app.value = f.window.moment('2025-07-19', 'YYYY-MM-DD', true);
+  await f.window.Vue.nextTick();
+  assert.equal(f.M.inspect(el).value, '2025-07');
+  assert.equal(el.querySelector('input').value, '2025-07');
+  const same = f.R.plan(el, { value: '2025-07' });
+  assert.equal(same.status, 'success');
+  el.querySelector('input').value = '2025-07-19';
+  assert.equal((await f.R.verify(el, same, { settleMs: 0 })).status, 'mismatch');
+});
+
+test('real AMonthPicker custom display formats remain manual and planning has no effects', async t => {
+  const f = boot({ libraries: true }); t.after(() => f.close());
+  const app = f.mount('<main id="app"><a-month-picker id="month" v-model="value" format="YYYY/MM"></a-month-picker></main>', { value: null });
+  await f.window.Vue.nextTick();
+  const el = f.get('month'); let effects = 0;
+  for (const event of ['input', 'change', 'click']) el.addEventListener(event, () => { effects++; });
+  const plan = f.R.plan(el, { value: '2024-02' });
+  assert.equal(plan.status, 'manual');
+  assert.equal(plan.reason, 'display_format_unverified');
+  assert.equal(app.value, null);
+  assert.equal(el.querySelector('input').value, '');
+  assert.equal(effects, 0);
+});
+
 test('React fibers provide read-only diagnostics and cannot fall through to native writing', t => {
   const f = boot(); t.after(() => f.close());
   const el = f.get('target'); let called = 0;

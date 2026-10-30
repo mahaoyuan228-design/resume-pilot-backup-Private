@@ -2,7 +2,7 @@
 // instances or handlers to the extension. No events, setters or network calls.
 (() => {
   'use strict';
-  if (globalThis.ResumeControlModel?.version === 1 && globalThis.ResumeControlModel.revision === 3) return;
+  if (globalThis.ResumeControlModel?.version === 1 && globalThis.ResumeControlModel.revision === 4) return;
   const norm = value => String(value ?? '').normalize('NFKC').replace(/\s+/gu, ' ').trim();
   function serial(value, depth = 0) {
     if (value == null || ['string', 'number', 'boolean'].includes(typeof value)) return value ?? null;
@@ -80,6 +80,25 @@
     // Incomplete or cyclic trees are not evidence of an isolated owner.
     return queue.length > 200 ? [] : roots;
   }
+  function monthOwner(vm) {
+    // Ant's public wrapper and rendered picker share a name/root. Vue can
+    // replace root.__vue__ with the inner picker during calendar navigation.
+    // The outer wrapper owns the public Moment/string model and stays stable.
+    let owner = vm;
+    for (let parent = vm.$parent, count = 0; parent && count++ < 20; parent = parent.$parent) {
+      if (parent.$el !== vm.$el) break;
+      if (parent.$options?.name === 'AMonthPicker') owner = parent;
+    }
+    const queue = [...(owner.$children || [])];
+    let displayFormat;
+    for (let i = 0; i < queue.length && i < 40; i++) {
+      const child = queue[i];
+      if (child.$el !== owner.$el) continue;
+      if (child.$options?.name === 'AMonthPicker') { displayFormat = child.$props?.format; break; }
+      queue.push(...(child.$children || []));
+    }
+    return { vm: owner, displayFormat };
+  }
   function resolve(el) {
     if (!el || el.nodeType !== 1) return {};
     const seen = new Set();
@@ -92,7 +111,8 @@
         frameworkFallback ||= { element: el, framework: 'vue2', props: {} };
         const multiple = /(?:Select|DatePicker|MonthPicker|CalendarPicker|Cascader|RadioGroup|CheckboxGroup)$/u.test(name);
         if (knownVue.test(name) && ownsControl(vm.$el, el, multiple)) {
-          const found = { vm, props: vm.$props || {}, element: vm.$el, componentName: name, framework: 'vue2' };
+          const owner = name === 'AMonthPicker' ? monthOwner(vm) : { vm };
+          const found = { ...owner, props: owner.vm.$props || {}, element: owner.vm.$el, componentName: name, framework: 'vue2' };
           // Display/search inputs belong to their Select/DatePicker/Cascader.
           // Keep a plain Input only if no owning complex component is present.
           if (/^(?:ElInput|AInput|ATextarea)$/u.test(name)) inputFallback ||= found;
@@ -172,17 +192,34 @@
     if (!Array.isArray(rawOptions) && componentName === 'ElSelect') rawOptions = vm?.options;
     if (!Array.isArray(rawOptions) && componentName === 'ASelect') rawOptions = vm?.$slots?.default;
     if (!Array.isArray(rawOptions) && componentName === 'iSelect') rawOptions = vm?.$slots?.default;
-    const valueFormat = lib === 'iview' && componentName === 'CalendarPicker' ? props.format : props.valueFormat;
+    // Ant v1 MonthPicker's public model defaults to Moment and its display to
+    // YYYY-MM. The day serializer would erase the control's month precision.
+    // Apply that default only after confirming this owning component/library.
+    const antMonth = ref.framework === 'vue2' && lib === 'ant-design-vue'
+      && Number(version?.split('.')[0]) === 1 && componentName === 'AMonthPicker';
+    const defaultMonthFormat = antMonth && props.valueFormat == null;
+    const rawValue = valueKey ? props[valueKey] : null;
+    const momentMonth = defaultMonthFormat && rawValue?._isAMomentObject === true && typeof rawValue.format === 'function'
+      && typeof rawValue.isValid === 'function' && rawValue.isValid();
+    const monthModelConfirmed = !antMonth || rawValue == null || rawValue === ''
+      || (defaultMonthFormat ? momentMonth : typeof rawValue === 'string' && /^\d{4}-\d{2}$/u.test(rawValue));
+    const valueFormat = lib === 'iview' && componentName === 'CalendarPicker' ? props.format
+      : defaultMonthFormat ? 'YYYY-MM' : props.valueFormat;
     const value = valueKey ? modelValue(props[valueKey], valueFormat) : null;
     const input = root?.matches?.('input,textarea,select') ? root : root?.querySelector?.('input,textarea,select');
     return { framework: ref.framework || 'native', lib, version, major: version ? Number(version.split('.')[0]) : null,
-      componentName, available: !!valueKey && readableValue(props[valueKey]), value, options: optionsOf(rawOptions), valueFormat: valueFormat || null,
-      format: props.format || null, type: props.type || null, filterable: !!(props.filterable || props.showSearch),
+      componentName, available: !!valueKey && readableValue(props[valueKey]) && monthModelConfirmed, value,
+      options: optionsOf(rawOptions), valueFormat: valueFormat || null,
+      format: antMonth ? ref.displayFormat ?? props.format ?? 'YYYY-MM' : props.format || null,
+      ...(antMonth ? { valueFormatEvidence: defaultMonthFormat ? 'component_default' : 'explicit_prop',
+        modelKind: defaultMonthFormat ? 'moment' : 'formatted',
+        modelReason: monthModelConfirmed ? null : 'month_model_unconfirmed' } : {}),
+      type: props.type || null, filterable: !!(props.filterable || props.showSearch),
       remote: !!(props.remote || (props.showSearch && props.filterOption === false)),
       lazy: !!(props.lazy || props.loadData || props.props?.lazy), disabled: !!(props.disabled || vm?.disabled || input?.disabled),
       readonly: !!props.readonly, controlRoot: root,
       multiple: !!props.multiple, separator: typeof props.separator === 'string' ? props.separator : null,
       versionEvidence: version ? 'page_library_export' : 'version_unconfirmed' };
   }
-  globalThis.ResumeControlModel = Object.freeze({ version: 1, revision: 3, inspect, resolve, serial, optionsOf });
+  globalThis.ResumeControlModel = Object.freeze({ version: 1, revision: 4, inspect, resolve, serial, optionsOf });
 })();

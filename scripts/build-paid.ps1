@@ -81,6 +81,7 @@ $productFiles = @(
   'src/content/controls/registry.js',
   'src/content/controls/upload.js',
   'src/content/controls/native.js',
+  'src/content/controls/date-controls.js',
   'src/content/controls/vue-controls.js',
   'src/content/controls/resume-form.js',
   'src/background/worker.mjs',

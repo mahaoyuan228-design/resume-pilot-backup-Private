@@ -11,7 +11,8 @@ export function readControlCandidatesInPage(expectedUrl, timeOrigin) {
   if (location.href !== expectedUrl || performance.timeOrigin !== timeOrigin || document.visibilityState !== 'visible') throw Error('control_document_changed');
   const registry = globalThis.ResumeControls;
   if (registry?.version !== 1 || registry.liveSupportClaimed !== false) throw Error('control_registry_missing');
-  const names = new Set(['ivu-select', 'ivu-date', 'ud-select', 'ud-date', 'ud-cascader', 'phoenix-select', 'phoenix-cascader', 'phoenix-date']);
+  const names = new Set(['ivu-select', 'ivu-date', 'ud-select', 'ud-date', 'ud-cascader', 'phoenix-select', 'phoenix-cascader', 'phoenix-date',
+    'native-date', 'native-month', 'my97-date', 'my97-datetime', 'antdv1-month']);
   const candidates = [];
   for (const element of [...document.querySelectorAll('input,textarea')].slice(0, 300)) {
     if (['hidden', 'password', 'file', 'submit', 'button', 'reset', 'image'].includes(element.type)

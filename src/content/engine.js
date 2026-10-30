@@ -38,8 +38,10 @@
     return proseValue(read(root));
   }
   let atsControlTargets = new Map();
+  const atsControlPeers = new Set();
   async function loadAtsControlTargets(enabled = null) {
     atsControlTargets = new Map();
+    atsControlPeers.clear();
     if (enabled === null) enabled = typeof globalThis.chrome?.storage?.local?.get === 'function'
       && (await chrome.storage.local.get('resumeAtsEngineWriteEnabled')).resumeAtsEngineWriteEnabled === true;
     if (!enabled) return;
@@ -47,7 +49,13 @@
     if (response?.ok !== true || response.mode !== 'candidates' || response.writeStarted !== false || response.liveSupportClaimed !== false) throw Error('control_candidates_unavailable');
     for (const candidate of response.candidates || []) {
       const nodes = document.querySelectorAll(candidate.selector);
-      if (nodes.length === 1 && nodes[0].matches('input,textarea,[contenteditable]')) atsControlTargets.set(nodes[0], candidate);
+      if (nodes.length !== 1 || !nodes[0].matches('input,textarea,[contenteditable]')) continue;
+      if (candidate.type === 'multi-select') {
+        const roots = typeof candidate.rootSelector === 'string' ? document.querySelectorAll(candidate.rootSelector) : [];
+        if (roots.length !== 1 || !roots[0].contains(nodes[0])) continue;
+        for (const peer of roots[0].querySelectorAll('input,textarea,[contenteditable]')) if (peer !== nodes[0]) atsControlPeers.add(peer);
+      }
+      atsControlTargets.set(nodes[0], candidate);
     }
   }
   let fieldMemorySnapshot = null;
@@ -984,6 +992,7 @@
     // Rich text can enter only through MAIN's confirmed, opt-in L1 claim.
     // It has no legacy native-setter path.
     const controls = query('input,select,textarea,iframe,[contenteditable]').filter((control) => {
+      if (atsControlPeers.has(control)) return false;
       if (richtextControl(control) && atsControlTargets.get(control)?.type !== 'richtext') return false;
       if (!visible(control, atsControlTargets.has(control))) return false;
       // An opened but unsupported Ant v3 select exposes its inner text input.
@@ -1092,7 +1101,7 @@
         result.path = value?.path;
         result.answer = value?.value;
         result.reason = value?.reason || (value ? "ready" : "missing_profile_value");
-      } else if (antSelectControl(control) && !degreeSelect) {
+      } else if (antSelectControl(control) && !degreeSelect && atsControlTargets.get(control)?.type !== 'multi-select') {
         result.reason = "custom_select_not_supported";
       } else if(cmsSimple) {
         const value=cmsScopedAcademicAnswer(profile,cmsSimple);
@@ -1134,7 +1143,8 @@
         result.path = value.path;
         result.answer = value.value;
         result.reason = value.reason || "ready";
-        if (result.reason === "ready" && !(control instanceof HTMLSelectElement) && Array.isArray(result.answer) && result.answer.length !== 1) {
+        if (result.reason === "ready" && !(control instanceof HTMLSelectElement)
+          && atsControlTargets.get(control)?.type !== 'multi-select' && Array.isArray(result.answer) && result.answer.length !== 1) {
           result.reason = "multiple_profile_values";
         }
       }
@@ -1187,6 +1197,9 @@
     }
     const { control, answer, radioOptions, antUnnamedRadio,regionFact,checkboxFact,cmsBasicAddress, ...plain } = entry;
     plain.currentValue = meaningfulCurrent(control, radioOptions, antUnnamedRadio);
+    // Search text is not a selected chip. MAIN's array model and rendered tags
+    // decide preservation and readback for an explicitly claimed multi-select.
+    if (atsControlTargets.get(control)?.type === 'multi-select') return plain;
     if(entry.kind==='cms_checkbox_group') {
       const selected=globalThis.ResumeCmsCheckboxes.inspectControl(control)?.selected,
         desired=checkboxFact?.answers?.map(exactOptionText).sort();
@@ -1989,6 +2002,12 @@
 
   function atsControlSelector(control) {
     if (!control?.isConnected || control.getRootNode() !== document) throw Error('control_target_changed');
+    const claimed = atsControlTargets.get(control);
+    if (claimed?.type === 'multi-select') {
+      const nodes = document.querySelectorAll(claimed.selector);
+      if (nodes.length !== 1 || nodes[0] !== control) throw Error('control_target_changed');
+      return claimed.selector;
+    }
     if (control.id) {
       const selector = `#${CSS.escape(control.id)}`;
       if (document.querySelectorAll(selector).length === 1) return selector;
@@ -2046,7 +2065,7 @@
     const atsEngineWriteEnabled = typeof globalThis.chrome?.storage?.local?.get === 'function'
       && (await chrome.storage.local.get('resumeAtsEngineWriteEnabled')).resumeAtsEngineWriteEnabled === true;
     if (atsEngineWriteEnabled) await loadAtsControlTargets(true);
-    else if (typeof atsControlTargets !== 'undefined') atsControlTargets.clear();
+    else if (typeof atsControlTargets !== 'undefined') { atsControlTargets.clear(); atsControlPeers.clear(); }
     if (location.origin + location.pathname === CMS_PHOTO_PAGE) {
       const session = typeof globalThis.ResumeCmsSession?.check === "function"
         ? await globalThis.ResumeCmsSession.check() : null;

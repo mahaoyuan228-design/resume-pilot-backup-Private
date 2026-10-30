@@ -204,7 +204,7 @@ test('reinjection replaces revision 11 prose contracts and installs the richtext
   for (const source of sources) f.w.eval(source);
   const current = f.w.ResumeControls;
   assert.notEqual(current, old);
-  assert.equal(current.revision, 12);
+  assert.equal(current.revision, 13);
   assert.equal(current.resolve(f.get('rich')).name, 'native-richtext');
   for (const source of sources) f.w.eval(source);
   assert.equal(f.w.ResumeControls, current);

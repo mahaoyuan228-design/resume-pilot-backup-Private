@@ -15,13 +15,10 @@ export function readControlCandidatesInPage(expectedUrl, timeOrigin) {
   const names = new Set(['ivu-select', 'ivu-date', 'ud-select', 'ud-date', 'ud-cascader', 'phoenix-select', 'phoenix-cascader', 'phoenix-date',
     'native-date', 'native-month', 'my97-date', 'my97-datetime', 'antdv1-month',
     'native-combobox-search', 'el-autocomplete', 'antdv1-autocomplete', 'el-select-search', 'antdv1-select-search',
+    'el-select-multiple', 'antdv1-select-multiple',
     'native-textarea', 'el-textarea', 'antdv1-textarea', 'native-richtext']);
-  const candidates = [];
-  for (const element of [...document.querySelectorAll('input,textarea,[contenteditable]')].slice(0, 300)) {
-    if (['hidden', 'password', 'file', 'submit', 'button', 'reset', 'image'].includes(element.type)
-      || element.disabled || element.getRootNode() !== document) continue;
-    const inspection = registry.inspect(element), model = inspection.model;
-    if (inspection.status === 'manual' || !names.has(inspection.adapter) || !model?.available || model.disabled || model.readonly) continue;
+  const candidates = [], roots = new Set();
+  const selectorOf = element => {
     const parts = [];
     for (let node = element; node && node !== document.documentElement; node = node.parentElement) {
       const parent = node.parentElement;
@@ -29,7 +26,26 @@ export function readControlCandidatesInPage(expectedUrl, timeOrigin) {
       parts.unshift(`${node.tagName.toLowerCase()}:nth-child(${[...parent.children].indexOf(node) + 1})`);
     }
     const selector = ['html', ...parts].join(' > ');
-    if (selector.length <= 2048 && document.querySelectorAll(selector).length === 1) candidates.push({ selector, adapter: inspection.adapter, type: registry.list().find(row => row.name === inspection.adapter).type });
+    return selector.length <= 2048 && document.querySelectorAll(selector).length === 1 ? selector : null;
+  };
+  for (const element of [...document.querySelectorAll('input,textarea,[contenteditable]')].slice(0, 300)) {
+    if (['hidden', 'password', 'file', 'submit', 'button', 'reset', 'image'].includes(element.type)
+      || element.disabled || element.getRootNode() !== document) continue;
+    const inspection = registry.inspect(element), model = inspection.model;
+    if (inspection.status === 'manual' || !names.has(inspection.adapter) || !model?.available || model.disabled || model.readonly) continue;
+    const type = registry.list().find(row => row.name === inspection.adapter).type;
+    // A multiple select can own both display and search inputs. Expose one
+    // answer target and its root so ISOLATED cannot collect the peer as a field.
+    const root = type === 'multi-select' ? registry.resolve(element)?.readModel(element).controlRoot : null;
+    if (root && roots.has(root)) continue;
+    const rootSelector = root && selectorOf(root);
+    // Chips may be inserted before a search input's containing li. A unique
+    // input under the confirmed root survives that harmless index change.
+    const selector = rootSelector && root.querySelectorAll('input:not([type="hidden"])').length === 1
+      ? `${rootSelector} input:not([type="hidden"])` : selectorOf(element);
+    if (!selector || type === 'multi-select' && !rootSelector) continue;
+    if (root) roots.add(root);
+    candidates.push({ selector, adapter: inspection.adapter, type, ...(rootSelector ? { rootSelector } : {}) });
   }
   return { mode: 'candidates', candidates, writeStarted: false, liveSupportClaimed: false };
 }

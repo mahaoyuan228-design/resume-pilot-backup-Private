@@ -5,7 +5,7 @@
   'use strict';
   // Rebuild old registries so reinjection installs current dropdown readback
   // contracts as well as the current model resolver.
-  if (globalThis.ResumeControls?.version === 1 && globalThis.ResumeControls.revision === 12) return;
+  if (globalThis.ResumeControls?.version === 1 && globalThis.ResumeControls.revision === 13) return;
   const adapters = new Map();
   // Executable dropdown/choice plans stay bound to their original widget in MAIN.
   // Serialized shadow observations carry no authority to write another root.
@@ -203,12 +203,15 @@
   function createAdapter(spec) {
     const readModel = spec.readModel || ((el, probe) => ({ ...probe }));
     const multiline = ['textarea', 'richtext'].includes(spec.type);
-    const boundControl = multiline || ['select', 'select-search', 'cascader', 'radio', 'checkbox', 'checkbox-group', 'switch'].includes(spec.type);
+    const multi = spec.type === 'multi-select';
+    const boundControl = multiline || ['select', 'select-search', 'multi-select', 'cascader', 'radio', 'checkbox', 'checkbox-group', 'switch'].includes(spec.type);
     const choice = ['radio', 'checkbox', 'checkbox-group', 'switch'].includes(spec.type);
-    const ownerBound = multiline || choice || spec.type === 'select-search';
+    const ownerBound = multiline || choice || ['select-search', 'multi-select'].includes(spec.type);
     const valueEqual = multiline ? proseEqual : ownerBound ? choiceEqual : equal;
     const domEqual = multiline ? proseEqual : equal;
     const validInstruction = instruction => ['planned', 'success'].includes(instruction?.status) && instruction.adapter === spec.name
+      && (!multi || instruction.type === spec.type && Array.isArray(instruction.value)
+        && choiceEqual(instruction.value, instruction.modelValue) && equal(instruction.labels, instruction.domValue))
       && (!multiline || instruction.type === spec.type && proseEqual(instruction.value, instruction.modelValue)
         && proseEqual(instruction.value, instruction.domValue));
     const sameOwner = (el, instruction, model) => {
@@ -319,7 +322,7 @@
     } catch { return { ...manual('component_probe_failed'), adapter: null }; }
   }
   const helpers = Object.freeze({ norm, equal, prose, proseEqual, richtextValue, empty, tick, makePlan, safeClick, nativeSet, confirmSearchOption, check, clickAllowed, clean, validDate });
-  globalThis.ResumeControls = Object.freeze({ version: 1, revision: 12, mode: 'shadow', liveSupportClaimed: false,
+  globalThis.ResumeControls = Object.freeze({ version: 1, revision: 13, mode: 'shadow', liveSupportClaimed: false,
     register, createAdapter, resolve, inspect, plan, helpers, list: () => ordered().map(a => ({ name: a.name, lib: a.lib, type: a.type, priority: a.priority || 0 })),
     verify: (el, instruction, ctx) => resolve(el)?.verify(el, instruction, ctx) || Promise.resolve({ status: 'unsupported', reason: 'control_or_version_unconfirmed' }) });
 })();

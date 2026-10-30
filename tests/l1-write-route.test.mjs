@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { JSDOM } from 'jsdom';
 import { captureProfileBinding, assertProfileBinding, PROFILE_LOCK } from '../src/profile/profile-lifecycle.js';
-import { createControlWriteBridge, CONTROL_WRITE_MESSAGE, CONTROL_CANDIDATES_MESSAGE, CONTROL_WRITE_FLAG } from '../src/background/controls-write.mjs';
+import { createControlWriteBridge, CONTROL_WRITE_MESSAGE, CONTROL_VERIFY_MESSAGE, CONTROL_CANDIDATES_MESSAGE, CONTROL_WRITE_FLAG } from '../src/background/controls-write.mjs';
 
 const root = new URL('../', import.meta.url);
 const source = file => readFileSync(new URL(file, root), 'utf8');
@@ -40,7 +40,7 @@ async function harness({ enabled, html = '<form><label for="name">姓名</label>
       if (message.type === 'RESUME_PROFILE_BINDING_CHECK') {
         try { await assertProfileBinding(storage, message.profileBinding); return { allowed: true }; } catch { return { allowed: false }; }
       }
-      if ([CONTROL_WRITE_MESSAGE, CONTROL_CANDIDATES_MESSAGE].includes(message.type)) return invoke(message);
+      if ([CONTROL_WRITE_MESSAGE, CONTROL_VERIFY_MESSAGE, CONTROL_CANDIDATES_MESSAGE].includes(message.type)) return invoke(message);
       throw Error('unexpected_message');
     } }, storage: { local: storage } };
   window.eval(source('src/core/matcher.js'));
@@ -158,7 +158,7 @@ test('ordinary birthday part placeholders read empty while unbound parts remain 
   const previousListener = h.window.__resumeQuickFillEngineListener;
   h.window.__resumeQuickFillEngineRevision = 15;
   h.window.eval(source('src/content/engine.js'));
-  assert.equal(h.window.__resumeQuickFillEngineRevision, 16);
+  assert.equal(h.window.__resumeQuickFillEngineRevision, 17);
   assert.notEqual(h.window.__resumeQuickFillEngineListener, previousListener);
   let events = 0;
   for (const type of ['input', 'change', 'click']) h.window.document.addEventListener(type, () => events++);
@@ -220,10 +220,12 @@ test('ordinary RESUME_FILL opt-in executes the actual MAIN registry plan/write/d
   assert.equal(row.adapterStatus, 'success');
   assert.equal(row.reason, 'readback_matched');
   assert.equal(h.window.document.getElementById('name').value, '离线姓名');
-  assert.equal(h.calls.length, 4);
+  assert.equal(h.calls.length, 5);
   assert.equal(h.calls[3].func.name, 'writeControlInPage');
   assert.equal(h.calls[3].world, 'MAIN');
   assert.deepEqual(h.calls[3].target, { tabId: 7, frameIds: [0] });
+  assert.equal(h.calls[4].func.name, 'verifyControlInPage');
+  assert.equal(h.calls[4].files, undefined, 'readback must retain the original MAIN plan');
   assert.equal(h.locks[0].name, PROFILE_LOCK);
   assert.equal(h.locks[0].options.mode, 'exclusive');
 });
@@ -390,6 +392,103 @@ function syntheticUdSelect(h, { version = 'fixture-contract-1', readonly = false
   option.addEventListener('click', () => { props.value = 'name-code'; input.value = '离线姓名'; portal.hidden = true; });
   return { input, props, portal };
 }
+
+test('batch readback rejects a later field changing either endpoint, options or owner without another write', async t => {
+  for (const scenario of ['model', 'display', 'both', 'options', 'owner', 'preexisting-model']) {
+    const h = await harness({ enabled: true, html: '<form><label for="name">姓名</label><input id="name"><label for="phone">手机号</label><input id="phone"><input id="neighbor" value="KEEP"></form>' });
+    t.after(() => h.dom.window.close());
+    h.data.resumeProfile.phone = '13800138000'; h.data.resumeProfile.confirmedFields.push('phone');
+    const f = syntheticUdSelect(h);
+    if (scenario === 'preexisting-model') { f.props.value = 'name-code'; f.input.value = '离线姓名'; }
+    let selections = 0;
+    f.portal.firstElementChild.addEventListener('click', () => { selections++; });
+    h.window.document.getElementById('phone').addEventListener('input', () => {
+      if (['model', 'both', 'preexisting-model'].includes(scenario)) f.props.value = '';
+      if (['display', 'both'].includes(scenario)) f.input.value = '';
+      if (scenario === 'options') {
+        f.props.options = [{ value: 'remapped-code', label: '离线姓名' }];
+        f.props.value = 'remapped-code';
+      }
+      if (scenario === 'owner') {
+        const host = f.input.__reactFiber$fixture;
+        host.return = { ...host.return, type: { ...host.return.type }, memoizedProps: { ...f.props } };
+      }
+    });
+    const result = await h.fill(), name = result.data.fields.find(row => row.id === 'name');
+    assert.equal(result.ok, true, JSON.stringify(result));
+    assert.equal(name.status, 'failed', `${scenario}: ${JSON.stringify(result)}`);
+    assert.notEqual(name.adapterStatus, 'success', scenario);
+    assert.equal(result.data.fields.find(row => row.id === 'phone').status, 'verified');
+    assert.equal(selections, scenario === 'preexisting-model' ? 0 : 1, `${scenario}: never repeat the selection after readback failure`);
+    assert.equal(h.calls.filter(call => call.func?.name === 'writeControlInPage' && call.args[0].selector === '#name').length, 1);
+    assert.equal(h.window.document.getElementById('neighbor').value, 'KEEP');
+    assert.equal(f.portal.hidden, true);
+  }
+});
+
+test('the engine rejects a missing write receipt or an unacknowledged success status in final readback', async t => {
+  for (const scenario of ['missing-receipt', 'unacknowledged-status', 'write-started']) {
+    const h = await harness({ enabled: true }); t.after(() => h.dom.window.close());
+    const sendMessage = h.window.chrome.runtime.sendMessage;
+    h.window.chrome.runtime.sendMessage = async message => {
+      const response = await sendMessage(message);
+      if (scenario === 'missing-receipt' && message.type === CONTROL_WRITE_MESSAGE) delete response.readbackId;
+      if (message.type === CONTROL_VERIFY_MESSAGE) {
+        if (scenario === 'unacknowledged-status') return { ...response, status: 'success', ok: false };
+        if (scenario === 'write-started') return { ...response, status: 'success', writeStarted: true };
+      }
+      return response;
+    };
+    const result = await h.fill(), field = result.data.fields[0];
+    assert.equal(result.ok, true, JSON.stringify(result)); assert.equal(field.status, 'failed', scenario);
+    assert.equal(h.window.document.getElementById('name').value, '离线姓名');
+    assert.equal(h.calls.filter(call => call.func?.name === 'writeControlInPage').length, 1);
+  }
+});
+
+test('readback consumes its receipt once and never emits an input, change or click', async t => {
+  const h = await harness({ enabled: true }); t.after(() => h.dom.window.close());
+  const written = await h.invoke(h.request());
+  await Promise.resolve(); // Model the browser's asynchronous response delivery.
+  assert.equal(written.status, 'success'); assert.equal(typeof written.readbackId, 'string');
+  let effects = 0;
+  for (const event of ['input', 'change', 'blur', 'click', 'submit']) h.window.document.addEventListener(event, () => { effects++; });
+  const request = { ...h.request(), type: CONTROL_VERIFY_MESSAGE, readbackId: written.readbackId };
+  const verified = await h.invoke(request);
+  await Promise.resolve();
+  assert.equal(verified.ok, true); assert.equal(verified.status, 'success');
+  assert.equal(verified.writeStarted, false); assert.equal(verified.liveSupportClaimed, false);
+  const replay = await h.invoke(request);
+  assert.notEqual(replay.status, 'success'); assert.equal(replay.writeStarted, false);
+  assert.equal(effects, 0); assert.equal(h.window.document.getElementById('name').value, '离线姓名');
+  assert.equal(h.calls.filter(call => call.func?.name === 'writeControlInPage').length, 1);
+});
+
+test('missing, mismatched, expired and obsolete-document readback receipts fail closed without effects', async t => {
+  for (const scenario of ['missing', 'selector', 'value', 'path', 'expired', 'document', 'detached']) {
+    const h = await harness({ enabled: true }); t.after(() => h.dom.window.close());
+    const written = await h.invoke(h.request());
+    await Promise.resolve();
+    assert.equal(written.status, 'success');
+    const request = { ...h.request(), type: CONTROL_VERIFY_MESSAGE, readbackId: written.readbackId };
+    if (scenario === 'missing') delete request.readbackId;
+    if (scenario === 'selector') request.selector = 'input';
+    if (scenario === 'value') request.value = 'other';
+    if (scenario === 'path') request.path = 'phone';
+    if (scenario === 'expired') {
+      const now = h.window.performance.now(); Object.defineProperty(h.window.performance, 'now', { value: () => now + 10 * 60 * 1000 });
+    }
+    if (scenario === 'document') request.timeOrigin++;
+    if (scenario === 'detached') h.window.document.getElementById('name').replaceWith(h.window.document.getElementById('name').cloneNode());
+    let effects = 0;
+    for (const event of ['input', 'change', 'blur', 'click', 'submit']) h.window.document.addEventListener(event, () => { effects++; });
+    const result = await h.invoke(request);
+    assert.notEqual(result.status, 'success', `${scenario}: ${JSON.stringify(result)}`);
+    assert.equal(result.writeStarted, false, scenario); assert.equal(result.liveSupportClaimed, false, scenario);
+    assert.equal(effects, 0, scenario);
+    assert.equal(h.calls.filter(call => call.func?.name === 'writeControlInPage').length, 1, scenario);
+  }
+});
 
 test('ordinary RESUME_FILL reaches an input-backed ud-select only with the opt-in and confirmed writable model', async t => {
   for (const scenario of ['enabled', 'off', 'version', 'readonly']) {

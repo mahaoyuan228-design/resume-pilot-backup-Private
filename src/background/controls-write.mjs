@@ -4,6 +4,7 @@ import { assertProfileBinding, withProfileBinding } from '../profile/profile-lif
 import { CONTROL_FILES } from './controls-shadow.mjs';
 
 export const CONTROL_WRITE_MESSAGE = 'RESUME_ATS_CONTROL_WRITE';
+export const CONTROL_VERIFY_MESSAGE = 'RESUME_ATS_CONTROL_VERIFY';
 export const CONTROL_CANDIDATES_MESSAGE = 'RESUME_ATS_CONTROL_CANDIDATES';
 export const CONTROL_WRITE_FLAG = 'resumeAtsEngineWriteEnabled';
 
@@ -70,11 +71,33 @@ export async function writeControlInPage(payload) {
     const model = adapter.readModel(element), ref = globalThis.ResumeControlModel.resolve(element);
     identity = { adapter: adapter.name, root: model.controlRoot, version: model.version,
       framework: ref.framework, vm: ref.vm, componentType: ref.componentType };
+    const retainReadback = result => {
+      if (result.status !== 'success') return result;
+      // Keep the original plan (including resolved option codes/click evidence)
+      // in MAIN. Replanning from the final model could bless a changed option.
+      const readbacks = globalThis.__resumeQuickFillControlReadbacks ||= new Map();
+      const now = performance.now();
+      for (const [id, record] of readbacks) if (record.expiresAt <= now) readbacks.delete(id);
+      while (readbacks.size >= 300) readbacks.delete(readbacks.keys().next().value);
+      const readbackId = crypto.randomUUID();
+      readbacks.set(readbackId, { expiresAt: now + 300000, async verify(request) {
+        for (const key of ['selector', 'path', 'value', 'expectedUrl', 'timeOrigin', 'profileBinding']) {
+          if (JSON.stringify(request[key]) !== JSON.stringify(payload[key])) reject('control_readback_changed');
+        }
+        await check();
+        const verification = await adapter.verify(element, plan, { previousSuccess: true });
+        await check();
+        return { ...verification, adapter: adapter.name,
+          reason: verification.status === 'success' ? 'readback_matched' : 'readback_mismatch',
+          writeStarted: false, liveSupportClaimed: false };
+      } });
+      return { ...result, readbackId };
+    };
     if (plan.status === 'success') {
       const verification = await adapter.verify(element, plan);
       await check();
-      return { ...verification, adapter: adapter.name, reason: verification.status === 'success' ? 'preexisting_same_value' : 'readback_mismatch',
-        writeStarted: false, strategy: 'none', attempts: 0, liveSupportClaimed: false };
+      return retainReadback({ ...verification, adapter: adapter.name, reason: verification.status === 'success' ? 'preexisting_same_value' : 'readback_mismatch',
+        writeStarted: false, strategy: 'none', attempts: 0, liveSupportClaimed: false });
     }
     // Conservative: after entry into the writer an error may follow a partial UI
     // sequence, so callers must retain review ownership even without readback.
@@ -84,11 +107,24 @@ export async function writeControlInPage(payload) {
     if (written.status && written.status !== 'success') return { ...written, adapter: adapter.name, writeStarted, liveSupportClaimed: false };
     const verification = await adapter.verify(element, plan);
     await check();
-    return { ...written, ...verification, adapter: adapter.name,
-      reason: verification.status === 'success' ? 'readback_matched' : 'readback_mismatch', writeStarted, liveSupportClaimed: false };
+    return retainReadback({ ...written, ...verification, adapter: adapter.name,
+      reason: verification.status === 'success' ? 'readback_matched' : 'readback_mismatch', writeStarted, liveSupportClaimed: false });
   } catch (error) {
     return { status: 'unsupported', reason: /^[a-z_]+$/u.test(error?.message || '') ? error.message : 'control_write_failed',
       writeStarted, liveSupportClaimed: false };
+  }
+}
+
+export async function verifyControlInPage(payload) {
+  const readbacks = globalThis.__resumeQuickFillControlReadbacks;
+  const record = readbacks?.get(payload.readbackId);
+  readbacks?.delete(payload.readbackId);
+  try {
+    if (!record || record.expiresAt <= performance.now()) throw Error('control_readback_expired');
+    return await record.verify(payload);
+  } catch (error) {
+    return { status: 'unsupported', reason: /^[a-z_]+$/u.test(error?.message || '') ? error.message : 'control_readback_failed',
+      writeStarted: false, liveSupportClaimed: false };
   }
 }
 
@@ -113,15 +149,16 @@ function confirmedValue(profile, path) {
 export function createControlWriteBridge({ api = globalThis.chrome, verifyBeforeFill = null, lifecycleOptions = {} } = {}) {
   const pending = new Set();
   const listener = (message, sender, sendResponse) => {
-    if (![CONTROL_WRITE_MESSAGE, CONTROL_CANDIDATES_MESSAGE].includes(message?.type)) return false;
+    if (![CONTROL_WRITE_MESSAGE, CONTROL_VERIFY_MESSAGE, CONTROL_CANDIDATES_MESSAGE].includes(message?.type)) return false;
     const refuse = reason => sendResponse({ ok: false, reason, writeStarted: false, liveSupportClaimed: false });
     if (sender?.id !== api.runtime.id || sender.frameId !== 0 || !Number.isSafeInteger(sender.tab?.id)
       || sender.tab.id < 0 || sender.url !== sender.tab.url || !/^https:\/\//u.test(sender.url || '')) {
       refuse('control_wrong_sender'); return false;
     }
     const discovering = message.type === CONTROL_CANDIDATES_MESSAGE;
+    const verifying = message.type === CONTROL_VERIFY_MESSAGE;
     if (!Number.isFinite(message.timeOrigin) || !discovering && (typeof message.selector !== 'string' || !message.selector || message.selector.length > 2048
-      || typeof message.path !== 'string')) {
+      || typeof message.path !== 'string') || verifying && (typeof message.readbackId !== 'string' || !/^[a-f0-9-]{36}$/u.test(message.readbackId))) {
       refuse('control_request_invalid'); return false;
     }
     const tabId = sender.tab.id;
@@ -156,14 +193,16 @@ export function createControlWriteBridge({ api = globalThis.chrome, verifyBefore
         const value = confirmedValue(profile || {}, message.path);
         if (JSON.stringify(value) !== JSON.stringify(message.value)) throw Error('control_fact_changed');
         const target = { tabId, frameIds: [0] };
-        await api.scripting.executeScript({ target, world: 'MAIN', files: [...CONTROL_FILES] });
+        if (!verifying) await api.scripting.executeScript({ target, world: 'MAIN', files: [...CONTROL_FILES] });
         await exactTab();
-        started = true;
-        const rows = await api.scripting.executeScript({ target, world: 'MAIN', func: writeControlInPage,
-          args: [{ selector: message.selector, value, expectedUrl: sender.url, timeOrigin: message.timeOrigin }] });
+        started = !verifying;
+        const rows = await api.scripting.executeScript({ target, world: 'MAIN', func: verifying ? verifyControlInPage : writeControlInPage,
+          args: [{ selector: message.selector, path: message.path, value, expectedUrl: sender.url, timeOrigin: message.timeOrigin,
+            profileBinding: message.profileBinding, ...(verifying ? { readbackId: message.readbackId } : {}) }] });
         await exactTab();
         const result = rows.length === 1 && rows[0].frameId === 0 ? rows[0].result : null;
         if (!result || result.liveSupportClaimed !== false || typeof result.writeStarted !== 'boolean'
+          || verifying && result.writeStarted !== false
           || !['success', 'mismatch', 'reverted', 'unsupported', 'manual'].includes(result.status)) throw Error('control_result_invalid');
         // Registry verification also exposes an `ok` sample flag. Keep it from
         // replacing this transport verdict for mismatch/reverted outcomes.

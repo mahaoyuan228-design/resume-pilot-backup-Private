@@ -8,7 +8,7 @@
   if(nativeMessages.hasListeners?.()===false)globalThis.__resumeNativeListenersResetObserved=true;
   if(globalThis.__resumeQuickFillInstalled){
     existingListenerAlive=!!ownedListener&&nativeMessages.hasListener?.(ownedListener)===true;
-    if(existingListenerAlive&&globalThis.__resumeQuickFillEngineRevision===16&&typeof globalThis.ResumeQuickFillGthInspect==='function')return;
+    if(existingListenerAlive&&globalThis.__resumeQuickFillEngineRevision===17&&typeof globalThis.ResumeQuickFillGthInspect==='function')return;
     if(existingListenerAlive){if(fillState.pending)throw Error('profile_write_context_busy');nativeMessages.removeListener(ownedListener);existingListenerAlive=false;}
     else if(!ownedListener&&nativeMessages.hasListeners?.()===true&&!globalThis.__resumeNativeListenersResetObserved)throw Error('extension_reload_required');
   }
@@ -1982,6 +1982,24 @@
       : response.writeStarted === true || ['mismatch', 'reverted'].includes(response.status) ? 'failed' : 'skipped';
     result.reason = response.reason || 'control_write_failed';
     result.currentValue = meaningfulCurrent(entry.control, entry.radioOptions, entry.antUnnamedRadio);
+    return response.readbackId;
+  }
+
+  async function verifyAtsControl(entry, result, readbackId) {
+    const context = globalThis.ResumeProfileWriteContext;
+    await context.check(false);
+    const response = await chrome.runtime.sendMessage({ type: 'RESUME_ATS_CONTROL_VERIFY',
+      selector: atsControlSelector(entry.control), path: entry.path, value: entry.answer, readbackId,
+      profileBinding: context.profileBinding, timeOrigin: performance.timeOrigin });
+    await context.check(false);
+    // A transport acknowledgement or the earlier write cannot replace the
+    // original plan's final model AND display verification in MAIN.
+    if (response?.ok !== true || response.liveSupportClaimed !== false || response.writeStarted !== false
+      || response.status !== 'success' || response.adapter !== result.adapter) {
+      result.status = 'failed';
+      result.adapterStatus = response?.ok === true ? response.status : 'unsupported';
+      result.reason = response?.reason || 'control_readback_failed';
+    }
   }
 
   async function fillOwnedContent(profile, attachment, photoUploads = null) {
@@ -2125,6 +2143,9 @@
         }
         if (existing && result.status !== "verified") continue;
         if (existing && result.status === "verified") {
+          // A successful L1 write is never retried after a re-render. Its
+          // original target and plan must pass the final read-only check.
+          if (atsEngineWriteEnabled) continue;
           if (answerMatches(entry, attachment)) continue;
           // A date picker may have committed a value before the site re-renders.
           // Never click it a second time if that value later disappears.
@@ -2176,7 +2197,7 @@
           requireVisibleFillPage();
           const answer = Array.isArray(entry.answer) ? entry.answer[0] : entry.answer;
           if (atsEngineWriteEnabled) {
-            await fillAtsControl(entry, result);
+            record.readbackId = await fillAtsControl(entry, result);
             continue;
           } else if (entry.kind === "ant_degree_select") {
             Object.assign(result, await fillAntDegreeSelect(entry, answer));
@@ -2338,10 +2359,17 @@
         continue;
       }
       result.currentValue = meaningfulCurrent(live.control, live.radioOptions, live.antUnnamedRadio);
-      if (!answerMatches(live, attachment)) {
+      if (atsEngineWriteEnabled) {
+        try { await verifyAtsControl(live, result, record.readbackId); }
+        catch (error) {
+          if (/^profile_[a-z_]+$/u.test(error?.message || '') || error?.message === PAGE_HIDDEN_DURING_FILL) throw error;
+          result.status = 'failed'; result.adapterStatus = 'unsupported'; result.reason = 'control_readback_failed';
+        }
+      } else if (!answerMatches(live, attachment)) {
         result.status = "failed";
         result.reason = "readback_mismatch";
-      } else if (live.control.validity && !live.control.validity.valid) {
+      }
+      if (result.status === 'verified' && live.control.validity && !live.control.validity.valid) {
         result.status = "failed";
         result.reason = "browser_validation_failed";
       }
@@ -2352,6 +2380,7 @@
     const validationGaps = currentValidationGaps();
     return { url: location.href, title: document.title,
       fields: [...results, ...cmsUncollectedQuestions(finalEntries, photoRows), ...photoRows],
+      ...(atsEngineWriteEnabled ? { liveSupportClaimed: false } : {}),
       ...(validationGaps ? { validationGaps } : {}),
       savedOnSite: null, submitted: null, softwareClickedSubmit: false };
   }
@@ -2624,7 +2653,7 @@
         sendResponse(reply);
       });
     return true;
-  };chrome.runtime.onMessage.addListener(engineListener);globalThis.__resumeQuickFillEngineListener=engineListener;globalThis.__resumeQuickFillEngineRevision=16;}
+  };chrome.runtime.onMessage.addListener(engineListener);globalThis.__resumeQuickFillEngineListener=engineListener;globalThis.__resumeQuickFillEngineRevision=17;}
   globalThis.ResumeQuickFillGthInspect = (profile) => {
     if (`${location.origin}${location.pathname}` !== "https://hr.gtht.com/resume/edit/")
       throw new Error("gth_inspect_wrong_page");

@@ -129,3 +129,46 @@ for (const variant of ['', 'partial', 'busy']) {
     } finally { await zoo.close(); }
   });
 }
+
+for (const variant of ['routes', 'manual']) {
+  test(`navigation engine: ${variant} stays passive in MAIN and ISOLATED worlds`, async ({}, testInfo) => {
+    const zoo = await startZoo('batchb-navigation', variant);
+    try {
+      const before = await zoo.readback();
+      const beforeDom = await zoo.page.content();
+      const results = {};
+      const flags = { readOnly: true, activation: 'manual', navigationAttempted: false,
+        writeStarted: false, writeAttempted: false, saved: false, skippedSave: true, liveSupportClaimed: false };
+      for (const world of ['MAIN', 'ISOLATED']) {
+        await zoo.inject([flow], world);
+        const result = await zoo.execute(() => ({
+          inspection: ResumeFormFlow.navigation.inspect(),
+          plans: [...document.querySelectorAll('#app button,#app a')].map(node => ({ id: node.id,
+            ...ResumeFormFlow.navigation.plan(node) })),
+        }), [], world);
+        expect(result.inspection).toMatchObject(flags);
+        expect(result.plans.length).toBeGreaterThan(0);
+        for (const plan of result.plans) expect(plan).toMatchObject(flags);
+        if (variant === 'routes') {
+          expect(result.inspection.status).toBe('observed');
+          expect(result.inspection.sections.map(row => row.strategy)).toEqual(['hash', 'query', 'tab']);
+          expect(result.plans.every(row => row.status === 'planned')).toBe(true);
+          expect(result.plans.find(row => row.id === 'nav-hash')).toMatchObject({ strategy: 'hash', target: 'education' });
+          expect(result.plans.find(row => row.id === 'nav-tab')).toMatchObject({ strategy: 'tab', target: 'tab-panel' });
+        } else {
+          expect(result.inspection.status).toBe('manual');
+          expect(result.inspection.sections.length).toBeGreaterThan(0);
+          expect(result.inspection.sections.every(row => row.status === 'manual')).toBe(true);
+          expect(result.plans.every(row => row.status === 'manual' && row.strategy === 'none')).toBe(true);
+        }
+        results[world] = result;
+      }
+      expect(results.MAIN).toEqual(results.ISOLATED);
+      expect(await zoo.page.content()).toBe(beforeDom);
+      expect(await zoo.readback()).toEqual(before);
+      const reads = await record(testInfo, zoo, results);
+      expect(reads.snapshot.effects).toEqual({ blacklistClicks: 0, entryClicks: [], inputEvents: 0,
+        preHydrationInputEvents: 0, navigationEvents: 0, navigationHandlerCalls: 0 });
+    } finally { await zoo.close(); }
+  });
+}

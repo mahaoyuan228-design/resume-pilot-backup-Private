@@ -57,7 +57,35 @@
       itemNeighbor: document.querySelector('#item-neighbor')?.value ?? null,
       disabledValue: document.querySelector('#disabled-neighbor').value };
   }
-  if (name === 'batchb-hotjob-entry') showCreate();
+  if (name === 'batchb-navigation') {
+    app.innerHTML = variant === 'manual'
+      ? `<nav aria-label="Synthetic wizard">
+          <button id="unknown" type="button">Other section</button>
+          <form><button id="submit">Section two</button></form>
+          <button id="next" type="button">下一步</button><button id="save" type="button">保存</button>
+          <a id="external" href="https://example.invalid/?section=two">Remote section</a>
+          <a id="action" href="?action=save&amp;section=two">Query action</a>
+          <a id="missing" href="#missing-panel">Missing section</a>
+          <a id="duplicate" href="#duplicate-panel">Duplicate section</a>
+          <button id="disabled" type="button" role="tab" aria-controls="disabled-panel" disabled>Disabled section</button>
+        </nav><section id="duplicate-panel"></section><section id="duplicate-panel"></section>
+        <section id="disabled-panel" role="tabpanel" aria-labelledby="disabled"></section>`
+      : `<div role="tablist" aria-label="Synthetic wizard">
+          <button id="nav-tab" type="button" role="tab" aria-controls="tab-panel" aria-selected="false">Tab section</button>
+        </div><aside aria-label="Synthetic sidebar">
+          <a id="nav-query" href="?section=education">Query section</a>
+          <a id="nav-hash" href="#education">Hash section</a>
+        </aside><section id="education"><input readonly value="SECTION_KEEP"></section>
+        <section id="tab-panel" role="tabpanel" aria-labelledby="nav-tab" hidden>Panel kept hidden</section>`;
+    effects.navigationEvents = 0; effects.navigationHandlerCalls = 0;
+    for (const event of ['click', 'pointerdown', 'pointerup', 'mousedown', 'mouseup', 'focus', 'blur', 'input', 'change', 'submit', 'reset']) {
+      document.addEventListener(event, action => { effects.navigationEvents++; action.preventDefault(); }, true);
+    }
+    for (const control of app.querySelectorAll('button,a')) control.addEventListener('click', () => {
+      effects.navigationHandlerCalls++;
+      document.querySelector('#neighbor').value = 'NAVIGATION_HANDLER_RAN';
+    });
+  } else if (name === 'batchb-hotjob-entry') showCreate();
   else if (name === 'batchb-beisen-summary') showSummary();
   else if (name === 'batchb-feishu-shell') {
     app.innerHTML = '<section id="editor-shell" aria-busy="true"><h2>编辑简历</h2><p>正在加载表单</p></section>';

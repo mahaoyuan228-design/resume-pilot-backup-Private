@@ -7,6 +7,7 @@
  * turn those samples into independent evidence or a live-support claim.
  */
 import { inspectCmsRowDCalendarEvidence } from './cms-row-d-calendar.mjs';
+import { inspectCmsRowDCalendarPanel } from './cms-row-d-calendar-panel.mjs';
 
 export const ROW_D_BASE_TIP = 'ef771fc02415a9249bfe86dd9d20afca7f6c130d';
 export const ROW_D_HARVEST = 'cms-row-d-open-harvest-2026-10-24-1445';
@@ -726,12 +727,19 @@ export function inspectCmsRowDOptions(doc, requests = {}) {
           push(false, 'control_not_available', { availabilityIssue: !enabled(pickers[0]) || !enabled(inputs[0])
             ? 'disabled_attribute_or_class' : 'hidden_control' }); continue;
         }
-        // The independent helper adds only current owned MonthPicker evidence;
-        // it cannot infer month semantics from this text-input structure.
+        // Component identity and owned month-panel observation are separate.
+        // Neither infers MonthPicker identity from this text-input structure.
         if (resolution) {
           push(false, resolution.reason, { calendarStructureObserved: true }); continue;
         }
-        const calendar = inspectCmsRowDCalendarEvidence(pickers[0], inputs[0], item, doc);
+        let calendar = inspectCmsRowDCalendarEvidence(pickers[0], inputs[0], item, doc);
+        if (!calendar.ok && calendar.calendarFramework === 'react') {
+          const panel = inspectCmsRowDCalendarPanel(pickers[0], inputs[0], item, doc);
+          if (panel.ok) calendar = { ok: true, calendarFramework: 'react',
+            calendarEvidenceSource: panel.calendarEvidenceSource, calendarPickerKind: panel.calendarPickerKind,
+            calendarMode: panel.calendarMode, calendarPanelKind: panel.calendarPanelKind,
+            calendarCellCount: panel.calendarCellCount };
+        }
         push(calendar.ok, calendar.ok ? 'read_only_calendar_preflight' : 'calendar_live_evidence_missing',
           mergeProbeData({ calendarStructureObserved: true }, calendar)); continue;
       }
@@ -1048,6 +1056,7 @@ export function buildCmsRowDOptionsProbeExpression(requests = {}) {
     `const ownedSelectDefinitionLabels = ${ownedSelectDefinitionLabels.toString()};`,
     `const ownedSelectVNodeLabels = ${ownedSelectVNodeLabels.toString()};`,
     `const inspectCmsRowDCalendarEvidence = ${inspectCmsRowDCalendarEvidence.toString()};`,
+    `const inspectCmsRowDCalendarPanel = ${inspectCmsRowDCalendarPanel.toString()};`,
     `const resolveCmsRowDOption = ${resolveCmsRowDOption.toString()};`,
     `const inspectCmsRowDOptions = ${inspectCmsRowDOptions.toString()};`,
     `return inspectCmsRowDOptions(globalThis.document, ${JSON.stringify(canonical)});`,

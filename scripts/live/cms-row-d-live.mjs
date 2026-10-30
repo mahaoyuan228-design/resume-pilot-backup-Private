@@ -1,10 +1,11 @@
 #!/usr/bin/env node
 /**
- * Explicitly invoked, inert CMS row D CDP probe. No fill adapter is installed.
+ * Explicitly invoked CMS row D CDP probe; inert by default. No fill adapter.
  * Network/Fetch guards are mandatory; only correlated keeper info/edit blocks
  * may preserve the inspection verdict. Every non-GET is still aborted.
- * The merged inspector never opens, focuses, blurs, emits events, reads current
- * values, or mutates controls. Originals therefore need no restoration writes.
+ * The inspector never interacts or reads current values. Explicit opt-in
+ * CALENDAR_PANEL_READONLY observes an owned popup through guarded CDP input,
+ * then verifies closure. No selected value is read or restored by writing.
  * No live PASS/support claim. Parent accepted PASS_PREFLIGHT/bookD at 575abee8;
  * the existing booked total stays 70. This runner makes no acceptance decision.
  */
@@ -14,6 +15,7 @@ import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { setTimeout as delay } from 'node:timers/promises';
 import { connectCdp, getJson } from '../../tools/live-harvest/cdp-client.mjs';
+import { observeCmsRowDCalendarPanel } from './cms-row-d-calendar-observation.mjs';
 import {
   ROW_D_FIELDS, ROW_D_PAGE, buildCmsRowDOptionsProbeExpression
 } from '../lib/cms-row-d-options.mjs';
@@ -69,6 +71,8 @@ export function readRowDProbeConfig(env = process.env, root = repoRoot, cwd = pr
   const timeoutText = env.STEP_TIMEOUT_MS || '10000';
   const optionsWaitText = env.OPTIONS_WAIT_MS ?? '2000';
   const optionsPollText = env.OPTIONS_POLL_MS ?? '100';
+  const calendarPanelText = env.CALENDAR_PANEL_READONLY ?? '0';
+  if (!['0', '1'].includes(calendarPanelText)) throw new TypeError('config_invalid');
   if (typeof portText !== 'string' || !/^\d{1,5}$/u.test(portText) || !validPort(Number(portText))) {
     throw new TypeError('config_invalid');
   }
@@ -87,7 +91,8 @@ export function readRowDProbeConfig(env = process.env, root = repoRoot, cwd = pr
   }
   buildCmsRowDOptionsProbeExpression(requests); // Fixed-error validation, before CDP attachment.
   return { port: Number(portText), timeoutMs: Number(timeoutText),
-    optionsWaitMs: Number(optionsWaitText), optionsPollMs: Number(optionsPollText), outDir, requests };
+    optionsWaitMs: Number(optionsWaitText), optionsPollMs: Number(optionsPollText), outDir, requests,
+    ...(calendarPanelText === '1' ? { calendarPanelReadOnly: true } : {}) };
 }
 
 export function selectRowDTarget(targets, port) {
@@ -470,7 +475,7 @@ const CALENDAR_DEFINITION_ISSUES = new Set([
 const CALENDAR_METADATA = new Set([
   'calendarStructureObserved', 'calendarFramework', 'calendarEvidenceSource',
   'calendarPickerKind', 'calendarFormat', 'calendarMode', 'calendarOpen',
-  'calendarPanelKind', 'calendarCellCount', 'calendarDefinitionIssue'
+  'calendarPanelKind', 'calendarCellCount', 'calendarDefinitionIssue', 'calendarEvidenceTiming'
 ]);
 
 // New compound-control evidence is a fixed own-data envelope. Unknown fields,
@@ -603,21 +608,27 @@ function cleanInspection(value) {
       && row.reason === 'calendar_live_evidence_missing'
       && metadata.calendarStructureObserved === true && CALENDAR_DEFINITION_ISSUES.has(issue));
     optional('calendarEvidenceSource', source => calendarSuccess
-      && ['owned_react_props', 'owned_calendar_vnodes', 'aria_controls_calendar_dom'].includes(source));
-    optional('calendarPickerKind', kind => calendarSuccess && kind === 'month');
+      && ['owned_react_props', 'owned_calendar_vnodes', 'aria_controls_calendar_dom', 'owned_react_portal'].includes(source));
+    optional('calendarPickerKind', kind => calendarSuccess && (kind === 'month'
+      || (kind === 'unverified' && metadata.calendarEvidenceSource === 'owned_react_portal')));
     optional('calendarFormat', format => calendarSuccess && ['YYYY-MM', 'YYYY/MM', 'YYYY年MM月'].includes(format));
     optional('calendarMode', mode => calendarSuccess && mode === 'month');
     optional('calendarOpen', open => calendarSuccess && typeof open === 'boolean');
     optional('calendarPanelKind', kind => calendarSuccess && ['month', 'date'].includes(kind));
     optional('calendarCellCount', cells => calendarSuccess && count(cells, 42));
+    optional('calendarEvidenceTiming', timing => calendarSuccess && metadata.calendarEvidenceSource === 'owned_react_portal'
+      && timing === 'observed_then_closed');
     if (calendarSuccess) {
       const source = metadata.calendarEvidenceSource;
-      const panel = source === 'aria_controls_calendar_dom';
-      if (metadata.calendarStructureObserved !== true || metadata.calendarPickerKind !== 'month'
+      const reactPortal = source === 'owned_react_portal';
+      const panel = source === 'aria_controls_calendar_dom' || reactPortal;
+      if (metadata.calendarStructureObserved !== true || metadata.calendarPickerKind !== (reactPortal ? 'unverified' : 'month')
         || metadata.calendarMode !== 'month' || !source
         || !['react', 'vue'].includes(metadata.calendarFramework)
         || (source === 'owned_react_props' && metadata.calendarFramework !== 'react')
         || (source === 'owned_calendar_vnodes' && metadata.calendarFramework !== 'vue')
+        || (reactPortal && (metadata.calendarFramework !== 'react' || metadata.calendarPanelKind !== 'month'
+          || metadata.calendarCellCount !== 12 || Object.hasOwn(row, 'calendarFormat') || Object.hasOwn(row, 'calendarOpen')))
         || (!panel && (!Object.hasOwn(metadata, 'calendarFormat')
           || Object.hasOwn(metadata, 'calendarPanelKind') || Object.hasOwn(metadata, 'calendarCellCount')))
         || (panel && (metadata.calendarOpen === false || !['month', 'date'].includes(metadata.calendarPanelKind)
@@ -678,13 +689,13 @@ export function rowDProbeEvidence(reason = 'not_started') {
 
 /** Test dependencies are explicit. Importing this module never attaches. */
 export async function runCmsRowDLive({ port = 9242, timeoutMs = 10000, requests = {},
-  optionsWaitMs = 2000, optionsPollMs = 100,
+  optionsWaitMs = 2000, optionsPollMs = 100, calendarPanelReadOnly = false,
   getTargets = getJson, connect = connectCdp, wait = delay, now = () => performance.now() } = {}) {
   const evidence = rowDProbeEvidence();
   let expression;
   try {
     if (!validPort(port) || !Number.isInteger(timeoutMs) || timeoutMs < 1000 || timeoutMs > 30000
-      || !validOptionsWait(optionsWaitMs) || !validOptionsPoll(optionsPollMs)) {
+      || !validOptionsWait(optionsWaitMs) || !validOptionsPoll(optionsPollMs) || typeof calendarPanelReadOnly !== 'boolean') {
       throw new TypeError('config_invalid');
     }
     expression = buildCmsRowDOptionsProbeExpression(requests);
@@ -869,6 +880,55 @@ export async function runCmsRowDLive({ port = 9242, timeoutMs = 10000, requests 
         if (!retryable(inspection)) { readiness.status = 'ready'; break; }
       }
     }
+    if (calendarPanelReadOnly && evidence.fields.some(row => row.key === 'englishExamDate'
+      && !row.ok && row.reason === 'calendar_live_evidence_missing' && row.calendarStructureObserved === true)) {
+      stage = 'calendar_panel';
+      const strictRead = async (calendarExpression, returnByValue = true) => {
+        if (!contextReady()) throw new Error('calendar_guard_blocked');
+        let reply;
+        try {
+          reply = await session.send('Runtime.evaluate', {
+            expression: calendarExpression, contextId: context.id, returnByValue, awaitPromise: false,
+            userGesture: false, throwOnSideEffect: true, timeout: timeoutMs
+          }, { timeoutMs, step: 'calendar_panel', closeOnTimeout: false });
+        } catch (error) { guard.commandFailure('Runtime.evaluate', error); throw error; }
+        if (!contextReady()) throw new Error('calendar_guard_blocked');
+        return reply;
+      };
+      const observed = await observeCmsRowDCalendarPanel({ session, read: strictRead,
+        readInspection: async () => {
+          const reply = await strictRead(expression);
+          if (reply?.exceptionDetails) throw new Error('calendar_strict_read_failed');
+          return cleanInspection(reply?.result?.value);
+        }, contextReady, guardReady: () => !guard.failed() && !guard.hasPendingCommands(),
+        nonGetCount: () => guard.traffic.observedNonGetCount + guard.traffic.interceptedNonGetCount,
+        commandFailure: (method, error) => guard.commandFailure(method, error), wait });
+      evidence.calendarObservation = observed.observation;
+      if (observed.observation.interactionStarted) evidence.restoration = observed.observation.panelClosed
+        ? 'calendar_panel_closed_no_value_writes' : 'calendar_panel_close_unverified';
+      if (observed.inspection && observed.finalInspection) {
+        const proof = observed.inspection.fields.find(row => row.key === 'englishExamDate');
+        const before = evidence.fields.find(row => row.key === 'englishExamDate');
+        const after = observed.finalInspection.fields.find(row => row.key === 'englishExamDate');
+        evidence.fields = observed.finalInspection.fields;
+        evidence.visibilityBasis = observed.finalInspection.visibilityBasis;
+        // The panel proof has an explicit observation time. Every other field,
+        // and the closed trigger's ownership/availability, use the final read.
+        if (proof?.ok && proof.calendarEvidenceSource === 'owned_react_portal'
+          && JSON.stringify(before) === JSON.stringify(after)) {
+          evidence.fields = evidence.fields.map(row => row.key === 'englishExamDate'
+            ? { ...proof, calendarEvidenceTiming: 'observed_then_closed' } : row);
+        }
+        evidence.ok = evidence.fields.every(row => row.ok || row.reason === 'calendar_live_evidence_missing');
+        evidence.reason = evidence.ok ? 'read_only_preflight' : 'row_d_preflight_incomplete';
+        readiness.finalUnavailableCount = unavailableCount(observed.finalInspection);
+      }
+      if (observed.observation.status === 'cleanup_failed') {
+        evidence.ok = false;
+        evidence.reason = 'calendar_panel_cleanup_failed';
+      }
+      if (!contextReady()) return evidence;
+    }
     stage = 'settlement';
     await wait(250); // Monitoring window only; not a restoration/support assertion.
     await guard.drain();
@@ -934,7 +994,7 @@ export async function runCmsRowDLive({ port = 9242, timeoutMs = 10000, requests 
 }
 
 export const HELP = `Usage: node scripts/live/cms-row-d-live.mjs
-Inert Never-Save row D CDP probe. No open/fill/Save/submit, no value reads.
+Never-Save row D CDP probe. Default: no open/fill/Save/submit, no value reads.
 neverSave=true liveSupportClaimed=false livePassClaimed=false writeStarted=false
 mutationAllowed=false valuesExposed=false probeOnly=true
 Visibility uses attributes only; stylesheet/layout visibility is not verified.
@@ -944,6 +1004,9 @@ Booked stays 70; this probe does not make another acceptance or booking decision
 PORT defaults to 9242; STEP_TIMEOUT_MS defaults to 10000 (1000..30000).
 OPTIONS_WAIT_MS defaults to 2000 (0..5000); OPTIONS_POLL_MS to 100 (25..500).
 Options wait uses bounded host reads only; missing dormant lists remain skips.
+CALENDAR_PANEL_READONLY=1 opts into owned trigger/header popup observation and close.
+Default 0. No month/day selection; all evaluations remain throwOnSideEffect=true.
+Popup traffic or unverified cleanup prevents retaining the new calendar proof.
 OUTDIR defaults to repo/_temp-scripts/cms-row-d-live-never-save.
 REQUESTS_FILE optionally names JSON wrapper IDs -> harvested labels/checkbox array.
 OUTDIR and REQUESTS_FILE must stay within repo/_temp-scripts, including symlinks.

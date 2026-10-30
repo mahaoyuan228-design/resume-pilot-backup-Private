@@ -265,6 +265,17 @@ function wireMonths(doc, options = {}) {
   const year = panel.querySelector('.el-date-picker__header-label');
   let active;
   const stats = { open: 0, cells: 0 };
+  const pick = monthIndex => {
+    if (active) active.value = `${year.textContent.match(/\d{4}/u)[0]}-${String(monthIndex + 1).padStart(2, '0')}`;
+    panel.style.display = 'none';
+  };
+  // Expose the native cell fixture's picker model to the MAIN-world bridge.
+  panel.__vue__ = {
+    selectionMode: 'month',
+    get year() { return Number(year.textContent.match(/\d{4}/u)[0]); },
+    handleMonthPick: pick,
+    $children: [],
+  };
   for (const id of ['start-date', 'end-date']) doc.getElementById(id + '-icon').addEventListener('click', () => {
     active = doc.getElementById(id); panel.style.display = 'block'; stats.open++;
   });
@@ -273,8 +284,8 @@ function wireMonths(doc, options = {}) {
   }
   for (const cell of panel.querySelectorAll('td')) cell.addEventListener('click', () => {
     const month = MONTHS.indexOf(cell.textContent.trim()) + 1;
-    active.value = `${year.textContent.match(/\d{4}/u)[0]}-${String(month).padStart(2, '0')}`;
-    panel.style.display = 'none'; stats.cells++;
+    pick(month - 1);
+    stats.cells++;
   });
   doc.addEventListener('keydown', event => { if (event.key === 'Escape') panel.style.display = 'none'; });
   return stats;

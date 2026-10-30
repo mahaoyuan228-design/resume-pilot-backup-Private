@@ -6,6 +6,8 @@ Element UI 2.15.14 is a selected offline fixture version, not a verified GTH pro
 
 No implementation code was copied from the ATS research repositories in the handover. In particular, no MPL-2.0 heuristics, AGPL, proprietary or unlicensed code was imported. Future derived source must carry `Derived from <repo>@<sha> <path> (<license>)` and retain its original copyright notice.
 
+PR-2 adds original project source under `src/content/controls/` and `src/background/controls-shadow.mjs`, with no new third-party runtime or test dependency. The ordered adapter registry and separated model/plan/result contracts follow the architectural direction described in the handover; no implementation from fill-all or ats-autofill-engine was copied. In particular, ats-autofill-engine's MPL-2.0 `src/ats/` and `src/core/heuristics/mozilla/` are not incorporated. The exact development dependencies, upstream commits, package paths, copyright notices and complete MIT/Apache license texts below continue to apply to the offline zoo only.
+
 ## Vue 2.7.16
 
 Repository: https://github.com/vuejs/vue

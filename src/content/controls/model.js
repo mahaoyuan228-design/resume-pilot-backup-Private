@@ -1,0 +1,109 @@
+// First-party L1 component inspection. Load in MAIN; never transfer framework
+// instances or handlers to the extension. No events, setters or network calls.
+(() => {
+  'use strict';
+  if (globalThis.ResumeControlModel?.version === 1) return;
+  const norm = value => String(value ?? '').normalize('NFKC').replace(/\s+/gu, ' ').trim();
+  function serial(value, depth = 0) {
+    if (value == null || ['string', 'number', 'boolean'].includes(typeof value)) return value ?? null;
+    if (depth > 6) return null;
+    if (value instanceof Date) return Number.isNaN(+value) ? null : value.toISOString();
+    if (typeof value?.format === 'function' && value?._isAMomentObject) return value.format('YYYY-MM-DD');
+    if (Array.isArray(value)) return value.slice(0, 1000).map(v => serial(v, depth + 1));
+    return null;
+  }
+  function optionsOf(raw, depth = 0) {
+    if (!Array.isArray(raw) || depth > 6) return [];
+    return raw.slice(0, 1000).map(option => {
+      const props = option?.componentOptions?.propsData || option?.props || option;
+      if (props == null || typeof props !== 'object') return { value: serial(props), label: norm(props), disabled: false };
+      const slot = option?.componentOptions?.children || option?.children;
+      const slotText = Array.isArray(slot) ? slot.map(child => child?.text || '').join('') : '';
+      return { value: serial(props.value ?? props.key), label: norm(props.label ?? props.title ?? (slotText || props.value)),
+        disabled: props.disabled === '' || !!props.disabled, children: optionsOf(props.children, depth + 1) };
+    });
+  }
+  function modelValue(value, valueFormat) {
+    if (Array.isArray(value)) return value.map(part => modelValue(part, valueFormat));
+    const format = { 'YYYY-MM': 'YYYY-MM', 'yyyy-MM': 'YYYY-MM', 'YYYY-MM-DD': 'YYYY-MM-DD', 'yyyy-MM-dd': 'YYYY-MM-DD' }[valueFormat];
+    if (format && value?._isAMomentObject && typeof value.format === 'function') return value.format(format);
+    if (format && value instanceof Date && !Number.isNaN(+value)) {
+      const date = [String(value.getFullYear()).padStart(4, '0'), String(value.getMonth() + 1).padStart(2, '0'), String(value.getDate()).padStart(2, '0')];
+      return date.slice(0, format === 'YYYY-MM' ? 2 : 3).join('-');
+    }
+    return serial(value);
+  }
+  const knownVue = /^(El(Input|Select|Option|Radio(Group)?|Checkbox(Group)?|DatePicker|Cascader)|A(Input|Textarea|Select|Radio(Group)?|Checkbox(Group)?|DatePicker|MonthPicker|Cascader))$/u;
+  function resolve(el) {
+    if (!el || el.nodeType !== 1) return {};
+    const seen = new Set();
+    let inputFallback;
+    for (let node = el, count = 0; node && count++ < 40; node = node.parentElement) {
+      let vm = node.__vue__;
+      for (let level = 0; vm && level++ < 20 && !seen.has(vm); vm = vm.$parent) {
+        seen.add(vm);
+        const name = vm.$options?.name || vm.$options?._componentTag || '';
+        if (knownVue.test(name) && (vm.$el === el || vm.$el?.contains?.(el) || el.contains(vm.$el))) {
+          const found = { vm, props: vm.$props || {}, element: vm.$el, componentName: name, framework: 'vue2' };
+          // Display/search inputs belong to their Select/DatePicker/Cascader.
+          // Keep a plain Input only if no owning complex component is present.
+          if (/^(?:ElInput|AInput|ATextarea)$/u.test(name)) inputFallback ||= found;
+          else return found;
+        }
+      }
+      // Vue 3 internals are read for diagnostics only. They cannot be mistaken
+      // for the Vue 2 library families supported by this slice.
+      const instance = node.__vueParentComponent || node.__vue_app__?._instance;
+      if (instance) {
+        const queue = [instance], visited = new Set();
+        for (let i = 0; i < queue.length && i < 200; i++) {
+          const item = queue[i];
+          if (!item || visited.has(item)) continue;
+          visited.add(item);
+          const root = item.subTree?.el;
+          if (root === el || root?.contains?.(el)) return { props: item.props || {}, element: root,
+            componentName: item.type?.name || '', framework: 'vue3' };
+          if (item.subTree?.component) queue.push(item.subTree.component);
+          for (const child of item.subTree?.children || []) if (child?.component) queue.push(child.component);
+        }
+      }
+      const fiberKey = Object.keys(node).find(key => key.startsWith('__reactFiber$'));
+      let fiber = fiberKey && node[fiberKey];
+      for (let level = 0; fiber && level++ < 30; fiber = fiber.return) {
+        const props = fiber.memoizedProps;
+        if (props && (Object.prototype.hasOwnProperty.call(props, 'value') || typeof props.onChange === 'function')) {
+          return { props, element: node, framework: 'react', componentName: fiber.type?.displayName || fiber.type?.name || '' };
+        }
+      }
+    }
+    return inputFallback || { element: el, framework: 'native', props: {} };
+  }
+  function inspect(el) {
+    const ref = resolve(el), { vm, props = {}, componentName = '' } = ref;
+    let lib = null, version = null;
+    if (ref.framework === 'vue2' && /^El/u.test(componentName)) {
+      lib = 'element-ui';
+      // A component name alone cannot distinguish a compatible version.
+      version = typeof globalThis.ELEMENT?.version === 'string' ? globalThis.ELEMENT.version : null;
+    } else if (ref.framework === 'vue2' && /^A/u.test(componentName)) {
+      lib = 'ant-design-vue';
+      version = typeof globalThis.antd?.version === 'string' ? globalThis.antd.version : null;
+    }
+    const root = ref.element || el;
+    const valueKey = Object.prototype.hasOwnProperty.call(props, 'value') ? 'value'
+      : Object.prototype.hasOwnProperty.call(props, 'modelValue') ? 'modelValue' : null;
+    let rawOptions = props.options;
+    if (!Array.isArray(rawOptions) && componentName === 'ElSelect') rawOptions = vm?.options;
+    if (!Array.isArray(rawOptions) && componentName === 'ASelect') rawOptions = vm?.$slots?.default;
+    const value = valueKey ? modelValue(props[valueKey], props.valueFormat) : null;
+    const input = root?.matches?.('input,textarea,select') ? root : root?.querySelector?.('input,textarea,select');
+    return { framework: ref.framework || 'native', lib, version, major: version ? Number(version.split('.')[0]) : null,
+      componentName, available: !!valueKey, value, options: optionsOf(rawOptions), valueFormat: props.valueFormat || null,
+      format: props.format || null, type: props.type || null, filterable: !!(props.filterable || props.showSearch),
+      remote: !!(props.remote || (props.showSearch && props.filterOption === false)),
+      lazy: !!(props.lazy || props.loadData || props.props?.lazy), disabled: !!(props.disabled || vm?.disabled || input?.disabled),
+      readonly: !!props.readonly, controlRoot: root,
+      versionEvidence: version ? 'page_library_export' : 'version_unconfirmed' };
+  }
+  globalThis.ResumeControlModel = Object.freeze({ version: 1, inspect, resolve, serial, optionsOf });
+})();

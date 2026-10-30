@@ -3,7 +3,9 @@
 // No implementation source from the ATS research repos is used.
 (() => {
   'use strict';
-  if (globalThis.ResumeControls?.version === 1 && globalThis.ResumeControls.revision === 2) return;
+  // Rebuild the adapter registry with the model upgrade: adapters may capture
+  // ResumeControlModel, so retaining revision 2 would retain its old resolver.
+  if (globalThis.ResumeControls?.version === 1 && globalThis.ResumeControls.revision === 3) return;
   const adapters = new Map();
   const norm = value => String(value ?? '').normalize('NFKC').replace(/\s+/gu, ' ').trim();
   const equal = (a, b) => Array.isArray(a) || Array.isArray(b)
@@ -201,7 +203,7 @@
     return clean({ probe, adapter: adapter?.name || null, model: adapter ? adapter.readModel(el, probe) : probe });
   }
   const helpers = Object.freeze({ norm, equal, empty, tick, makePlan, safeClick, nativeSet, check, clickAllowed, clean, validDate });
-  globalThis.ResumeControls = Object.freeze({ version: 1, revision: 2, mode: 'shadow', liveSupportClaimed: false,
+  globalThis.ResumeControls = Object.freeze({ version: 1, revision: 3, mode: 'shadow', liveSupportClaimed: false,
     register, createAdapter, resolve, inspect, plan, helpers, list: () => ordered().map(a => ({ name: a.name, lib: a.lib, type: a.type, priority: a.priority || 0 })),
     verify: (el, instruction, ctx) => resolve(el)?.verify(el, instruction, ctx) || Promise.resolve({ status: 'unsupported', reason: 'control_or_version_unconfirmed' }) });
 })();

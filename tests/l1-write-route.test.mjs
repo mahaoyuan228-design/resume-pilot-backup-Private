@@ -176,7 +176,10 @@ function syntheticUdSelect(h, { version = 'fixture-contract-1', readonly = false
   const props = { value: '', readonly, options: [{ value: 'name-code', label: '离线姓名' }] };
   const component = { displayName: 'UdSelect', library: { name: 'ud', version } };
   w.UD = { version };
-  input.__reactFiber$fixture = { type: component, memoizedProps: props, return: null };
+  const owner = { type: component, memoizedProps: props, return: null };
+  const host = { type: 'input', stateNode: input, memoizedProps: { value: '' }, return: owner };
+  owner.child = host;
+  input.__reactFiber$fixture = host;
   input.addEventListener('click', () => { portal.hidden = false; });
   option.addEventListener('click', () => { props.value = 'name-code'; input.value = '离线姓名'; portal.hidden = true; });
   return { input, props, portal };
@@ -199,6 +202,30 @@ test('ordinary RESUME_FILL reaches an input-backed ud-select only with the opt-i
     }
     assert.equal(f.portal.hidden, true, scenario);
   }
+});
+
+test('resume entry refreshes MAIN candidates after revealing an opt-in widget editor', async t => {
+  const h = await harness({ enabled: true,
+    html: '<header><input type="search" value="KEEP_HEADER"></header><section><p>简历摘要</p><button type="button">编辑简历</button></section>' });
+  t.after(() => h.dom.window.close());
+  h.window.eval(source('src/content/controls/resume-form.js'));
+  let edits = 0, widget;
+  h.window.document.querySelector('button').addEventListener('click', () => {
+    edits++;
+    h.window.document.querySelector('section').innerHTML = '<form><label for="name">姓名</label><input id="name"></form>';
+    widget = syntheticUdSelect(h);
+  });
+  const result = await h.fill();
+  assert.equal(result.ok, true, JSON.stringify(result));
+  const row = result.data.fields.find(field => field.path === 'fullName');
+  assert.equal(edits, 1);
+  assert.equal(row.adapter, 'ud-select');
+  assert.equal(row.adapterStatus, 'success');
+  assert.equal(widget.input.value, '离线姓名');
+  assert.equal(widget.props.value, 'name-code');
+  assert.equal(widget.portal.hidden, true);
+  assert.equal(h.window.document.querySelector('header input').value, 'KEEP_HEADER');
+  assert.ok(h.calls.filter(call => call.func?.name === 'readControlCandidatesInPage').length >= 2);
 });
 
 test('intent arrays project only individually confirmed entries into the opt-in route', async t => {

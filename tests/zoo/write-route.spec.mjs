@@ -22,7 +22,11 @@ for (const scenario of ['legacy', 'native', 'ud-select']) {
         portal.append(option); document.body.append(portal);
         const props = { value: '', options: [{ value: 'name-code', label: '离线姓名' }],
           onChange(value) { props.value = value; input.value = '离线姓名'; portal.hidden = true; } };
-        input.__reactFiber$zoo = { type: { displayName: 'UdSelect', library: { name: 'ud', version: 'fixture-contract-1' } }, memoizedProps: props, return: null };
+        const host = { type: 'input', stateNode: input };
+        const fiber = { type: { displayName: 'UdSelect', library: { name: 'ud', version: 'fixture-contract-1' } },
+          memoizedProps: props, child: host, return: null };
+        host.return = fiber;
+        input.__reactFiber$zoo = fiber;
         input.addEventListener('click', () => { portal.hidden = false; });
         option.addEventListener('click', () => props.onChange('name-code'));
       });

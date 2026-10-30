@@ -40,7 +40,9 @@ function boot([name, lib, componentName, fact], { legacy = false } = {}) {
     w[lib === 'ud' ? 'UD' : 'Phoenix'] = { version: 'fixture-contract-1' };
     props.onChange = update;
     const component = { displayName: componentName, library: { name: lib, version: 'fixture-contract-1' } };
-    el.__reactFiber$fixture = { type: component, memoizedProps: props, return: null };
+    const host = { type: 'div', stateNode: el, memoizedProps: {}, return: null };
+    el.__reactFiber$fixture = { type: component, memoizedProps: props, child: host, return: null };
+    host.return = el.__reactFiber$fixture;
     portal.setAttribute('role', type === 'date' ? 'dialog' : 'listbox');
     input.addEventListener('click', () => { portal.hidden = false; });
     const choice = (text, action) => {
@@ -59,8 +61,9 @@ function boot([name, lib, componentName, fact], { legacy = false } = {}) {
     } else portal.append(choice('本科', () => update('UG')));
   }
   if (legacy) {
-    w.ResumeControlModel = Object.freeze({ version: 1, inspect() { throw Error('old_model_retained'); } });
-    w.ResumeControls = Object.freeze({ version: 1, mode: 'shadow', list: () => [{ name: 'old_adapter' }] });
+    const revision = typeof legacy === 'number' ? legacy : undefined;
+    w.ResumeControlModel = Object.freeze({ version: 1, revision, inspect() { throw Error('old_model_retained'); } });
+    w.ResumeControls = Object.freeze({ version: 1, revision, mode: 'shadow', list: () => [{ name: 'old_adapter' }] });
   }
   for (const source of files) w.eval(source);
   return { dom, w, el, input, portal, props, effects, R: w.ResumeControls, fact: { value: fact } };
@@ -119,7 +122,8 @@ test('unknown ud/phoenix contract versions stay unsupported even if page and com
 
 test('owning React component wins over a nested host value; foreign portals are never clicked', async t => {
   const f = boot(contracts[2]); t.after(() => f.dom.window.close());
-  f.input.__reactFiber$host = { type: 'input', memoizedProps: { value: 'host display' }, return: f.el.__reactFiber$fixture };
+  f.input.__reactFiber$host = { type: 'input', stateNode: f.input,
+    memoizedProps: { value: 'host display' }, return: f.el.__reactFiber$fixture };
   assert.equal(f.R.resolve(f.input)?.name, 'ud-select');
   f.input.removeAttribute('aria-controls');
   const plan = f.R.plan(f.el, f.fact);
@@ -191,12 +195,12 @@ test('object-valued models and option codes cannot be flattened into empty value
   assert.equal(cascader.effects.length, 0);
 });
 
-test('R2 reinjection upgrades an old v1 MAIN model/registry and restores every adapter family', t => {
+test('reinjection upgrades an old v1 MAIN model/registry and restores every adapter family', t => {
   const f = boot(contracts[2], { legacy: true }); t.after(() => f.dom.window.close());
   assert.equal(f.w.ResumeControlModel.version, 1);
-  assert.equal(f.w.ResumeControlModel.revision, 2);
+  assert.equal(f.w.ResumeControlModel.revision, 3);
   assert.equal(f.R.version, 1);
-  assert.equal(f.R.revision, 2);
+  assert.equal(f.R.revision, 3);
   const names = new Set(f.R.list().map(adapter => adapter.name));
   for (const name of ['native-text', 'native-select', 'el-select', 'antdv1-month', ...contracts.map(row => row[0])]) {
     assert.equal(names.has(name), true, name);
@@ -205,6 +209,25 @@ test('R2 reinjection upgrades an old v1 MAIN model/registry and restores every a
   assert.equal(f.R.plan(f.el, f.fact).adapter, 'ud-select');
   f.props.value = { id: 'opaque-existing-value' };
   assert.equal(f.R.plan(f.el, f.fact).status, 'unsupported', 'upgraded model keeps the opaque-value protection');
+});
+
+test('revision 2 reinjection replaces captured models and adapters before a guarded UI write', async t => {
+  const f = boot(contracts[2], { legacy: 2 }); t.after(() => f.dom.window.close());
+  assert.equal(f.w.ResumeControlModel.revision, 3);
+  assert.equal(f.R.revision, 3);
+  assert.equal(f.R.list().some(adapter => adapter.name === 'old_adapter'), false);
+  for (const name of ['native-text', 'el-select', 'antdv1-month', ...contracts.map(row => row[0])]) {
+    assert.equal(f.R.list().some(adapter => adapter.name === name), true, name);
+  }
+  const plan = f.R.plan(f.el, f.fact), adapter = f.R.resolve(f.el);
+  assert.equal(plan.adapter, 'ud-select');
+  assert.equal((await adapter.write(f.el, plan)).reason, 'shadow_mode');
+  assert.equal(f.effects.length, 0, 'upgrade must preserve the default write gate');
+  const result = await adapter.write(f.el, plan, { allowWrite: true, check: async () => {} });
+  assert.equal(result.strategy, 'ui', 'writer closures must use the replacement model');
+  assert.equal((await f.R.verify(f.el, plan, { settleMs: 0 })).status, 'success');
+  assert.equal(f.props.value, 'UG');
+  assert.equal(f.input.value, '本科');
 });
 
 test('reinjection of the current revision is inert and preserves registered adapters', t => {

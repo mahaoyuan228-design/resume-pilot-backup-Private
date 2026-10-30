@@ -2,7 +2,7 @@
 // instances or handlers to the extension. No events, setters or network calls.
 (() => {
   'use strict';
-  if (globalThis.ResumeControlModel?.version === 1 && globalThis.ResumeControlModel.revision === 2) return;
+  if (globalThis.ResumeControlModel?.version === 1 && globalThis.ResumeControlModel.revision === 3) return;
   const norm = value => String(value ?? '').normalize('NFKC').replace(/\s+/gu, ' ').trim();
   function serial(value, depth = 0) {
     if (value == null || ['string', 'number', 'boolean'].includes(typeof value)) return value ?? null;
@@ -50,23 +50,55 @@
   }
   const knownVue = /^(El(Input|Select|Option|Radio(Group)?|Checkbox(Group)?|DatePicker|Cascader)|A(Input|Textarea|Select|Radio(Group)?|Checkbox(Group)?|DatePicker|MonthPicker|Cascader)|iSelect|CalendarPicker)$/u;
   const knownReact = /^(Ud|Phoenix)(Select|DatePicker|Cascader)$/u;
+  const valueControls = root => root?.nodeType === 1 ? [
+    ...(root.matches('input:not([type="hidden"]),textarea,select') ? [root] : []),
+    ...root.querySelectorAll('input:not([type="hidden"]),textarea,select')
+  ] : [];
+  // Model values belong to a control, never to a surrounding form. In
+  // particular, a parent React/Forms component can have a value prop for a
+  // different child. Containment alone does not prove that value's ownership.
+  function ownsControl(root, el, multiple = false) {
+    if (root?.nodeType !== 1 || root.ownerDocument !== el.ownerDocument) return false;
+    if (root !== el && !root.contains(el) && !el.contains(root)) return false;
+    const owned = valueControls(root), requested = valueControls(el);
+    if (!multiple && owned.length > 1) return false;
+    if (el !== root && el.contains(root)
+      && (requested.length !== owned.length || requested.some(control => !owned.includes(control)))) return false;
+    return true;
+  }
+  function fiberRoots(fiber) {
+    if (fiber?.stateNode?.nodeType === 1) return [fiber.stateNode];
+    const roots = [], queue = fiber?.child ? [fiber.child] : [], seen = new Set();
+    for (let i = 0; i < queue.length && i < 200; i++) {
+      const item = queue[i];
+      if (!item || seen.has(item)) continue;
+      seen.add(item);
+      if (item.sibling) queue.push(item.sibling);
+      if (item.stateNode?.nodeType === 1) roots.push(item.stateNode);
+      else if (item.child) queue.push(item.child);
+    }
+    // Incomplete or cyclic trees are not evidence of an isolated owner.
+    return queue.length > 200 ? [] : roots;
+  }
   function resolve(el) {
     if (!el || el.nodeType !== 1) return {};
     const seen = new Set();
-    let inputFallback, reactFallback, reactValueFallback, reactNamedFallback, vueFallback;
+    let inputFallback, frameworkFallback, reactValueFallback, reactNamedFallback, vueFallback;
     for (let node = el, count = 0; node && count++ < 40; node = node.parentElement) {
       let vm = node.__vue__;
       for (let level = 0; vm && level++ < 20 && !seen.has(vm); vm = vm.$parent) {
         seen.add(vm);
         const name = vm.$options?.name || vm.$options?._componentTag || '';
-        if (knownVue.test(name) && (vm.$el === el || vm.$el?.contains?.(el) || el.contains(vm.$el))) {
+        frameworkFallback ||= { element: el, framework: 'vue2', props: {} };
+        const multiple = /(?:Select|DatePicker|MonthPicker|CalendarPicker|Cascader|RadioGroup|CheckboxGroup)$/u.test(name);
+        if (knownVue.test(name) && ownsControl(vm.$el, el, multiple)) {
           const found = { vm, props: vm.$props || {}, element: vm.$el, componentName: name, framework: 'vue2' };
           // Display/search inputs belong to their Select/DatePicker/Cascader.
           // Keep a plain Input only if no owning complex component is present.
           if (/^(?:ElInput|AInput|ATextarea)$/u.test(name)) inputFallback ||= found;
           else return found;
         }
-        if (vm.$el === el || vm.$el?.contains?.(el) || el.contains(vm.$el)) vueFallback ||= {
+        if (ownsControl(vm.$el, el)) vueFallback ||= {
           vm, props: vm.$props || {}, element: vm.$el, componentName: name, framework: 'vue2'
         };
       }
@@ -74,13 +106,14 @@
       // for the Vue 2 library families supported by this slice.
       const instance = node.__vueParentComponent || node.__vue_app__?._instance;
       if (instance) {
+        frameworkFallback ||= { element: el, framework: 'vue3', props: {} };
         const queue = [instance], visited = new Set();
         for (let i = 0; i < queue.length && i < 200; i++) {
           const item = queue[i];
           if (!item || visited.has(item)) continue;
           visited.add(item);
           const root = item.subTree?.el;
-          if (root === el || root?.contains?.(el)) return { props: item.props || {}, element: root,
+          if (ownsControl(root, el)) return { props: item.props || {}, element: root,
             componentName: item.type?.name || '', framework: 'vue3' };
           if (item.subTree?.component) queue.push(item.subTree.component);
           for (const child of item.subTree?.children || []) if (child?.component) queue.push(child.component);
@@ -88,13 +121,15 @@
       }
       const fiberKey = Object.keys(node).find(key => key.startsWith('__reactFiber$'));
       let fiber = fiberKey && node[fiberKey];
+      if (fiber) frameworkFallback ||= { element: el, framework: 'react', props: {} };
       for (let level = 0; fiber && level++ < 30; fiber = fiber.return) {
-        reactFallback ||= { props: fiber.memoizedProps || {}, element: node, framework: 'react',
-          componentName: fiber.type?.displayName || fiber.type?.name || '', componentType: fiber.type };
         const props = fiber.memoizedProps;
         if (props && (Object.prototype.hasOwnProperty.call(props, 'value') || typeof props.onChange === 'function')) {
           const componentName = fiber.type?.displayName || fiber.type?.name || '';
-          const found = { props, element: node, framework: 'react', componentName, componentType: fiber.type };
+          const roots = fiberRoots(fiber);
+          const root = roots.length === 1 ? roots[0] : null;
+          if (!root || !ownsControl(root, el)) continue;
+          const found = { props, element: root, framework: 'react', componentName, componentType: fiber.type };
           // A host input's value is not its owning Select/Formily field model.
           // Prefer an explicit reviewed component identity up the same fiber.
           if (knownReact.test(componentName)) return found;
@@ -103,7 +138,7 @@
         }
       }
     }
-    return inputFallback || vueFallback || reactNamedFallback || reactValueFallback || reactFallback
+    return inputFallback || vueFallback || reactNamedFallback || reactValueFallback || frameworkFallback
       || { element: el, framework: 'native', props: {} };
   }
   function inspect(el) {
@@ -149,5 +184,5 @@
       multiple: !!props.multiple, separator: typeof props.separator === 'string' ? props.separator : null,
       versionEvidence: version ? 'page_library_export' : 'version_unconfirmed' };
   }
-  globalThis.ResumeControlModel = Object.freeze({ version: 1, revision: 2, inspect, resolve, serial, optionsOf });
+  globalThis.ResumeControlModel = Object.freeze({ version: 1, revision: 3, inspect, resolve, serial, optionsOf });
 })();

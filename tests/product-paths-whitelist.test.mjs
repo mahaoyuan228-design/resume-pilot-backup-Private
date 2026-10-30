@@ -26,9 +26,9 @@ describe('productPaths ↔ WHITELIST ↔ build allowlists', () => {
   const whitelist = JSON.parse(readFileSync(resolve(root, 'WHITELIST.json'), 'utf8'));
   const productPaths = whitelist.productPaths;
 
-  it('productPaths is a non-empty array with expected count (145 @ v0.1.4.9)', () => {
+  it('productPaths is a non-empty array with expected count (146 @ v0.1.4.9)', () => {
     assert.ok(Array.isArray(productPaths), 'productPaths must be array');
-    assert.equal(productPaths.length, 145, `productPaths length ${productPaths.length} ≠ 145`);
+    assert.equal(productPaths.length, 146, `productPaths length ${productPaths.length} ≠ 146`);
     assert.equal(whitelist.version, '0.1.4.9');
   });
 

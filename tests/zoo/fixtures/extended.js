@@ -49,7 +49,12 @@ window.createExtendedZoo = function createExtendedZoo(name, variant) {
       } };
     const component = { displayName: `${family === 'ud' ? 'Ud' : 'Phoenix'}${kind === 'date' ? 'DatePicker' : kind === 'select' ? 'Select' : 'Cascader'}`,
       library: { name: family, version: 'fixture-contract-1' } };
-    root.__reactFiber$zoo = { type: component, memoizedProps: props, return: null };
+    // A synthetic composite must identify its actual owned host root. Props on
+    // a surrounding multi-field form are not evidence for a child's value.
+    const host = { type: 'div', stateNode: root };
+    const fiber = { type: component, memoizedProps: props, child: host, return: null };
+    host.return = fiber;
+    root.__reactFiber$zoo = fiber;
     if (existing) input.value = '原有值';
     input.disabled = props.disabled;
     const optionNode = (option, action) => {

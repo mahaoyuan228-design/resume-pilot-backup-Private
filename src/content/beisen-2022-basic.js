@@ -388,6 +388,23 @@
     };
   }
 
+  async function prepareForm(options = {}) {
+    const ready = () => pageAllowed(options) && TEXT_LABELS.every(label => classifyField(label).ready);
+    if (!pageAllowed(options)) return { ok: false, status: 'manual', reason: 'wrong_page', entryAttempted: false, writeAttempted: false, liveSupportClaimed: false };
+    if (!globalThis.ResumeFormFlow) return { ok: ready(), status: ready() ? 'ready' : 'unsupported',
+      reason: ready() ? 'form_ready' : 'form_not_ready', entryAttempted: false, writeAttempted: false, liveSupportClaimed: false };
+    return globalThis.ResumeFormFlow.ensure({ ready, allowEntry: options.allowEntry !== false,
+      timeoutMs: options.readinessTimeoutMs ?? 2000, check: async () => {
+        if (!pageAllowed(options)) throw Error('form_document_changed');
+        await globalThis.ResumeProfileWriteContext?.check(false);
+        if (options.profileBinding) {
+          let verdict;
+          try { verdict = await chrome.runtime.sendMessage({ type: 'RESUME_PROFILE_BINDING_CHECK', profileBinding: options.profileBinding }); } catch {}
+          if (verdict?.allowed !== true) throw Error('profile_binding_changed');
+        }
+      } });
+  }
+
   async function fillBasic(rawValues = {}, options = {}) {
     if (!pageAllowed(options)) {
       return {
@@ -455,6 +472,12 @@
       values = plan.values;
     }
 
+    if (globalThis.ResumeFormFlow) {
+      const readiness = await prepareForm({ ...options, profileBinding: rawValues.profileBinding || options.profileBinding });
+      if (!readiness.ok) return { ok: false, siteId: SITE_ID, status: readiness.status, reason: 'form_not_ready',
+        readiness, href: location.href, results: [], writeAttempted: false, saved: false,
+        skippedSave: true, liveSupportClaimed: false };
+    }
     const textPlan = [
       ['姓名', values.fullName],
       ['手机号码', values.mobile],
@@ -581,6 +604,7 @@
 
   const api = {
     siteId: SITE_ID,
+    prepareForm,
     liveSupportClaimed: false,
     TEXT_LABELS,
     ITEM_SEL,

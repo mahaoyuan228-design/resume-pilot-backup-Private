@@ -193,7 +193,7 @@ export function createFeishuAtsxBasicAutoRunner({ api = globalThis.chrome, verif
     await bounded(() => dispatchBoundSource(
       api.storage.local,
       binding,
-      () => api.scripting.executeScript({ target: { tabId: tab.id }, files: ['src/content/feishu-atsx-basic.js'] }),
+      () => api.scripting.executeScript({ target: { tabId: tab.id }, files: ['src/content/controls/resume-form.js', 'src/content/feishu-atsx-basic.js'] }),
       lifecycleOptions
     ), 15000);
 
@@ -247,6 +247,24 @@ export function createFeishuAtsxBasicAutoRunner({ api = globalThis.chrome, verif
     report.steps.push({ find: found.kind, tabId: found.tab.id, url: found.tab.url || null });
     await focusTab(found.tab);
     report.steps.push('focused_feishu_atsx_tab');
+    await bounded(() => api.scripting.executeScript({
+      target: { tabId: found.tab.id },
+      files: ['src/content/controls/resume-form.js', 'src/content/feishu-atsx-basic.js']
+    }), 15000);
+    const prepared = await bounded(() => api.scripting.executeScript({
+      target: { tabId: found.tab.id },
+      func: () => globalThis.ResumeFeishuAtsxBasic.prepareForm({ readinessTimeoutMs: 2000 })
+    }), 10000);
+    const formReadiness = prepared?.[0]?.result;
+    report.formReadiness = formReadiness;
+    if (formReadiness?.ok !== true) {
+      report.ok = false;
+      report.status = formReadiness?.status === 'unsupported' ? 'unsupported' : 'manual';
+      report.reason = 'form_not_ready';
+      report.helpNeeded = true;
+      await api.storage.local.set({ resumeFeishuAtsxBasicAutoRun: report });
+      return report;
+    }
     let probeResult = await probe(found.tab.id);
     if (!probeResult.ok) {
       for (let i = 0; i < 8 && !probeResult.ok; i += 1) {

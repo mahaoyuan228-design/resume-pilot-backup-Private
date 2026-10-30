@@ -1729,6 +1729,126 @@ test('typed month component and owned calendar panels survive sanitizing without
   }
 });
 
+function reactPortalSuccessMetadata() {
+  return { ok: true, status: 'observed', reason: 'read_only_calendar_preflight',
+    calendarStructureObserved: true, calendarFramework: 'react',
+    calendarEvidenceSource: 'owned_react_portal', calendarPickerKind: 'unverified',
+    calendarMode: 'month', calendarPanelKind: 'month', calendarCellCount: 12 };
+}
+
+for (const timing of [undefined, 'observed_then_closed']) {
+  test(`typed React portal shape survives cleaning with honest picker identity (timing=${timing})`, async () => {
+    const metadata = reactPortalSuccessMetadata();
+    if (timing !== undefined) metadata.calendarEvidenceTiming = timing;
+    const evidence = await fakeCdp({ evaluate: () => secondaryInspection('16_65_0', metadata) }).run();
+    assertSafety(evidence);
+    assert.equal(evidence.probeCompleted, true);
+    const row = evidence.fields.find(field => field.key === 'englishExamDate');
+    assert.equal(row.ok, true);
+    assert.equal(row.calendarPickerKind, 'unverified');
+    assert.equal(row.calendarEvidenceSource, 'owned_react_portal');
+    assert.equal(row.calendarEvidenceTiming, timing);
+    assert.equal(Object.hasOwn(row, 'calendarFormat'), false);
+    assert.equal(Object.hasOwn(row, 'calendarOpen'), false);
+  });
+}
+
+for (const [name, change] of [
+  ['forged MonthPicker kind', metadata => { metadata.calendarPickerKind = 'month'; }],
+  ['date panel', metadata => { metadata.calendarPanelKind = 'date'; metadata.calendarCellCount = 42; }],
+  ['extra month format', metadata => { metadata.calendarFormat = 'YYYY-MM'; }],
+  ['extra open state', metadata => { metadata.calendarOpen = true; }],
+  ['Vue framework mismatch', metadata => { metadata.calendarFramework = 'vue'; }],
+  ['unknown evidence timing', metadata => { metadata.calendarEvidenceTiming = PRIVATE; }],
+  ['internal panel ownership', metadata => { metadata.calendarPanelOwned = true; }],
+  ['internal panel state', metadata => { metadata.calendarPanelState = 'month'; }],
+  ['internal action target', metadata => { metadata.calendarPanelTarget = PRIVATE; }]
+]) {
+  test(`React portal cleaner rejects ${name}`, async () => {
+    const metadata = reactPortalSuccessMetadata(); change(metadata);
+    const evidence = await fakeCdp({ evaluate: () => secondaryInspection('16_65_0', metadata) }).run();
+    assertSafety(evidence);
+    assert.equal(evidence.reason, 'inspection_failed');
+    assert.equal(evidence.probeCompleted, false);
+    assert.deepEqual(evidence.fields, []);
+  });
+}
+
+test('closed-panel observation merges the latest unrelated field failure instead of the candidate snapshot', async () => {
+  const dom = syntheticDom();
+  let initial;
+  try { initial = clone(dom.window.eval(buildCmsRowDOptionsProbeExpression())); }
+  finally { dom.window.close(); }
+  for (const id of ['13_100701_0', '13_100702_0']) {
+    const row = initial.fields.find(field => field.wrapperId === id);
+    delete row.controlKindIssue;
+    Object.assign(row, locationSuccessMetadata());
+  }
+  const initialCalendar = initial.fields.find(field => field.key === 'englishExamDate');
+  Object.assign(initialCalendar, { calendarStructureObserved: true, calendarFramework: 'react',
+    calendarDefinitionIssue: 'month_component_unrecognized' });
+  initial.ok = true; initial.reason = 'read_only_preflight';
+  const candidate = clone(initial);
+  const candidateCalendar = candidate.fields.find(field => field.key === 'englishExamDate');
+  delete candidateCalendar.calendarDefinitionIssue;
+  Object.assign(candidateCalendar, reactPortalSuccessMetadata());
+  const final = clone(initial);
+  const drift = noDocumentInspection().fields.find(field => field.wrapperId === '13_43_0');
+  drift.reason = 'control_not_available'; drift.availabilityIssue = 'hidden_control';
+  final.fields[final.fields.findIndex(field => field.wrapperId === '13_43_0')] = drift;
+  final.ok = false; final.reason = 'row_d_preflight_incomplete';
+  let fullReads = 0, state = 'closed', action, geometryNode;
+  const nodeIds = { open: 11, month_header: 12, close_focus: 13, close_blank: 14 };
+  const fake = fakeCdp({ onSend(method, params) {
+    if (method === 'Runtime.evaluate') {
+      assert.equal(params.throwOnSideEffect, true);
+      assert.equal(params.userGesture, false);
+      assert.equal(params.awaitPromise, false);
+      const actionMatch = params.expression.match(/return inspect\(picker, input, item, doc, "([a-z_]+)"\)/u);
+      if (!actionMatch) {
+        fullReads += 1;
+        return { result: { value: clone(fullReads === 1 ? initial : fullReads === 2 ? candidate : final) } };
+      }
+      action = actionMatch[1];
+      if (action !== 'evidence') return { result: { type: 'object', subtype: 'node', objectId: `calendar-node-${nodeIds[action]}` } };
+      const value = state === 'closed' ? { ok: false, calendarFramework: 'react',
+        calendarDefinitionIssue: 'calendar_portal_hidden', calendarPanelState: 'closed' }
+        : state === 'date' ? { ok: false, calendarFramework: 'react', calendarDefinitionIssue: 'calendar_panel_shape_unsupported',
+          calendarPanelOwned: true, calendarPanelState: 'date' }
+          : { ok: true, calendarFramework: 'react', calendarPanelOwned: true, calendarPanelState: 'month' };
+      return { result: { value } };
+    }
+    if (method === 'DOM.requestNode') return { nodeId: Number(params.objectId.split('-').at(-1)) };
+    if (method === 'DOM.getBoxModel') {
+      geometryNode = params.nodeId;
+      return { model: { content: [10, 10, 30, 10, 30, 30, 10, 30] } };
+    }
+    if (method === 'Page.getLayoutMetrics') return { cssVisualViewport: {
+      pageX: 0, pageY: 0, clientWidth: 100, clientHeight: 100, scale: 1 } };
+    if (method === 'DOM.getNodeForLocation') return { backendNodeId: geometryNode + 100 };
+    if (method === 'DOM.describeNode') return { node: { backendNodeId: params.nodeId + 100 } };
+    if (method === 'Input.dispatchMouseEvent' && params.type === 'mouseReleased') {
+      state = action === 'open' ? 'date' : action === 'month_header' ? 'month' : 'closed';
+    }
+    if (method === 'Input.dispatchKeyEvent' && params.type === 'keyUp') state = 'closed';
+  } });
+  const evidence = await fake.run({ calendarPanelReadOnly: true });
+  assert.equal(fullReads, 3, 'initial, opened-panel candidate and closed-panel final reads');
+  assert.equal(evidence.calendarObservation.status, 'observed');
+  assert.equal(evidence.calendarObservation.panelClosed, true);
+  assert.equal(evidence.restoration, 'calendar_panel_closed_no_value_writes');
+  assertSafety({ ...evidence, restoration: 'not_needed_no_interaction' });
+  assert.equal(evidence.ok, false, 'calendar evidence cannot conceal another field becoming unavailable');
+  assert.equal(evidence.reason, 'row_d_preflight_incomplete');
+  assert.equal(evidence.fields.find(field => field.wrapperId === '13_43_0').reason, 'control_not_available');
+  const calendar = evidence.fields.find(field => field.key === 'englishExamDate');
+  assert.equal(calendar.ok, true);
+  assert.equal(calendar.calendarPickerKind, 'unverified');
+  assert.equal(calendar.calendarEvidenceTiming, 'observed_then_closed');
+  assert.equal(evidence.traffic.commandFailed, false);
+  assert.equal(evidence.traffic.observedNonGetCount, 0);
+});
+
 test('new typed preflights can complete a modeled snapshot without new acceptance flags', async () => {
   const dom = syntheticDom();
   try {
@@ -2064,6 +2184,18 @@ test('config rejects bad ports/timeouts, path escapes, unknown labels, and overs
     const input = path.join(temporary, 'invalid-requests.json');
     fs.writeFileSync(input, data, 'utf8');
     assert.throws(() => readRowDProbeConfig({ REQUESTS_FILE: input }, root, root));
+  }
+});
+
+test('read-only calendar panel config is explicitly opt-in', () => {
+  const defaults = readRowDProbeConfig({}, root, root);
+  const disabled = readRowDProbeConfig({ CALENDAR_PANEL_READONLY: '0' }, root, root);
+  const enabled = readRowDProbeConfig({ CALENDAR_PANEL_READONLY: '1' }, root, root);
+  assert.equal(Object.hasOwn(defaults, 'calendarPanelReadOnly'), false);
+  assert.equal(Object.hasOwn(disabled, 'calendarPanelReadOnly'), false);
+  assert.equal(enabled.calendarPanelReadOnly, true);
+  for (const value of ['', 'true', 'false', 'yes', '2', '01', 1, true, {}]) {
+    assert.throws(() => readRowDProbeConfig({ CALENDAR_PANEL_READONLY: value }, root, root), TypeError);
   }
 });
 

@@ -1,5 +1,56 @@
 # CMS row D Never-Save probe
 
+## Calendar panel observation (after `66c9d6f2`)
+
+The default probe remains inert. Set `CALENDAR_PANEL_READONLY=1` to opt into
+the English exam calendar's bounded open, month-header observation and close
+cycle. This is the only popup interaction added by this revision. The older
+version notes below describe their original inert behavior.
+
+```powershell
+$env:PORT='9239'
+$env:CALENDAR_PANEL_READONLY='1'
+$env:OUTDIR=(Join-Path (Get-Location) '_temp-scripts\cms-row-d-calendar-probe')
+node scripts/live/cms-row-d-live.mjs
+```
+
+Every evaluation still uses `throwOnSideEffect:true`, `userGesture:false` and
+`awaitPromise:false`. Browser input is separate and guarded: the exact current
+trigger input may be clicked, followed by its uniquely owned month header.
+The helper authenticates the committed React host, forward current-tree links,
+HostPortal ancestry and its container. A unique global popup is insufficient.
+Before each click, a document-coordinate hit test must match the exact target;
+mouse events use viewport coordinates. Overlays and replaced targets refuse
+the action. No input value, selected date, cell text or component state is read.
+No month/day cell is clicked and no value is written or saved.
+
+The proof is a uniquely owned month panel with 12 cells. A DatePicker can keep
+42 background day cells mounted beneath this panel. This observation reports
+`calendarPickerKind=unverified`; it does not establish MonthPicker identity or
+calendar fill support. Minified type names and date-only formats remain
+insufficient definition evidence.
+
+Cleanup uses an authenticated calendar focus plus Escape, with an exact static
+label-container click as a fallback. The popup must then be confirmed closed
+by another strict read. A delayed Escape close can invalidate the fallback
+target; only a fresh closed snapshot accepts that race. Unverified cleanup
+fails the probe. Any new non-GET during this cycle prevents retaining its
+calendar proof; the existing network guard still blocks the request. Protocol
+command failures remain hard failures. Previously open popups are left alone.
+
+After closing, the full inspector runs again. Other fields use that final
+snapshot; a prior success cannot hide later drift. The retained calendar proof
+is explicitly marked `calendarEvidenceTiming=observed_then_closed`, with
+`calendarObservation.panelClosed=true`. This records the earlier observation,
+not a currently open popup or unchanged DOM identity across the cycle.
+`restoration=calendar_panel_closed_no_value_writes` describes verified popup
+cleanup without any selected-value restoration write.
+
+Never-Save and all existing false write/mutation/value/support/PASS flags stay
+unchanged. Booked stays 70; no new book D or support claim is made. The
+location diagnostic's source hashes include both new calendar dependencies;
+its location logic and guard decisions remain unchanged.
+
 Original runner baseline: `53791dfe6da2a6ae2b627b8e9b945ca0d411fefc` (`codex/cms-row-d-live-never-save-r1`).
 
 Side-effect R2 starts at `c32f2fda429f8f32ab318e9fdf0c2fe69f52a386` on

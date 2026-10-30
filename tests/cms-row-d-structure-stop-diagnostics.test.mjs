@@ -169,7 +169,8 @@ test('success schema and final guard remain unchanged; reviewed options/runner/C
   for(const file of Object.keys(SOURCE_PINS)){
     const current=fs.readFileSync(path.join(ROOT,file),'utf8').replace(/\r\n/gu,'\n');
     if(file==='scripts/live/cms-row-d-live.mjs'||file==='scripts/lib/cms-row-d-options.mjs'
-      ||file==='scripts/lib/cms-row-d-calendar.mjs'){
+      ||file==='scripts/lib/cms-row-d-calendar.mjs'||file==='scripts/lib/cms-row-d-calendar-panel.mjs'
+      ||file==='scripts/live/cms-row-d-calendar-observation.mjs'){
       // Keep the reviewed options/runner dependencies' deployed CRLF bytes pinned.
       assert.equal(createHash('sha256').update(current.replace(/\n/gu,'\r\n')).digest('hex'),SOURCE_PINS[file]);
       continue;

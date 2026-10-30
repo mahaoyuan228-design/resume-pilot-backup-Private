@@ -10,9 +10,11 @@ import { runCmsRowDLive, readRowDProbeConfig, rowDTemporaryPath, selectRowDTarge
 import { connectCdp, getJson } from '../../tools/live-harvest/cdp-client.mjs';
 
 export const SOURCE_PINS = Object.freeze({
-  'scripts/live/cms-row-d-live.mjs':'2c7dfdc44c64c9c4c77e42b3d244df60fcef0ed7bc9549b9c6ebf9b7c32f1bc2',
-  'scripts/lib/cms-row-d-options.mjs':'6298e9c5299a3c0b72e212e6d636c74ce40966d3b7a06f8939c7c534e80a9734',
+  'scripts/live/cms-row-d-live.mjs':'b8640c43b6864d0176df63467290919461440dc52203042f7581d8382ba2ceae',
+  'scripts/live/cms-row-d-calendar-observation.mjs':'e46514235cd46c846e9dbab7d6b82bd35b9cf4da014942e6ed5049f712a54939',
+  'scripts/lib/cms-row-d-options.mjs':'aa572825e442a3210e7b7c4653deed289b976b8b282c78cc37b4a57f341805e2',
   'scripts/lib/cms-row-d-calendar.mjs':'d325649ae05ec2484b748deb6babf5928a4116c5919c55d5fb534de44fef406f',
+  'scripts/lib/cms-row-d-calendar-panel.mjs':'d9196ed003b1338bc25e933e59181924d3a31a7eedf4f226dba7c8398732b675',
   'tools/live-harvest/cdp-client.mjs':'dda94f460de513c549250cba9a26ec5046a5487397514dc2734a3e37fa8afe35',
   'tools/live-harvest/errors.mjs':'528cefd73f5dcc3a0ecec732a09aac394a7bfd1e75196d514517fa32d46d3e9c'
 });

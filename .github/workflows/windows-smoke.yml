@@ -1,0 +1,42 @@
+name: Windows clean-checkout smoke
+
+on:
+  pull_request:
+  push:
+    branches: [cursor/expand-night-ats-f861]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows-smoke:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        # Offline ZIP tests also spawn powershell.exe; keep its module path native.
+        shell: powershell
+    steps:
+      - name: Preserve frozen source bytes
+        run: git config --global core.autocrlf false
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - name: Install locked dependencies
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Build internal package
+        run: ./scripts/build-internal.ps1
+      - name: Build paid package (test configuration only)
+        run: ./scripts/build-paid.ps1 -LicenseServiceUrl https://license-ci.invalid
+      - name: Paid service-worker smoke (no browser)
+        run: node scripts/build-paid-smoke.mjs
+      - name: Offline paid ZIP, license, L1 and whitelist tests
+        run: npm run test:windows-smoke
+      - name: Record scope
+        if: always()
+        run: Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Value 'liveSupportClaimed=false; Never-Save; synthetic/offline checks only.'

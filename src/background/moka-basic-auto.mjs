@@ -1,6 +1,7 @@
 // Moka basic auto (tiny). Mirror CITICS_BASIC_AUTO / FEISHU_ATSX_BASIC_AUTO shape.
 // Fill-without-save only. Never clicks 保存/提交/投递. Isolated siteId: moka.
 // Live resume edit path is login-walled; host match only (*.mokahr.com).
+import {requireAutoFormReady,autoFormReadinessFailure} from './auto-form-readiness.mjs';
 import {captureProfileBinding,assertProfileBinding,canonicalProfileHash,
   dispatchBoundSource} from '../profile/profile-lifecycle.js';
 import {planMokaBasicFromProfile,isMokaHost} from '../content/moka-profile-map.mjs';
@@ -193,6 +194,8 @@ export function createMokaBasicAutoRunner({ api = globalThis.chrome, verifyBefor
       lifecycleOptions
     ), 15000);
 
+    await requireAutoFormReady(api, tab.id);
+
     const replies = await bounded(() => dispatchBoundSource(
       api.storage.local,
       binding,
@@ -242,6 +245,7 @@ export function createMokaBasicAutoRunner({ api = globalThis.chrome, verifyBefor
     const found = await findTab(sender?.tab?.id, { openIfMissing, page: target.page });
     report.steps.push({ find: found.kind, tabId: found.tab.id, url: found.tab.url || null });
     await focusTab(found.tab);
+    report.formReadiness = await requireAutoFormReady(api, found.tab.id);
     report.steps.push('focused_moka_tab');
     let probeResult = await probe(found.tab.id);
     if (!probeResult.ok) {
@@ -305,6 +309,7 @@ export function createMokaBasicAutoRunner({ api = globalThis.chrome, verifyBefor
       const payload = {
         ok: false,
         reason,
+        ...autoFormReadinessFailure(error),
         helpNeeded: help,
         helpUrl,
         helpReason: error?.helpReason || (help ? HELP_HINT : ''),

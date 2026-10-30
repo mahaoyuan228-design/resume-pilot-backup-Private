@@ -30,13 +30,14 @@ const fixture = () => ({
   ],
 });
 
-async function harness({ trialResponse, statusOutcome = 'verified_preexisting', patchTrial, profile } = {}) {
+async function harness({ trialResponse, statusOutcome = 'verified_preexisting', patchTrial, profile,
+  formReadiness = [{ status: 'ready', reason: 'visible_editable_form' }] } = {}) {
   const data = {
     resumeProfile: profile || fixture(),
     resumeProfileLifecycle: { version: 1, epoch, state: 'ready' },
   };
   const clone = (value) => (value === undefined ? undefined : structuredClone(value));
-  const stats = { trial: 0, status: 0, inject: 0, probe: 0, trialProfile: null };
+  const stats = { trial: 0, status: 0, inject: 0, probe: 0, trialProfile: null, readiness: 0 };
   const storage = {
     get: async (keys) =>
       keys === null
@@ -131,8 +132,12 @@ async function harness({ trialResponse, statusOutcome = 'verified_preexisting', 
     scripting: {
       executeScript: async (request) => {
         if (request.files) {
-          stats.inject += 1;
+          if (request.files.length !== 1 || request.files[0] !== 'src/content/controls/resume-form.js') stats.inject += 1;
           return [];
+        }
+        if (String(request.func).includes('ResumeFormFlow') && String(request.func).includes('readiness')) {
+          const result = formReadiness[Math.min(stats.readiness++, formReadiness.length - 1)];
+          return [{ frameId: 0, result: clone(result) }];
         }
         if (typeof request.func === 'function' && request.world === 'MAIN') {
           stats.probe += 1;
@@ -161,6 +166,57 @@ async function harness({ trialResponse, statusOutcome = 'verified_preexisting', 
     lifecycleOptions: { locks: { request: async (_n, _o, work) => work() }, cryptoImpl: globalThis.crypto },
   });
   return { invoke, stats, data, autoSender, badSender };
+}
+
+for (const [status, reason] of [['login_required', 'visible_login_wall'],
+  ['form_not_ready', 'form_loading'], ['manual', 'required_control_unrecognized']]) {
+  for (const mode of ['readiness', 'fill']) test(`GTH_BASIC_AUTO ${mode} stops on ${status} despite ok:true`, async () => {
+    const verdict = { ok: true, status, reason, liveSupportClaimed: false };
+    const h = await harness({ formReadiness: [verdict] });
+    const result = await h.invoke({ type: 'GTH_BASIC_AUTO', mode, educationIndex: 5, originConfirmed: true });
+    assert.equal(result.ok, false);
+    assert.equal(result.reason, reason);
+    assert.equal(result.status, status);
+    assert.deepEqual(result.formReadiness, verdict);
+    assert.equal(result.fillNotStarted, true);
+    assert.equal(result.writeStarted, false);
+    assert.equal(result.writeAttempted, false);
+    assert.equal(result.saveAttempted, false);
+    assert.equal(result.liveSupportClaimed, false);
+    assert.equal(h.stats.readiness, 1);
+    assert.equal(h.stats.probe, 0);
+    assert.equal(h.stats.trial, 0);
+    assert.equal(h.stats.status, 0);
+    assert.equal(h.stats.inject, 0);
+    assert.equal(h.data[`resumePendingFillReview:${tabId}`], undefined);
+    assert.equal(h.data.resumeGthBasicAutoRun.reason, reason);
+    assert.equal(h.data.resumeGthBasicAutoRun.status, status);
+  });
+
+  test(`GTH_BASIC_AUTO rechecks ${status} before dispatch and clears pending`, async () => {
+    const verdict = { ok: true, status, reason, liveSupportClaimed: false };
+    const h = await harness({ formReadiness: [{ status: 'ready', reason: 'visible_editable_form' }, verdict] });
+    const result = await h.invoke({ type: 'GTH_BASIC_AUTO', mode: 'fill', educationIndex: 5, originConfirmed: true });
+    assert.equal(result.ok, false);
+    assert.equal(result.reason, reason);
+    assert.equal(result.status, status);
+    assert.deepEqual(result.formReadiness, verdict);
+    assert.equal(result.writeAttempted, false);
+    assert.equal(result.saveAttempted, false);
+    assert.equal(result.liveSupportClaimed, false);
+    const job = h.data[basicJobKey(tabId)];
+    assert.equal(job.state, 'stopped_before_write');
+    assert.equal(job.reason, reason);
+    assert.equal(job.status, status);
+    assert.deepEqual(job.formReadiness, verdict);
+    assert.equal(job.writeStarted, false);
+    assert.equal(h.stats.readiness, 2);
+    assert.equal(h.stats.trial, 0);
+    assert.equal(h.stats.status, 0);
+    assert.equal(h.stats.inject, 1);
+    assert.equal(h.data[`resumePendingFillReview:${tabId}`], undefined);
+    assert.equal(h.data.resumeGthBasicAutoRun.status, status);
+  });
 }
 
 test('GTH_BASIC_AUTO rejects non-basic auto page sender', async () => {

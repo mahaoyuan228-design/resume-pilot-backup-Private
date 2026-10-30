@@ -90,7 +90,8 @@ test('resolveCmbTarget accepts the resume edit host and refuses aliases that are
   ]) assert.throws(() => resolveCmbTarget(bad), /cmb_page_invalid/, String(bad));
 });
 
-function harness({ hostPermissions = grantedManifest().host_permissions, probeOk = true, serviceWorker = 'src/background/worker.mjs', fillResult = null, birthDatePicker = undefined } = {}) {
+function harness({ hostPermissions = grantedManifest().host_permissions, probeOk = true, serviceWorker = 'src/background/worker.mjs', fillResult = null, birthDatePicker = undefined,
+  formReadiness = { status: 'ready', reason: 'visible_editable_form' }, formReadinessSequence = null } = {}) {
   const data = {
     resumeProfile: {
       schemaVersion: 1,
@@ -102,7 +103,7 @@ function harness({ hostPermissions = grantedManifest().host_permissions, probeOk
     resumeProfileLifecycle: { version: 1, epoch, state: 'ready' }
   };
   const clone = (value) => (value === undefined ? undefined : structuredClone(value));
-  const stats = { fill: 0, inject: 0, probe: 0, query: 0, files: [] };
+  const stats = { fill: 0, inject: 0, probe: 0, query: 0, files: [], readiness: 0, readinessInject: 0 };
   const storage = {
     get: async (keys) =>
       keys === null
@@ -152,12 +153,21 @@ function harness({ hostPermissions = grantedManifest().host_permissions, probeOk
     scripting: {
       executeScript: async (request) => {
         if (request.files) {
+          if (request.files.length === 1 && request.files[0] === 'src/content/controls/resume-form.js') {
+            stats.readinessInject += 1;
+            return [];
+          }
           stats.inject += 1;
           stats.files.push(request.files);
           return [];
         }
         if (typeof request.func === 'function') {
           const src = String(request.func);
+          if (src.includes('ResumeFormFlow') && src.includes('readiness')) {
+            const result = formReadinessSequence?.[stats.readiness] ?? formReadiness;
+            stats.readiness += 1;
+            return [{ result: clone(result) }];
+          }
           if (src.includes('fillBasic')) {
             stats.fill += 1;
             return [{
@@ -262,7 +272,55 @@ test('CMB_BASIC_AUTO fill injects cmb-basic.js once and never Save', async () =>
   assert.equal(h.data['resumePendingFillReview:42'], undefined);
   assert.equal(h.stats.inject, 1);
   assert.equal(h.stats.fill, 1);
+  assert.equal(h.stats.readiness, 2);
+  assert.equal(filled.formReadiness.status, 'ready');
   assert.deepEqual(h.stats.files, [['src/content/cmb-basic.js']]);
+});
+
+for (const formReadiness of [
+  { status: 'login_required', reason: 'visible_login_wall' },
+  { status: 'form_not_ready', reason: 'form_loading' },
+  { status: 'manual', reason: 'iframe_or_captcha_manual' }
+]) {
+  test(`CMB_BASIC_AUTO: ${formReadiness.status} stops before probe or fill`, async () => {
+    for (const mode of ['readiness', 'fill']) {
+      const h = harness({ formReadiness });
+      const result = await h.invoke({ type: 'CMB_BASIC_AUTO', mode, openIfMissing: false });
+      assert.equal(result.ok, false);
+      assert.equal(result.status, formReadiness.status);
+      assert.equal(result.reason, formReadiness.reason);
+      assert.equal(result.formReadiness.reason, formReadiness.reason);
+      assert.equal(result.writeAttempted, false);
+      assert.equal(result.saveAttempted, false);
+      assert.equal(result.skippedSave, true);
+      assert.equal(result.liveSupportClaimed, false);
+      assert.equal(h.stats.readiness, 1);
+      assert.equal(h.stats.probe, 0);
+      assert.equal(h.stats.inject, 0);
+      assert.equal(h.stats.fill, 0);
+      assert.equal(h.data.resumeCmbBasicAutoRun.reason, formReadiness.reason);
+      assert.equal(h.data['resumePendingFillReview:42'], undefined);
+    }
+  });
+}
+
+test('CMB_BASIC_AUTO: changed readiness prevents the first field write', async () => {
+  const h = harness({ formReadinessSequence: [
+    { status: 'ready', reason: 'visible_editable_form' },
+    { status: 'form_not_ready', reason: 'form_loading' }
+  ] });
+  const result = await h.invoke({ type: 'CMB_BASIC_AUTO', mode: 'fill', openIfMissing: false });
+  assert.equal(result.ok, false);
+  assert.equal(result.status, 'form_not_ready');
+  assert.equal(result.reason, 'form_loading');
+  assert.equal(result.writeAttempted, false);
+  assert.equal(result.saveAttempted, false);
+  assert.equal(result.liveSupportClaimed, false);
+  assert.equal(h.stats.readiness, 2);
+  assert.ok(h.stats.probe > 0);
+  assert.equal(h.stats.fill, 0);
+  assert.equal(h.data.resumeCmbBasicAutoRun.reason, 'form_loading');
+  assert.equal(h.data['resumePendingFillReview:42'], undefined);
 });
 
 test('CMB_BASIC_AUTO keeps a submit or savedOnSite claim and does not report ok', async () => {

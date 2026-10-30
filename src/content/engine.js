@@ -2125,7 +2125,7 @@
     }
     const formFlow = globalThis.ResumeFormFlow;
     const initialReadiness = currentFormReadiness();
-    if (initialReadiness?.status === 'login_required') throw Object.assign(Error('login_required'), {
+    if (initialReadiness && initialReadiness.status !== 'ready') throw Object.assign(Error(initialReadiness.status), {
       fillNotStarted: true, writeStarted: false, readiness: initialReadiness });
     const formReady = () => collect(profile, attachment).some(entry => entry.reason === 'ready'
       && entry.path && entry.path !== 'sessionAttachment' && entry.answer != null
@@ -2745,7 +2745,9 @@
       })
       .then((data) => ({ ok: true, data }),
         (error) => ({ ok: false, error: String(error?.message || error),
-          ...(error?.readiness ? { readiness: error.readiness } : {}),
+          ...(error?.readiness ? { readiness: error.readiness, status: error.readiness.status,
+            reason: error.readiness.reason, writeAttempted: false, saveAttempted: false,
+            skippedSave: true, liveSupportClaimed: false } : {}),
           ...(error?.fillNotStarted === true ? { fillNotStarted: true, writeStarted: false } : {}),
           ...(message.type === "GTH_SALARY_TRIAL"
             && typeof error?.writeStarted === "boolean"

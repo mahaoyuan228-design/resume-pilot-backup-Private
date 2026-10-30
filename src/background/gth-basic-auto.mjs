@@ -9,6 +9,7 @@ import {captureProfileBinding,assertProfileBinding,canonicalProfileHash,commitBo
 import {BASIC_PAGE,BASIC_KIND,basicCandidate,basicCoverage,basicJobKey,
   planGthBasicCoverage,sealGthJobCoverage,gthRequestedFillBlocksComplete,validResponse} from './basic-task-runner.mjs';
 import {evaluateGthSavePolicy,assertAutoNeverAttemptedSave} from './gth-save-policy.mjs';
+import {requireAutoFormReady,autoFormReadinessFailure} from './auto-form-readiness.mjs';
 
 const PAGE=BASIC_PAGE,ORIGIN='https://hr.gtht.com';
 const TITLES=['基本信息','教育经历','求职意向','工作经验','职业技能与特长','附件简历','其他信息'];
@@ -225,6 +226,13 @@ export function createGthBasicAutoRunner({api=globalThis.chrome,verifyBeforeFill
     job={...job,state:'running',at:Date.now()};
     await commitBoundJob(api.storage.local,key,job,binding,lifecycleOptions);
     await bounded(()=>dispatchBoundSource(api.storage.local,binding,()=>api.scripting.executeScript({target:{tabId:tab.id},files:['src/content/gth-basic.js']}),lifecycleOptions),15000);
+    try{await requireAutoFormReady(api,tab.id);}catch(error){
+      job={...job,state:'stopped_before_write',reason:safe(error),...autoFormReadinessFailure(error),
+        writeStarted:false,liveSupportClaimed:false,at:Date.now()};
+      await commitBoundJob(api.storage.local,key,job,binding,lifecycleOptions);
+      await withProfileBinding(api.storage.local,binding,()=>api.storage.local.remove(pendingKey(tab.id)),lifecycleOptions);
+      throw error;
+    }
     const response=await bounded(()=>dispatchBoundSource(api.storage.local,binding,()=>api.tabs.sendMessage(tab.id,{type:'GTH_BASIC_TRIAL',requestId,educationIndex,replaceExisting,
       profile:candidate.profile,profileBinding:binding}),lifecycleOptions));
     await assertProfileBinding(api.storage.local,binding,lifecycleOptions);
@@ -311,6 +319,7 @@ export function createGthBasicAutoRunner({api=globalThis.chrome,verifyBeforeFill
     report.steps.push({find:found.kind,tabId:found.tab.id,url:found.tab.url||null});
     await focusTab(found.tab);
     report.steps.push('focused_gth_tab');
+    report.formReadiness=await requireAutoFormReady(api,found.tab.id);
     let probeResult=await probe(found.tab.id);
     if(!probeResult.ok){
       for(let i=0;i<8&&!probeResult.ok;i+=1){await sleep(500);probeResult=await probe(found.tab.id);}
@@ -387,7 +396,8 @@ export function createGthBasicAutoRunner({api=globalThis.chrome,verifyBeforeFill
       const helpUrl=error?.helpUrl||PAGE;
       const help=reason==='gth_basic_login_or_wrong_page'||reason==='gth_basic_tab_missing'||/\/login\b/i.test(String(helpUrl));
       const payload={ok:false,reason,helpNeeded:help,helpUrl,helpReason:error?.helpReason||(help?'我需要帮助！请打开已登录的国泰海通简历编辑页 https://hr.gtht.com/resume/edit/':''),
-        mode:message?.mode||'readiness',saveAttempted:false,writeAttempted:false,liveSupportClaimed:false,complete:false,at:Date.now(),version:1,kind:'gth_basic_auto'};
+        mode:message?.mode||'readiness',saveAttempted:false,writeAttempted:false,liveSupportClaimed:false,complete:false,
+        ...autoFormReadinessFailure(error),at:Date.now(),version:1,kind:'gth_basic_auto'};
       api.storage.local.set({resumeGthBasicAutoRun:payload}).catch(()=>{});
       sendResponse(payload);
     });

@@ -36,14 +36,14 @@ const fixture = () => ({
   ],
 });
 
-async function harness({ fillResponse, patchFill } = {}) {
+async function harness({ fillResponse, patchFill, formReadiness = [{ status: 'ready', reason: 'visible_editable_form' }] } = {}) {
   const data = {
     resumeProfile: fixture(),
     resumeProfileLifecycle: { version: 1, epoch, state: 'ready' },
     resumeTrustedOrigins: [new URL(PAGE).origin],
   };
   const clone = (value) => (value === undefined ? undefined : structuredClone(value));
-  const stats = { fill: 0, inject: 0, probe: 0, focus: 0 };
+  const stats = { fill: 0, inject: 0, probe: 0, focus: 0, readiness: 0 };
   const storage = {
     get: async (keys) =>
       keys === null
@@ -133,8 +133,12 @@ async function harness({ fillResponse, patchFill } = {}) {
     scripting: {
       executeScript: async (request) => {
         if (request.files) {
-          stats.inject += 1;
+          if (request.files.length !== 1 || request.files[0] !== 'src/content/controls/resume-form.js') stats.inject += 1;
           return [];
+        }
+        if (String(request.func).includes('ResumeFormFlow') && String(request.func).includes('readiness')) {
+          const result = formReadiness[Math.min(stats.readiness++, formReadiness.length - 1)];
+          return [{ frameId: 0, result: clone(result) }];
         }
         if (typeof request.func === 'function' && request.world === 'MAIN') {
           // focus probe or page probe
@@ -171,6 +175,117 @@ async function harness({ fillResponse, patchFill } = {}) {
   });
   return { invoke, stats, data, autoSender, badSender };
 }
+
+for (const [status, reason] of [['login_required', 'visible_login_wall'],
+  ['form_not_ready', 'form_loading'], ['manual', 'required_control_unrecognized']]) {
+  for (const mode of ['readiness', 'fill']) test(`CMS_BASIC_AUTO ${mode} stops on ${status} despite ok:true`, async () => {
+    const verdict = { ok: true, status, reason, liveSupportClaimed: false };
+    const h = await harness({ formReadiness: [verdict] });
+    const result = await h.invoke({ type: 'CMS_BASIC_AUTO', mode, originConfirmed: true });
+    assert.equal(result.ok, false);
+    assert.equal(result.reason, reason);
+    assert.equal(result.status, status);
+    assert.deepEqual(result.formReadiness, verdict);
+    assert.equal(result.fillNotStarted, true);
+    assert.equal(result.writeStarted, false);
+    assert.equal(result.writeAttempted, false);
+    assert.equal(result.saveAttempted, false);
+    assert.equal(result.liveSupportClaimed, false);
+    assert.equal(h.stats.readiness, 1);
+    assert.equal(h.stats.probe, 0);
+    assert.equal(h.stats.fill, 0);
+    assert.equal(h.stats.inject, 0);
+    assert.equal(h.data[`resumePendingFillReview:${tabId}`], undefined);
+    assert.equal(h.data.resumeCmsBasicAutoRun.reason, reason);
+    assert.equal(h.data.resumeCmsBasicAutoRun.status, status);
+  });
+
+  test(`CMS_BASIC_AUTO rechecks ${status} before dispatch and clears pending`, async () => {
+    const verdict = { ok: true, status, reason, liveSupportClaimed: false };
+    const h = await harness({ formReadiness: [{ status: 'ready', reason: 'visible_editable_form' }, verdict] });
+    const result = await h.invoke({ type: 'CMS_BASIC_AUTO', mode: 'fill', originConfirmed: true });
+    assert.equal(result.ok, false);
+    assert.equal(result.reason, reason);
+    assert.equal(result.status, status);
+    assert.deepEqual(result.formReadiness, verdict);
+    assert.equal(result.writeAttempted, false);
+    assert.equal(result.saveAttempted, false);
+    assert.equal(result.liveSupportClaimed, false);
+    assert.equal(result.job.state, 'stopped_before_write');
+    assert.equal(result.job.reason, reason);
+    assert.equal(result.job.status, status);
+    assert.deepEqual(result.job.formReadiness, verdict);
+    assert.equal(result.job.writeStarted, false);
+    assert.equal(h.stats.readiness, 2);
+    assert.equal(h.stats.fill, 0);
+    assert.equal(h.stats.inject, 1);
+    assert.equal(h.data[`resumePendingFillReview:${tabId}`], undefined);
+    assert.equal(h.data.resumeCmsBasicAutoRun.job.state, 'stopped_before_write');
+  });
+
+  test(`CMS_BASIC_AUTO preserves engine ${status} after both auto gates are ready`, async () => {
+    const verdict = { status, reason, writeStarted: false, writeAttempted: false, liveSupportClaimed: false };
+    const h = await harness({ fillResponse: {
+      ok: false, error: status, status, reason, readiness: verdict, fillNotStarted: true, writeStarted: false,
+    } });
+    const result = await h.invoke({ type: 'CMS_BASIC_AUTO', mode: 'fill', originConfirmed: true });
+    assert.equal(result.ok, false);
+    assert.equal(result.reason, reason);
+    assert.equal(result.status, status);
+    assert.deepEqual(result.formReadiness, verdict);
+    assert.equal(result.fillNotStarted, true);
+    assert.equal(result.writeStarted, false);
+    assert.equal(result.writeAttempted, false);
+    assert.equal(result.saveAttempted, false);
+    assert.equal(result.liveSupportClaimed, false);
+    assert.equal(result.job.state, 'stopped_before_write');
+    assert.equal(result.job.reason, reason);
+    assert.equal(result.job.status, status);
+    assert.deepEqual(result.job.formReadiness, verdict);
+    assert.equal(result.job.writeStarted, false);
+    assert.equal(result.fill.reason, reason);
+    assert.equal(result.fill.status, status);
+    assert.equal(h.stats.readiness, 2);
+    assert.equal(h.stats.fill, 1);
+    assert.equal(h.data[`resumePendingFillReview:${tabId}`], undefined);
+    assert.equal(h.data.resumeCmsBasicAutoRun.job.state, 'stopped_before_write');
+    assert.equal(h.data.resumeCmsBasicAutoRun.reason, reason);
+    assert.equal(h.data.resumeCmsBasicAutoRun.status, status);
+  });
+}
+
+for (const contradiction of ['save_attempted', 'field_write']) test(`CMS_BASIC_AUTO retains ${contradiction} evidence over engine pre-write claims`, async () => {
+  const readiness = { status: 'form_not_ready', reason: 'form_loading', writeStarted: false, liveSupportClaimed: false };
+  const fillResponse = {
+    ok: false, error: 'form_not_ready', readiness, fillNotStarted: true, writeStarted: false,
+  };
+  if (contradiction === 'save_attempted') fillResponse.saveAttempted = true;
+  else fillResponse.data = { writeStarted: true, fields: [{
+    id: 'cms-academic-__cms_basic_academic_degree', path: 'customAnswers.__cms_basic_academic_degree',
+    scope: { sectionName: '个人基本信息必填' }, status: 'verified', reason: 'readback_matched',
+  }] };
+  const h = await harness({ fillResponse });
+  const result = await h.invoke({ type: 'CMS_BASIC_AUTO', mode: 'fill', originConfirmed: true });
+  assert.equal(result.ok, false);
+  assert.equal(result.job.state, 'unknown');
+  assert.notEqual(result.fillNotStarted, true);
+  assert.equal(result.formReadiness.reason, 'visible_editable_form', 'initial observation must not become a false stopped verdict');
+  assert.equal(result.job.formReadiness, undefined);
+  assert.equal(result.liveSupportClaimed, false);
+  assert.equal(h.stats.fill, 1);
+  assert.ok(h.data[`resumePendingFillReview:${tabId}`]);
+  if (contradiction === 'save_attempted') {
+    assert.equal(result.reason, 'cms_basic_save_policy_violated');
+    assert.equal(result.saveAttempted, true);
+    assert.equal(result.job.saveAttempted, true);
+    assert.equal(result.fill.saveAttempted, true);
+    assert.equal(h.data.resumeCmsBasicAutoRun.saveAttempted, true);
+  } else {
+    assert.equal(result.writeAttempted, true);
+    assert.equal(result.job.writeStarted, true);
+    assert.equal(result.fill.writeStarted, true);
+  }
+});
 
 test('CMS_BASIC_AUTO rejects non-basic auto page sender', async () => {
   const h = await harness();

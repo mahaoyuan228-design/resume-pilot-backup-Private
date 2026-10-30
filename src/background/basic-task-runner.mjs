@@ -7,6 +7,7 @@
 import {normalizeProfile} from '../profile/store.js';
 import {assertProfileBinding,canonicalProfileHash,commitBoundJob,reserveBoundJob,dispatchBoundSource,withProfileBinding,invalidateBoundJob} from '../profile/profile-lifecycle.js';
 import {beginRecentRequest,saveRecentResult} from '../popup/recent-result.js';
+import {requireAutoFormReady,autoFormReadinessFailure} from './auto-form-readiness.mjs';
 
 export const BASIC_PAGE='https://hr.gtht.com/resume/edit/';
 export const BASIC_KIND='gth_basic_trial';
@@ -259,6 +260,7 @@ export function createBasicTaskRunner({api=globalThis.chrome,verifyBeforeFill=nu
       await exactTab(tabId);
       if(stable(basicCandidate(await get('resumeProfile'),educationIndex))!==stable(candidate))fail('basic_job_profile_changed');
       if((await get(pendingKey(tabId)))?.requestId!==requestId)fail('basic_job_pending_changed');
+      await requireAutoFormReady(api,tabId);
       sent=true;
       const response=await bounded(()=>dispatchBoundSource(api.storage.local,binding,()=>api.tabs.sendMessage(tabId,{type:'GTH_BASIC_TRIAL',requestId,educationIndex,replaceExisting,profile:candidate.profile,profileBinding:binding}),lifecycleOptions));
       await assertProfileBinding(api.storage.local,binding,lifecycleOptions);
@@ -304,8 +306,8 @@ export function createBasicTaskRunner({api=globalThis.chrome,verifyBeforeFill=nu
       if(binding&&reason.startsWith('profile_')){await invalidateBoundJob(api.storage.local,key,job,{...lifecycleOptions,writeMayHaveStarted:sent});respond({ok:false,error:reason,requestId,writeStarted:sent});return;}
       if(!sent&&reserved)await withProfileBinding(api.storage.local,binding,()=>clearExact(tabId,requestId),lifecycleOptions);
       if((await get(key))?.requestId===requestId)await save({state:sent?'unknown':'stopped_before_write',reason,
-        writeStarted:sent,...(licenseCode?{licenseCode}:{})});
-      respond({ok:false,error:reason,requestId,writeStarted:sent});
+        writeStarted:sent,liveSupportClaimed:false,...autoFormReadinessFailure(error),...(licenseCode?{licenseCode}:{})});
+      respond({ok:false,error:reason,requestId,writeStarted:sent,liveSupportClaimed:false,...autoFormReadinessFailure(error)});
     }finally{clearInterval(keepAlive);running.delete(tabId);}
   }
   const listener=(message,sender,sendResponse)=>{

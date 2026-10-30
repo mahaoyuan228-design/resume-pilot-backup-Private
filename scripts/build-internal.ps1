@@ -35,6 +35,7 @@ if ($version -notmatch '^\d+\.\d+\.\d+(?:\.\d+)?$') { throw "扩展版本号无�
 # A strict allowlist prevents tests, server keys, sample data and design files from entering the package.
 $files = @(
   'manifest.json',
+  'src/background/auto-form-readiness.mjs',
   'src/background/basic-task-runner.mjs',
   'src/background/cms-education-task-runner.mjs',
   'src/background/cms-page-focus.mjs',

@@ -2,6 +2,45 @@ import { test, expect } from '@playwright/test';
 import fs from 'node:fs/promises';
 import { startZoo } from './support.mjs';
 
+test('packaged auto readiness gate preserves page state and Never-Save for every status', async ({}, testInfo) => {
+  const zoo = await startZoo('write-route');
+  try {
+    const bridge = await zoo.page.context().newPage();
+    await bridge.goto(new URL('/manifest.json', zoo.worker.url()).href);
+    await zoo.page.bringToFront();
+    const results = [];
+    for (const status of ['ready', 'login_required', 'form_not_ready', 'manual']) {
+      await zoo.page.evaluate(status => {
+        document.querySelector('#readiness-state')?.remove();
+        document.querySelector('form').removeAttribute('aria-busy');
+        const state = document.createElement('section'); state.id = 'readiness-state';
+        if (status === 'login_required') state.innerHTML = '<h2 role="alert">Please sign in to continue</h2>';
+        if (status === 'form_not_ready') document.querySelector('form').setAttribute('aria-busy', 'true');
+        if (status === 'manual') state.innerHTML = '<div data-captcha>Offline challenge</div>';
+        document.body.append(state);
+      }, status);
+      const before = await zoo.readback(), markup = await zoo.page.content();
+      const result = await bridge.evaluate(async tabId => {
+        const gate = await import(chrome.runtime.getURL('src/background/auto-form-readiness.mjs'));
+        try { return await gate.requireAutoFormReady(chrome, tabId); }
+        catch (error) { return { reason: error.message, ...gate.autoFormReadinessFailure(error) }; }
+      }, zoo.tabId);
+      expect(result, JSON.stringify(result)).toMatchObject({ status,
+        writeStarted: false, writeAttempted: false, saveAttempted: false, liveSupportClaimed: false });
+      expect(result.reason).toBeTruthy();
+      expect(await zoo.readback()).toEqual(before);
+      expect(await zoo.page.content()).toBe(markup);
+      results.push(result);
+    }
+    const evidence = await zoo.evidence();
+    expect(evidence).toMatchObject({ neverSave: true, liveSupportClaimed: false,
+      nonGetObserved: 0, responseToNonGet: 0, nonGetBlocked: 0,
+      blacklistClickAttempts: 0, blacklistClicks: 0, guardFailed: false });
+    expect(evidence.routing).toMatchObject({ rejected: [], nonGetReachedRoute: 0 });
+    await fs.writeFile(testInfo.outputPath('auto-readiness-evidence.json'), JSON.stringify({ results, evidence }, null, 2));
+  } finally { await zoo.close(); }
+});
+
 for (const scenario of ['legacy', 'native', 'ud-select']) {
   const enabled = scenario !== 'legacy';
   test(`ordinary RESUME_FILL uses ${enabled ? `opt-in packaged ${scenario} writer` : 'default legacy path'}`, async ({}, testInfo) => {

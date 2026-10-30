@@ -4,6 +4,18 @@ import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
+import { requireAutoFormReady } from '../../src/background/auto-form-readiness.mjs';
+export { autoFormReadinessFailure } from '../../src/background/auto-form-readiness.mjs';
+
+// Use the same read-only readiness gate for direct CDP and extension auto paths.
+export function requireCdpAutoFormReady(send) {
+  return requireAutoFormReady({ scripting: { executeScript: async ({ files, func }) => {
+    const expression = files ? fs.readFileSync(new URL(`../../${files[0]}`, import.meta.url), 'utf8') : `(${func})()`;
+    const reply = await send('Runtime.evaluate', { expression, returnByValue: true });
+    if (reply.exceptionDetails) throw Error('form_readiness_unavailable');
+    return [{ result: reply.result?.value }];
+  } } }, null);
+}
 
 function stampLocal() {
   const d = new Date();

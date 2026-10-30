@@ -11,6 +11,7 @@ import os from 'node:os';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { createHash } from 'node:crypto';
+import { requireCdpAutoFormReady, autoFormReadinessFailure } from './lib/ats-extension-harness.mjs';
 if (typeof globalThis.WebSocket === 'undefined') {
   const { default: WS } = await import('ws');
   globalThis.WebSocket = WS;
@@ -148,7 +149,8 @@ function requiredShape(label, partial) {
     ...partial,
     saved: false,
     skippedSave: true,
-    skippedYidun: true
+    skippedYidun: true,
+    liveSupportClaimed: false
   };
 }
 
@@ -366,6 +368,7 @@ async function evaluate(send, expression, awaitPromise = false) {
 async function injectAndFill(send, { label, expected, synthetic, restore, pickAlternate }) {
   const source = fs.readFileSync(scriptPath, 'utf8');
   await evaluate(send, source, false);
+  if (!synthetic) await requireCdpAutoFormReady(send);
   await evaluate(send, `document.addEventListener('click', event => {
     const node = event.target && event.target.closest ? event.target.closest('button, a') : null;
     const text = (node && node.textContent || '').replace(/\\s+/g, '');
@@ -376,6 +379,7 @@ async function injectAndFill(send, { label, expected, synthetic, restore, pickAl
     restore: restore === true,
     pickAlternate: pickAlternate === true
   })})`;
+  if (!synthetic) await requireCdpAutoFormReady(send);
   const result = await evaluate(send, call, true);
   const commitClicks = await evaluate(send, 'window.__citicsCommitClicks || 0', false);
   const weirdClicks = await evaluate(send, 'window.__weirdClicks || 0', false);
@@ -568,6 +572,7 @@ async function runSelectKnife(args) {
   } catch (error) {
     const payload = requiredShape(label, {
       reason: String(error?.message || error).slice(0, 300),
+      ...autoFormReadinessFailure(error),
       surface: args.synthetic ? 'synthetic-ant-design-vue-1' : 'cdp',
       structure: { error: String(error?.stack || error).slice(0, 800) }
     });

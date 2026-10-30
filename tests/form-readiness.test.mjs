@@ -213,9 +213,29 @@ for (const enabled of [false, true]) for (const [name, html, status] of engineBl
     assert.equal(filled.fillNotStarted, true);
     assert.equal(filled.writeStarted, false);
     assert.equal(filled.error, status);
+    assert.equal(filled.status, status);
+    assert.equal(filled.reason, inspected.data.formReadiness.reason);
+    assert.equal(filled.writeAttempted, false);
+    assert.equal(filled.saveAttempted, false);
+    assert.equal(filled.liveSupportClaimed, false);
     assertReadiness(filled.readiness, status);
     f.assertInert();
   });
+
+test('non-ready engine stops before legacy entry preparation and preserves its reason', async t => {
+  const f = fixture(t, '<main><form></form><button type="button">进入简历</button></main>', { engine: true });
+  let preparations = 0;
+  f.window.ResumeFormFlow = { readiness: f.window.ResumeFormFlow.readiness,
+    inspect() { preparations++; throw Error('unexpected_entry_inspection'); },
+    ensure() { preparations++; throw Error('unexpected_entry_preparation'); } };
+  const result = await f.request('RESUME_FILL');
+  assert.equal(result.ok, false);
+  assert.equal(result.status, 'form_not_ready');
+  assert.equal(result.reason, 'form_shell');
+  assert.equal(result.writeStarted, false);
+  assert.equal(preparations, 0);
+  f.assertInert();
+});
 
 for (const enabled of [false, true]) test(`ordinary inspect reports an editable required application (opt-in ${enabled})`, async t => {
   const f = fixture(t, '<form><label>姓名<input id="applicant" required></label><label>邮箱<input id="neighbor" value="KEEP" readonly></label>'

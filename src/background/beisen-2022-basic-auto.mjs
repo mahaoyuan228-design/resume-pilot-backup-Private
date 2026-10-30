@@ -1,6 +1,7 @@
 // Beisen-2022 basic auto (tiny). Mirror CITICS_BASIC_AUTO / FEISHU_ATSX_BASIC_AUTO shape.
 // Fill-without-save only. Never clicks 保存/提交/投递. Isolated siteId: beisen-2022.
 // Live resume edit path is login-walled; host match only (*.zhiye.com). Not Beisen-legacy.
+import {requireAutoFormReady,autoFormReadinessFailure} from './auto-form-readiness.mjs';
 import {captureProfileBinding,assertProfileBinding,canonicalProfileHash,
   dispatchBoundSource} from '../profile/profile-lifecycle.js';
 import {planBeisen2022BasicFromProfile,isBeisen2022Host} from '../content/beisen-2022-profile-map.mjs';
@@ -214,6 +215,8 @@ export function createBeisen2022BasicAutoRunner({ api = globalThis.chrome, verif
       lifecycleOptions
     ), 15000);
 
+    await requireAutoFormReady(api, tab.id);
+
     const replies = await bounded(() => dispatchBoundSource(
       api.storage.local,
       binding,
@@ -263,6 +266,7 @@ export function createBeisen2022BasicAutoRunner({ api = globalThis.chrome, verif
     const found = await findTab(sender?.tab?.id, { openIfMissing, page: target.page });
     report.steps.push({ find: found.kind, tabId: found.tab.id, url: found.tab.url || null });
     await focusTab(found.tab);
+    report.formReadiness = await requireAutoFormReady(api, found.tab.id);
     report.steps.push('focused_beisen_2022_tab');
     if (mode === 'fill') {
       report.preparation = await prepareForm(found.tab);
@@ -336,6 +340,7 @@ export function createBeisen2022BasicAutoRunner({ api = globalThis.chrome, verif
       const payload = {
         ok: false,
         reason,
+        ...autoFormReadinessFailure(error),
         helpNeeded: help,
         helpUrl,
         helpReason: error?.helpReason || (help ? HELP_HINT : ''),

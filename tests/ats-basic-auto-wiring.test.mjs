@@ -79,7 +79,9 @@ test('resolveMokaTarget: sample default + host accept/refuse', () => {
 });
 
 function makeHarness({
-  createRunner, autoHtml, messageType, tabUrl, probeReason, probeOk = true, preparation = { ok: true, status: 'ready', reason: 'form_ready', entryAttempted: false, writeAttempted: false }, foundLabels = ['姓名', '手机号码', '邮箱']
+  createRunner, autoHtml, messageType, tabUrl, probeReason, probeOk = true,
+  formReadiness = { status: 'ready', reason: 'visible_editable_form' }, formReadinessSequence = null,
+  preparation = { ok: true, status: 'ready', reason: 'form_ready', entryAttempted: false, writeAttempted: false }, foundLabels = ['姓名', '手机号码', '邮箱']
 }) {
   const data = {
     resumeProfile: {
@@ -92,7 +94,7 @@ function makeHarness({
     resumeProfileLifecycle: { version: 1, epoch, state: 'ready' }
   };
   const clone = (value) => (value === undefined ? undefined : structuredClone(value));
-  const stats = { fill: 0, inject: 0, prepare: 0, probe: 0 };
+  const stats = { fill: 0, inject: 0, prepare: 0, probe: 0, readiness: 0, readinessInject: 0 };
   const storage = {
     get: async (keys) =>
       keys === null
@@ -134,11 +136,20 @@ function makeHarness({
     scripting: {
       executeScript: async (request) => {
         if (request.files) {
+          if (request.files.length === 1 && request.files[0] === 'src/content/controls/resume-form.js') {
+            stats.readinessInject += 1;
+            return [];
+          }
           stats.inject += 1;
           return [];
         }
         if (typeof request.func === 'function') {
           const src = String(request.func);
+          if (src.includes('ResumeFormFlow') && src.includes('readiness')) {
+            const result = formReadinessSequence?.[stats.readiness] ?? formReadiness;
+            stats.readiness += 1;
+            return [{ result: clone(result) }];
+          }
           if (src.includes('prepareForm')) {
             stats.prepare += 1;
             return [{ result: clone(preparation) }];
@@ -324,6 +335,69 @@ test('HOTJOB_MC_BASIC_AUTO: wrong sender + invalid targetPage refused; readiness
   assert.equal(h.stats.prepare, 1);
   assert.equal(h.stats.fill, 1);
 });
+
+const autoScenarios = [
+  { createRunner: createMokaBasicAutoRunner, autoHtml: 'src/auto/moka-basic-auto.html', messageType: 'MOKA_BASIC_AUTO', tabUrl: 'https://app.mokahr.com/resume', probeReason: 'moka_page_ready', storageKey: 'resumeMokaBasicAutoRun' },
+  { createRunner: createHotjobMcBasicAutoRunner, autoHtml: 'src/auto/hotjob-mc-basic-auto.html', messageType: 'HOTJOB_MC_BASIC_AUTO', tabUrl: 'https://wecruit.hotjob.cn/SU00000000/mc/deliver/operationResumer', probeReason: 'hotjob_mc_page_ready', storageKey: 'resumeHotjobMcBasicAutoRun' },
+  { createRunner: createBeisen2022BasicAutoRunner, autoHtml: 'src/auto/beisen-2022-basic-auto.html', messageType: 'BEISEN_2022_BASIC_AUTO', tabUrl: 'https://synthetic.zhiye.com/resume', probeReason: 'beisen_2022_page_ready', storageKey: 'resumeBeisen2022BasicAutoRun' },
+  { createRunner: createFeishuAtsxBasicAutoRunner, autoHtml: 'src/auto/feishu-atsx-basic-auto.html', messageType: 'FEISHU_ATSX_BASIC_AUTO', tabUrl: 'https://synthetic.jobs.feishu.cn/resume', probeReason: 'feishu_atsx_page_ready', storageKey: 'resumeFeishuAtsxBasicAutoRun' }
+];
+const stoppedStates = [
+  { status: 'login_required', reason: 'visible_login_wall' },
+  { status: 'form_not_ready', reason: 'form_loading' },
+  { status: 'manual', reason: 'iframe_or_captcha_manual' }
+];
+
+for (const scenario of autoScenarios) {
+  test(`${scenario.messageType}: ready is checked before probe and again before writing`, async () => {
+    const h = makeHarness(scenario);
+    const result = await h.invoke({ type: scenario.messageType, mode: 'fill', openIfMissing: false });
+    assert.equal(result.ok, true);
+    assert.equal(result.formReadiness.status, 'ready');
+    assert.equal(h.stats.readiness, 2);
+    assert.equal(h.stats.fill, 1);
+    assert.equal(result.saveAttempted, false);
+    assert.equal(result.liveSupportClaimed, false);
+  });
+
+  for (const formReadiness of stoppedStates) {
+    test(`${scenario.messageType}: ${formReadiness.status} stops before preparation, probe or fill`, async () => {
+      for (const mode of ['readiness', 'fill']) {
+        const h = makeHarness({ ...scenario, formReadiness });
+        const result = await h.invoke({ type: scenario.messageType, mode, openIfMissing: false });
+        assert.equal(result.ok, false);
+        assert.equal(result.status, formReadiness.status);
+        assert.equal(result.reason, formReadiness.reason);
+        assert.equal(result.formReadiness.reason, formReadiness.reason);
+        assert.equal(result.writeAttempted, false);
+        assert.equal(result.saveAttempted, false);
+        assert.equal(result.skippedSave, true);
+        assert.equal(result.liveSupportClaimed, false);
+        assert.equal(h.stats.readiness, 1);
+        assert.equal(h.stats.prepare, 0);
+        assert.equal(h.stats.probe, 0);
+        assert.equal(h.stats.fill, 0);
+        assert.equal(h.data[scenario.storageKey].reason, formReadiness.reason);
+      }
+    });
+  }
+
+  test(`${scenario.messageType}: changed readiness prevents the first field write`, async () => {
+    const blocked = stoppedStates[0];
+    const h = makeHarness({ ...scenario, formReadinessSequence: [{ status: 'ready', reason: 'visible_editable_form' }, blocked] });
+    const result = await h.invoke({ type: scenario.messageType, mode: 'fill', openIfMissing: false });
+    assert.equal(result.ok, false);
+    assert.equal(result.status, blocked.status);
+    assert.equal(result.reason, blocked.reason);
+    assert.equal(result.writeAttempted, false);
+    assert.equal(result.saveAttempted, false);
+    assert.equal(result.liveSupportClaimed, false);
+    assert.equal(h.stats.readiness, 2);
+    assert.ok(h.stats.probe > 0);
+    assert.equal(h.stats.fill, 0);
+    assert.equal(h.data[scenario.storageKey].reason, blocked.reason);
+  });
+}
 
 for (const scenario of [
   { createRunner: createHotjobMcBasicAutoRunner, autoHtml: 'src/auto/hotjob-mc-basic-auto.html', messageType: 'HOTJOB_MC_BASIC_AUTO', tabUrl: 'https://wecruit.hotjob.cn/SU00000000/mc/deliver/operationResumer', probeReason: 'hotjob_mc_page_ready' },

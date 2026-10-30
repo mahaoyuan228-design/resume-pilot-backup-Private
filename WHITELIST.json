@@ -244,7 +244,15 @@
     "tests/zoo/slider.spec.mjs",
     "tests/zoo/fixtures/slider.html",
     "tests/zoo/fixtures/slider.js",
-    "docs/ATS_SLIDER_CONTROLS.md"
+    "docs/ATS_SLIDER_CONTROLS.md",
+    "src/content/controls/rate-controls.js",
+    "tests/l1-rate-controls.test.mjs",
+    "tests/l1-rate-write-route.test.mjs",
+    "tests/fixtures/rate-harness.mjs",
+    "tests/zoo/rate.spec.mjs",
+    "tests/zoo/fixtures/rate.html",
+    "tests/zoo/fixtures/rate.js",
+    "docs/ATS_RATE_CONTROLS.md"
   ],
   "productPaths": [
     "manifest.json",
@@ -398,7 +406,8 @@
     "src/content/controls/time-controls.js",
     "src/content/controls/date-range-controls.js",
     "src/content/controls/tree-select-controls.js",
-    "src/content/controls/slider-controls.js"
+    "src/content/controls/slider-controls.js",
+    "src/content/controls/rate-controls.js"
   ],
   "excluded": [
     "No directory-wide copy of repository/tests/exports/dist.",

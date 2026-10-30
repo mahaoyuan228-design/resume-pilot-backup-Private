@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 const here = path.dirname(fileURLToPath(import.meta.url));
 export default defineConfig({
   testDir: here,
-  testMatch: ['legacy.spec.mjs', 'l1.spec.mjs', 'extended.spec.mjs', 'write-route.spec.mjs', 'batchb.spec.mjs', 'upload.spec.mjs', 'dates.spec.mjs', 'time.spec.mjs', 'date-range.spec.mjs', 'tree-select.spec.mjs', 'switch.spec.mjs', 'slider.spec.mjs', 'har.spec.mjs'],
+  testMatch: ['legacy.spec.mjs', 'l1.spec.mjs', 'extended.spec.mjs', 'write-route.spec.mjs', 'batchb.spec.mjs', 'upload.spec.mjs', 'dates.spec.mjs', 'time.spec.mjs', 'date-range.spec.mjs', 'tree-select.spec.mjs', 'switch.spec.mjs', 'slider.spec.mjs', 'rate.spec.mjs', 'har.spec.mjs'],
   timeout: 90000,
   expect: { timeout: 10000 },
   workers: 1,

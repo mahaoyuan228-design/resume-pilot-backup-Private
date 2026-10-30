@@ -13,6 +13,7 @@ export const CONTROL_FILES = Object.freeze([
   'src/content/controls/date-range-controls.js',
   'src/content/controls/tree-select-controls.js',
   'src/content/controls/slider-controls.js',
+  'src/content/controls/rate-controls.js',
 ]);
 
 export function readShadowRequests(requests, expectedUrl) {

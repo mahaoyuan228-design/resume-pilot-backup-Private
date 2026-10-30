@@ -2,7 +2,7 @@
 // instances or handlers to the extension. No events, setters or network calls.
 (() => {
   'use strict';
-  if (globalThis.ResumeControlModel?.version === 1 && globalThis.ResumeControlModel.revision === 14) return;
+  if (globalThis.ResumeControlModel?.version === 1 && globalThis.ResumeControlModel.revision === 15) return;
   const norm = value => String(value ?? '').normalize('NFKC').replace(/\s+/gu, ' ').trim();
   function serial(value, depth = 0) {
     if (value == null || ['string', 'number', 'boolean'].includes(typeof value)) return value ?? null;
@@ -50,7 +50,7 @@
     }
     return serial(value);
   }
-  const knownVue = /^(El(InputNumber|Input|Autocomplete|Select|Option|Radio(Group)?|Checkbox(Group)?|Switch|Slider|DatePicker|TimePicker|Cascader)|A(InputNumber|Input|Textarea|AutoComplete|Select|TreeSelect|Radio(Group)?|Checkbox(Group)?|Switch|Slider|DatePicker|MonthPicker|RangePicker|TimePicker|Cascader)|iSelect|CalendarPicker)$/u;
+  const knownVue = /^(El(InputNumber|Input|Autocomplete|Select|Option|Radio(Group)?|Checkbox(Group)?|Switch|Slider|Rate|DatePicker|TimePicker|Cascader)|A(InputNumber|Input|Textarea|AutoComplete|Select|TreeSelect|Radio(Group)?|Checkbox(Group)?|Switch|Slider|Rate|DatePicker|MonthPicker|RangePicker|TimePicker|Cascader)|iSelect|CalendarPicker)$/u;
   const knownReact = /^(Ud|Phoenix)(Select|DatePicker|Cascader)$/u;
   const valueControls = root => root?.nodeType === 1 ? [
     ...(root.matches('input:not([type="hidden"]),textarea,select') ? [root] : []),
@@ -90,6 +90,10 @@
     return root?.matches?.(name === 'ElSlider' ? '.el-slider' : '.ant-slider')
       && (root === el || root.contains(el)) && ownsControl(root, el, true);
   }
+  function ownsRate(root, el, name) {
+    return root?.matches?.(name === 'ElRate' ? '.el-rate' : '.ant-rate')
+      && (root === el || root.contains(el)) && ownsControl(root, el, true);
+  }
   function fiberRoots(fiber) {
     if (fiber?.stateNode?.nodeType === 1) return [fiber.stateNode];
     const roots = [], queue = fiber?.child ? [fiber.child] : [], seen = new Set();
@@ -126,7 +130,7 @@
   function resolve(el) {
     if (!el || el.nodeType !== 1) return {};
     const seen = new Set();
-    let inputFallback, choiceFallback, frameworkFallback, reactValueFallback, reactNamedFallback, vueFallback;
+    let inputFallback, choiceFallback, frameworkFallback, reactValueFallback, reactNamedFallback, vueFallback, vue3Fallback;
     let autocompleteUnconfirmed = false;
     for (let node = el, count = 0; node && count++ < 40; node = node.parentElement) {
       let vm = node.__vue__;
@@ -141,7 +145,8 @@
         const owns = /^(?:ElSelect|ASelect|ATreeSelect|iSelect|ElAutocomplete|AAutoComplete)$/u.test(name)
           ? ownsSelect(vm.$el, el, name) : /^(?:ElCascader|ACascader)$/u.test(name)
             ? ownsCascader(vm.$el, el, name) : /^(?:ElSlider|ASlider)$/u.test(name)
-              ? ownsSlider(vm.$el, el, name) : ownsControl(vm.$el, el, multiple);
+              ? ownsSlider(vm.$el, el, name) : /^(?:ElRate|ARate)$/u.test(name)
+                ? ownsRate(vm.$el, el, name) : ownsControl(vm.$el, el, multiple);
         if (knownVue.test(name) && owns) {
           const owner = /^(?:ADatePicker|AMonthPicker|ARangePicker|ATimePicker)$/u.test(name) ? pickerOwner(vm) : { vm };
           const found = { ...owner, props: owner.vm.$props || {}, element: owner.vm.$el, componentName: name, framework: 'vue2' };
@@ -156,8 +161,7 @@
           vm, props: vm.$props || {}, element: vm.$el, componentName: name, framework: 'vue2'
         };
       }
-      // Vue 3 internals are read for diagnostics only. They cannot be mistaken
-      // for the Vue 2 library families supported by this slice.
+      // Vue 3 stays diagnostic except for the explicitly reviewed ElRate owner.
       const instance = node.__vueParentComponent || node.__vue_app__?._instance;
       if (instance) {
         frameworkFallback ||= { element: el, framework: 'vue3', props: {} };
@@ -167,10 +171,14 @@
           if (!item || visited.has(item)) continue;
           visited.add(item);
           const root = item.subTree?.el;
-          if (ownsControl(root, el)) return { props: item.props || {}, element: root,
+          if (item.type?.name === 'ElRate' && ownsRate(root, el, 'ElRate')) return {
+            vm: item, props: item.props || {}, element: root, componentName: 'ElRate', framework: 'vue3'
+          };
+          if (ownsControl(root, el)) vue3Fallback ||= { props: item.props || {}, element: root,
             componentName: item.type?.name || '', framework: 'vue3' };
+          if (item.parent) queue.push(item.parent);
           if (item.subTree?.component) queue.push(item.subTree.component);
-          for (const child of item.subTree?.children || []) if (child?.component) queue.push(child.component);
+          for (const child of Array.isArray(item.subTree?.children) ? item.subTree.children : []) if (child?.component) queue.push(child.component);
         }
       }
       const fiberKey = Object.keys(node).find(key => key.startsWith('__reactFiber$'));
@@ -193,7 +201,7 @@
       }
     }
     if (autocompleteUnconfirmed) return frameworkFallback || { element: el, framework: 'vue2', props: {} };
-    return choiceFallback || inputFallback || vueFallback || reactNamedFallback || reactValueFallback || frameworkFallback
+    return choiceFallback || inputFallback || vueFallback || vue3Fallback || reactNamedFallback || reactValueFallback || frameworkFallback
       || { element: el, framework: 'native', props: {} };
   }
   function inspect(el) {
@@ -203,6 +211,9 @@
       lib = 'element-ui';
       // A component name alone cannot distinguish a compatible version.
       version = typeof globalThis.ELEMENT?.version === 'string' ? globalThis.ELEMENT.version : null;
+    } else if (ref.framework === 'vue3' && componentName === 'ElRate') {
+      lib = 'element-plus';
+      version = typeof globalThis.ElementPlus?.version === 'string' ? globalThis.ElementPlus.version : null;
     } else if (ref.framework === 'vue2' && /^A/u.test(componentName)) {
       lib = 'ant-design-vue';
       version = typeof globalThis.antd?.version === 'string' ? globalThis.antd.version : null;
@@ -289,5 +300,5 @@
           || props.displayRender || vm?.$scopedSlots?.displayRender || vm?.$scopedSlots?.default || customFields) } : {}),
       versionEvidence: version ? 'page_library_export' : 'version_unconfirmed' };
   }
-  globalThis.ResumeControlModel = Object.freeze({ version: 1, revision: 14, inspect, resolve, serial, optionsOf });
+  globalThis.ResumeControlModel = Object.freeze({ version: 1, revision: 15, inspect, resolve, serial, optionsOf });
 })();

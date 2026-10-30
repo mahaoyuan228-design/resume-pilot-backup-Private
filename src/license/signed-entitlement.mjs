@@ -261,5 +261,12 @@ export async function reverifyStoredSignedEntitlement(entitlement, publicKeyPem)
   if (!ok) {
     throw new LicenseGateError(LICENSE_CODES.NOT_ACTIVATED, 'signature_invalid');
   }
+  // Gate decisions must use the fields that were signed, not an edited cache.
+  const fields = normalizeSignedPayloadFields(payload);
+  const mismatch = ['status', 'licenseId', 'expiresAtMs'].some((key) => entitlement[key] !== fields[key])
+    || ['installId', 'profileHash'].some((key) => fields[key] != null && entitlement[key] !== fields[key]);
+  if (mismatch) {
+    throw new LicenseGateError(LICENSE_CODES.NOT_ACTIVATED, 'signed_fields_mismatch');
+  }
   return true;
 }

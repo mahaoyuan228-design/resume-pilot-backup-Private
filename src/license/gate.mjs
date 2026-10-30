@@ -9,6 +9,8 @@ import { bindingMatches, isInstallId } from './binding.mjs';
  * @typedef {object} PaidConfig
  * @property {'paid'|'internal'} [buildFlavor]
  * @property {string|null} [licenseServiceUrl]
+ * @property {'offline'|'online'} [verificationMode] offline requires local signatures, no service URL
+ * @property {null} [publicWebsite] Reserved public-site integration stub; no implementation
  * @property {string|null} [publicKeyPem] Ed25519 SPKI PEM; required when requireSignedEntitlement
  * @property {boolean} [requireSignedEntitlement] when true, missing key or unsigned entitlement → deny
  */
@@ -26,7 +28,7 @@ import { bindingMatches, isInstallId } from './binding.mjs';
  */
 
 /**
- * Validate paid-config shape. Missing HTTPS URL → not usable (fail-closed).
+ * Validate paid-config shape. Offline packages require signatures and no URL.
  * @param {PaidConfig|null|undefined} config
  */
 export function assertPaidConfig(config) {
@@ -35,6 +37,18 @@ export function assertPaidConfig(config) {
   }
   if (!isPaidFlavor(config.buildFlavor)) {
     throw new LicenseGateError(LICENSE_CODES.CONFIG_MISSING, 'flavor_not_paid');
+  }
+  if (config.verificationMode === 'offline') {
+    if (config.licenseServiceUrl != null || config.requireSignedEntitlement !== true) {
+      throw new LicenseGateError(LICENSE_CODES.CONFIG_MISSING, 'offline_config_invalid');
+    }
+    if (typeof config.publicKeyPem !== 'string' || !config.publicKeyPem.includes('BEGIN PUBLIC KEY')) {
+      throw new LicenseGateError(LICENSE_CODES.CONFIG_MISSING, 'public_key_pem_missing');
+    }
+    return config;
+  }
+  if (config.verificationMode != null && config.verificationMode !== 'online') {
+    throw new LicenseGateError(LICENSE_CODES.CONFIG_MISSING, 'verification_mode_invalid');
   }
   const url = config.licenseServiceUrl;
   if (typeof url !== 'string' || !/^https:\/\/[^/\s]+/i.test(url)) {

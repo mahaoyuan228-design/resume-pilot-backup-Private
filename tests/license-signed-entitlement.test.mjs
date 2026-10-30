@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
+import { generateKeyPairSync, sign } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { LICENSE_CODES, LicenseGateError } from '../src/license/errors.mjs';
@@ -17,13 +18,16 @@ import {
 } from '../src/license/signed-entitlement.mjs';
 
 const fixtureDir = resolve('tests/fixtures/license');
-const publicKeyPem = readFileSync(resolve(fixtureDir, 'EXAMPLE_ed25519_public.pem'), 'utf8');
-const signedActive = JSON.parse(
-  readFileSync(resolve(fixtureDir, 'EXAMPLE_signed_entitlement.json'), 'utf8'),
-);
-const signedExpired = JSON.parse(
-  readFileSync(resolve(fixtureDir, 'EXAMPLE_signed_entitlement_expired.json'), 'utf8'),
-);
+// Fresh test-only keys: a clean checkout has no ignored EXAMPLE PEM files.
+const { privateKey, publicKey } = generateKeyPairSync('ed25519');
+const publicKeyPem = publicKey.export({ type: 'spki', format: 'pem' });
+function signedFixture(name) {
+  const token = JSON.parse(readFileSync(resolve(fixtureDir, name), 'utf8'));
+  token.signature = sign(null, Buffer.from(canonicalJson(token.payload)), privateKey).toString('base64');
+  return token;
+}
+const signedActive = signedFixture('EXAMPLE_signed_entitlement.json');
+const signedExpired = signedFixture('EXAMPLE_signed_entitlement_expired.json');
 
 const installId = '11111111-2222-4333-a444-555555555555';
 
@@ -251,11 +255,9 @@ describe('packaging / docs: signed module in paid build, not internal', () => {
     assert.equal(script.includes('src/license/'), false);
   });
 
-  it('EXAMPLE fixtures are clearly marked and private key stays under tests/', () => {
+  it('EXAMPLE fixtures are clearly marked', () => {
     const readme = readFileSync(resolve(fixtureDir, 'README.md'), 'utf8');
     assert.match(readme, /NOT production/i);
     assert.match(readme, /EXAMPLE/);
-    const priv = readFileSync(resolve(fixtureDir, 'EXAMPLE_ed25519_private.pem'), 'utf8');
-    assert.match(priv, /BEGIN PRIVATE KEY/);
   });
 });

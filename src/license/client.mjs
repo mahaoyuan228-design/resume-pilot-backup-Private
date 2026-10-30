@@ -61,6 +61,9 @@ export function createLicenseClient({
    * No payment / order APIs here.
    */
   async function verifyOnline({ profileHash = null, nowMs = Date.now() } = {}) {
+    if (config.verificationMode === 'offline' && requireOnline) {
+      throw new LicenseGateError(LICENSE_CODES.CONFIG_MISSING, 'offline_online_conflict');
+    }
     const local = await verifyLocal({ profileHash, nowMs });
     if (!requireOnline) return local;
 

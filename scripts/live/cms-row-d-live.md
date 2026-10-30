@@ -61,6 +61,15 @@ R8 waits only for eligible pending proof while guards and the keeper remain
 active, then requires the unchanged complete correlation verdict before any
 inspection. See [R8 validation notes](../../tests/cms-row-d-keeper-settlement-r8-notes.md).
 
+Keeper non-GET R7 (2026-10-30) starts at
+`23c0ce54b759aa1fc42516ecaf7c851bd63e785c`, which already includes the
+research R7 and settlement R8 changes above. CDP makes Fetch `networkId`
+optional; the previous guard rejected its absence permanently. This revision
+allows one narrowly bounded identity-based pairing when that field is absent,
+without accepting explicit ID disagreements or aggregate counts as proof.
+The sanitized historical report cannot establish whether its IDs were absent.
+See [keeper R7 notes](../../tests/cms-row-d-keeper-nongget-r7-notes.md).
+
 `cms-row-d-live.mjs` attaches to an existing CMS resume tab and runs the merged offline options resolver and read-only ownership preflight. This is a probe, not a fill adapter. It never opens a popup, clicks an option or 保存/提交, emits input events, or reads current field values. No originals require restoration because the probe performs no form interactions or value mutations.
 
 Every result keeps `neverSave=true`, `liveSupportClaimed=false`, `livePassClaimed=false`, `writeStarted=false`, `mutationAllowed=false`, `valuesExposed=false`, and `probeOnly=true`. A successful preflight does not grant mutation permission or establish live fill support. Education is outside this probe's scope.
@@ -96,9 +105,17 @@ Both `Network.enable` and CDP `Fetch.enable` must succeed before the page probe 
 Only a POST to the exact CMS-origin `/wecruit/resume/info/edit/<baseline tenant>`
 path derived from `ROW_D_PAGE` can preserve the inspection verdict: its Network
 observation and request-stage Fetch pause must both occur
-during the fully guarded keeper lifetime, match one-to-one by
-`Network.requestId` / `Fetch.networkId` and unique `Fetch.requestId`, and have
-an acknowledged `Fetch.failRequest`. Method and URL identity must agree; a
+during the fully guarded keeper lifetime and have an acknowledged
+`Fetch.failRequest`. If Fetch supplies `networkId`, it must match the valid
+`Network.requestId` one-to-one, alongside a unique valid `Fetch.requestId`.
+If Fetch omits `networkId`, exactly one Network non-GET observation and one
+Fetch non-GET pause across the entire lifetime may pair by matching method
+and full URL identity. This is identity inference by exclusion, not CDP-ID
+proof. Both observations must independently qualify for the exact endpoint
+and keeper lifetime. A second non-GET permanently rejects this fallback,
+even if its URL matches or the first checkpoint already passed. An absent
+Network observation/ID, invalid or unequal supplied IDs, missing Fetch ID,
+or unmatched identity still fails. Method and URL identity must agree; a
 URL hash stays internal and is never emitted. Timing describes observation
 during the keeper; it does not prove which command caused the request.
 Missing, duplicate or conflicting correlation, unblocked non-GET, other
@@ -114,17 +131,23 @@ never emitted.
 `correlated_keeper_blocks`, or `rejected`) and fixed rejection reason enums.
 These diagnose endpoint, lifetime, identity, matching, block-acknowledgment,
 response or guard failures without exposing request IDs, raw URLs, query values,
-bodies or hashes. The assessment is descriptive and supplies no authority to
+bodies or hashes. Optional-ID pairing additionally emits the fixed
+`correlationMode=unique_identity_missing_fetch_network_id`, including on
+rejection, so it is distinguishable from ID-proven correlation. The assessment
+is descriptive and supplies no authority to
 bypass the ledger. A correlated block preserves an incomplete inspection; it
 cannot upgrade fields, prove server-write isolation or book D.
 
 The guards also cover browser activation and focus emulation. After each keeper command, and again immediately before inspection, the runner
 rejects permanent failures and may settle only valid, eligible missing pairs or
-pending guard decisions. One 250 ms authorization deadline is shared across all
+pending guard decisions. Optional-ID pairing may settle in either event order;
+the abort is immediate and its acknowledgment follows the same ledger entry.
+One 250 ms authorization deadline is shared across all
 these checkpoints; events never renew it. At most ten timer ticks and 200 event
 wakeups are allowed. A Fetch pause is aborted immediately, without waiting for
 its Network counterpart. The original terminal `failed()` predicate must be
-false and all decision replies settled before inspection begins. Invalid IDs,
+false and all decision replies settled before inspection begins. Invalid IDs
+(as distinct from the narrowly allowed absent Fetch `networkId`),
 duplicate/conflicting identities, other endpoints/methods/origins, outside-keeper
 traffic, responses/redirects, command failure and truncation cannot wait their
 way into eligibility. Unmatched or unacknowledged traffic at expiry stops.
@@ -214,7 +237,7 @@ field result. See [R4 notes](../../tests/cms-row-d-preflight-r4-notes.md).
 
 Exit `0` means complete preflight. Exit `2` means incomplete, blocked, or error; a completed probe can still be incomplete because of these intentional skips. Inspect the result reasons rather than treating execution alone as a pass.
 
-No live PASS, live fill/support, or site support is claimed by this probe. The parent must re-probe 9242 with the new tip. Booked stays **53**; this work does not book **+12**.
+No live PASS, live fill/support, or site support is claimed by this probe. The parent must re-probe 9242 with the new tip. Booked stays **58** (E included, D unbooked); this work does not book **+12**. Historical reports above retain their original booked count of 53.
 
 ## Offline validation
 

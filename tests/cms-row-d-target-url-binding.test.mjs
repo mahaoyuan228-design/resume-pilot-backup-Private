@@ -5,6 +5,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { JSDOM } from 'jsdom';
 import { ROW_D_PAGE } from '../scripts/lib/cms-row-d-options.mjs';
 import { runCmsRowDLive } from '../scripts/live/cms-row-d-live.mjs';
@@ -171,7 +172,7 @@ for(const mode of ['success','wrong-page','unsafe'])test('URL sentinels never re
   assert.equal(fs.existsSync(path.join(out,'structure.json')),mode==='success');
   for(const file of fs.readdirSync(out))safe(fs.readFileSync(path.join(out,file),'utf8'));
 });
-test('only the second exact-href check changes DOM reads; R11/schema/guard/IO and four dependencies stay exact',()=>{
+test('only the second exact-href check changes DOM reads; R11/schema/guard/IO, R7 runner pin and other three dependencies stay exact',()=>{
   const file='scripts/live/cms-row-d-location-structure.mjs';
   const old=execFileSync('git',['show',BASE+':'+file],{cwd:ROOT,encoding:'utf8'}).replace(/\r\n/gu,'\n');
   const now=fs.readFileSync(path.join(ROOT,file),'utf8').replace(/\r\n/gu,'\n');
@@ -182,6 +183,13 @@ test('only the second exact-href check changes DOM reads; R11/schema/guard/IO an
   for(const [start,end] of [['const ROW_REASONS','export function buildLocationStructureExpression'],
     ['export function verifySources','\nif(process.argv[1]']])assert.equal(block(now,start,end),block(old,start,end));
   assert.equal(block(now,'export function cleanCaptureAllowed','\n// getJson owns'),block(old,'export function cleanCaptureAllowed','\nexport async function runLocationStructure'));
-  for(const file of Object.keys(SOURCE_PINS))assert.equal(fs.readFileSync(path.join(ROOT,file),'utf8').replace(/\r\n/gu,'\n'),
-    execFileSync('git',['show',BASE+':'+file],{cwd:ROOT,encoding:'utf8'}).replace(/\r\n/gu,'\n'));
+  for(const file of Object.keys(SOURCE_PINS)){
+    const current=fs.readFileSync(path.join(ROOT,file),'utf8').replace(/\r\n/gu,'\n');
+    if(file==='scripts/live/cms-row-d-live.mjs'){
+      // The reviewed R7 runner revision replaces only this historical pin.
+      assert.equal(createHash('sha256').update(current.replace(/\n/gu,'\r\n')).digest('hex'),SOURCE_PINS[file]);
+      continue;
+    }
+    assert.equal(current,execFileSync('git',['show',BASE+':'+file],{cwd:ROOT,encoding:'utf8'}).replace(/\r\n/gu,'\n'));
+  }
 });

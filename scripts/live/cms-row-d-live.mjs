@@ -5,7 +5,7 @@
  * may preserve the inspection verdict. Every non-GET is still aborted.
  * The merged inspector never opens, focuses, blurs, emits events, reads current
  * values, or mutates controls. Originals therefore need no restoration writes.
- * See cms-row-d-live.md. No live PASS/support claim; booked remains 53.
+ * See cms-row-d-live.md. No live PASS/support claim; booked remains 58 (not D).
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -17,7 +17,7 @@ import {
   ROW_D_FIELDS, ROW_D_PAGE, buildCmsRowDOptionsProbeExpression
 } from '../lib/cms-row-d-options.mjs';
 
-export const ROW_D_LIVE_BASE_TIP = '3c5c9d08c78ce0ffc522e69398f815188bbdaaeb';
+export const ROW_D_LIVE_BASE_TIP = '23c0ce54b759aa1fc42516ecaf7c851bd63e785c';
 // Evidence uses a normalized endpoint label; eligibility uses the recorded
 // tenant endpoint. Never use the redacted label or a suffix match as authority.
 const rowDPage = new URL(ROW_D_PAGE);
@@ -120,6 +120,11 @@ export function createRowDNetworkGuard(send) {
   // Internal IDs only: never serialize correlation metadata or raw URLs.
   // Retain the bounded ledger after loadingFailed; failure alone proves no block.
   const requests = new Map();
+  // Fetch.networkId is optional in CDP. A single id-less pause may be paired
+  // by exact identity with one Network observation, never by counts alone.
+  // Move this same entry object so an outstanding abort ack retains its target.
+  const unlinkedPauseId = Symbol('unlinked_fetch_pause');
+  let missingFetchNetworkId = false;
   const fetchIds = new Set();
   const earlyResponses = new Set();
   let keeperActive = false;
@@ -139,7 +144,10 @@ export function createRowDNetworkGuard(send) {
   };
   const validId = id => typeof id === 'string' && id.length > 0 && id.length <= 1024;
   function track(phase, id, request, identity) {
-    if (!validId(id)) { rejectCorrelation('network_id_missing_or_invalid'); return undefined; }
+    const idlessPause = phase === 'paused' && id === undefined;
+    if (!idlessPause && !validId(id)) {
+      rejectCorrelation('network_id_missing_or_invalid'); return undefined;
+    }
     let eligible = false;
     let urlHash;
     try {
@@ -152,6 +160,22 @@ export function createRowDNetworkGuard(send) {
       if (identity.method !== 'POST') rejections.add('method_ineligible');
       if (!exactEndpoint) rejections.add('endpoint_ineligible');
     } catch { rejections.add('endpoint_ineligible'); }
+    if (idlessPause) {
+      missingFetchNetworkId = true;
+      id = unlinkedPauseId;
+      if (requests.size === 1) {
+        const [networkId, candidate] = requests.entries().next().value;
+        if (candidate.observed && !candidate.paused && candidate.eligible && eligible
+          && candidate.identity.method === identity.method && candidate.urlHash === urlHash) id = networkId;
+      }
+    } else if (phase === 'observed' && requests.size === 1 && requests.has(unlinkedPauseId)) {
+      const candidate = requests.get(unlinkedPauseId);
+      if (!candidate.observed && candidate.eligible && eligible
+        && candidate.identity.method === identity.method && candidate.urlHash === urlHash) {
+        requests.delete(unlinkedPauseId);
+        requests.set(id, candidate);
+      }
+    }
     let entry = requests.get(id);
     if (!entry) {
       if (requests.size >= 200) { traffic.truncated = true; return undefined; }
@@ -211,7 +235,7 @@ export function createRowDNetworkGuard(send) {
           traffic.interceptedNonGetCount += 1;
           record('paused', identity);
           const entry = track('paused', params.networkId, params.request, identity);
-          if (entry) observed.set(params.networkId, entry);
+          if (entry && validId(params.networkId)) observed.set(params.networkId, entry);
           if (!validId(params.requestId)) rejectCorrelation('fetch_id_missing_or_invalid');
           else if (fetchIds.has(params.requestId)) rejectCorrelation('duplicate_fetch_id');
           else if (fetchIds.size < 200) fetchIds.add(params.requestId);
@@ -250,7 +274,15 @@ export function createRowDNetworkGuard(send) {
         responseFor(params.requestId);
       }
     } catch { traffic.commandFailed = true; }
-    finally { notify(); }
+    finally {
+      // Once optional-ID pairing is used, any second non-GET event makes the
+      // identity inference ambiguous forever, including after inspection.
+      if (missingFetchNetworkId && (traffic.observedNonGetCount > 1
+        || traffic.interceptedNonGetCount > 1 || requests.size > 1)) {
+        rejectCorrelation('missing_network_id_pair_ambiguous');
+      }
+      notify();
+    }
   };
   function failed() {
     return traffic.commandFailed || traffic.truncated || correlationFailed
@@ -326,7 +358,8 @@ export function createRowDNetworkGuard(send) {
         || [...requests.values()].some(entry => !entry.observed || !entry.paused)) reasons.add('network_fetch_unmatched');
       if ([...requests.values()].some(entry => !entry.blocked)) reasons.add('block_unacknowledged');
       return { status: failed() ? 'rejected' : requests.size ? 'correlated_keeper_blocks' : 'no_non_get',
-        reasons: [...reasons].sort() };
+        reasons: [...reasons].sort(),
+        ...(missingFetchNetworkId ? { correlationMode: 'unique_identity_missing_fetch_network_id' } : {}) };
     }
   };
 }
@@ -413,7 +446,7 @@ function cleanInspection(value) {
 
 export function rowDProbeEvidence(reason = 'not_started') {
   return { version: 1, kind: 'cms_row_d_live_never_save_probe', ...safety(),
-    baseTip: ROW_D_LIVE_BASE_TIP, booked: 53, visibilityBasis: 'attributes_only',
+    baseTip: ROW_D_LIVE_BASE_TIP, booked: 58, visibilityBasis: 'attributes_only',
     visibilityKeeper: { targetActivated: false, pageBroughtToFront: false,
       focusEmulationEnabled: false, focusEmulationCleared: false },
     inspectionGate: { status: 'not_reached', checkpoints: [] },
@@ -536,6 +569,9 @@ export async function runCmsRowDLive({ port = 9242, timeoutMs = 10000, requests 
       evidence.reason = 'visibility_keeper_cleanup_failed';
     }
     if (guard.failed()) {
+      // Includes the bounded optional-networkId pairing above. A qualifying
+      // block leaves the actual inspection verdict intact; every rejection
+      // still overrides it, including new traffic during guard teardown.
       evidence.ok = false;
       evidence.reason = 'non_get_or_guard_failure';
     }
@@ -549,7 +585,7 @@ neverSave=true liveSupportClaimed=false livePassClaimed=false writeStarted=false
 mutationAllowed=false valuesExposed=false probeOnly=true
 Visibility uses attributes only; stylesheet/layout visibility is not verified.
 Guarded CDP activation retains focus emulation through the inspection window.
-No live PASS claimed until parent runs real CDP Never-Save. Booked stays 53.
+No live PASS claimed until parent runs real CDP Never-Save. Booked stays 58 (not D).
 PORT defaults to 9242; STEP_TIMEOUT_MS defaults to 10000 (1000..30000).
 OUTDIR defaults to repo/_temp-scripts/cms-row-d-live-never-save.
 REQUESTS_FILE optionally names JSON wrapper IDs -> harvested labels/checkbox array.

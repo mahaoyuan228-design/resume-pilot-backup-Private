@@ -539,7 +539,7 @@ export function rowDProbeEvidence(reason = 'not_started') {
 /** Test dependencies are explicit. Importing this module never attaches. */
 export async function runCmsRowDLive({ port = 9242, timeoutMs = 10000, requests = {},
   optionsWaitMs = 2000, optionsPollMs = 100,
-  getTargets = getJson, connect = connectCdp, wait = delay } = {}) {
+  getTargets = getJson, connect = connectCdp, wait = delay, now = () => performance.now() } = {}) {
   const evidence = rowDProbeEvidence();
   let expression;
   try {
@@ -603,7 +603,9 @@ export async function runCmsRowDLive({ port = 9242, timeoutMs = 10000, requests 
       row.controlKind === 'ant-select' && row.reason === 'current_options_unavailable').length;
     const retryable = inspection => inspection.reason === 'page_not_ready'
       || (inspection.reason === 'row_d_preflight_incomplete' && unavailableCount(inspection) > 0);
+    let longestInspectionMs = 0;
     const evaluate = async evaluationTimeout => {
+      const started = now();
       readiness.attempts += 1;
       const reply = await session.send('Runtime.evaluate', {
         expression, returnByValue: true, awaitPromise: false, userGesture: false,
@@ -621,6 +623,7 @@ export async function runCmsRowDLive({ port = 9242, timeoutMs = 10000, requests 
         return undefined;
       }
       const inspection = cleanInspection(reply?.result?.value);
+      longestInspectionMs = Math.max(longestInspectionMs, now() - started);
       // Replace the entire snapshot. Earlier successful fields cannot conceal
       // a later ownership, label, visibility, dictionary, or control drift.
       evidence.fields = inspection.fields;
@@ -652,25 +655,31 @@ export async function runCmsRowDLive({ port = 9242, timeoutMs = 10000, requests 
     else {
       // One host-side budget starts after the first complete actual snapshot.
       // A round cap also bounds tests/callers whose injected wait is a no-op.
-      const deadline = performance.now() + optionsWaitMs;
+      const deadline = now() + optionsWaitMs;
       const maximumRounds = Math.ceil(optionsWaitMs / optionsPollMs);
       readiness.status = 'timed_out';
       for (let round = 0; round < maximumRounds; round += 1) {
         if (!optionsGuardReady()) return evidence;
-        let remaining = deadline - performance.now();
-        if (remaining <= 0) break;
+        let remaining = deadline - now();
+        // Do not dispatch a full strict inspection with only a tiny remainder
+        // of its observed cost. Reserve twice the slowest completed sample,
+        // with 25ms minimum host/protocol headroom. An exhausted readiness
+        // budget leaves the latest incomplete snapshot intact; a dispatched
+        // read that really times out still fails inspection and is not retried.
+        const sampleBudget = Math.max(25, Math.ceil(longestInspectionMs * 2));
+        if (remaining <= sampleBudget) break;
         readiness.waitRounds += 1;
         await wait(Math.min(optionsPollMs, remaining));
         if (!optionsGuardReady()) return evidence;
-        remaining = deadline - performance.now();
-        if (remaining <= 0) break; // Never dispatch a sample after the deadline.
+        remaining = deadline - now();
+        if (remaining <= sampleBudget) break;
         const previous = inspection;
         inspection = await evaluate(Math.max(1, Math.min(timeoutMs, Math.ceil(remaining))));
         if (!inspection) return evidence;
         if (!optionsGuardReady()) return evidence;
         // A late reply remains the latest actual evidence, but cannot renew
         // this deadline or authorize a successful readiness wait.
-        if (performance.now() >= deadline) {
+        if (now() >= deadline) {
           if (evidence.ok) { evidence.ok = false; evidence.reason = 'options_readiness_timeout'; }
           break;
         }

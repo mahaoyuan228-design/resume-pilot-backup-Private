@@ -93,6 +93,18 @@ read-only ownership path; loading stays unavailable. Fixed diagnostics separate
 inspection, command and option-proof failures without exposing private data.
 See [evidence and validation notes](../../tests/cms-row-d-commandfailed-fetch-r1-notes.md).
 
+The root-anchor revision starts at `c149f940` (#222). Its supplied real probe
+has eleven `root_anchor_missing` selects and an inspection retry timeout,
+with no non-GET traffic or command failure. PRIMARY is options ownership and
+inspection readiness. If a select's own Vue anchor is absent, the inspector
+can recover its exact current component through a verified ancestor render
+tree inside the same form item. It still requires current root/component/ARIA
+and option-definition links; ancestor caches, slots and harvested labels alone
+cannot establish current options. No popup is opened. Passive retries reserve
+enough time for a complete strict sample; an exhausted readiness budget keeps
+the latest incomplete snapshot, while actual command failures remain failures.
+See [root-anchor notes](../../tests/cms-row-d-options-root-anchor-r1-notes.md).
+
 ## Run
 
 From the repository root in PowerShell:

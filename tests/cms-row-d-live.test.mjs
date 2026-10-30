@@ -1129,6 +1129,87 @@ test('host readiness uses a finite round cap with no-op waits and retains latest
   } finally { dom.window.close(); }
 });
 
+test('host readiness reserves a complete strict sample after a slow initial inspection', async () => {
+  const dom = syntheticDom();
+  try {
+    dom.window.document.getElementById('synthetic-13_43_0').remove();
+    const actual = clone(dom.window.eval(buildCmsRowDOptionsProbeExpression()));
+    let clock = 0;
+    const fake = fakeCdp({ onSend(method) {
+      if (method !== 'Runtime.evaluate') return;
+      clock += 100;
+      return { result: { value: clone(actual) } };
+    } });
+    const evidence = await fake.run({ optionsWaitMs: 150, optionsPollMs: 25, now: () => clock });
+    assertSafety(evidence);
+    assert.equal(evidence.reason, 'row_d_preflight_incomplete');
+    assert.equal(evidence.probeCompleted, true);
+    assert.deepEqual(evidence.optionsReadiness, { status: 'timed_out', attempts: 1,
+      waitRounds: 0, initialUnavailableCount: 1, finalUnavailableCount: 1 });
+    assert.equal(Object.hasOwn(evidence, 'failure'), false);
+    assert.equal(methods(fake).filter(method => method === 'Runtime.evaluate').length, 1);
+    assert.equal(evidence.visibilityKeeper.focusEmulationCleared, true);
+  } finally { dom.window.close(); }
+});
+
+test('host readiness updates its retry reserve from the slowest completed whole snapshot', async () => {
+  const dom = syntheticDom();
+  try {
+    const document = dom.window.document;
+    const firstList = document.getElementById('synthetic-13_43_0');
+    const parent = firstList.parentElement;
+    firstList.remove();
+    document.getElementById('synthetic-13_47_0').remove();
+    const initial = clone(dom.window.eval(buildCmsRowDOptionsProbeExpression()));
+    parent.append(firstList);
+    const latest = clone(dom.window.eval(buildCmsRowDOptionsProbeExpression()));
+    let clock = 0;
+    let samples = 0;
+    const fake = fakeCdp({ onSend(method) {
+      if (method !== 'Runtime.evaluate') return;
+      samples += 1;
+      clock += samples === 1 ? 50 : 160;
+      return { result: { value: clone(samples === 1 ? initial : latest) } };
+    }, onWait({ calls }) { clock += calls.at(-1).ms; } });
+    const evidence = await fake.run({ optionsWaitMs: 500, optionsPollMs: 25, now: () => clock });
+    assertSafety(evidence);
+    assert.equal(evidence.reason, 'row_d_preflight_incomplete');
+    assert.deepEqual(evidence.optionsReadiness, { status: 'timed_out', attempts: 2,
+      waitRounds: 1, initialUnavailableCount: 2, finalUnavailableCount: 1 });
+    const verdicts = fields => fields.map(({ key, ok, reason }) => ({ key, ok, reason }));
+    assert.deepEqual(verdicts(evidence.fields), verdicts(latest.fields));
+    assert.equal(Object.hasOwn(evidence, 'failure'), false);
+    const evaluations = fake.calls.filter(call => call.method === 'Runtime.evaluate');
+    assert.equal(evaluations.length, 2);
+    assert.ok(evaluations.every(call => call.params.throwOnSideEffect === true
+      && call.params.awaitPromise === false && call.params.userGesture === false));
+    assert.ok(evaluations.every(call => call.options.closeOnTimeout === false));
+    assert.equal(evaluations[1].params.timeout, 475);
+    assert.equal(evaluations[1].options.timeoutMs, 475);
+  } finally { dom.window.close(); }
+});
+
+test('host readiness rechecks sample headroom after a delayed host wait', async () => {
+  const dom = syntheticDom();
+  try {
+    dom.window.document.getElementById('synthetic-13_43_0').remove();
+    const actual = clone(dom.window.eval(buildCmsRowDOptionsProbeExpression()));
+    let clock = 0;
+    const fake = fakeCdp({ onSend(method) {
+      if (method !== 'Runtime.evaluate') return;
+      clock += 1;
+      return { result: { value: clone(actual) } };
+    }, onWait() { clock += 65; } });
+    const evidence = await fake.run({ optionsWaitMs: 75, optionsPollMs: 25, now: () => clock });
+    assertSafety(evidence);
+    assert.equal(evidence.reason, 'row_d_preflight_incomplete');
+    assert.deepEqual(evidence.optionsReadiness, { status: 'timed_out', attempts: 1,
+      waitRounds: 1, initialUnavailableCount: 1, finalUnavailableCount: 1 });
+    assert.equal(Object.hasOwn(evidence, 'failure'), false);
+    assert.equal(methods(fake).filter(method => method === 'Runtime.evaluate').length, 1);
+  } finally { dom.window.close(); }
+});
+
 test('host readiness deadline is checked after wait and before another Runtime command', async () => {
   const dom = syntheticDom();
   try {
@@ -1154,20 +1235,29 @@ test('host readiness does not authorize a late Runtime reply and still retains i
     const parent = list.parentElement;
     list.remove();
     let evaluationCount = 0;
+    let clock = 0;
     const fake = fakeCdp({ onSend(method, params) {
       if (method !== 'Runtime.evaluate') return;
       evaluationCount += 1;
-      if (evaluationCount !== 2) return;
+      if (evaluationCount !== 2) { clock += 1; return; }
       parent.append(list);
       const late = clone(dom.window.eval(params.expression));
-      return new Promise(resolve => setTimeout(() => resolve({ result: { value: late } }), 40));
-    }, evaluate: expression => clone(dom.window.eval(expression)) });
-    const evidence = await fake.run({ optionsWaitMs: 25, optionsPollMs: 25 });
+      // Model a reply after the host deadline without wall-clock sleeps. The
+      // fake transport deliberately returns it despite its 50ms timeout so
+      // the runner's independent late-reply authorization check is exercised.
+      clock += 90;
+      return { result: { value: late } };
+    }, evaluate: expression => clone(dom.window.eval(expression)),
+    onWait({ calls }) { clock += calls.at(-1).ms; } });
+    const evidence = await fake.run({ optionsWaitMs: 75, optionsPollMs: 25, now: () => clock });
     assertSafety(evidence);
     assert.equal(evidence.optionsReadiness.status, 'timed_out');
     assert.equal(evidence.optionsReadiness.attempts, 2);
     assert.equal(evidence.optionsReadiness.finalUnavailableCount, 0);
     assert.equal(evidence.fields.find(row => row.wrapperId === '13_43_0').ok, true);
+    const retry = fake.calls.filter(call => call.method === 'Runtime.evaluate')[1];
+    assert.equal(retry.params.timeout, 50);
+    assert.equal(retry.options.timeoutMs, 50);
   } finally { dom.window.close(); }
 });
 

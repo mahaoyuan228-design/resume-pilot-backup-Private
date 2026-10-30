@@ -43,6 +43,30 @@
       disabled: disabled(el), readonly: !!el.readOnly || el.getAttribute('aria-readonly') === 'true',
       controlRoot: el };
   }
+  function datePartPlaceholder(option) {
+    if (!option) return false;
+    // Require a date-part option family, so a real "Month" frequency choice
+    // or an unknown mixed option list cannot be mistaken for an empty prompt.
+    const token = norm(option.textContent).toLowerCase();
+    const part = /^(?:年|year|yyyy)$/u.test(token) ? 'year' : /^(?:月|month|mm)$/u.test(token) ? 'month'
+      : /^(?:日|day|dd)$/u.test(token) ? 'day' : null;
+    if (!part || !['', '-1', '0', token].includes(norm(option.value).toLowerCase())) return false;
+    const choices = [...(option.closest('select')?.options || [])].filter(node => node !== option
+      && !node.disabled && !node.closest('optgroup[disabled]'));
+    const pattern = part === 'year' ? /^\d{4}$/u : /^\d{1,2}$/u;
+    const display = part === 'year' ? /^(\d{4})年?$/u : part === 'month' ? /^(\d{1,2})月?$/u : /^(\d{1,2})日?$/u;
+    return choices.length > 0 && choices.every(node => {
+      const value = norm(node.value), label = norm(node.textContent).match(display), number = Number(value);
+      return pattern.test(value) && label && Number(label[1]) === number
+        && number >= (part === 'year' ? 1900 : 1) && number <= (part === 'year' ? 2100 : part === 'month' ? 12 : 31);
+    });
+  }
+  function selectModel(el, probe) {
+    const option = el.selectedOptions[0], placeholder = datePartPlaceholder(option);
+    return base(el, probe, placeholder ? '' : el.value, placeholder ? '' : option ? norm(option.textContent) : '',
+      [...el.options].map(node => ({ value: node.value, label: norm(node.textContent),
+        disabled: node.disabled || !!node.closest('optgroup[disabled]') || datePartPlaceholder(node) })));
+  }
   function radios(el) {
     if (!el.name) return [el];
     const scope = el.form || el.getRootNode();
@@ -141,19 +165,21 @@
   });
   register({ name: 'native-select', type: 'select',
     matches: (el, probe) => plain(el, probe) && el.tagName === 'SELECT' && !el.multiple,
-    readModel(el, probe) {
-      const option = el.selectedOptions[0];
-      return base(el, probe, el.value, option ? norm(option.textContent) : '',
-        [...el.options].map(node => ({ value: node.value, label: norm(node.textContent),
-          disabled: node.disabled || !!node.closest('optgroup[disabled]') })));
+    readModel: selectModel,
+    plan(fact, model) {
+      const planned = api.helpers.makePlan(fact, model, { type: 'select' });
+      return { ...planned, ...(planned.status === 'unsupported' ? { status: 'manual' } : {}),
+        writeStarted: false, liveSupportClaimed: false };
     },
     async performWrite(el, instruction, ctx) {
       const reason = guards(el);
       if (reason) return noWrite(reason);
       const value = String(targetValue(instruction) ?? '');
-      const options = [...el.options].filter(node => node.value === value && !node.disabled && !node.closest('optgroup[disabled]'));
+      const options = [...el.options].filter(node => node.value === value && !node.disabled
+        && !node.closest('optgroup[disabled]') && !datePartPlaceholder(node));
       if (options.length !== 1) return noWrite(options.length ? 'ambiguous_option' : 'option_missing');
-      if (el.value && !equal(el.value, value)) return noWrite('existing_value');
+      const current = selectModel(el).value;
+      if (current && !equal(current, value)) return noWrite('existing_value');
       if (el.value === value) return { strategy: 'native', attempts: 0 };
       await nativeSet(el, value, ctx);
       await tick();

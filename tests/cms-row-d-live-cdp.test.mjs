@@ -201,6 +201,34 @@ test('actual loopback transport passively repeats the same strict expression and
   assert.equal(stub.calls.filter(call => call.method === 'Target.activateTarget').length, 1);
 });
 
+test('actual loopback transport avoids a short final read when completed inspection cost no longer fits', async t => {
+  // The host clock models sample cost deterministically; transport and cleanup
+  // use the real loopback CDP client. This is not a new CMS timing observation.
+  let clock = 0;
+  const stub = await cdpStub(t, { evaluationGet: false, inspection() {
+    clock += 80;
+    return modeledUnavailableInspection();
+  } });
+  const result = await runCmsRowDLive({ port: stub.port, timeoutMs: 1000,
+    optionsWaitMs: 250, optionsPollMs: 100, now: () => clock,
+    wait: async ms => { clock += ms; } });
+  safe(result);
+  assert.equal(result.ok, false);
+  assert.equal(result.probeCompleted, true);
+  assert.equal(result.reason, 'row_d_preflight_incomplete');
+  assert.deepEqual(result.optionsReadiness, { status: 'timed_out', attempts: 1,
+    waitRounds: 1, initialUnavailableCount: 1, finalUnavailableCount: 1 });
+  assert.deepEqual(result.fields, modeledUnavailableInspection().fields);
+  assert.equal(Object.hasOwn(result, 'failure'), false);
+  assert.equal(result.visibilityKeeper.focusEmulationCleared, true);
+  assert.equal(result.traffic.commandFailed, false);
+  assert.deepEqual(result.traffic.keeperAssessment, { status: 'no_non_get', reasons: [] });
+  assert.equal(stub.calls.filter(call => call.method === 'Runtime.evaluate').length, 1);
+  assert.deepEqual(stub.calls.slice(-3).map(call => call.method), [
+    'Emulation.setFocusEmulationEnabled', 'Fetch.disable', 'Network.disable'
+  ]);
+});
+
 test('actual loopback missing readiness reply preserves cleanup and the latest incomplete snapshot', async t => {
   const stub = await cdpStub(t, { evaluationGet: false, inspection: modeledUnavailableInspection(),
     omitEvaluationReplyAt: 2 });

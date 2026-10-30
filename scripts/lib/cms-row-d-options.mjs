@@ -243,13 +243,76 @@ const denseProbeArray = (object, maximum) => {
  * Labels remain evaluation-local and still face the exact harvested dictionary
  * checks. Source compatibility is not proof of the real CMS component shape.
  */
-const ownedSelectVNodeLabels = (select, reference, diagnostic = {}) => {
+const ownedSelectVNodeLabels = (select, reference, diagnostic = {}, item = null) => {
   const reject = issue => { diagnostic.optionsDefinitionIssue = issue; return null; };
   try {
     const seen = [];
     const candidates = [];
     let current = ownProbeData(select, '__vue__');
-    if (!current) return reject('root_anchor_missing');
+    if (current === undefined || current === null) {
+      // Vue can clear an old root's expando while an enclosing component's
+      // current render still owns that exact element. Inspect only the nearest
+      // anchored DOM ancestor inside this already-verified form item. Never
+      // search another field, a wrapper/section root, $children, refs, slots,
+      // retained option caches, or application state for a substitute.
+      const path = [select];
+      for (let node = item && select.parentElement, depth = 0; node && depth < 16; depth += 1) {
+        path.push(node);
+        if (node === item) break;
+        node = node.parentElement;
+      }
+      if (item && path[path.length - 1] === item) {
+        for (let pathIndex = 1; pathIndex < path.length; pathIndex += 1) {
+          const root = path[pathIndex];
+          const anchor = ownProbeData(root, '__vue__');
+          if (anchor === undefined || anchor === null) continue;
+          const render = ownProbeData(anchor, '_vnode');
+          if (ownProbeData(anchor, '$el') !== root || ownProbeData(render, 'elm') !== root) {
+            return reject('current_root_unverified');
+          }
+          const pending = [{ vnode: render, depth: 0 }];
+          const visited = [];
+          const roots = [];
+          while (pending.length) {
+            const entry = pending.pop();
+            const vnode = entry.vnode;
+            if (!vnode || visited.includes(vnode) || visited.length >= 512 || entry.depth > 32) {
+              return reject('current_chain_unverified');
+            }
+            visited.push(vnode);
+            const element = ownProbeData(vnode, 'elm');
+            // Identity against this exact ancestor path avoids reading sibling
+            // content, selected text, DOM snapshots, or any component getters.
+            if (!path.includes(element)) continue;
+            const child = ownProbeData(vnode, 'componentInstance');
+            if (child !== undefined && child !== null) {
+              const childRender = ownProbeData(child, '_vnode');
+              if (ownProbeData(child, '$vnode') !== vnode || ownProbeData(child, '$el') !== element
+                || ownProbeData(childRender, 'elm') !== element) return reject('current_chain_unverified');
+              if (element === select) roots.push(child);
+              else pending.push({ vnode: childRender, depth: entry.depth + 1 });
+            } else {
+              if (element === select) return reject('current_chain_unverified');
+              const children = ownProbeData(vnode, 'children');
+              if (children === undefined || children === null) continue;
+              if (!Array.isArray(children)) return reject('current_chain_unverified');
+              const length = ownProbeData(children, 'length');
+              if (!Number.isSafeInteger(length) || length < 0 || length > 256
+                || visited.length + pending.length + length > 512) return reject('current_chain_unverified');
+              for (let index = 0; index < length; index += 1) {
+                const childVNode = Object.getOwnPropertyDescriptor(children, String(index));
+                if (!childVNode || !Object.hasOwn(childVNode, 'value')) return reject('current_chain_unverified');
+                pending.push({ vnode: childVNode.value, depth: entry.depth + 1 });
+              }
+            }
+          }
+          if (roots.length !== 1) return reject('current_chain_unverified');
+          current = roots[0];
+          break;
+        }
+      }
+      if (current === undefined || current === null) return reject('root_anchor_missing');
+    }
     // Vue may move __vue__ to a lower component sharing this root after an
     // update. Ascend only the exact current single-root render chain first.
     const ascended = [];
@@ -591,7 +654,7 @@ export function inspectCmsRowDOptions(doc, requests = {}) {
         const targets = exactIds(reference);
         if (!targets.length) {
           observation.optionsReadiness = 'target_missing';
-          const fallback = ownedSelectVNodeLabels(select, reference, observation);
+          const fallback = ownedSelectVNodeLabels(select, reference, observation, item);
           if (!fallback) { push(false, 'current_options_unavailable'); continue; }
           for (let index = 0; index < fallback.length; index += 1) optionLabels.push(fallback[index]);
         } else {
@@ -613,7 +676,7 @@ export function inspectCmsRowDOptions(doc, requests = {}) {
           const optionNodes = snapshot(list.querySelectorAll('.ant-select-dropdown-menu-item,.ant-select-item-option,li[role="option"],.ant-select-item,li'));
           if (!optionNodes.length) {
             observation.optionsReadiness = 'list_empty';
-            const fallback = ownedSelectVNodeLabels(select, reference, observation);
+            const fallback = ownedSelectVNodeLabels(select, reference, observation, item);
             if (!fallback) { push(false, 'current_options_unavailable'); continue; }
             for (let index = 0; index < fallback.length; index += 1) optionLabels.push(fallback[index]);
           } else {

@@ -39,16 +39,19 @@ function offlineFixture() {
         Vue.config.devtools = false;
         Vue.use(antd);
         const labels = ${JSON.stringify(field.options)};
+        const OwnedControl = { name: 'OwnedOfflineControl', render(h) {
+          return h('div', { class: 'ant-form-item-control' }, [
+            h(antd.Select, { props: { value: ${JSON.stringify(PRIVATE)}, showSearch: true, filterOption: true } },
+              labels.map(label => h(antd.Select.Option,
+                { key: label, props: { value: label } }, [label])))
+          ]);
+        } };
         new Vue({ render(h) {
           return h('section', { class: 'form-cell', attrs: { id: ${JSON.stringify(field.sectionId)} } }, [
             h('div', { attrs: { id: ${JSON.stringify(field.wrapperId)} } }, [
               h('div', { class: 'ant-form-item' }, [
                 h('div', { class: 'ant-form-item-label' }, [h('label', ${JSON.stringify(field.label)})]),
-                h('div', { class: 'ant-form-item-control' }, [
-                  h(antd.Select, { props: { value: ${JSON.stringify(PRIVATE)}, showSearch: true, filterOption: true } },
-                    labels.map(label => h(antd.Select.Option,
-                      { key: label, props: { value: label } }, [label])))
-                ])
+                h(OwnedControl)
               ])
             ])
           ]);
@@ -223,6 +226,25 @@ test('native Blink accepts owned never-opened Vue/Ant option VNodes under the st
         for (const [name, expected] of Object.entries(flags)) assert.equal(row[name], expected, name);
       }
       assert.equal(JSON.stringify(inspection).includes(PRIVATE), false, 'private selected values never enter evidence');
+      // Model loss of only the select-root expando after mounting. The local
+      // ancestor and its installed current render tree stay intact. This is
+      // an offline regression scenario, not an assertion of live CMS shape.
+      const removeRoot = await session.send('Runtime.evaluate', { returnByValue: true,
+        expression: `(() => {
+          const host = document.querySelector('.ant-select');
+          const local = host.parentElement;
+          const descriptor = Object.getOwnPropertyDescriptor(local, '__vue__');
+          if (!descriptor || !Object.hasOwn(descriptor, 'value') || !descriptor.value) return false;
+          delete host.__vue__;
+          return true;
+        })()` });
+      assert.equal(removeRoot.result.value, true, 'the installed ancestor retains its local current render anchor');
+      const recovered = await session.send('Runtime.evaluate', {
+        ...strict, expression: buildCmsRowDOptionsProbeExpression()
+      });
+      assert.equal(recovered.exceptionDetails, undefined, JSON.stringify(recovered.exceptionDetails));
+      assert.deepEqual(recovered.result.value, inspection,
+        'strict full inspector recovers the same definitions through current local ancestor VNodes');
       const after = await session.send('Runtime.evaluate', { returnByValue: true,
         expression: `({ effects: globalThis.__ownedOptionsFixture.effects,
           portals: document.querySelectorAll('.ant-select-dropdown').length,

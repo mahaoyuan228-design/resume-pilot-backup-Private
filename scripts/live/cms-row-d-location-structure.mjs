@@ -10,8 +10,8 @@ import { runCmsRowDLive, readRowDProbeConfig, rowDTemporaryPath, selectRowDTarge
 import { connectCdp, getJson } from '../../tools/live-harvest/cdp-client.mjs';
 
 export const SOURCE_PINS = Object.freeze({
-  'scripts/live/cms-row-d-live.mjs':'f4fdab71acef5ff48b110f637b19443aafe1a9d4334896628a5a1dc54b3f0121',
-  'scripts/lib/cms-row-d-options.mjs':'69d3c16319140badf7fef45bda80b20eebf2467323708dcfa7d0da041027d4e7',
+  'scripts/live/cms-row-d-live.mjs':'430dabbbd724ebfbd93cee34a883810180397ab43f8d68e36a102dcff60c8231',
+  'scripts/lib/cms-row-d-options.mjs':'0a69c4064ba98e72c21b2302207652d8c494d6b0282bf0b51816a1f193efa622',
   'tools/live-harvest/cdp-client.mjs':'dda94f460de513c549250cba9a26ec5046a5487397514dc2734a3e37fa8afe35',
   'tools/live-harvest/errors.mjs':'528cefd73f5dcc3a0ecec732a09aac394a7bfd1e75196d514517fa32d46d3e9c'
 });

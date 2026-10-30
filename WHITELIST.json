@@ -172,6 +172,7 @@
     "src/background/controls-shadow.mjs",
     "src/content/controls/model.js",
     "src/content/controls/registry.js",
+    "src/content/controls/upload.js",
     "src/content/controls/native.js",
     "src/content/controls/vue-controls.js",
     "docs/ATS_L1_SHADOW.md",
@@ -200,7 +201,12 @@
     "docs/ATS_ENGINE_R2.md",
     "tests/l1-extended-controls.test.mjs",
     "tests/l1-write-route.test.mjs",
-    "tests/l2-semantics-memory.test.mjs"
+    "tests/l2-semantics-memory.test.mjs",
+    "docs/ATS_UPLOAD_CONTROLS.md",
+    "tests/l1-upload-controls.test.mjs",
+    "tests/zoo/upload.spec.mjs",
+    "tests/zoo/fixtures/upload.html",
+    "tests/zoo/fixtures/upload.js"
   ],
   "productPaths": [
     "manifest.json",
@@ -342,6 +348,7 @@
     "src/background/controls-shadow.mjs",
     "src/content/controls/model.js",
     "src/content/controls/registry.js",
+    "src/content/controls/upload.js",
     "src/content/controls/native.js",
     "src/content/controls/vue-controls.js",
     "src/content/controls/resume-form.js",

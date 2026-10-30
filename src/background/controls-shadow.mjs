@@ -4,6 +4,7 @@
 export const CONTROL_FILES = Object.freeze([
   'src/content/controls/model.js',
   'src/content/controls/registry.js',
+  'src/content/controls/upload.js',
   'src/content/controls/native.js',
   'src/content/controls/vue-controls.js',
   'src/content/controls/extended-controls.js',

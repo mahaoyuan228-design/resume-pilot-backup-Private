@@ -200,7 +200,7 @@ test('reinjection upgrades an old v1 MAIN model/registry and restores every adap
   assert.equal(f.w.ResumeControlModel.version, 1);
   assert.equal(f.w.ResumeControlModel.revision, 3);
   assert.equal(f.R.version, 1);
-  assert.equal(f.R.revision, 3);
+  assert.equal(f.R.revision, 4);
   const names = new Set(f.R.list().map(adapter => adapter.name));
   for (const name of ['native-text', 'native-select', 'el-select', 'antdv1-month', ...contracts.map(row => row[0])]) {
     assert.equal(names.has(name), true, name);
@@ -214,7 +214,7 @@ test('reinjection upgrades an old v1 MAIN model/registry and restores every adap
 test('revision 2 reinjection replaces captured models and adapters before a guarded UI write', async t => {
   const f = boot(contracts[2], { legacy: 2 }); t.after(() => f.dom.window.close());
   assert.equal(f.w.ResumeControlModel.revision, 3);
-  assert.equal(f.R.revision, 3);
+  assert.equal(f.R.revision, 4);
   assert.equal(f.R.list().some(adapter => adapter.name === 'old_adapter'), false);
   for (const name of ['native-text', 'el-select', 'antdv1-month', ...contracts.map(row => row[0])]) {
     assert.equal(f.R.list().some(adapter => adapter.name === name), true, name);

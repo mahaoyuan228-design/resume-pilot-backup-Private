@@ -2,7 +2,7 @@
 
 R2 adds eight per-adapter checks in `extended.spec.mjs` and the ordinary production message route in `write-route.spec.mjs`; see [the R2 contract](../../docs/ATS_ENGINE_R2.md). The original legacy baseline and five shadow comparisons remain intact. iView uses actual pinned 3.5.4 components. Ud/phoenix use explicitly synthetic contract replays, with production versions still pending samples. `liveSupportClaimed=false`.
 
-The combined suite contains 44 tests: 21 original legacy/L1 checks, eight extended-adapter checks, three ordinary-route checks and twelve Batch B control-pattern checks. The ordinary-route checks exercise the flag-absent legacy path plus explicit opt-in native and synthetic Ud-select writers. `resumeAtsEngineWriteEnabled` remains absent by default; no UI turns it on automatically.
+The combined suite contains 51 tests: 21 original legacy/L1 checks, eight extended-adapter checks, three ordinary-route checks, twelve Batch B control-pattern checks and seven generic upload checks; see [the upload contract](../../docs/ATS_UPLOAD_CONTROLS.md). The ordinary-route checks exercise the flag-absent legacy path plus explicit opt-in native and synthetic Ud-select writers. `resumeAtsEngineWriteEnabled` remains absent by default; no UI turns it on automatically.
 
 The legacy suite records existing adapter behavior at base `f07879e1caa24e6f7f09bf6c59e30b7098d89b6b` (#226). PR-2 started from `8dcd68619cdad860f1402e56196fc61aefd881f0` (#227) and added L1 shadow planning and disposable offline writer checks. That original slice did not implement L2 semantics, L3 profiles or the live batch runner; R2's L2 and opt-in route are documented separately.
 
@@ -21,7 +21,7 @@ The runner selects the newest internal build under `dist`; set `ZOO_EXTENSION` t
 
 ## Fixtures and interpretation
 
-The legacy, L1, extended and ordinary-route suites load the unchanged built extension and execute its shipped adapter files through `chrome.scripting.executeScript`. Exact CMS/GTH HTTPS URLs preserve production host and page checks; the ordinary-route fixture uses an offline synthetic host. Batch B uses loopback and separate browser worlds as described below. Every web request is fulfilled from a fixed local asset map or aborted; there is no network fallback to a recruiting server.
+The legacy, L1, extended and ordinary-route suites load the built extension and execute its shipped adapter files through `chrome.scripting.executeScript`. Exact CMS/GTH HTTPS URLs preserve production host and page checks; the ordinary-route fixture uses an offline synthetic host. Batch B and the upload suite use loopback and separate browser worlds as described below. Every web request is fulfilled from a fixed local asset map or aborted; there is no network fallback to a recruiting server.
 
 | Required scenario | Fixture | Evidence and limits |
 | --- | --- | --- |
@@ -56,6 +56,12 @@ Additional checks prove MAIN/ISOLATED separation, unknown-version rejection, exi
 `batchb.spec.mjs` uses a first-party synthetic page on loopback, with no recruiting URL. It exercises the same built source bytes and the existing network guard. Because production permissions intentionally exclude loopback, this subset loads the byte-checked built files through CDP into disposable MAIN or isolated browser contexts. It does not change extension permissions. The older suites retain their `chrome.scripting.executeScript` path.
 
 The twelve cases cover a create/enter resume transition before Hotjob text filling (1), an edit resume transition before Beisen text filling (1), rejected submit and ambiguous entry controls (2), Moka-shaped React and Vue3 model ownership including separate positive control values (3), Feishu delayed hydration from empty or busy shells (2), and permanent empty, incomplete or busy shells (3). Each case checks unchanged neighboring values, zero forbidden clicks, zero non-GET traffic and `liveSupportClaimed=false`. Hydration checks also require zero input events before readiness. React and Vue3 internals are diagnostic synthetic fixtures; they do not establish live framework versions or Moka selector support.
+
+## Generic upload and attachment controls
+
+`upload.spec.mjs` uses first-party synthetic attachment pages on loopback. It loads exact packaged control bytes without adding host permissions or connecting to a live site. Native file inputs, input-backed drop zones, existing previews, clear/remove affordances, and explicit skip/later outcomes are read-only observations. Unknown or shared ownership remains manual. Preview does not open links or dialogs; clear preserves attachments; skip/later never click page controls. The existing native upload entry remains manual, and attachment display inputs cannot fall through to ordinary writers.
+
+The fixtures never select a file, assign a FileList, create a File/DataTransfer, upload, save or submit. Checks require unchanged attachment and neighbor state, zero click/input/change/drag/drop attempts, zero non-GET traffic, and `liveSupportClaimed=false`. [The detect/preview/skip contract](../../docs/ATS_UPLOAD_CONTROLS.md) records the API, result reasons and evidence limits. UL is a phenomenon reference only; this suite contains no site-specific patch.
 
 ## Never-Save boundary
 

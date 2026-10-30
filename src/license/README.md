@@ -4,6 +4,8 @@
 
 **Paid flavor (separate package):** `scripts/build-paid.ps1 -LicenseServiceUrl 'https://…'` copies product files, generates `paid-config.mjs`, sets the service worker to `guard-worker.mjs`, and includes the Chinese activate panel. Optional `-PublicKeyPemPath` embeds an Ed25519 public key; `-RequireSignedEntitlement` fail-closes unsigned tokens.
 
+**Offline distribution:** `scripts/build-paid.ps1 -Offline -PublicKeyPemPath <public.pem>` requires signed activation tokens and generates `verificationMode: 'offline'` with no license-service URL. Activation, status, and each fill recheck signatures, signed fields, binding, and expiry locally. Trial packaging and manual installation/update steps: [offline distribution](../../docs/OFFLINE_DISTRIBUTION.md). `publicWebsite: null` reserves a public-site integration stub only.
+
 | File | Role |
 | --- | --- |
 | `flavor.mjs` | `internal` vs `paid` |

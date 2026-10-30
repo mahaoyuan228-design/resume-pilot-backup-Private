@@ -140,7 +140,7 @@ export async function readLicenseStatus({
 
   const bag = await storage.get(ENTITLEMENT_KEY);
   const entitlement = bag?.[ENTITLEMENT_KEY] ?? null;
-  const decision = isFillAllowed({
+  const decision = await isFillAllowedAsync({
     flavor: normalized,
     config,
     entitlement,

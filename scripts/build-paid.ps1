@@ -1,6 +1,7 @@
 ﻿# Build a SEPARATE paid-flavor Edge unpacked package from the same product sources.
 # Does NOT modify the internal package Jeremy loads (worker.mjs / 003753).
-# Requires an operator-owned HTTPS license URL. Does NOT invent payment credentials
+# Accepts -Offline with a signing public key, or an operator-owned HTTPS license URL.
+# Does NOT invent payment credentials
 # or claim a live payment/license server exists.
 #
 # Fresh rebuild (do not hand-patch an old dist, including 20261018 hotpatches):
@@ -21,20 +22,26 @@
 #   -RequireSignedEntitlement   # fail-closed unless entitlements carry Ed25519 signature
 #
 param(
-  [Parameter(Mandatory = $true)]
-  [string]$LicenseServiceUrl,
+  [Parameter(Mandatory = $false)]
+  [string]$LicenseServiceUrl = '',
 
   [Parameter(Mandatory = $false)]
   [string]$PublicKeyPemPath = '',
 
   [Parameter(Mandatory = $false)]
-  [switch]$RequireSignedEntitlement
+  [switch]$RequireSignedEntitlement,
+
+  [switch]$Offline
 )
 
 $ErrorActionPreference = 'Stop'
 $repoRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..')).Path
 
-if ($LicenseServiceUrl -notmatch '^https://[^/\s]+') {
+if ($Offline) {
+  if ($LicenseServiceUrl) { throw '-Offline 不允许 LicenseServiceUrl；离线包不连接授权服务器。' }
+  if ([string]::IsNullOrWhiteSpace($PublicKeyPemPath)) { throw '-Offline 必须提供 PublicKeyPemPath。' }
+  $RequireSignedEntitlement = $true
+} elseif ($LicenseServiceUrl -notmatch '^https://[^/\s]+') {
   throw 'LicenseServiceUrl 必须是 https:// 开头的经营者自有域名（不要填占位或假支付地址当生产）。'
 }
 
@@ -255,6 +262,9 @@ foreach ($relative in $licenseFiles) {
 
 # Generate paid-config.mjs (URL + optional public key — no merchant / private-key secrets).
 $urlEscaped = $LicenseServiceUrl.Replace('\', '\\').Replace("'", "\'")
+$urlLiteral = "'$urlEscaped'"
+$verificationMode = 'online'
+if ($Offline) { $urlLiteral = 'null'; $verificationMode = 'offline' }
 $publicKeyLiteral = 'null'
 $requireSignedLiteral = 'false'
 if ($PublicKeyPemPath -and $PublicKeyPemPath.Trim().Length -gt 0) {
@@ -265,8 +275,12 @@ if ($PublicKeyPemPath -and $PublicKeyPemPath.Trim().Length -gt 0) {
   if ($pemRaw -notmatch 'BEGIN PUBLIC KEY') {
     throw 'PublicKeyPemPath 必须是 Ed25519 SPKI PUBLIC KEY PEM（不要传入私钥）。'
   }
-  if ($pemRaw -match 'BEGIN PRIVATE KEY') {
+  if ($pemRaw -match 'PRIVATE KEY') {
     throw '拒绝打包私钥。PublicKeyPemPath 只能是公钥。'
+  }
+  if ($Offline) {
+    & node -e "const fs=require('node:fs');const key=require('node:crypto').createPublicKey(fs.readFileSync(process.argv[1]));if(key.asymmetricKeyType!=='ed25519')process.exit(1);" $PublicKeyPemPath
+    if ($LASTEXITCODE -ne 0) { throw '-Offline 必须提供有效 Ed25519 SPKI 公钥。' }
   }
   # Embed as a JS double-quoted string (JSON-style escapes). Never embed a private key.
   $pemNorm = $pemRaw.Replace("`r", '')
@@ -284,7 +298,9 @@ $configBody = @"
 // publicKeyPem: operator Ed25519 SPKI public key, or null. NEVER embed a private key.
 export const paidConfig = {
   buildFlavor: 'paid',
-  licenseServiceUrl: '$urlEscaped',
+  licenseServiceUrl: $urlLiteral,
+  verificationMode: '$verificationMode',
+  publicWebsite: null, // Reserved website integration stub; no site is connected.
   publicKeyPem: $publicKeyLiteral,
   requireSignedEntitlement: $requireSignedLiteral,
 };
@@ -298,7 +314,7 @@ $paidManifest = Get-Content -LiteralPath $paidManifestPath -Raw -Encoding UTF8 |
 $paidManifest.name = '简历快填 · 授权版'
 $paidManifest.description = '授权核验通过后，在你打开的招聘页面中识别字段，使用已核对的本机资料填写并逐项读回。'
 $paidManifest.background.service_worker = 'src/license/guard-worker.mjs'
-$paidManifest | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $paidManifestPath -Encoding UTF8
+[IO.File]::WriteAllText($paidManifestPath, ($paidManifest | ConvertTo-Json -Depth 10), (New-Object Text.UTF8Encoding($false)))
 
 # Paid-only: inject Chinese activate entry into the *copied* popup (source popup untouched).
 $popupPath = Join-Path $extensionRoot 'src\popup\popup.html'
@@ -683,7 +699,8 @@ $readme = @"
 - Version: $version
 - Service worker: src/license/guard-worker.mjs
 - LicenseServiceUrl: $LicenseServiceUrl
-- This package is NOT a live payment product. Wire an owned HTTPS license service before customer distribution.
+- VerificationMode: $verificationMode. Offline verifies signed tokens locally; no license server or domain is required.
+- Public website integration: null (stub). Installation and updates use complete local packages.
 - Activate UI (Chinese): src/license/activate.html — paste local entitlement token; no payment credentials.
 - Open activate: popup「授权激活」link, or chrome.runtime message RESUME_OPEN_LICENSE_ACTIVATE, or extension URL …/src/license/activate.html
 - Ed25519: optional -PublicKeyPemPath embeds publicKeyPem; -RequireSignedEntitlement fail-closes unsigned tokens. EXAMPLE key under tests/fixtures/license/ is for docs/tests only.
@@ -711,10 +728,30 @@ function Assert-PackedOmitsGthIntentTest([string]$Root) {
 }
 Assert-PackedOmitsGthIntentTest $extensionRoot
 
+# ZIP contains only the reviewed extension allowlist, with manifest.json at its root.
+Add-Type -AssemblyName System.IO.Compression
+Add-Type -AssemblyName System.IO.Compression.FileSystem
+$zipName = "resume-autofill-edge-paid-v$version.zip"
+$zipPath = Join-Path $buildRoot $zipName
+$archive = [IO.Compression.ZipFile]::Open($zipPath, [IO.Compression.ZipArchiveMode]::Create)
+$hashLines = New-Object 'System.Collections.Generic.List[string]'
+try {
+  foreach ($relative in ($packedList | Sort-Object)) {
+    $target = Join-Path $extensionRoot ($relative -replace '/', '\')
+    [void][IO.Compression.ZipFileExtensions]::CreateEntryFromFile($archive, $target, $relative, [IO.Compression.CompressionLevel]::Optimal)
+    $hash = (Get-FileHash -LiteralPath $target -Algorithm SHA256).Hash.ToLowerInvariant()
+    $hashLines.Add("$hash  extension/$relative")
+  }
+} finally { $archive.Dispose() }
+$zipHash = (Get-FileHash -LiteralPath $zipPath -Algorithm SHA256).Hash.ToLowerInvariant()
+$hashLines.Add("$zipHash  $zipName")
+[IO.File]::WriteAllLines((Join-Path $buildRoot 'SHA256SUMS.txt'), $hashLines, (New-Object Text.UTF8Encoding($false)))
+
 Write-Output "付费候选包：$buildRoot"
 Write-Output "扩展目录：$extensionRoot"
+Write-Output "ZIP：$zipPath"
 Write-Output "授权服务 URL：$LicenseServiceUrl"
-Write-Output '注意：未部署真实授权服务前，所有填写路径应 fail-closed（license_required）。'
+Write-Output "授权校验模式：$verificationMode；未激活或无效授权均拒绝填写。"
 Write-Output '不要把此包当作 Jeremy 当前内部 003753 工作流加载。'
 if ($PublicKeyPemPath) { Write-Output "已嵌入 publicKeyPem 来源：$PublicKeyPemPath" } else { Write-Output 'publicKeyPem: null（未传 -PublicKeyPemPath；签名令牌将无法校验）' }
 Write-Output "requireSignedEntitlement: $RequireSignedEntitlement"

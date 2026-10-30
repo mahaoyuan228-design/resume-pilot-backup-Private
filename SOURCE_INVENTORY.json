@@ -1,6 +1,6 @@
 {
   "version": "0.1.4.9",
-  "sumsSha256": "9a10bf66ef028e3951b5a58af2470672ea26348a9cd1829a7d456600260c2fad",
+  "sumsSha256": "9f91bb72bf5e6027b5736051f6ef0b6cc1d2f4ca73b20fd6717fe8bbf3e6a048",
   "inventory": [
     {
       "path": "manifest.json",
@@ -820,20 +820,20 @@
     },
     {
       "path": "src/background/controls-shadow.mjs",
-      "sha256": "fc24d947a904ab5344373c2207623444c12c3c6a58c30fb88ef2a219dd3175af",
-      "sourceSha256": "fc24d947a904ab5344373c2207623444c12c3c6a58c30fb88ef2a219dd3175af",
+      "sha256": "e4cfaf62844ad831ba828db0fa7d8fcaa2904ff84902e3f66ed094975bdd2809",
+      "sourceSha256": "e4cfaf62844ad831ba828db0fa7d8fcaa2904ff84902e3f66ed094975bdd2809",
       "kind": "frozen-product"
     },
     {
       "path": "src/content/controls/model.js",
-      "sha256": "192b72dcf7baecf9bb32f46e0cd8f375706081c0f1892fff3d73580b7995949a",
-      "sourceSha256": "192b72dcf7baecf9bb32f46e0cd8f375706081c0f1892fff3d73580b7995949a",
+      "sha256": "91fd9d495e2b44edae79e9dc702620dad1857a72a6caef4681d40c8bc6153a78",
+      "sourceSha256": "91fd9d495e2b44edae79e9dc702620dad1857a72a6caef4681d40c8bc6153a78",
       "kind": "frozen-product"
     },
     {
       "path": "src/content/controls/registry.js",
-      "sha256": "419f8b56769201d64aea3e91c59f93a23bb8816a80f337a4ede148f2f28c6de3",
-      "sourceSha256": "419f8b56769201d64aea3e91c59f93a23bb8816a80f337a4ede148f2f28c6de3",
+      "sha256": "1da054ec3cdccb0a66fc2a9d082705c819d6f15bc7b1cfcd8d9666b66dfc65aa",
+      "sourceSha256": "1da054ec3cdccb0a66fc2a9d082705c819d6f15bc7b1cfcd8d9666b66dfc65aa",
       "kind": "frozen-product"
     },
     {
@@ -862,8 +862,8 @@
     },
     {
       "path": "src/background/controls-write.mjs",
-      "sha256": "c1e38af1da52f29647fb5a2c2481f435998d25d60d0e1068ec6982a68bdcfa3a",
-      "sourceSha256": "c1e38af1da52f29647fb5a2c2481f435998d25d60d0e1068ec6982a68bdcfa3a",
+      "sha256": "c331a5b01d4e581b3beeb3cb3673e9f63cfbcb117fbee6f085ed8a25363e2581",
+      "sourceSha256": "c331a5b01d4e581b3beeb3cb3673e9f63cfbcb117fbee6f085ed8a25363e2581",
       "kind": "frozen-product"
     },
     {
@@ -897,9 +897,15 @@
       "kind": "frozen-product"
     },
     {
+      "path": "src/content/controls/date-range-controls.js",
+      "sha256": "2ec57734eab616f6cb89675ee4bb6be6d24e6ed256f8308cf1bbba7849db6649",
+      "sourceSha256": "2ec57734eab616f6cb89675ee4bb6be6d24e6ed256f8308cf1bbba7849db6649",
+      "kind": "frozen-product"
+    },
+    {
       "path": "scripts/build-internal.ps1",
-      "sha256": "316a199bace3f4a6aaf97bff26cb1c3a9ad5a9e10375d3ce8c24a119d70b1608",
-      "sourceSha256": "316a199bace3f4a6aaf97bff26cb1c3a9ad5a9e10375d3ce8c24a119d70b1608",
+      "sha256": "daac5f85d9261cb96378262da170819771c5f9783363c791b183066a2103e4eb",
+      "sourceSha256": "daac5f85d9261cb96378262da170819771c5f9783363c791b183066a2103e4eb",
       "kind": "required-build"
     },
     {
@@ -1060,8 +1066,8 @@
     },
     {
       "path": "tests/zoo/README.md",
-      "sha256": "92cd88afe1417954abebbf8d8a3a2b0bd25314dde8b680a9e4de06b077f39f82",
-      "sourceSha256": "92cd88afe1417954abebbf8d8a3a2b0bd25314dde8b680a9e4de06b077f39f82",
+      "sha256": "e1a3ed734e50ae63df30950691101befea276f0c1b194e37604d976e2ecb4f55",
+      "sourceSha256": "e1a3ed734e50ae63df30950691101befea276f0c1b194e37604d976e2ecb4f55",
       "kind": "selected-zoo-offline-regression"
     },
     {
@@ -1096,14 +1102,14 @@
     },
     {
       "path": "tests/zoo/playwright.config.mjs",
-      "sha256": "5bc26b5b02406d60b6711db5dda510ba0421fac60f5656631f6d11d0b693954b",
-      "sourceSha256": "5bc26b5b02406d60b6711db5dda510ba0421fac60f5656631f6d11d0b693954b",
+      "sha256": "684dac4cddd965270bb33e7d85153502b6dd5332b97dbe4868e0a2575a58cbaa",
+      "sourceSha256": "684dac4cddd965270bb33e7d85153502b6dd5332b97dbe4868e0a2575a58cbaa",
       "kind": "selected-zoo-offline-regression"
     },
     {
       "path": "tests/zoo/support.mjs",
-      "sha256": "c26f5d94e73034a36c6c17047535fb5eac3a8b33433104c99912acba032a54c7",
-      "sourceSha256": "c26f5d94e73034a36c6c17047535fb5eac3a8b33433104c99912acba032a54c7",
+      "sha256": "43f9e11f8d576b059355f658f777649b937234fe0e0dfb3ccf250fcbc1305af0",
+      "sourceSha256": "43f9e11f8d576b059355f658f777649b937234fe0e0dfb3ccf250fcbc1305af0",
       "kind": "selected-zoo-offline-regression"
     },
     {
@@ -1156,14 +1162,14 @@
     },
     {
       "path": "tests/product-paths-whitelist.test.mjs",
-      "sha256": "07e6d5de96a9df2714eb697ebc95ca9244b58b832fa2e5e1604716775626f583",
-      "sourceSha256": "07e6d5de96a9df2714eb697ebc95ca9244b58b832fa2e5e1604716775626f583",
+      "sha256": "1c27365fac4c7763862e3a55d1f2d3498919114237f86783294093b535526292",
+      "sourceSha256": "1c27365fac4c7763862e3a55d1f2d3498919114237f86783294093b535526292",
       "kind": "selected-l1-shadow-regression"
     },
     {
       "path": "scripts/build-paid.ps1",
-      "sha256": "42c413b845d4bf4b78aff8e4ad270dbaea91adb307b897b6696b9ff0d81b700e",
-      "sourceSha256": "42c413b845d4bf4b78aff8e4ad270dbaea91adb307b897b6696b9ff0d81b700e",
+      "sha256": "bb043d5ee7473b9ff6092fa5e806ef346ef812217e383c5618d5ca5524dba408",
+      "sourceSha256": "bb043d5ee7473b9ff6092fa5e806ef346ef812217e383c5618d5ca5524dba408",
       "kind": "required-build"
     },
     {
@@ -1174,8 +1180,8 @@
     },
     {
       "path": "tests/l1-extended-controls.test.mjs",
-      "sha256": "784f26b77f735730ba19398d20793b527b0ffd4bcd3b9873f81195cad5af17a8",
-      "sourceSha256": "784f26b77f735730ba19398d20793b527b0ffd4bcd3b9873f81195cad5af17a8",
+      "sha256": "27c1a76cf778dd57a84c75f8b24dcd60895d9a075790df541f7dba4524d903f1",
+      "sourceSha256": "27c1a76cf778dd57a84c75f8b24dcd60895d9a075790df541f7dba4524d903f1",
       "kind": "selected-ats-r2-offline-regression"
     },
     {
@@ -1345,6 +1351,48 @@
       "sha256": "3ecfa0df4f41e7383217af42c8b0a1c9daea2c98c11aad2372cf4688a7ffd3f2",
       "sourceSha256": "3ecfa0df4f41e7383217af42c8b0a1c9daea2c98c11aad2372cf4688a7ffd3f2",
       "kind": "selected-switch-offline-regression"
+    },
+    {
+      "path": "docs/ATS_DATE_RANGE_CONTROLS.md",
+      "sha256": "93d050054f46d13f31766fc0e9b9944fce0d787c34cd9d4d4dd2bb20d382d51d",
+      "sourceSha256": "93d050054f46d13f31766fc0e9b9944fce0d787c34cd9d4d4dd2bb20d382d51d",
+      "kind": "selected-date-range-offline-regression"
+    },
+    {
+      "path": "tests/l1-date-range-controls.test.mjs",
+      "sha256": "9df6c293e1633f215d0319b461f2f5cebe2811a3256fd45e7655a127c6d54d28",
+      "sourceSha256": "9df6c293e1633f215d0319b461f2f5cebe2811a3256fd45e7655a127c6d54d28",
+      "kind": "selected-date-range-offline-regression"
+    },
+    {
+      "path": "tests/zoo/date-range.spec.mjs",
+      "sha256": "7e3e987a38bb662f23b382020dda336f4f6f574c496d2840121efea150e27d2c",
+      "sourceSha256": "7e3e987a38bb662f23b382020dda336f4f6f574c496d2840121efea150e27d2c",
+      "kind": "selected-date-range-offline-regression"
+    },
+    {
+      "path": "tests/zoo/fixtures/date-range.html",
+      "sha256": "d021a389e77bd44bf939d51286e9f8611f5299f09494ac090ef2f361bac44c9d",
+      "sourceSha256": "d021a389e77bd44bf939d51286e9f8611f5299f09494ac090ef2f361bac44c9d",
+      "kind": "selected-date-range-offline-regression"
+    },
+    {
+      "path": "tests/zoo/fixtures/date-range.js",
+      "sha256": "8e1a758750b3f13d7a28334835367b7e8b56ebc87183d6343c2e37536081960e",
+      "sourceSha256": "8e1a758750b3f13d7a28334835367b7e8b56ebc87183d6343c2e37536081960e",
+      "kind": "selected-date-range-offline-regression"
+    },
+    {
+      "path": "tests/l1-select-readback.test.mjs",
+      "sha256": "63a7f4120af5a33ee3df2eb3cbefbee182ee1783c1df4add31fa548d3953a9fb",
+      "sourceSha256": "63a7f4120af5a33ee3df2eb3cbefbee182ee1783c1df4add31fa548d3953a9fb",
+      "kind": "selected-l1-shadow-regression"
+    },
+    {
+      "path": "tests/l1-textarea-richtext.test.mjs",
+      "sha256": "05666894192ab29d7790a68d94a9279ebf5bfbe39c2f557f0211b2c75e8315f6",
+      "sourceSha256": "05666894192ab29d7790a68d94a9279ebf5bfbe39c2f557f0211b2c75e8315f6",
+      "kind": "selected-l1-shadow-regression"
     }
   ]
 }

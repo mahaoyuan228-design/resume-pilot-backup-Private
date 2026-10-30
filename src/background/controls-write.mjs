@@ -15,6 +15,7 @@ export function readControlCandidatesInPage(expectedUrl, timeOrigin) {
   const names = new Set(['ivu-select', 'ivu-date', 'ud-select', 'ud-date', 'ud-cascader', 'phoenix-select', 'phoenix-cascader', 'phoenix-date',
     'native-date', 'native-month', 'my97-date', 'my97-datetime', 'antdv1-month',
     'native-time', 'el-time', 'antdv1-time',
+    'native-date-range', 'el-date-range', 'antdv1-date-range', 'date-range-pair',
     'native-number', 'aria-number', 'el-number', 'antdv1-number',
     'native-combobox-search', 'el-autocomplete', 'antdv1-autocomplete', 'el-select-search', 'antdv1-select-search',
     'el-select-multiple', 'antdv1-select-multiple',
@@ -38,14 +39,14 @@ export function readControlCandidatesInPage(expectedUrl, timeOrigin) {
     const type = registry.list().find(row => row.name === inspection.adapter).type;
     // A multiple select can own both display and search inputs. Expose one
     // answer target and its root so ISOLATED cannot collect the peer as a field.
-    const root = type === 'multi-select' ? registry.resolve(element)?.readModel(element).controlRoot : null;
+    const root = ['multi-select', 'date-range'].includes(type) ? registry.resolve(element)?.readModel(element).controlRoot : null;
     if (root && roots.has(root)) continue;
     const rootSelector = root && selectorOf(root);
     // Chips may be inserted before a search input's containing li. A unique
     // input under the confirmed root survives that harmless index change.
     const selector = rootSelector && root.querySelectorAll('input:not([type="hidden"])').length === 1
       ? `${rootSelector} input:not([type="hidden"])` : selectorOf(element);
-    if (!selector || type === 'multi-select' && !rootSelector) continue;
+    if (!selector || ['multi-select', 'date-range'].includes(type) && !rootSelector) continue;
     if (root) roots.add(root);
     candidates.push({ selector, adapter: inspection.adapter, type, ...(rootSelector ? { rootSelector } : {}) });
   }

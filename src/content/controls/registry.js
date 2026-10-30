@@ -5,7 +5,7 @@
   'use strict';
   // Rebuild old registries so reinjection installs current dropdown readback
   // contracts as well as the current model resolver.
-  if (globalThis.ResumeControls?.version === 1 && globalThis.ResumeControls.revision === 16) return;
+  if (globalThis.ResumeControls?.version === 1 && globalThis.ResumeControls.revision === 17) return;
   const adapters = new Map();
   // Executable dropdown/choice plans stay bound to their original widget in MAIN.
   // Serialized shadow observations carry no authority to write another root.
@@ -219,7 +219,7 @@
     if (Array.isArray(value)) return value.slice(0, 1000).map(v => clean(v, depth + 1));
     if (typeof value !== 'object' || value.nodeType || value instanceof Map) return null;
     const out = {};
-    for (const [key, val] of Object.entries(value)) if (!['controlRoot', 'numberInput', 'vm', 'props'].includes(key) && typeof val !== 'function') out[key] = clean(val, depth + 1);
+    for (const [key, val] of Object.entries(value)) if (!['controlRoot', 'numberInput', 'vm', 'props', 'rangeInputs', 'rangeRoots', 'rangeOwners'].includes(key) && typeof val !== 'function') out[key] = clean(val, depth + 1);
     if (selectBindings.has(value)) selectBindings.set(out, selectBindings.get(value));
     if (choiceBindings.has(value)) choiceBindings.set(out, choiceBindings.get(value));
     if (searchSelections.has(value)) searchSelections.set(out, searchSelections.get(value));
@@ -230,11 +230,12 @@
     const multiline = ['textarea', 'richtext'].includes(spec.type);
     const numeric = spec.type === 'number';
     const time = spec.type === 'time';
+    const range = spec.type === 'date-range';
     const toggle = spec.type === 'switch';
     const multi = spec.type === 'multi-select';
-    const boundControl = time || numeric || multiline || ['select', 'select-search', 'multi-select', 'cascader', 'radio', 'checkbox', 'checkbox-group', 'switch'].includes(spec.type);
+    const boundControl = range || time || numeric || multiline || ['select', 'select-search', 'multi-select', 'cascader', 'radio', 'checkbox', 'checkbox-group', 'switch'].includes(spec.type);
     const choice = ['radio', 'checkbox', 'checkbox-group', 'switch'].includes(spec.type);
-    const ownerBound = time || numeric || multiline || choice || ['select-search', 'multi-select'].includes(spec.type);
+    const ownerBound = range || time || numeric || multiline || choice || ['select-search', 'multi-select'].includes(spec.type);
     const valueEqual = multiline ? proseEqual : ownerBound ? choiceEqual : equal;
     const domEqual = numeric ? choiceEqual : multiline ? proseEqual : equal;
     const validInstruction = instruction => ['planned', 'success'].includes(instruction?.status) && instruction.adapter === spec.name
@@ -247,11 +248,19 @@
         && proseEqual(instruction.value, instruction.domValue))
       && (!time || instruction.type === 'time' && typeof instruction.value === 'string'
         && instruction.value === instruction.modelValue && instruction.value === instruction.domValue)
+      && (!range || instruction.type === 'date-range' && Array.isArray(instruction.value) && instruction.value.length === 2
+        && instruction.value.every(value => validDate(value, 'date')) && instruction.value[0] <= instruction.value[1]
+        && choiceEqual(instruction.value, instruction.modelValue) && choiceEqual(instruction.value, instruction.domValue))
       && (!toggle || instruction.type === 'switch' && typeof instruction.domValue === 'boolean'
         && choiceEqual(instruction.value, instruction.modelValue) && ['set', 'toggle'].includes(instruction.operation));
     const sameOwner = (el, instruction, model) => {
       if (!ownerBound) return true;
       const owner = choiceBindings.get(instruction), ref = globalThis.ResumeControlModel.resolve(el);
+      if (range) return !!owner && owner.root === model.controlRoot && owner.version === model.version
+        && owner.rangePlan === JSON.stringify(clean(instruction)) && owner.rangeContract === model.rangeContract
+        && ['rangeInputs', 'rangeRoots', 'rangeOwners'].every(key => Array.isArray(model[key])
+          && owner[key].length === model[key].length && owner[key].every((part, index) => part === model[key][index]))
+        && model.rangeOwners.every(vm => !vm?._isDestroyed && !vm?._isBeingDestroyed);
       return !!owner && owner.root === model.controlRoot && owner.vm === ref.vm && owner.version === model.version
         && (!time || owner.timePlan === JSON.stringify(clean(instruction))
           && owner.timeContract === JSON.stringify([model.format, model.valueFormat, model.modelKind, model.timeConstraints]))
@@ -278,6 +287,8 @@
           const ref = globalThis.ResumeControlModel.resolve(model.controlRoot);
           choiceBindings.set(plan, { root: model.controlRoot, vm: ref.vm, framework: ref.framework,
             componentType: ref.componentType, version: model.version,
+            ...(range ? { rangePlan: JSON.stringify(clean(plan)), rangeContract: model.rangeContract,
+              rangeInputs: model.rangeInputs.slice(), rangeRoots: model.rangeRoots.slice(), rangeOwners: model.rangeOwners.slice() } : {}),
             ...(time ? { timePlan: JSON.stringify(clean(plan)),
               timeContract: JSON.stringify([model.format, model.valueFormat, model.modelKind, model.timeConstraints]) } : {}),
             ...(toggle ? { switchPlan: JSON.stringify(clean(plan)), switchTarget: model.switchTarget, switchInput: model.switchInput,
@@ -325,7 +336,7 @@
         const sample = () => {
           if (!el?.isConnected) return { ok: false, unsupported: true, reason: 'target_detached' };
           const model = adapter.readModel(el);
-          if ((time || numeric || multiline || toggle) && (model.disabled || model.readonly)) return { ok: false, unsupported: true, reason: 'control_not_writable' };
+          if ((range || time || numeric || multiline || toggle) && (model.disabled || model.readonly)) return { ok: false, unsupported: true, reason: 'control_not_writable' };
           if (boundControl && (resolve(el)?.name !== spec.name || !model.controlRoot
             || selectBindings.get(instruction) !== model.controlRoot || !sameOwner(el, instruction, model))) return { ok: false, unsupported: true, reason: 'control_target_changed' };
           const search = searchSelections.get(instruction), selection = search?.selection;
@@ -380,7 +391,7 @@
     } catch { return { ...manual('component_probe_failed'), adapter: null }; }
   }
   const helpers = Object.freeze({ norm, equal, prose, proseEqual, richtextValue, empty, tick, makePlan, switchPlan, safeClick, nativeSet, confirmSearchOption, check, clickAllowed, clean, validDate });
-  globalThis.ResumeControls = Object.freeze({ version: 1, revision: 16, mode: 'shadow', liveSupportClaimed: false,
+  globalThis.ResumeControls = Object.freeze({ version: 1, revision: 17, mode: 'shadow', liveSupportClaimed: false,
     register, createAdapter, resolve, inspect, plan, helpers, list: () => ordered().map(a => ({ name: a.name, lib: a.lib, type: a.type, priority: a.priority || 0 })),
     verify: (el, instruction, ctx) => resolve(el)?.verify(el, instruction, ctx) || Promise.resolve({ status: 'unsupported', reason: 'control_or_version_unconfirmed' }) });
 })();

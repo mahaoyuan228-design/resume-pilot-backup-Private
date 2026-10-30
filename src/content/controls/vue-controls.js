@@ -83,6 +83,17 @@
   function modelFor(el, probe) {
     if (choiceName.test(probe.componentName)) return choiceModel(el, probe);
     const root = rootOf(el, probe);
+    if (probe.multiple && /^(?:ElSelect|ASelect)$/u.test(probe.componentName)) {
+      const selector = probe.lib === 'element-ui' ? '.el-select__tags-text' : '.ant-select-selection__choice__content';
+      const chips = all(root, selector).filter(node => shown(node) && node.closest('.el-select,.ant-select') === root);
+      const inputs = all(root, 'input:not([type="hidden"])');
+      return { ...probe, value: probe.value ?? [], domValue: chips.map(node => n(node.textContent)),
+        available: probe.available && !probe.multiUnsupported && (probe.value == null || Array.isArray(probe.value) && probe.value.every(primitive)),
+        disabled: probe.disabled || inputs.some(input => input.disabled || input.matches(':disabled'))
+          || !!root.closest('[aria-disabled="true"],[inert]'),
+        readonly: probe.readonly || root.getAttribute('aria-readonly') === 'true'
+          || inputs.some(input => input.getAttribute('aria-readonly') === 'true') };
+    }
     let domValue;
     let options = probe.options;
     if (probe.componentName === 'ACascader') {
@@ -333,6 +344,127 @@
     if (existing.status !== 'planned' && !(autocomplete(model) && existing.status === 'success')) return existing;
     return { status: 'planned', reason: 'search_options_deferred', value: fact.value,
       labels: [fact.value], domValue: fact.value, strategy: 'ui', interaction: 'search', requiresOptionResolution: true };
+  }
+
+  function multiPlan(fact, model) {
+    if (model.disabled || model.readonly) return unsupported(model.disabled ? 'disabled' : 'readonly');
+    if (!model.available || !model.multiple) return unsupported('multi_select_contract_unconfirmed');
+    const requested = fact?.value;
+    if (!Array.isArray(requested) || !requested.length || requested.length > 30
+      || !requested.every(value => primitive(value) && (typeof value !== 'string' || n(value) && value.length <= 160)))
+      return unsupported('explicit_values_required');
+    const options = model.options || [], values = [...model.value], labels = [];
+    for (const value of values) {
+      const hits = options.filter(option => sameValue(option.value, value));
+      if (hits.length > 1 || hits[0]?.valueSupported === false || !hits.length && !(model.creatable && typeof value === 'string'))
+        return unsupported('selected_option_unconfirmed');
+      labels.push(hits[0]?.label ?? n(value));
+    }
+    if (values.some((value, index) => values.slice(0, index).some(previous => sameValue(previous, value)))
+      || !H.equal(model.domValue, labels)) return unsupported('selected_chips_mismatch');
+    for (const part of requested) {
+      const hits = options.filter(option => sameValue(option.value, part) || typeof part === 'string' && n(option.label) === n(part));
+      if (hits.length > 1) return unsupported('option_ambiguous');
+      const option = hits[0];
+      if (option && (option.disabled || option.valueSupported === false || !primitive(option.value))) return unsupported('option_unavailable');
+      if (!option && !(model.creatable && typeof part === 'string' && part === n(part))) return unsupported('option_missing');
+      const value = option ? option.value : part, label = option ? option.label : part;
+      if (!values.some(previous => sameValue(previous, value))) { values.push(value); labels.push(label); }
+    }
+    if (values.length > 30 || model.multipleLimit > 0 && values.length > model.multipleLimit) return unsupported('multiple_limit');
+    const same = sameChoices(model.value, values) && H.equal(model.domValue, labels);
+    return { status: same ? 'success' : 'planned', reason: same ? 'preexisting_same_value' : 'ready',
+      value: values, modelValue: values, domValue: labels, labels, writeStarted: false, liveSupportClaimed: false };
+  }
+
+  async function writeMulti(el, instruction, ctx) {
+    const initial = inspect(el), root = initial.controlRoot, owner = resolve(el).vm;
+    const menuSelector = '.el-select-dropdown,.ant-select-dropdown';
+    const menus = () => all(document, menuSelector).filter(shown);
+    const inputs = all(root, 'input:not([type="hidden"])');
+    const search = inputs.find(input => !input.readOnly) || inputs[0];
+    const face = initial.lib === 'element-ui' ? search : root.querySelector('.ant-select-selection');
+    if (!face || !search || search.value || menus().length) return unsupported('control_busy');
+    let baseline = modelFor(el, initial);
+    let menu;
+    const ownsMenu = candidate => {
+      const refs = [owner?.$refs?.popper?.$el].filter(Boolean);
+      for (const node of [root, ...all(root, '[aria-controls],[aria-owns]')]) {
+        for (const id of `${node.getAttribute('aria-controls') || ''} ${node.getAttribute('aria-owns') || ''}`.split(/\s+/u).filter(Boolean)) {
+          const targets = all(document, '[id]').filter(target => target.id === id);
+          if (targets.length !== 1) return false;
+          if (all(document, '[aria-controls],[aria-owns]').some(peer => peer !== root && !root.contains(peer)
+            && ['aria-controls', 'aria-owns'].some(name => (peer.getAttribute(name) || '').split(/\s+/u).includes(id)))) return false;
+          refs.push(targets[0]);
+        }
+      }
+      return refs.length > 0 && refs.every(ref => ref === candidate || candidate.contains(ref));
+    };
+    const guarded = { ...ctx, async check() {
+      await ctx.check();
+      const p = inspect(el), live = modelFor(el, p), plan = multiPlan({ value: instruction.value }, live);
+      if (resolve(el).vm !== owner || p.controlRoot !== root || p.version !== initial.version
+        || p.creatable !== initial.creatable || p.multipleLimit !== initial.multipleLimit
+        || inputs.some(input => !root.contains(input)) || !root.contains(face)
+        || !sameChoices(live.value, baseline.value) || !H.equal(live.domValue, baseline.domValue)
+        || !['planned', 'success'].includes(plan.status) || !sameChoices(plan.value, instruction.value)
+        || !H.equal(plan.labels, instruction.labels)) throw Error('multi_select_contract_changed');
+      if (menu && (!ownsMenu(menu) || menus().some(node => node !== menu))) throw Error('overlay_ownership_changed');
+    } };
+    await H.safeClick(face, guarded);
+    for (let turn = 0; turn < 40; turn++) {
+      await H.check(guarded);
+      const visible = menus();
+      if (visible.length > 1) return unsupported('overlay_ambiguous');
+      if (visible.length === 1) { menu = visible[0]; break; }
+      await pause(20);
+    }
+    if (!menu || !ownsMenu(menu)) return unsupported('overlay_ownership_unconfirmed');
+    let attempts = 0;
+    try {
+      for (let index = initial.value?.length || 0; index < instruction.value.length; index++) {
+        await H.check(guarded);
+        const label = instruction.labels[index];
+        // In tags mode typing a known label can create a second option whose
+        // string value differs from the known code. Click existing options as
+        // displayed; type only an explicit new tag (or an ordinary filter).
+        const known = inspect(el).options.some(option => sameValue(option.value, instruction.value[index]));
+        if (initial.creatable ? !known : initial.filterable) await H.nativeSet(search, label, guarded, ['input']);
+        const selector = initial.lib === 'element-ui' ? '.el-select-dropdown__item' : '.ant-select-dropdown-menu-item';
+        const hits = () => all(menu, selector).filter(node => shown(node) && n(node.textContent) === n(label)
+          && !node.closest('[disabled],[aria-disabled="true"],.is-disabled,.ant-select-dropdown-menu-item-disabled'));
+        const busy = () => menu.matches('[aria-busy="true"]') || !!menu.querySelector('[aria-busy="true"],.ant-spin-spinning,.el-loading-mask');
+        let target;
+        for (let turn = 0; turn < 80; turn++) {
+          await H.check(guarded);
+          if (!shown(menu)) return unsupported('control_changed');
+          const matches = hits();
+          if (matches.length > 1) return unsupported('option_ambiguous');
+          if (!busy() && matches.length === 1) { target = matches[0]; break; }
+          await pause(20);
+        }
+        if (!target) return unsupported('option_not_found');
+        await H.safeClick(target, { ...guarded, async check() {
+          await guarded.check();
+          if (!shown(menu) || busy() || hits().length !== 1 || hits()[0] !== target) throw Error('option_changed');
+        } });
+        attempts++;
+        // A query or a painted chip is insufficient: each click must commit
+        // exactly the next typed model value and its independent visible label.
+        const live = modelFor(el, inspect(el));
+        if (!sameChoices(live.value, instruction.value.slice(0, index + 1))
+          || !H.equal(live.domValue, instruction.labels.slice(0, index + 1))) return unsupported('selection_not_committed');
+        baseline = live;
+      }
+      return { strategy: 'ui', interaction: 'multiple', attempts };
+    } finally {
+      if (shown(menu)) {
+        await H.check(guarded);
+        search.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', keyCode: 27, which: 27, bubbles: true, cancelable: true }));
+        const closing = await waitOwnedClosed(el, menu, menuSelector, guarded);
+        if (closing) return closing;
+      }
+    }
   }
 
   function datePlan(fact, model, type) {
@@ -600,6 +732,7 @@
     ['el-textarea', 'element-ui', 'textarea', 175, ['ElInput'], writeInput],
     ['el-select', 'element-ui', 'select', 400, ['ElSelect'], writeSelect],
     ['el-select-search', 'element-ui', 'select-search', 450, ['ElSelect'], writeSearch],
+    ['el-select-multiple', 'element-ui', 'multi-select', 475, ['ElSelect'], writeMulti],
     ['el-autocomplete', 'element-ui', 'select-search', 475, ['ElAutocomplete'], writeSearch],
     ['el-radio', 'element-ui', 'radio', 300, ['ElRadioGroup', 'ElRadio'], writeChoice],
     ['el-checkbox', 'element-ui', 'checkbox', 300, ['ElCheckboxGroup', 'ElCheckbox'], writeChoice],
@@ -611,6 +744,7 @@
     ['antdv1-textarea', 'ant-design-vue', 'textarea', 175, ['ATextarea'], writeInput],
     ['antdv1-select', 'ant-design-vue', 'select', 400, ['ASelect'], writeSelect],
     ['antdv1-select-search', 'ant-design-vue', 'select-search', 450, ['ASelect'], writeSearch],
+    ['antdv1-select-multiple', 'ant-design-vue', 'multi-select', 475, ['ASelect'], writeMulti],
     ['antdv1-autocomplete', 'ant-design-vue', 'select-search', 475, ['AAutoComplete'], writeSearch],
     ['antdv1-radio', 'ant-design-vue', 'radio', 300, ['ARadioGroup', 'ARadio'], writeChoice],
     ['antdv1-checkbox-group', 'ant-design-vue', 'checkbox', 300, ['ACheckboxGroup'], writeChoice],
@@ -626,6 +760,8 @@
     R.register({ name, lib, type, priority,
       matches(el, p) {
         if (!librarySpec(lib, major, names)(el, p)) return false;
+        if (type === 'multi-select') return p.multiple;
+        if (/Select/u.test(p.componentName) && p.multiple) return false;
         if (name === 'el-textarea') return p.type === 'textarea';
         if (name === 'el-input') return p.type !== 'textarea';
         if (name === 'el-month') return p.type === 'month';
@@ -639,6 +775,7 @@
       readModel: modelFor,
       ...(type === 'month' || type === 'date' ? { plan: (fact, model) => datePlan(fact, model, type) }
         : type === 'select-search' ? { plan: searchPlan }
+          : type === 'multi-select' ? { plan: multiPlan }
           : type === 'cascader' ? { plan: cascaderPlan }
             : ['radio', 'checkbox', 'switch'].includes(type) ? { plan: (fact, model, ctx) => choicePlan(fact, model, type, ctx) } : {}),
       performWrite,

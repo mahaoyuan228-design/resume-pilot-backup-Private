@@ -444,3 +444,77 @@ test('offline multiline and richtext writers retain exact prose with native and 
     await record(testInfo, zoo, { shadow, results, fidelity, scope: 'offline disposable prose controls only' });
   } finally { await zoo.close(); }
 });
+
+for (const [library, adapterName] of [['ant', 'antdv1-select-multiple'], ['element', 'el-select-multiple']]) {
+  test(`offline ${library} multiple and tag writers commit arrays through real Vue panels`, async ({}, testInfo) => {
+    const zoo = await startZoo('cms-month');
+    try {
+      await zoo.page.evaluate(async library => {
+        const host = document.createElement('form');
+        host.id = 'l1-multi-fixture';
+        host.innerHTML = '<div id="l1-multi-vue"></div>';
+        const effects = window.__multiEffects = { submits: 0, removeClicks: 0, options: [] };
+        host.addEventListener('submit', event => { event.preventDefault(); effects.submits++; });
+        host.addEventListener('click', event => {
+          if (event.target.closest('.ant-select-selection__choice__remove,.el-tag__close')) effects.removeClicks++;
+        }, true);
+        document.addEventListener('click', event => {
+          const option = event.target.closest('.ant-select-dropdown-menu-item,.el-select-dropdown__item');
+          if (option) effects.options.push(option.textContent.trim());
+        }, true);
+        document.body.append(host);
+        const options = '<a-select-option v-for="o in options" :key="o.value" :value="o.value">{{o.label}}</a-select-option>';
+        const ant = `<section><a-select id="l1-multi" style="width:360px" v-model="multiple" mode="multiple">${options}</a-select>`
+          + `<a-select id="l1-tags" style="width:360px" v-model="tags" mode="tags">${options}</a-select></section>`;
+        const elementOptions = '<el-option v-for="o in options" :key="o.value" :value="o.value" :label="o.label"></el-option>';
+        const element = `<section><el-select id="l1-multi" style="width:360px" v-model="multiple" multiple>${elementOptions}</el-select>`
+          + `<el-select id="l1-tags" style="width:360px" v-model="tags" multiple filterable allow-create>${elementOptions}</el-select></section>`;
+        window.__multiVue = new Vue({
+          el: '#l1-multi-vue', template: library === 'ant' ? ant : element,
+          data: { multiple: ['keep'], tags: [], options: [
+            { value: 'keep', label: 'Keep' }, { value: 'alpha', label: 'Alpha' }, { value: 'beta', label: 'Beta' },
+          ] },
+        });
+        await Vue.nextTick();
+      }, library);
+      const requests = [
+        { selector: '#l1-multi', fact: { value: ['Alpha', 'Beta'] }, values: ['keep', 'alpha', 'beta'], labels: ['Keep', 'Alpha', 'Beta'] },
+        { selector: '#l1-tags', fact: { value: ['Custom token', 'Alpha'] }, values: ['Custom token', 'alpha'], labels: ['Custom token', 'Alpha'] },
+      ];
+      const shadow = await zoo.shadow(requests.map(({ selector, fact }) => ({ selector, fact })));
+      for (const plan of shadow.plans) expect(plan, JSON.stringify(shadow))
+        .toMatchObject({ status: 'planned', adapter: adapterName, type: 'multi-select', liveSupportClaimed: false });
+      expect(await zoo.page.evaluate(() => ({ multiple: window.__multiVue.multiple, tags: window.__multiVue.tags })))
+        .toEqual({ multiple: ['keep'], tags: [] });
+      const results = await zoo.execute(async requests => {
+        const results = [];
+        for (const { selector, fact } of requests) {
+          const el = document.querySelector(selector), plan = ResumeControls.plan(el, fact), adapter = ResumeControls.resolve(el);
+          const denied = await adapter.write(el, plan);
+          const written = await adapter.write(el, plan, { allowWrite: true, check: async () => {
+            if (!el.isConnected || document.visibilityState !== 'visible') throw Error('zoo_control_not_visible');
+          } });
+          const verified = await ResumeControls.verify(el, plan);
+          const again = await adapter.write(el, ResumeControls.plan(el, fact), { allowWrite: true, check: async () => {} });
+          results.push({ denied, written, verified, again });
+        }
+        return results;
+      }, [requests], 'MAIN');
+      for (let index = 0; index < requests.length; index++) {
+        expect(results[index].denied.reason).toBe('shadow_mode');
+        expect(results[index].written.strategy, JSON.stringify(results)).toBe('ui');
+        expect(results[index].verified, JSON.stringify(results)).toMatchObject({
+          status: 'success', modelReadback: requests[index].values, domReadback: requests[index].labels,
+        });
+        expect(results[index].again).toMatchObject({ status: 'success', attempts: 0 });
+      }
+      expect(await zoo.page.evaluate(() => ({ multiple: window.__multiVue.multiple, tags: window.__multiVue.tags })))
+        .toEqual({ multiple: requests[0].values, tags: requests[1].values });
+      await expect(zoo.page.locator('.ant-select-dropdown:visible,.el-select-dropdown:visible')).toHaveCount(0);
+      expect(await zoo.page.evaluate(() => window.__multiEffects)).toEqual({
+        submits: 0, removeClicks: 0, options: ['Alpha', 'Beta', 'Custom token', 'Alpha'],
+      });
+      await record(testInfo, zoo, { shadow, results, scope: 'offline real Vue multiple and tag controls only' });
+    } finally { await zoo.close(); }
+  });
+}

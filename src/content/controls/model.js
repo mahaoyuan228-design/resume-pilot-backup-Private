@@ -2,7 +2,7 @@
 // instances or handlers to the extension. No events, setters or network calls.
 (() => {
   'use strict';
-  if (globalThis.ResumeControlModel?.version === 1 && globalThis.ResumeControlModel.revision === 8) return;
+  if (globalThis.ResumeControlModel?.version === 1 && globalThis.ResumeControlModel.revision === 9) return;
   const norm = value => String(value ?? '').normalize('NFKC').replace(/\s+/gu, ' ').trim();
   function serial(value, depth = 0) {
     if (value == null || ['string', 'number', 'boolean'].includes(typeof value)) return value ?? null;
@@ -270,6 +270,11 @@
       lazy, disabled: !!(props.disabled || vm?.disabled || input?.disabled),
       readonly: !!props.readonly, controlRoot: root,
       multiple: !!props.multiple || ['multiple', 'tags'].includes(props.mode), separator: typeof props.separator === 'string' ? props.separator : null,
+      ...(/^(?:ElSelect|ASelect)$/u.test(componentName) ? {
+        creatable: props.mode === 'tags' || !!(props.allowCreate && props.filterable),
+        multiUnsupported: !!(props.labelInValue || props.collapseTags || props.maxTagCount != null || props.tokenSeparators?.length),
+        multipleLimit: props.multipleLimit || 0
+      } : {}),
       ...(cascader ? { separator: componentName === 'ElCascader' ? props.separator ?? ' / ' : ' / ',
         showAllLevels: props.showAllLevels !== false,
         cascaderUnsupported: !!(props.multiple || config.multiple || config.emitPath === false || config.checkStrictly
@@ -277,5 +282,5 @@
           || props.displayRender || vm?.$scopedSlots?.displayRender || vm?.$scopedSlots?.default || customFields) } : {}),
       versionEvidence: version ? 'page_library_export' : 'version_unconfirmed' };
   }
-  globalThis.ResumeControlModel = Object.freeze({ version: 1, revision: 8, inspect, resolve, serial, optionsOf });
+  globalThis.ResumeControlModel = Object.freeze({ version: 1, revision: 9, inspect, resolve, serial, optionsOf });
 })();

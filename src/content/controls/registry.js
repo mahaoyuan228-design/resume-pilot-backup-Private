@@ -5,12 +5,13 @@
   'use strict';
   // Rebuild old registries so reinjection installs current dropdown readback
   // contracts as well as the current model resolver.
-  if (globalThis.ResumeControls?.version === 1 && globalThis.ResumeControls.revision === 10) return;
+  if (globalThis.ResumeControls?.version === 1 && globalThis.ResumeControls.revision === 11) return;
   const adapters = new Map();
   // Executable dropdown/choice plans stay bound to their original widget in MAIN.
   // Serialized shadow observations carry no authority to write another root.
   const selectBindings = new WeakMap();
   const choiceBindings = new WeakMap();
+  const searchSelections = new WeakMap();
   const norm = value => String(value ?? '').normalize('NFKC').replace(/\s+/gu, ' ').trim();
   const equal = (a, b) => Array.isArray(a) || Array.isArray(b)
     ? Array.isArray(a) && Array.isArray(b) && a.length === b.length && a.every((v, i) => equal(v, b[i]))
@@ -134,15 +135,27 @@
     node.click();
     await tick();
   }
-  async function nativeSet(node, value, ctx) {
+  async function nativeSet(node, value, ctx, events = ['input', 'change', 'blur']) {
     await check(ctx);
     if (!node?.isConnected || !clickAllowed(node) || node.readOnly || node.getAttribute('aria-readonly') === 'true' || !node.matches('input,textarea,select') || node.type === 'file') throw new Error('control_not_writable');
     const prototype = node.tagName === 'SELECT' ? HTMLSelectElement.prototype : node.tagName === 'TEXTAREA' ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
     const setter = Object.getOwnPropertyDescriptor(prototype, 'value')?.set;
     if (!setter) throw new Error('native_setter_missing');
     setter.call(node, value);
-    for (const type of ['input', 'change', 'blur']) { await check(ctx); node.dispatchEvent(new Event(type, { bubbles: true })); }
+    for (const type of events) { await check(ctx); node.dispatchEvent(new Event(type, { bubbles: true })); }
     await tick();
+  }
+  function confirmSearchOption(instruction, model, option) {
+    // Resolve a deferred code only from this widget's observed options after
+    // its exact option was clicked. A typed query grants no readback authority.
+    const search = searchSelections.get(instruction);
+    if (!search || instruction.type !== 'select-search' || selectBindings.get(instruction) !== model.controlRoot
+      || !equal(search.domValue, option?.label) || option.disabled
+      || !search.deferred && !choiceEqual(search.value, option.value)
+      || option.valueSupported === false || !model.options?.includes(option)) throw Error('option_unconfirmed');
+    const hits = model.options.filter(item => !item.disabled && equal(item.label, option.label));
+    if (hits.length !== 1) throw Error('option_ambiguous');
+    search.selection = { value: option.value, domValue: option.label };
   }
   function clean(value, depth = 0) {
     if (depth > 8) return null;
@@ -153,15 +166,17 @@
     for (const [key, val] of Object.entries(value)) if (!['controlRoot', 'vm', 'props'].includes(key) && typeof val !== 'function') out[key] = clean(val, depth + 1);
     if (selectBindings.has(value)) selectBindings.set(out, selectBindings.get(value));
     if (choiceBindings.has(value)) choiceBindings.set(out, choiceBindings.get(value));
+    if (searchSelections.has(value)) searchSelections.set(out, searchSelections.get(value));
     return out;
   }
   function createAdapter(spec) {
     const readModel = spec.readModel || ((el, probe) => ({ ...probe }));
     const boundControl = ['select', 'select-search', 'cascader', 'radio', 'checkbox', 'checkbox-group', 'switch'].includes(spec.type);
     const choice = ['radio', 'checkbox', 'checkbox-group', 'switch'].includes(spec.type);
-    const valueEqual = choice ? choiceEqual : equal;
+    const ownerBound = choice || spec.type === 'select-search';
+    const valueEqual = ownerBound ? choiceEqual : equal;
     const sameOwner = (el, instruction, model) => {
-      if (!choice) return true;
+      if (!ownerBound) return true;
       const owner = choiceBindings.get(instruction), ref = globalThis.ResumeControlModel.resolve(el);
       return !!owner && owner.root === model.controlRoot && owner.vm === ref.vm && owner.version === model.version;
     };
@@ -174,8 +189,11 @@
         const plan = { adapter: spec.name, lib: spec.lib, type: spec.type,
           ...(spec.plan ? spec.plan(fact, model, ctx) : makePlan(fact, model, { type: spec.type })) };
         if (boundControl && model.controlRoot) selectBindings.set(plan, model.controlRoot);
-        if (choice && model.controlRoot) choiceBindings.set(plan, { root: model.controlRoot,
+        if (ownerBound && model.controlRoot) choiceBindings.set(plan, { root: model.controlRoot,
           vm: globalThis.ResumeControlModel.resolve(model.controlRoot).vm, version: model.version });
+        if (spec.type === 'select-search') searchSelections.set(plan, {
+          required: !!(plan.requiresOptionResolution || plan.requiresOptionClick), deferred: !!plan.requiresOptionResolution,
+          value: plan.modelValue ?? plan.value, domValue: plan.domValue ?? plan.value, selection: null });
         return plan;
       },
       async write(el, instruction, ctx) {
@@ -207,7 +225,10 @@
           const model = adapter.readModel(el);
           if (boundControl && (resolve(el)?.name !== spec.name || !model.controlRoot
             || selectBindings.get(instruction) !== model.controlRoot || !sameOwner(el, instruction, model))) return { ok: false, unsupported: true, reason: 'control_target_changed' };
-          return { ok: model.available && valueEqual(model.value, instruction.modelValue ?? instruction.value) && equal(model.domValue, instruction.domValue ?? instruction.value),
+          const search = searchSelections.get(instruction), selection = search?.selection;
+          const clicked = !search?.required || !!selection;
+          return { ok: model.available && clicked && valueEqual(model.value, selection ? selection.value : search ? search.value : instruction.modelValue ?? instruction.value)
+              && equal(model.domValue, selection ? selection.domValue : search ? search.domValue : instruction.domValue ?? instruction.value),
             unsupported: !model.available, domReadback: clean(model.domValue), modelReadback: clean(model.value) };
         };
         const first = sample();
@@ -255,8 +276,8 @@
         probe, adapter: adapter?.name || null, model: adapter ? adapter.readModel(el, probe) : probe });
     } catch { return { ...manual('component_probe_failed'), adapter: null }; }
   }
-  const helpers = Object.freeze({ norm, equal, empty, tick, makePlan, safeClick, nativeSet, check, clickAllowed, clean, validDate });
-  globalThis.ResumeControls = Object.freeze({ version: 1, revision: 10, mode: 'shadow', liveSupportClaimed: false,
+  const helpers = Object.freeze({ norm, equal, empty, tick, makePlan, safeClick, nativeSet, confirmSearchOption, check, clickAllowed, clean, validDate });
+  globalThis.ResumeControls = Object.freeze({ version: 1, revision: 11, mode: 'shadow', liveSupportClaimed: false,
     register, createAdapter, resolve, inspect, plan, helpers, list: () => ordered().map(a => ({ name: a.name, lib: a.lib, type: a.type, priority: a.priority || 0 })),
     verify: (el, instruction, ctx) => resolve(el)?.verify(el, instruction, ctx) || Promise.resolve({ status: 'unsupported', reason: 'control_or_version_unconfirmed' }) });
 })();

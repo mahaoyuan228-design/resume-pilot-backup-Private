@@ -13,7 +13,7 @@
 
   // A class-only or unrecognised framework widget must not become native text.
   // That includes its readonly display input and its hidden search input.
-  function plain(el, probe) {
+  function plain(el, probe, searchable = false) {
     if (!el || !el.matches?.('input,textarea,select')) return false;
     if (probe?.lib && probe.lib !== 'native') return false;
     if (probe?.framework && probe.framework !== 'native') return false;
@@ -24,7 +24,7 @@
       // be confirmed. Never silently downgrade an unknown calendar to text.
       if (/(?:^|\s)Wdate(?:\s|$)/iu.test(classes)
         || ['onfocus', 'onclick'].some(name => /\bWdatePicker\b/u.test(node.getAttribute(name) || ''))) return false;
-      if (node !== el && node.matches?.('[role="combobox"],[role="listbox"],[role="tree"]')) return false;
+      if ((node !== el || !searchable) && node.matches?.('[role="combobox"],[role="listbox"],[role="tree"]')) return false;
     }
     return true;
   }
@@ -86,6 +86,115 @@
     api.register({ lib: 'native', priority: 10,
       libVersionProbe: () => ({ lib: 'native', version: 'html' }), ...spec });
   }
+
+  const shown = node => {
+    if (!node?.isConnected || !node.getClientRects().length || node.closest('[hidden],[aria-hidden="true"]')) return false;
+    for (let parent = node; parent; parent = parent.parentElement) {
+      const style = getComputedStyle(parent);
+      if (style.display === 'none' || ['hidden', 'collapse'].includes(style.visibility)) return false;
+    }
+    return true;
+  };
+  const ariaTokens = node => ['aria-controls', 'aria-owns'].flatMap(name =>
+    (node.getAttribute(name) || '').split(/\s+/u).filter(Boolean));
+  function comboPortal(el) {
+    if (!el?.isConnected || el.ownerDocument !== document || el.getRootNode() !== document
+      || !plain(el, globalThis.ResumeControlModel?.inspect(el), true)
+      || !el.matches('input[role="combobox"]') || !['text', 'search'].includes(el.type)
+      || !['list', 'both'].includes(el.getAttribute('aria-autocomplete'))
+      || !['true', 'false'].includes(el.getAttribute('aria-expanded'))) return null;
+    const ids = [...new Set(ariaTokens(el))];
+    if (ids.length !== 1) return null;
+    const lists = [...document.querySelectorAll('[id]')].filter(node => node.id === ids[0]);
+    if (lists.length !== 1 || !lists[0].matches('[role="listbox"]')
+      || lists[0].getRootNode() !== document || lists[0].querySelector('input,textarea,select,[role="listbox"]')) return null;
+    const owners = [...document.querySelectorAll('[aria-controls],[aria-owns]')]
+      .filter(node => ariaTokens(node).includes(ids[0]));
+    return owners.length === 1 && owners[0] === el ? lists[0] : null;
+  }
+  const comboOptions = portal => [...portal.querySelectorAll('[role="option"]')]
+    .filter(node => node.closest('[role="listbox"]') === portal
+      && !node.parentElement.closest('[role="option"]'));
+  const optionEnabled = node => !node.disabled && !node.matches(':disabled')
+    && !node.closest('[disabled],[aria-disabled="true"],[inert]');
+  const comboBusy = (el, portal) => !!(el.closest('[aria-busy="true"]')
+    || portal.matches('[aria-busy="true"]') || portal.querySelector('[aria-busy="true"]'));
+  function comboModel(el, probe) {
+    const portal = comboPortal(el), options = portal ? comboOptions(portal) : [];
+    const selected = options.filter(node => node.getAttribute('aria-selected') === 'true');
+    const committed = !!portal && !shown(portal) && el.getAttribute('aria-expanded') === 'false'
+      && !comboBusy(el, portal) && selected.length === 1 && optionEnabled(selected[0])
+      && equal(norm(selected[0].textContent), el.value);
+    return { ...base(el, probe, el.value, committed ? norm(el.value) : '', options.map(node => ({
+      value: norm(node.textContent), label: norm(node.textContent), disabled: !optionEnabled(node)
+    }))), available: !!portal, selectionCommitted: committed };
+  }
+  register({ name: 'native-combobox-search', type: 'select-search', priority: 450,
+    matches: (el, probe) => plain(el, probe, true) && !!comboPortal(el),
+    readModel: comboModel,
+    plan(fact, model) {
+      const value = fact?.value;
+      if (typeof value !== 'string' || !norm(value) || value.length > 160)
+        return { status: 'unsupported', reason: 'explicit_option_required' };
+      const plan = api.helpers.makePlan(fact, model, { type: 'text' });
+      return { ...plan, strategy: 'ui', interaction: 'search', requiresOptionClick: plan.status === 'planned',
+        writeStarted: false, liveSupportClaimed: false };
+    },
+    async performWrite(el, instruction, ctx) {
+      const portal = comboPortal(el), reason = guards(el);
+      if (reason || !portal) return noWrite(reason || 'overlay_ownership_unconfirmed');
+      const desired = norm(instruction.domValue ?? instruction.value);
+      if (el.value && !equal(el.value, desired)) return noWrite('existing_value');
+      if (shown(portal) || [...document.querySelectorAll('[role="listbox"]')].some(shown)) return noWrite('control_busy');
+      if (comboBusy(el, portal)) return noWrite('control_busy');
+      const binding = ['aria-controls', 'aria-owns', 'aria-autocomplete'].map(name => el.getAttribute(name));
+      const dialogs = new Set([...document.querySelectorAll('[role="dialog"]')].filter(shown));
+      const owned = { ...ctx, async check() {
+        await ctx.check();
+        if (guards(el) || comboPortal(el) !== portal
+          || binding.some((value, i) => el.getAttribute(['aria-controls', 'aria-owns', 'aria-autocomplete'][i]) !== value)
+          || el.value && !equal(el.value, desired)) throw Error('control_changed');
+        if ([...document.querySelectorAll('[role="listbox"]')].some(node => node !== portal && shown(node))
+          || [...document.querySelectorAll('[role="dialog"]')].some(node => shown(node) && !dialogs.has(node)))
+          throw Error('overlay_ambiguous');
+      } };
+      await safeClick(el, owned);
+      for (let i = 0; i < 40 && !shown(portal); i++) { await api.helpers.check(owned); await tick(20); }
+      if (!shown(portal) || el.getAttribute('aria-expanded') !== 'true') return noWrite('select_not_open');
+      await nativeSet(el, desired, owned, ['input']);
+      for (let i = 0; i < 80; i++) {
+        await api.helpers.check(owned);
+        if (!shown(portal) || el.getAttribute('aria-expanded') !== 'true') return noWrite('control_changed');
+        const hits = comboOptions(portal).filter(node => shown(node) && optionEnabled(node)
+          && norm(node.textContent) === desired);
+        if (hits.length > 1) return noWrite('option_ambiguous');
+        if (!comboBusy(el, portal) && hits.length === 1) {
+          const target = hits[0];
+          const observed = { ...comboModel(el), options: comboOptions(portal).filter(shown).map(node => ({
+            value: norm(node.textContent), label: norm(node.textContent), disabled: !optionEnabled(node)
+          })) };
+          const selected = observed.options.find(option => !option.disabled && option.label === desired);
+          await safeClick(target, { ...owned, async check() {
+            await owned.check();
+            const live = comboOptions(portal).filter(node => shown(node) && optionEnabled(node)
+              && norm(node.textContent) === desired);
+            if (!shown(portal) || comboBusy(el, portal) || live.length !== 1 || live[0] !== target)
+              throw Error('option_changed');
+          } });
+          api.helpers.confirmSearchOption(instruction, observed, selected);
+          for (let count = 0; count < 60; count++) {
+            await api.helpers.check(owned);
+            if (!shown(portal) && el.getAttribute('aria-expanded') === 'false')
+              return { strategy: 'ui', interaction: 'search', attempts: 1 };
+            await tick(20);
+          }
+          return noWrite('owned_overlay_cleanup_timeout');
+        }
+        await tick(20);
+      }
+      return noWrite('option_not_found');
+    }
+  });
 
   function dateModel(el, probe, type) {
     return { ...base(el, probe, el.value), valueFormat: type === 'month' ? 'YYYY-MM' : 'YYYY-MM-DD',

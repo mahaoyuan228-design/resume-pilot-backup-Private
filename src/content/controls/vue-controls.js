@@ -26,6 +26,7 @@
     && probe.lib === lib && Number(probe.major ?? String(probe.version || '').split('.')[0]) === major;
   const named = (probe, names) => names.includes(probe.componentName);
   const empty = value => value == null || value === '' || (Array.isArray(value) && value.every(empty));
+  const autocomplete = p => /^(?:ElAutocomplete|AAutoComplete)$/u.test(p.componentName);
   const unsupported = reason => ({ status: 'unsupported', reason });
   const choiceName = /^(?:El|A)(?:Radio|Checkbox|Switch)(?:Group)?$/u;
   const primitive = value => ['string', 'boolean'].includes(typeof value) || typeof value === 'number' && Number.isFinite(value);
@@ -146,6 +147,99 @@
     return root.closest?.('.el-select,.ant-select') || root;
   }
 
+  async function writeSearch(el, instruction, ctx) {
+    const p = inspect(el), root = rootOf(el, p), owner = resolve(el).vm;
+    const menuSelector = '.el-select-dropdown,.el-autocomplete-suggestion,.ant-select-dropdown';
+    const menus = () => all(document, menuSelector).filter(shown);
+    if (menus().length) return unsupported('control_busy');
+    const inputs = all(root, 'input:not([type="hidden"])');
+    if (inputs.length !== 1 || inputs[0].disabled) return unsupported('search_input_unavailable');
+    const search = inputs[0], desired = n(instruction.labels?.[0] ?? instruction.value);
+    let menu, menuRefs, filtering = false, selecting = false, selectedValue;
+    const componentRefs = () => [owner?.$refs?.popper?.$el, owner?.$refs?.suggestions?.$el].filter(Boolean);
+    const ownsMenu = candidate => {
+      const refs = componentRefs();
+      if (refs.some(ref => ref !== candidate && !candidate.contains(ref))
+        || menuRefs && (refs.length !== menuRefs.length || refs.some((ref, index) => ref !== menuRefs[index]))) return false;
+      for (const node of [root, ...all(root, '[aria-controls],[aria-owns]')]) {
+        for (const id of `${node.getAttribute('aria-controls') || ''} ${node.getAttribute('aria-owns') || ''}`.trim().split(/\s+/u).filter(Boolean)) {
+          const targets = all(document, '[id]').filter(target => target.id === id);
+          if (targets.length > 1) return false;
+          if (targets.length === 1) {
+            if (targets[0] !== candidate && !candidate.contains(targets[0])) return false;
+            const peers = all(document, '[aria-controls],[aria-owns]').filter(peer => peer !== root && !root.contains(peer)
+              && ['aria-controls', 'aria-owns'].some(name => (peer.getAttribute(name) || '').split(/\s+/u).includes(id)));
+            if (peers.length) return false;
+            refs.push(targets[0]);
+          }
+        }
+      }
+      return refs.some(ref => ref === candidate || candidate.contains(ref));
+    };
+    const searchCtx = { ...ctx, async check() {
+      await ctx.check();
+      const current = inspect(el);
+      const currentInputs = all(root, 'input:not([type="hidden"])');
+      if (!el.isConnected || resolve(el).vm !== owner || current.controlRoot !== root
+        || current.version !== p.version || !current.available || current.disabled || current.readonly
+        || currentInputs.length !== 1 || currentInputs[0] !== search || !search.isConnected
+        || search.disabled || filtering && (search.readOnly || search.getAttribute('aria-readonly') === 'true')
+        || !shown(root)) throw Error('control_changed');
+      if (!sameValue(current.value, p.value) && !(empty(current.value) && empty(p.value))
+        && !(autocomplete(p) && H.equal(current.value, desired))
+        && !(selecting && sameValue(current.value, selectedValue))) throw Error('existing_value');
+      const visible = menus();
+      if (visible.length > 1 || visible.some(candidate => menu ? candidate !== menu : !ownsMenu(candidate))) throw Error('overlay_ambiguous');
+    } };
+    const face = p.lib === 'ant-design-vue' ? root.querySelector('.ant-select-selection') : search;
+    if (!face) return unsupported('control_guard');
+    await H.safeClick(face, searchCtx);
+    // Filtering must not dispatch change/blur: autocomplete commits and closes
+    // on those events even though no catalog option has been selected.
+    await H.nativeSet(search, desired, searchCtx, ['input']);
+    filtering = true;
+    const optionSelector = p.lib === 'element-ui'
+      ? autocomplete(p) ? '[role="option"]' : '.el-select-dropdown__item' : '.ant-select-dropdown-menu-item';
+    const exactOptions = () => all(menu, optionSelector).filter(node => shown(node)
+      && !node.matches('.is-disabled,.ant-select-dropdown-menu-item-disabled,[aria-disabled="true"],:disabled')
+      && !node.closest('[aria-disabled="true"]') && n(node.textContent) === desired);
+    const busy = () => owner?.loading || menu.matches('.is-loading,[aria-busy="true"]')
+      || menu.querySelector('[aria-busy="true"],.ant-spin-spinning,.el-loading-mask');
+    for (let count = 0; count < 80; count++) {
+      await H.check(searchCtx);
+      const visible = menus();
+      if (visible.length > 1) return unsupported('overlay_ambiguous');
+      if (visible.length === 1) {
+        if (menu && menu !== visible[0] || !ownsMenu(visible[0])) return unsupported('overlay_unowned');
+        menu = visible[0]; menuRefs ||= componentRefs();
+        const matches = exactOptions();
+        if (matches.length > 1) return unsupported('option_ambiguous');
+        if (!busy() && matches.length === 1) {
+          const model = modelFor(el, inspect(el));
+          const options = model.options.filter(option => !option.disabled && n(option.label) === desired);
+          if (options.length !== 1 || options[0].valueSupported === false) return unsupported('option_unconfirmed');
+          if (!instruction.requiresOptionResolution && !H.equal(options[0].value, instruction.value)) return unsupported('instruction_stale');
+          const optionCtx = { ...searchCtx, async check() {
+            await searchCtx.check();
+            const current = exactOptions();
+            const live = modelFor(el, inspect(el)).options.filter(option => !option.disabled && n(option.label) === desired);
+            if (!shown(menu) || busy() || current.length !== 1 || current[0] !== matches[0] || !ownsMenu(menu)
+              || live.length !== 1 || !sameValue(live[0].value, options[0].value)
+              || live[0].valueSupported === false) throw Error('option_changed');
+          } };
+          selecting = true; selectedValue = options[0].value;
+          await H.safeClick(matches[0], optionCtx);
+          filtering = false;
+          H.confirmSearchOption(instruction, model, options[0]);
+          const closing = await waitOwnedClosed(el, menu, menuSelector, searchCtx);
+          return closing || { strategy: 'ui', interaction: 'search', attempts: 1 };
+        }
+      }
+      await pause(20);
+    }
+    return unsupported('option_not_found');
+  }
+
   // Opening is allowed only with no pre-existing menu. A portal is accepted only
   // when this action produces exactly one visible menu of the expected library.
   async function writeSelect(el, instruction, ctx) {
@@ -196,11 +290,19 @@
   }
 
   function searchPlan(fact, model) {
-    const existing = H.makePlan(fact, { ...model, options: [] }, { type: 'text' });
-    if (existing.status !== 'planned') return existing;
-    if (typeof fact.value !== 'string' || !n(fact.value) || fact.value.length > 160)
+    if (model.multiple) return unsupported('multiple_select_manual');
+    if (!primitive(fact.value)) return unsupported('explicit_option_required');
+    if (typeof fact.value === 'string' && (!n(fact.value) || fact.value.length > 160))
       return unsupported('explicit_option_required');
-    if ((model.options || []).length) return H.makePlan(fact, model, { type: 'select' });
+    const hits = (model.options || []).filter(option => H.equal(option.value, fact.value) || H.equal(option.label, fact.value));
+    if (hits.length) {
+      const plan = H.makePlan(fact, model, { type: 'select' });
+      return autocomplete(model) && ['planned', 'success'].includes(plan.status)
+        ? { ...plan, status: 'planned', requiresOptionClick: true } : plan;
+    }
+    if (typeof fact.value !== 'string') return unsupported('explicit_option_required');
+    const existing = H.makePlan(fact, { ...model, options: [] }, { type: 'text' });
+    if (existing.status !== 'planned' && !(autocomplete(model) && existing.status === 'success')) return existing;
     return { status: 'planned', reason: 'search_options_deferred', value: fact.value,
       labels: [fact.value], domValue: fact.value, strategy: 'ui', interaction: 'search', requiresOptionResolution: true };
   }
@@ -469,6 +571,8 @@
     ['el-input', 'element-ui', 'text', 150, ['ElInput'], writeInput],
     ['el-textarea', 'element-ui', 'textarea', 175, ['ElInput'], writeInput],
     ['el-select', 'element-ui', 'select', 400, ['ElSelect'], writeSelect],
+    ['el-select-search', 'element-ui', 'select-search', 450, ['ElSelect'], writeSearch],
+    ['el-autocomplete', 'element-ui', 'select-search', 475, ['ElAutocomplete'], writeSearch],
     ['el-radio', 'element-ui', 'radio', 300, ['ElRadioGroup', 'ElRadio'], writeChoice],
     ['el-checkbox', 'element-ui', 'checkbox', 300, ['ElCheckboxGroup', 'ElCheckbox'], writeChoice],
     ['el-switch', 'element-ui', 'switch', 300, ['ElSwitch'], writeChoice],
@@ -478,7 +582,8 @@
     ['antdv1-input', 'ant-design-vue', 'text', 150, ['AInput'], writeInput],
     ['antdv1-textarea', 'ant-design-vue', 'textarea', 175, ['ATextarea'], writeInput],
     ['antdv1-select', 'ant-design-vue', 'select', 400, ['ASelect'], writeSelect],
-    ['antdv1-select-search', 'ant-design-vue', 'select-search', 450, ['ASelect'], writeSelect],
+    ['antdv1-select-search', 'ant-design-vue', 'select-search', 450, ['ASelect'], writeSearch],
+    ['antdv1-autocomplete', 'ant-design-vue', 'select-search', 475, ['AAutoComplete'], writeSearch],
     ['antdv1-radio', 'ant-design-vue', 'radio', 300, ['ARadioGroup', 'ARadio'], writeChoice],
     ['antdv1-checkbox-group', 'ant-design-vue', 'checkbox', 300, ['ACheckboxGroup'], writeChoice],
     ['antdv1-checkbox', 'ant-design-vue', 'checkbox', 300, ['ACheckbox'], writeChoice],
@@ -497,6 +602,8 @@
         if (name === 'el-input') return p.type !== 'textarea';
         if (name === 'el-month') return p.type === 'month';
         if (name === 'el-date') return p.type === 'date' || !p.type;
+        if (name === 'el-select-search') return !!(p.filterable || p.remote);
+        if (name === 'el-select') return !(p.filterable || p.remote);
         if (name === 'antdv1-select-search') return !!(p.filterable || p.remote || p.showSearch);
         if (name === 'antdv1-select') return !(p.filterable || p.remote || p.showSearch);
         return true;

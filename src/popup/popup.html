@@ -102,6 +102,13 @@
       <button id="collect-questions" class="button secondary" type="button">加入资料库并回答 ↗</button>
       <small id="question-draft-note"></small>
     </section>
+    <section id="aftercare" class="question-drafts" aria-label="手动清单与本地错误报告" hidden>
+      <h2 id="aftercare-title">手动清单</h2>
+      <p>请在网页逐项核对并手动处理。报告仅含数量、字段序号和诊断类别，不含答案、题目原文或网址；仅下载到本机，不会发送或上传。不会点击网站保存、提交或投递。</p>
+      <ul id="manual-list"></ul>
+      <button id="export-error-report" class="button secondary" type="button" disabled>导出本地错误报告（JSON）</button>
+      <small id="aftercare-note" role="status"></small>
+    </section>
     <section class="results" aria-label="字段结果">
       <div class="section-head"><h2>字段结果</h2><span id="summary">—</span></div>
       <div id="field-list" class="field-list"></div>

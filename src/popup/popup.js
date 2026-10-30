@@ -7,7 +7,7 @@ import {assessGthIntentFill, GTH_INTENT_FILL_TYPE, intentFillPayload, intentValu
 import {assessGthSkillsFill, assessGthOtherFill, assessGthEducationOpenFill, assessGthWorkOpenFill} from "../background/gth-open-fills.mjs";
 import { clearAttachment, loadAttachment, saveAttachment, MAX_ATTACHMENT_BYTES } from "../import/attachment-store.js";
 import { MAX_CUSTOM_FACTS, collectScopedQuestionDrafts, loadProfile, normalizeQuestionKey, saveProfile, questionIdentity, normalizeScopedQuestion } from "../profile/store.js";
-import { beginRecentRequest, loadRecentResult, recentResultText, saveRecentResult } from "./recent-result.js";
+import { beginRecentRequest, loadRecentResult, recentResultText, saveRecentResult, manualFields, createLocalErrorReport } from "./recent-result.js";
 import { createGthBasicActions } from "./gth-basic-actions.js";
 import {createSelectionOwner} from "../import/selection-owner.mjs";
 import { fullEducationCandidates, readEducationTargets, createGthEducationDraftActions, gthDraftMessage } from "./gth-education-actions.js";
@@ -19,6 +19,11 @@ const elements = {
   message: document.getElementById("message"),
   recentResult: document.getElementById("recent-result"),
   recentResultText: document.getElementById("recent-result-text"),
+  aftercare: document.getElementById("aftercare"),
+  aftercareTitle: document.getElementById("aftercare-title"),
+  manualList: document.getElementById("manual-list"),
+  exportReport: document.getElementById("export-error-report"),
+  aftercareNote: document.getElementById("aftercare-note"),
   validationGaps: document.getElementById("validation-gaps"),
   validationGapTitle: document.getElementById("validation-gap-title"),
   validationGapList: document.getElementById("validation-gap-list"),
@@ -164,6 +169,7 @@ let activeTab = null;
 let busy = false;
 let pendingInspect = false;
 let lastInspection = null;
+let aftercareSnapshot = null;
 let previewQuestions = [];
 let fillOutcomeUncertain = false;
 let gthSalaryEligible = false;
@@ -250,6 +256,59 @@ function showRecentResult(record) {
   elements.recentResultText.textContent = recentResultText(record);
 }
 
+function renderAftercare(fields = null, filled = false, operationFailed = false) {
+  elements.manualList.replaceChildren();
+  elements.aftercareNote.textContent = "";
+  aftercareSnapshot = fields === null ? null : {
+    report: createLocalErrorReport(fields, filled, operationFailed),
+    tabId: activeTab?.id, tabUrl: activeTab?.url
+  };
+  elements.aftercare.hidden = !aftercareSnapshot;
+  elements.exportReport.disabled = busy || !aftercareSnapshot;
+  if (!aftercareSnapshot) return;
+  const rows = manualFields(fields, filled);
+  elements.aftercareTitle.textContent = `手动清单 · ${rows.length} 项`;
+  for (const { position, field } of rows) {
+    const item = document.createElement("li");
+    const label = typeof field.labels?.[0] === "string" ? field.labels[0].slice(0, 160) : "未识别字段";
+    const reason = Object.hasOwn(reasons, field.reason) ? reasons[field.reason] : "请在网页核对并手动处理";
+    item.textContent = `第 ${position} 项 · ${label} · ${field.status === "failed" ? "失败 · " : ""}${reason}`;
+    elements.manualList.append(item);
+  }
+  elements.aftercareNote.textContent = operationFailed
+    ? "本次未取得完整结果，请在网页手动核对；报告只记录操作未完成。"
+    : !fields.length ? "未识别到字段，请在网页手动核对。"
+      : rows.length ? "清单仅对应本次结果；重新识别后会更新。" : "本次结果暂无手动项；请继续核对网页。";
+}
+
+async function exportLocalErrorReport() {
+  if (busy || !aftercareSnapshot) return;
+  const snapshot = aftercareSnapshot;
+  try {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (snapshot !== aftercareSnapshot) return;
+    if (tab?.id !== snapshot.tabId || tab?.url !== snapshot.tabUrl) {
+      renderAftercare();
+      setMessage("招聘页面已切换，请重新识别后再导出。", true);
+      return;
+    }
+    const url = URL.createObjectURL(new Blob([JSON.stringify(snapshot.report, null, 2)], { type: "application/json" }));
+    const link = document.createElement("a");
+    try {
+      link.href = url;
+      link.download = "resume-quick-fill-error-report.json";
+      document.body.append(link);
+      link.click();
+      elements.aftercareNote.textContent = "已请求浏览器下载到本机，请检查下载列表；报告不会自动发送。";
+    } finally {
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    }
+  } catch {
+    elements.aftercareNote.textContent = "本地导出未完成，请检查浏览器下载设置后重试。";
+  }
+}
+
 async function rememberResult(tab, requestId, kind, fields, statusCode = "readback_complete") {
   try {
     const record = await saveRecentResult(tab, requestId, kind, fields, statusCode);
@@ -261,6 +320,8 @@ async function rememberResult(tab, requestId, kind, fields, statusCode = "readba
 
 function setBusy(value) {
   busy = value;
+  if (value) renderAftercare();
+  elements.exportReport.disabled = value || !aftercareSnapshot;
   elements.inspect.disabled = value;
   elements.fill.disabled = value || !activeTab || isGthSite(activeTab.url) || !lastInspection;
   elements.gthSalaryButton.disabled = value || (gthPendingReview
@@ -1112,6 +1173,7 @@ async function render(data, filled = false) {
   const { resumePendingQuestions } = await chrome.storage.local.get("resumePendingQuestions");
   if(data.profileBinding)await assertProfileBinding(chrome.storage.local,data.profileBinding);
   const preview = questionPreview(fields, profile, resumePendingQuestions, data.url);
+  renderAftercare(fields, filled);
   previewQuestions = preview.questions;
   lastInspection = { data, filled, tabId: activeTab?.id, tabUrl: activeTab?.url };
   elements.draftList.replaceChildren();
@@ -1261,6 +1323,7 @@ async function perform(type) {
     }
   } catch (error) {
     lastInspection = null;
+    renderAftercare([], type === "RESUME_FILL", true);
     previewQuestions = [];
     elements.drafts.hidden = true;
     if (type === "RESUME_FILL" && fillOutcomeUncertain) {
@@ -2232,6 +2295,7 @@ function refreshInspection() {
 
 elements.inspect.addEventListener("click", () => perform("RESUME_INSPECT"));
 elements.fill.addEventListener("click", () => perform("RESUME_FILL"));
+elements.exportReport.addEventListener("click", exportLocalErrorReport);
 elements.gthSalaryButton.addEventListener("click", performGthSalaryTrial);
 elements.gthIntentButton.addEventListener("click", performGthIntentTrial);
 elements.gthEducationButtons.forEach((button, rowIndex) =>
@@ -2322,6 +2386,7 @@ chrome.storage.onChanged.addListener((changes,area)=>{
     gthSalaryEligible=false;gthIntentEligible=false;gthEducationEligible=false;gthSimpleEligible=false;gthOtherEligible=false;gthWorkEligible=false;gthWorkEditorOpen=false;
     populateGthEducationSource({education:[],confirmedFields:[]});populateGthWorkSource({experience:[],confirmedFields:[]});populateGthBasicSource([]);
     lastInspection=null;previewQuestions=[];elements.list.replaceChildren();elements.summary.textContent='';elements.drafts.hidden=true;showRecentResult(null);setBusy(busy);
+    renderAftercare();
     setMessage('客户资料已变化，请重新识别当前客户；已发出的操作须核对网站当前内容。',true);
   }
 });

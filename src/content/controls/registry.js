@@ -3,9 +3,9 @@
 // No implementation source from the ATS research repos is used.
 (() => {
   'use strict';
-  // Rebuild old registries so reinjection installs current select readback
+  // Rebuild old registries so reinjection installs current dropdown readback
   // contracts as well as the current model resolver.
-  if (globalThis.ResumeControls?.version === 1 && globalThis.ResumeControls.revision === 8) return;
+  if (globalThis.ResumeControls?.version === 1 && globalThis.ResumeControls.revision === 9) return;
   const adapters = new Map();
   // Executable dropdown plans stay bound to their original widget in MAIN.
   // Serialized shadow observations carry no authority to write another root.
@@ -68,13 +68,15 @@
     }
     if (['cascader', 'pair-cascader'].includes(type)) {
       if (!Array.isArray(value) || !value.length) return { status: 'unsupported', reason: 'path_required' };
-      let options = model.options || [], path = [], pathLabels = [];
+      let options = model.options || [], path = [], pathLabels = [], leaf;
       for (const part of value) {
         const hits = options.filter(o => !o.disabled && (equal(o.value, part) || equal(o.label, part)));
         if (hits.length !== 1) return { status: 'unsupported', reason: model.lazy ? 'lazy_options_pending' : 'path_unconfirmed' };
         if (hits[0].valueSupported === false) return { status: 'unsupported', reason: 'option_value_unavailable' };
-        path.push(hits[0].value); pathLabels.push(hits[0].label); options = hits[0].children || [];
+        leaf = hits[0];
+        path.push(leaf.value); pathLabels.push(leaf.label); options = leaf.children || [];
       }
+      if (options.length || leaf?.leaf === false) return { status: 'unsupported', reason: model.lazy ? 'lazy_options_pending' : 'path_incomplete' };
       target = path; labels = pathLabels; domValue = pathLabels;
     }
     // A checkbox group only adds; every other control preserves existing data.
@@ -146,7 +148,7 @@
   }
   function createAdapter(spec) {
     const readModel = spec.readModel || ((el, probe) => ({ ...probe }));
-    const boundSelect = ['select', 'select-search'].includes(spec.type);
+    const boundSelect = ['select', 'select-search', 'cascader'].includes(spec.type);
     const adapter = { ...spec,
       libVersionProbe: spec.libVersionProbe || ((el, probe = globalThis.ResumeControlModel.inspect(el)) =>
         probe.lib === spec.lib && probe.version ? { lib: probe.lib, version: probe.version } : null),
@@ -235,7 +237,7 @@
     } catch { return { ...manual('component_probe_failed'), adapter: null }; }
   }
   const helpers = Object.freeze({ norm, equal, empty, tick, makePlan, safeClick, nativeSet, check, clickAllowed, clean, validDate });
-  globalThis.ResumeControls = Object.freeze({ version: 1, revision: 8, mode: 'shadow', liveSupportClaimed: false,
+  globalThis.ResumeControls = Object.freeze({ version: 1, revision: 9, mode: 'shadow', liveSupportClaimed: false,
     register, createAdapter, resolve, inspect, plan, helpers, list: () => ordered().map(a => ({ name: a.name, lib: a.lib, type: a.type, priority: a.priority || 0 })),
     verify: (el, instruction, ctx) => resolve(el)?.verify(el, instruction, ctx) || Promise.resolve({ status: 'unsupported', reason: 'control_or_version_unconfirmed' }) });
 })();

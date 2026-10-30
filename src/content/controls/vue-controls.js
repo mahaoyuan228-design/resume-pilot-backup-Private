@@ -10,9 +10,14 @@
   const n = H.norm;
   const inspect = el => globalThis.ResumeControlModel.inspect(el);
   const resolve = el => globalThis.ResumeControlModel.resolve(el);
-  const shown = el => !!el?.isConnected && !!el.getClientRects().length
-    && !el.closest('[hidden],[aria-hidden="true"]')
-    && getComputedStyle(el).visibility !== 'hidden' && getComputedStyle(el).display !== 'none';
+  const shown = el => {
+    if (!el?.isConnected || !el.getClientRects().length || el.closest('[hidden],[aria-hidden="true"]')) return false;
+    for (let node = el; node; node = node.parentElement) {
+      const style = getComputedStyle(node);
+      if (style.display === 'none' || ['hidden', 'collapse'].includes(style.visibility)) return false;
+    }
+    return true;
+  };
   const all = (root, selector) => [...root.querySelectorAll(selector)];
   const pause = ms => new Promise(done => setTimeout(done, ms));
   const rootOf = (el, probe) => probe.controlRoot || el;
@@ -27,7 +32,9 @@
     const root = rootOf(el, probe);
     let domValue;
     let options = probe.options;
-    if (probe.lib === 'ant-design-vue' && /Select/u.test(probe.componentName)) {
+    if (probe.componentName === 'ACascader') {
+      domValue = valueInput(root)?.value || n(root.querySelector('.ant-cascader-picker-label')?.textContent);
+    } else if (probe.lib === 'ant-design-vue' && /Select/u.test(probe.componentName)) {
       const selected = all(root, '.ant-select-selection-selected-value,.ant-select-selection__choice__content');
       domValue = selected.length ? selected.map(node => n(node.textContent)).join(' | ') : '';
     } else if (/RadioGroup|CheckboxGroup/u.test(probe.componentName)) {
@@ -287,10 +294,15 @@
   }
 
   function cascaderPlan(fact, model) {
-    const path = Array.isArray(fact.value) ? fact.value : null;
-    if (!path || !path.length || path.some(value => typeof value !== 'string' || !n(value)))
+    const path = Array.isArray(fact?.value) ? fact.value : Array.isArray(fact) ? fact : null;
+    if (!path || !path.length || path.some(value => !(typeof value === 'string' && n(value)) && !(typeof value === 'number' && Number.isFinite(value))))
       return unsupported('explicit_path_required');
-    return H.makePlan(fact, model, { type: 'cascader' });
+    if (model.cascaderUnsupported || typeof model.separator !== 'string') return unsupported('cascader_contract_unconfirmed');
+    const plan = H.makePlan({ value: path }, model, { type: 'cascader' });
+    if (!['planned', 'success'].includes(plan.status)) return plan;
+    const domValue = (model.showAllLevels ? plan.labels : plan.labels.slice(-1)).join(model.separator);
+    if (empty(model.value) && !empty(model.domValue)) return unsupported('existing_value');
+    return { ...plan, domValue, status: H.equal(model.value, plan.value) && H.equal(model.domValue, domValue) ? 'success' : 'planned' };
   }
 
   async function writeCascader(el, instruction, ctx) {
@@ -298,53 +310,65 @@
     if (!Array.isArray(instruction.value)) return unsupported('explicit_path_required');
     const containerSelector = p.lib === 'element-ui' ? '.el-cascader__dropdown' : '.ant-cascader-menus';
     const menus = () => all(document, containerSelector).filter(shown);
+    const instancePanel = () => p.lib === 'element-ui' ? vm?.$refs?.popper
+      : vm?.popupRef?.$refs?.popupInstance?.$el?.closest(containerSelector);
+    const stable = () => {
+      const current = modelFor(el, inspect(el));
+      const plan = cascaderPlan({ value: instruction.value }, current);
+      return resolve(el).vm === vm && rootOf(el, current) === root && current.version === p.version
+        && ['planned', 'success'].includes(plan.status) && H.equal(plan.value, instruction.value)
+        && H.equal(plan.domValue, instruction.domValue);
+    };
+    const guarded = test => ({ ...ctx, async check() {
+      await ctx.check();
+      if (!stable() || !test()) throw Error('control_changed');
+    } });
     if (menus().length) return unsupported('control_busy');
     const face = valueInput(root) || root;
-    await H.safeClick(face, ctx);
+    await H.safeClick(face, guarded(() => !menus().length));
     let owned;
     for (let count = 0; count < 40; count++) {
+      await H.check(ctx);
+      if (!stable()) return unsupported('control_changed');
       const visible = menus();
       if (visible.length > 1) return unsupported('overlay_ambiguous');
-      if (visible.length === 1) { owned = visible[0]; break; }
+      if (visible.length === 1) {
+        if (instancePanel() !== visible[0]) return unsupported('overlay_ownership_unconfirmed');
+        owned = visible[0]; break;
+      }
       await pause(20);
     }
     if (owned) {
       const columnSelector = p.lib === 'element-ui' ? '.el-cascader-menu__list' : '.ant-cascader-menu';
       const itemSelector = p.lib === 'element-ui' ? '.el-cascader-node' : '.ant-cascader-menu-item';
+      const columns = () => all(owned, columnSelector), selected = [];
       for (let level = 0; level < instruction.value.length; level++) {
         let column;
         for (let count = 0; count < 60; count++) {
           await H.check(ctx);
-          if (menus().length !== 1 || menus()[0] !== owned) return unsupported('control_changed');
-          column = all(owned, columnSelector)[level];
+          if (!stable() || instancePanel() !== owned || menus().length !== 1 || menus()[0] !== owned) return unsupported('control_changed');
+          if (selected.some((column, i) => columns()[i] !== column || !shown(column))) return unsupported('control_changed');
+          column = columns()[level];
+          if (column && !shown(column)) return unsupported('cascader_column_hidden');
           if (column) break;
           await pause(20);
         }
         if (!column) return unsupported(p.lazy ? 'lazy_options_pending' : 'cascader_column_missing');
         const text = n(instruction.labels?.[level] ?? instruction.value[level]);
-        const matches = all(column, itemSelector).filter(item => shown(item)
+        const matches = () => all(column, itemSelector).filter(item => shown(item)
           && !item.matches('.is-disabled,.ant-cascader-menu-item-disabled,[aria-disabled="true"]')
           && n(item.querySelector('.el-cascader-node__label')?.textContent || item.textContent) === text);
-        if (matches.length !== 1) return unsupported(matches.length ? 'option_ambiguous' : 'option_not_found');
-        await H.safeClick(matches[0], ctx);
+        const hits = matches();
+        if (hits.length !== 1) return unsupported(hits.length ? 'option_ambiguous' : 'option_not_found');
+        selected.push(column);
+        await H.safeClick(hits[0], guarded(() => instancePanel() === owned && menus().length === 1 && menus()[0] === owned
+          && selected.every((column, i) => columns()[i] === column && shown(column)) && matches().length === 1 && matches()[0] === hits[0]));
         await H.tick();
       }
-      return { strategy: 'ui', attempts: instruction.value.length };
+      const closing = await waitOwnedClosed(el, owned, containerSelector, guarded(() => instancePanel() === owned));
+      return closing || { strategy: 'ui', attempts: instruction.value.length };
     }
-    // No menu was rendered. Only lazy cascaders may use the approved internal
-    // fallback; an unknown or ambiguous open portal never reaches this branch.
-    if (!p.lazy) return unsupported('cascader_not_open');
-    if (!vm || typeof vm.$emit !== 'function') return unsupported('component_api_unavailable');
-    await H.check(ctx);
-    if (!el.isConnected || vm.disabled) return unsupported('control_changed');
-    if (p.lib === 'element-ui') {
-      if (!('checkedValue' in vm)) return unsupported('cascader_api_unavailable');
-      vm.checkedValue = instruction.value.slice();
-      await H.check(ctx);
-      vm.$emit('change', instruction.value.slice());
-    } else vm.$emit('change', instruction.value.slice(), []);
-    await H.tick();
-    return { strategy: 'emit', attempts: 1 };
+    return unsupported(p.lazy ? 'lazy_options_pending' : 'cascader_not_open');
   }
 
   const definitions = [

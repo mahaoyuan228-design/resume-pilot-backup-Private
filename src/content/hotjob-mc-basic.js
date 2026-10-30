@@ -813,6 +813,23 @@
     });
   }
 
+  async function prepareForm(options = {}) {
+    const ready = () => pageAllowed(options) && TEXT_LABELS.every(label => classifyText(label).ready);
+    if (!pageAllowed(options)) return seal({ ok: false, status: 'manual', reason: 'wrong_page', entryAttempted: false, writeAttempted: false });
+    if (!globalThis.ResumeFormFlow) return seal({ ok: ready(), status: ready() ? 'ready' : 'unsupported',
+      reason: ready() ? 'form_ready' : 'form_not_ready', entryAttempted: false, writeAttempted: false });
+    return globalThis.ResumeFormFlow.ensure({ ready, allowEntry: options.allowEntry !== false,
+      timeoutMs: options.readinessTimeoutMs ?? 2000, check: async () => {
+        if (!pageAllowed(options)) throw Error('form_document_changed');
+        await globalThis.ResumeProfileWriteContext?.check(false);
+        if (options.profileBinding) {
+          let verdict;
+          try { verdict = await chrome.runtime.sendMessage({ type: 'RESUME_PROFILE_BINDING_CHECK', profileBinding: options.profileBinding }); } catch {}
+          if (verdict?.allowed !== true) throw Error('profile_binding_changed');
+        }
+      } });
+  }
+
   async function fillBasic(rawValues = {}, options = {}) {
     if (!pageAllowed(options)) {
       return seal({
@@ -880,6 +897,11 @@
       values = plan.values;
     }
 
+    if (globalThis.ResumeFormFlow) {
+      const readiness = await prepareForm({ ...options, profileBinding: rawValues.profileBinding || options.profileBinding });
+      if (!readiness.ok) return seal({ ok: false, status: readiness.status, reason: 'form_not_ready',
+        readiness, href: location.href, results: [], writeAttempted: false });
+    }
     const textPlan = [
       ['姓名', values.fullName],
       ['移动电话', values.mobile],
@@ -1306,6 +1328,7 @@
 
   const api = {
     siteId: SITE_ID,
+    prepareForm,
     TEXT_LABELS,
     NEVER_SAVE_TEXT_SPECS,
     NEVER_SAVE_TEXT_LABELS,

@@ -963,7 +963,7 @@ async function send(type) {
     }
   }
   let profile = await loadProfile();
-  const files = ["src/core/matcher.js", "src/content/cms-date-picker.js"];
+  const files = ["src/core/matcher.js", "src/content/controls/resume-form.js", "src/content/cms-date-picker.js"];
   if (isCmsResumePage(tab.url)) files.push("src/content/cms-validation-gaps.js");
   if (isCmsPhotoResumePage(tab.url)) files.push("src/content/cms-session.js", "src/content/cms-school-search.js", "src/content/cms-region.js", "src/content/cms-education-dates.js", "src/content/cms-checkboxes.js");
   files.push("src/content/engine.js");

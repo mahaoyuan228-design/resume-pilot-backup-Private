@@ -90,6 +90,7 @@
       for (let ancestor = node; ancestor; ancestor = ancestor.parentElement) {
         if (ancestor.hidden || ancestor.hasAttribute('inert')
           || ancestor.getAttribute('aria-hidden') === 'true'
+          || ancestor.getAttribute('aria-busy') === 'true'
           || ancestor.getAttribute('aria-disabled') === 'true'
           || ancestor.getAttribute('aria-readonly') === 'true') return false;
         const style = getComputedStyle(ancestor);
@@ -135,6 +136,20 @@
       item: hits[0],
       control: inputs[0]
     };
+  }
+
+  // A portal shell (or labels without editable controls) is not a form. This
+  // uses the same bounded control readiness flow as resume entry/expansion,
+  // with entry actions disabled for ATSX hydration.
+  async function prepareForm(options = {}) {
+    if (!pageAllowed(options)) return seal({ ok: false, status: 'unsupported', reason: 'wrong_page', writeAttempted: false, entryAttempted: false });
+    const ready = () => TEXT_LABELS.every((label) => classifyField(label).ready);
+    if (globalThis.ResumeFormFlow?.ensure) {
+      const readiness = await globalThis.ResumeFormFlow.ensure({ ready, allowEntry: false, timeoutMs: options.readinessTimeoutMs ?? 2000 });
+      return seal({ ...readiness, status: readiness.ok ? 'ready' : 'manual' });
+    }
+    if (ready()) return seal({ ok: true, status: 'ready', reason: 'form_ready', transitions: [], writeAttempted: false, entryAttempted: false });
+    return seal({ ok: false, status: 'manual', reason: 'form_not_ready', transitions: [], writeAttempted: false, entryAttempted: false });
   }
 
   // Cleanup may restore a hidden owned input, but never a node rebound to a
@@ -372,6 +387,7 @@
   }
 
   async function probeLabels(options = {}) {
+    const formReadiness = await prepareForm(options);
     const fp = probeFingerprint();
     const labels = TEXT_LABELS.map((label) => {
       const item = findItem(label);
@@ -385,7 +401,9 @@
     const foundCount = labels.filter((row) => row.found && row.hasTextControl).length;
     const onPage = pageAllowed(options);
     return {
-      ok: onPage && (foundCount >= 1 || fp.looksAtsx || options?.synthetic === true),
+      ok: onPage && formReadiness.ok,
+      status: formReadiness.ok ? 'ready' : formReadiness.status,
+      formReadiness,
       siteId: SITE_ID,
       href: location.href,
       title: document.title,
@@ -478,10 +496,13 @@
       ['手机号码', values.mobile],
       ['邮箱', values.email]
     ];
+    const formReadiness = await prepareForm(options);
     const classified = textPlan.map(([label, value]) => ({ ...classifyField(label), expected: norm(value) }));
-    if (classified.some((row) => !row.ready)) {
+    if (!formReadiness.ok || classified.some((row) => !row.ready)) {
       return {
         ok: false,
+        status: formReadiness.status === 'unsupported' ? 'unsupported' : 'manual',
+        formReadiness,
         siteId: SITE_ID,
         href: location.href,
         title: document.title,
@@ -566,6 +587,7 @@
       .map((snapshot) => ({ ...snapshot, beforeRaw: snapshot.before })));
     return withNeighborReadback({
       ok,
+      formReadiness,
       reason: neighborChanged ? 'neighbor_changed' : ok ? 'readback_matched' : 'readback_mismatch',
       siteId: SITE_ID,
       href: location.href,
@@ -598,6 +620,7 @@
     onFeishuAtsxPage,
     findItem,
     textControl,
+    prepareForm,
     fillText,
     fillBasic,
     probeLabels,

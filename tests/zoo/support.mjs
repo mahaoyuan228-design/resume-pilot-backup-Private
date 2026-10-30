@@ -11,6 +11,7 @@ import { canonicalProfileHash } from '../../src/profile/profile-lifecycle.js';
 export const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 export const CMS = 'https://wecruit.hotjob.cn/SU629dbc0c0dcad452299bc0f7/pb/resumeOperation.html';
 export const GTH = 'https://hr.gtht.com/resume/edit/';
+export const SYNTHETIC = 'http://127.0.0.1:17837/offline-ats-control-zoo';
 const assets = {
   '/vendor/vue.js': 'node_modules/vue/dist/vue.js',
   '/vendor/moment.js': 'node_modules/moment/min/moment.min.js',
@@ -22,6 +23,7 @@ const assets = {
   '/vendor/fonts/element-icons.ttf': 'node_modules/element-ui/lib/theme-chalk/fonts/element-icons.ttf',
   '/fixtures/zoo.js': 'tests/zoo/fixtures/zoo.js',
   '/fixtures/zoo.css': 'tests/zoo/fixtures/zoo.css',
+  '/fixtures/batchb.js': 'tests/zoo/fixtures/batchb.js',
 };
 const contentType = file => /\.(?:js|mjs)$/u.test(file) ? 'text/javascript; charset=utf-8'
   : file.endsWith('.json') ? 'application/json; charset=utf-8'
@@ -40,6 +42,7 @@ function extensionPath() {
 }
 
 export async function startZoo(caseName, variant = '') {
+  const synthetic = caseName.startsWith('batchb-');
   const extension = extensionPath();
   const manifest = JSON.parse(fs.readFileSync(path.join(extension, 'manifest.json'), 'utf8'));
   if (manifest.background?.service_worker !== 'src/background/worker.mjs') throw Error('zoo_requires_internal_build');
@@ -80,10 +83,11 @@ export async function startZoo(caseName, variant = '') {
         await route.fulfill({ status: 200, contentType: contentType(file), body: fs.readFileSync(path.join(extension, file)) });
         return;
       }
-      if (![new URL(CMS).origin, new URL(GTH).origin].includes(url.origin)) {
+      if (![new URL(CMS).origin, new URL(GTH).origin, ...(synthetic ? [new URL(SYNTHETIC).origin] : [])].includes(url.origin)) {
         routing.rejected.push(`${url.origin}${url.pathname}`); await route.abort('blockedbyclient'); return;
       }
-      const file = url.href === CMS || url.href === GTH ? 'tests/zoo/fixtures/index.html' : assets[url.pathname];
+      const file = synthetic && url.href === SYNTHETIC ? 'tests/zoo/fixtures/batchb.html'
+        : url.href === CMS || url.href === GTH ? 'tests/zoo/fixtures/index.html' : assets[url.pathname];
       if (!file) {
         // Browsers may ask for an icon; it is still supplied locally.
         if (url.pathname === '/favicon.ico') { await route.fulfill({ status: 204, body: '' }); return; }
@@ -114,7 +118,7 @@ export async function startZoo(caseName, variant = '') {
     for (const event of events) cdp.on(event, params => guard.onEvent({ method: event, params }));
     await cdp.send('Network.enable');
     await cdp.send('Fetch.enable', { patterns: [{ urlPattern: '*', requestStage: 'Request' }] });
-    const url = caseName.startsWith('gth-') ? GTH : CMS;
+    const url = synthetic ? SYNTHETIC : caseName.startsWith('gth-') ? GTH : CMS;
     await page.goto(url);
     await page.bringToFront();
     await page.waitForFunction(() => window.__zoo?.ready === true);
@@ -126,13 +130,31 @@ export async function startZoo(caseName, variant = '') {
       return matches[0].id;
     }, url);
     const fileHashes = {};
-    async function inject(files) {
+    // The built extension intentionally has no loopback host permission. New
+    // synthetic cases execute its exact checked bytes in a disposable browser
+    // isolated world; production permissions and the legacy extension path stay
+    // unchanged. MAIN remains a distinct real browser execution context.
+    const isolatedContext = synthetic ? (await cdp.send('Page.createIsolatedWorld', {
+      frameId: (await cdp.send('Page.getFrameTree')).frameTree.frame.id,
+      worldName: 'offline-resume-zoo', grantUniveralAccess: false,
+    })).executionContextId : null;
+    async function fixtureEvaluate(expression, world) {
+      const result = await cdp.send('Runtime.evaluate', {
+        expression, awaitPromise: true, returnByValue: true,
+        ...(world === 'ISOLATED' ? { contextId: isolatedContext } : {}),
+      });
+      if (result.exceptionDetails) throw Error(`zoo_fixture_execution:${result.exceptionDetails.exception?.description || result.exceptionDetails.text}`);
+      return result.result.value;
+    }
+    async function inject(files, world = 'ISOLATED') {
       for (const file of files) {
         const built = fs.readFileSync(path.join(extension, file));
         const source = fs.readFileSync(path.join(root, file));
         if (!built.equals(source)) throw Error(`stale_extension:${file}`);
         fileHashes[file] = createHash('sha256').update(built).digest('hex');
+        if (synthetic) await fixtureEvaluate(built.toString('utf8'), world);
       }
+      if (synthetic) return;
       return worker.evaluate(async ({ tabId, files }) => chrome.scripting.executeScript({ target: { tabId }, files, world: 'ISOLATED' }), { tabId, files });
     }
     let bridgeDocument;
@@ -165,6 +187,7 @@ export async function startZoo(caseName, variant = '') {
       // Function source is serialized by Playwright into extension scope; all
       // production writes below come from the injected built-extension modules.
       const source = func.toString();
+      if (synthetic) return fixtureEvaluate(`(${source})(...${JSON.stringify(args)})`, world);
       const expression = `async ({tabId,args,world}) => { const rows = await chrome.scripting.executeScript({target:{tabId},world,func:(${source}),args}); if(rows.length!==1) throw Error('zoo_execution_ambiguous'); return rows[0].result; }`;
       return worker.evaluate(`(${expression})(${JSON.stringify({ tabId, args, world })})`);
     }

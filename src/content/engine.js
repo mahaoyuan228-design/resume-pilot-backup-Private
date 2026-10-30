@@ -1821,6 +1821,17 @@
       }
       requireVisibleFillPage();
     }
+    const formFlow = globalThis.ResumeFormFlow;
+    const formReady = () => collect(profile, attachment).some(entry => entry.reason === 'ready'
+      && entry.path && entry.path !== 'sessionAttachment' && entry.answer != null
+      && !entry.control.readOnly && !entry.control.disabled && visible(entry.control)
+      && !entry.control.closest('[aria-busy="true"],[aria-readonly="true"],[inert]'));
+    if (formFlow && !formReady() && formFlow.inspect().entryCount > 0) {
+      const readiness = await formFlow.ensure({ ready: formReady,
+        allowEntry: true, check: () => globalThis.ResumeProfileWriteContext.check(false) });
+      if (!readiness.ok) throw Object.assign(Error(readiness.reason), {
+        fillNotStarted: true, writeStarted: false, readiness });
+    }
     const results = await ensureRepeatRows(profile);
     let decodedAttachment = null;
     const processed = new Set();

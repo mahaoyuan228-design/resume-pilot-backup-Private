@@ -204,6 +204,25 @@ export function createHotjobMcBasicAutoRunner({ api = globalThis.chrome, verifyB
     };
   }
 
+  async function prepareForm(tab) {
+    await license();
+    const binding = await captureProfileBinding(api.storage.local, lifecycleOptions);
+    const raw = await get('resumeProfile');
+    if (await canonicalProfileHash(raw, lifecycleOptions.cryptoImpl) !== binding.profileHash) fail('profile_binding_changed');
+    const plan = planHotjobMcBasicFromProfile(raw);
+    if (!plan.ok) fail(plan.reason || 'profile_fields_unavailable');
+    await bounded(() => dispatchBoundSource(api.storage.local, binding,
+      () => api.scripting.executeScript({ target: { tabId: tab.id },
+        files: ['src/content/controls/resume-form.js', 'src/content/hotjob-mc-basic.js'] }), lifecycleOptions), 15000);
+    const replies = await bounded(() => dispatchBoundSource(api.storage.local, binding,
+      () => api.scripting.executeScript({ target: { tabId: tab.id },
+        func: profileBinding => globalThis.ResumeHotjobMcBasic.prepareForm({ readinessTimeoutMs: 2000, profileBinding }),
+        args: [binding],
+      }), lifecycleOptions), 10000);
+    await assertProfileBinding(api.storage.local, binding, lifecycleOptions);
+    return replies?.[0]?.result || { ok: false, status: 'unsupported', reason: 'form_not_ready', writeAttempted: false };
+  }
+
   async function runFill(tab, readiness) {
     await license();
     const binding = readiness.profileBinding || await captureProfileBinding(api.storage.local, lifecycleOptions);
@@ -216,7 +235,7 @@ export function createHotjobMcBasicAutoRunner({ api = globalThis.chrome, verifyB
     await bounded(() => dispatchBoundSource(
       api.storage.local,
       binding,
-      () => api.scripting.executeScript({ target: { tabId: tab.id }, files: ['src/content/hotjob-mc-basic.js'] }),
+      () => api.scripting.executeScript({ target: { tabId: tab.id }, files: ['src/content/controls/resume-form.js', 'src/content/hotjob-mc-basic.js'] }),
       lifecycleOptions
     ), 15000);
 
@@ -272,6 +291,16 @@ export function createHotjobMcBasicAutoRunner({ api = globalThis.chrome, verifyB
     report.steps.push({ find: found.kind, tabId: found.tab.id, url: found.tab.url || null });
     await focusTab(found.tab);
     report.steps.push('focused_hotjob_mc_tab');
+    if (mode === 'fill') {
+      report.preparation = await prepareForm(found.tab);
+      if (!report.preparation.ok) {
+        report.ok = false;
+        report.status = report.preparation.status || 'unsupported';
+        report.reason = report.preparation.reason || 'form_not_ready';
+        await api.storage.local.set({ resumeHotjobMcBasicAutoRun: report });
+        return report;
+      }
+    }
     let probeResult = await probe(found.tab.id);
     if (!probeResult.ok) {
       for (let i = 0; i < 8 && !probeResult.ok; i += 1) {

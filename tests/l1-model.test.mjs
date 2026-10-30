@@ -140,9 +140,13 @@ test('React fibers provide read-only diagnostics and cannot fall through to nati
   const f = boot(); t.after(() => f.close());
   const el = f.get('target'); let called = 0;
   function FormilyField() {} FormilyField.displayName = 'FixtureFormilyField';
-  el.__reactFiber$fixture = { memoizedProps: {}, return: {
-    type: FormilyField, memoizedProps: { value: 'react-model', options: [{ value: 'code', label: '标签' }], onChange() { called++; } }
-  } };
+  const host = { stateNode: el, memoizedProps: {} };
+  el.__reactFiber$fixture = host;
+  host.return = {
+    type: FormilyField,
+    memoizedProps: { value: 'react-model', options: [{ value: 'code', label: '标签' }], onChange() { called++; } },
+    child: host
+  };
   const model = f.M.inspect(el);
   assert.equal(model.framework, 'react');
   assert.equal(model.componentName, 'FixtureFormilyField');
@@ -152,6 +156,75 @@ test('React fibers provide read-only diagnostics and cannot fall through to nati
   assert.equal(f.R.resolve(el), null);
   assert.equal(f.R.plan(el, { value: 'another' }).status, 'unsupported');
   assert.equal(called, 0);
+});
+
+test('React MAIN readback stays within each control root and rejects shared form values', t => {
+  const f = boot({ html: '<section id="form"><label id="name-root">姓名<input id="name" value="姓名模型"></label><label id="phone-root">手机<input id="phone" type="tel"></label><label id="email-root">邮箱<input id="email" type="email"></label></section>' });
+  t.after(() => f.close());
+  const form = f.get('form'), name = f.get('name'), phone = f.get('phone'), email = f.get('email');
+  const formHost = { stateNode: form, memoizedProps: {} };
+  const shared = { memoizedProps: { value: '姓名模型' }, child: formHost };
+  formHost.return = shared;
+  form.__reactFiber$fixture = formHost;
+  for (const input of [name, phone, email]) {
+    const host = { stateNode: input, memoizedProps: {}, return: shared };
+    input.__reactFiber$fixture = host;
+  }
+  name.__reactFiber$fixture.memoizedProps = { value: '姓名模型' };
+  assert.equal(f.M.inspect(name).value, '姓名模型');
+  for (const input of [phone, email]) {
+    const model = f.M.inspect(input);
+    assert.equal(model.framework, 'react');
+    assert.equal(model.available, false);
+    assert.equal(model.value, null);
+    assert.equal(model.controlRoot, input);
+    assert.equal(f.R.resolve(input), null, 'unknown React ownership must not fall back to native writing');
+  }
+  const wholeForm = f.M.inspect(form);
+  assert.equal(wholeForm.available, false, 'a multi-field wrapper is not a value control');
+  assert.equal(wholeForm.value, null);
+  phone.__reactFiber$fixture.memoizedProps = { value: '13800000000' };
+  email.__reactFiber$fixture.memoizedProps = { value: 'fixture@example.com' };
+  assert.equal(f.M.inspect(phone).value, '13800000000');
+  assert.equal(f.M.inspect(email).value, 'fixture@example.com');
+  assert.equal(name.value, '姓名模型');
+  assert.equal(phone.value, '');
+  assert.equal(email.value, '');
+});
+
+test('React values without a provable owning DOM root remain unavailable', t => {
+  const f = boot(); t.after(() => f.close());
+  const input = f.get('target');
+  input.__reactFiber$fixture = { memoizedProps: {}, return: { memoizedProps: { value: 'unowned' } } };
+  const model = f.M.inspect(input);
+  assert.equal(model.framework, 'react');
+  assert.equal(model.available, false);
+  assert.equal(model.value, null);
+  assert.equal(f.R.plan(input, { value: 'replacement' }).status, 'unsupported');
+});
+
+test('Vue ancestor models spanning sibling text controls cannot pollute readback', t => {
+  const f = boot({ html: '<section id="form"><input id="name"><input id="phone" type="tel"><input id="email" type="email"></section>' });
+  t.after(() => f.close());
+  const root = f.get('form');
+  const shared = { type: { name: 'SharedForm' }, props: { value: '姓名模型' }, subTree: { el: root } };
+  root.__vueParentComponent = shared;
+  for (const id of ['phone', 'email']) {
+    const model = f.M.inspect(f.get(id));
+    assert.equal(model.framework, 'vue3');
+    assert.equal(model.available, false);
+    assert.equal(model.value, null);
+    assert.equal(f.R.resolve(f.get(id)), null);
+  }
+  delete root.__vueParentComponent;
+  root.__vue__ = { $el: root, $props: { value: '姓名模型' }, $options: { name: 'AInput' } };
+  for (const id of ['phone', 'email']) {
+    const model = f.M.inspect(f.get(id));
+    assert.equal(model.framework, 'vue2');
+    assert.equal(model.available, false);
+    assert.equal(model.value, null);
+    assert.equal(f.R.resolve(f.get(id)), null);
+  }
 });
 
 test('Vue3 model diagnostics stay distinct from the Vue2 Element adapters', t => {

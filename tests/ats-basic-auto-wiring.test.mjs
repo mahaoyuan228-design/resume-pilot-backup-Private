@@ -79,7 +79,7 @@ test('resolveMokaTarget: sample default + host accept/refuse', () => {
 });
 
 function makeHarness({
-  createRunner, autoHtml, messageType, tabUrl, probeReason, probeOk = true, foundLabels = ['姓名', '手机号码', '邮箱']
+  createRunner, autoHtml, messageType, tabUrl, probeReason, probeOk = true, preparation = { ok: true, status: 'ready', reason: 'form_ready', entryAttempted: false, writeAttempted: false }, foundLabels = ['姓名', '手机号码', '邮箱']
 }) {
   const data = {
     resumeProfile: {
@@ -92,7 +92,7 @@ function makeHarness({
     resumeProfileLifecycle: { version: 1, epoch, state: 'ready' }
   };
   const clone = (value) => (value === undefined ? undefined : structuredClone(value));
-  const stats = { fill: 0, inject: 0, probe: 0 };
+  const stats = { fill: 0, inject: 0, prepare: 0, probe: 0 };
   const storage = {
     get: async (keys) =>
       keys === null
@@ -139,6 +139,10 @@ function makeHarness({
         }
         if (typeof request.func === 'function') {
           const src = String(request.func);
+          if (src.includes('prepareForm')) {
+            stats.prepare += 1;
+            return [{ result: clone(preparation) }];
+          }
           if (src.includes('fillBasic')) {
             stats.fill += 1;
             return [{
@@ -218,7 +222,8 @@ test('BEISEN_2022_BASIC_AUTO: wrong sender rejected; fill path never save', asyn
   assert.equal(filled.saveAttempted, false);
   assert.equal(filled.skippedSave, true);
   assert.equal(filled.writeAttempted, true);
-  assert.equal(h.stats.inject, 1);
+  assert.equal(h.stats.inject, 2);
+  assert.equal(h.stats.prepare, 1);
   assert.equal(h.stats.fill, 1);
 });
 
@@ -315,9 +320,30 @@ test('HOTJOB_MC_BASIC_AUTO: wrong sender + invalid targetPage refused; readiness
   assert.equal(filled.saveAttempted, false);
   assert.equal(filled.skippedSave, true);
   assert.equal(filled.writeAttempted, true);
-  assert.equal(h.stats.inject, 1);
+  assert.equal(h.stats.inject, 2);
+  assert.equal(h.stats.prepare, 1);
   assert.equal(h.stats.fill, 1);
 });
+
+for (const scenario of [
+  { createRunner: createHotjobMcBasicAutoRunner, autoHtml: 'src/auto/hotjob-mc-basic-auto.html', messageType: 'HOTJOB_MC_BASIC_AUTO', tabUrl: 'https://wecruit.hotjob.cn/SU00000000/mc/deliver/operationResumer', probeReason: 'hotjob_mc_page_ready' },
+  { createRunner: createBeisen2022BasicAutoRunner, autoHtml: 'src/auto/beisen-2022-basic-auto.html', messageType: 'BEISEN_2022_BASIC_AUTO', tabUrl: 'https://synthetic.zhiye.com/resume', probeReason: 'beisen_2022_page_ready' },
+  { createRunner: createFeishuAtsxBasicAutoRunner, autoHtml: 'src/auto/feishu-atsx-basic-auto.html', messageType: 'FEISHU_ATSX_BASIC_AUTO', tabUrl: 'https://synthetic.jobs.feishu.cn/resume', probeReason: 'feishu_atsx_page_ready' },
+]) {
+  test(`${scenario.messageType}: failed form preparation prevents probe and fill`, async () => {
+    const h = makeHarness({ ...scenario, preparation: { ok: false, status: 'manual', reason: 'form_not_ready', entryAttempted: false, writeAttempted: false } });
+    const result = await h.invoke({ type: scenario.messageType, mode: 'fill', openIfMissing: false });
+    assert.equal(result.ok, false);
+    assert.equal(result.reason, 'form_not_ready');
+    assert.equal(result.writeAttempted, false);
+    assert.equal(result.liveSupportClaimed, false);
+    assert.equal(result.status, 'manual');
+    if (scenario.messageType === 'FEISHU_ATSX_BASIC_AUTO') assert.equal(result.helpNeeded, true);
+    assert.equal(h.stats.prepare, 1);
+    assert.equal(h.stats.probe, 0);
+    assert.equal(h.stats.fill, 0);
+  });
+}
 
 test('cross-site message types do not share listeners', async () => {
   const feishu = makeHarness({

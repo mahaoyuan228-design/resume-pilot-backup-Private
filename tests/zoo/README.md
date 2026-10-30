@@ -47,6 +47,12 @@ The five shadow cases require the fixture model, effects, application DOM and cl
 
 Additional checks prove MAIN/ISOLATED separation, unknown-version rejection, existing-value preservation, disabled/readonly/upload manual outcomes and a default write gate that refuses effects. Separate offline writer checks execute the new adapters against actual Ant Design Vue school search, paired selects and month controls, plus the Element month range. They require UI strategy and agreement between visible DOM and fixture model. Changing only the month DOM produces mismatch, and a later change produces reverted. Native text, textarea, select, radio and additive checkbox writers run only against disposable controls in the offline page. No customer entry point is routed to these writers.
 
+## Batch B control patterns
+
+`batchb.spec.mjs` uses a first-party synthetic page on loopback, with no recruiting URL. It exercises the same built source bytes and the existing network guard. Because production permissions intentionally exclude loopback, this subset loads the byte-checked built files through CDP into disposable MAIN or isolated browser contexts. It does not change extension permissions. The older suites retain their `chrome.scripting.executeScript` path.
+
+The twelve cases cover a create/enter resume transition before Hotjob text filling (1), an edit resume transition before Beisen text filling (1), rejected submit and ambiguous entry controls (2), Moka-shaped React and Vue3 model ownership including separate positive control values (3), Feishu delayed hydration from empty or busy shells (2), and permanent empty, incomplete or busy shells (3). Each case checks unchanged neighboring values, zero forbidden clicks, zero non-GET traffic and `liveSupportClaimed=false`. Hydration checks also require zero input events before readiness. React and Vue3 internals are diagnostic synthetic fixtures; they do not establish live framework versions or Moka selector support.
+
 ## Never-Save boundary
 
 The harness reuses `createRowDNetworkGuard` without changing its policy. CDP Fetch interception starts before navigation and blocks every non-GET. Local routing independently refuses non-GET and unknown URLs. Tests require zero non-GET responses and zero blacklist click attempts in ordinary scenarios. An injected autosave POST must be observed, blocked and assessed as a failed safety verdict even though no response reaches the page. The click journal blocks and counts attempts on 保存 / 提交 / 下一步 / 投递 / 删除.

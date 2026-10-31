@@ -112,6 +112,9 @@
     description: [...sectionDefinitions.work.description, "实习内容", "实习职责", "实习描述"]
   };
   sectionDefinitions.basic.currentCity = ["现居住地", "现居城市", "当前居住城市"];
+  // The basic question consumes an existing education fact, never a new
+  // top-level degree field. General 学历 remains scoped to education rows.
+  sectionDefinitions.basic.degree = ["最高学历"];
   sectionDefinitions.intent.availabilityNote = ["到岗说明", "到岗时间说明"];
 
   function sectionKind(section, aliases = sectionNames) {
@@ -153,7 +156,20 @@
     return !!match && Number(match[2]) < 30 && repeatedFields[match[1]].includes(match[3]);
   }
 
-  function resolveField({ labels, section = "", index = null } = {}, sectionAliases = sectionNames) {
+  function resolveBasicDegree(profile) {
+    const manual = reason => ({ status: "manual", key: null, profileKey: null, reason });
+    const rows = Array.isArray(profile?.education) ? profile.education : [];
+    if (!rows.length) return manual("missing_profile_value");
+    // Choosing the highest among multiple source rows needs an explicit
+    // source binding. Do not infer ranking from free-form degree text.
+    if (rows.length !== 1) return manual("ambiguous_profile_fact");
+    const path = "education.0.degree";
+    if (typeof rows[0]?.degree !== "string" || !rows[0].degree.trim()) return manual("missing_profile_value");
+    if (!(profile.confirmedFields || []).includes(path)) return manual("unconfirmed_profile_value");
+    return { status: "mapped", key: "degree", profileKey: path, reason: "single_education_degree" };
+  }
+
+  function resolveField({ labels, section = "", index = null, profile = null } = {}, sectionAliases = sectionNames) {
     const manual = reason => ({ status: "manual", key: null, profileKey: null, reason });
     if (!Array.isArray(labels) || !labels.length || labels.some(label => typeof label !== "string")) return manual("unlabelled_field");
     const kind = sectionKind(section, sectionAliases);
@@ -166,6 +182,7 @@
     }
     if (candidates.size !== 1) return manual(candidates.size ? "ambiguous_label" : "unknown_question");
     const key = [...candidates][0];
+    if (key === "degree" && (!kind || kind === "basic")) return resolveBasicDegree(profile);
     if (["education", "work", "internship", "project"].includes(kind)) {
       if (!Number.isInteger(index) || index < 0 || index >= 30) return manual("ambiguous_repeat_group");
       const collection = kind === "education" ? "education" : kind === "project" ? "projects" : "experience";
@@ -197,7 +214,7 @@
     return { valid: true, value };
   }
 
-  const api = { definitions, sectionDefinitions, sectionNames, normalize, classify, sectionKind, resolveField,
+  const api = { definitions, sectionDefinitions, sectionNames, normalize, classify, sectionKind, resolveField, resolveBasicDegree,
     atsProfiles, resolveAtsProfile, resolveAtsField, isProfileKey, selectOption, validValue };
   root.ResumeMatcher = api;
   if (typeof module !== "undefined" && module.exports) module.exports = api;

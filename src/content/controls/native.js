@@ -20,6 +20,11 @@
     for (let node = el; node && node !== document.body; node = node.parentElement) {
       const classes = typeof node.className === 'string' ? node.className : '';
       if (frameworkClass.test(classes) || complexClass.test(classes)) return false;
+      // Custom dropdown text inputs are search queries, even when the page
+      // omits ARIA. Only the separately owned combobox route may claim one.
+      // An actual HTML select retains its native option/value contract.
+      if (!searchable && el.tagName !== 'SELECT' && (node.classList.contains('dropdown')
+        || [...node.classList].some(token => /(?:^|[-_])Dropdown-container(?:[-_]|$)/iu.test(token)))) return false;
       // My97 owns these text inputs even when its script/configuration cannot
       // be confirmed. Never silently downgrade an unknown calendar to text.
       if (/(?:^|\s)Wdate(?:\s|$)/iu.test(classes)
@@ -473,14 +478,18 @@
 
   register({ name: 'native-text', type: 'text',
     matches: (el, probe) => plain(el, probe) && !numberHint(el) && el.tagName === 'INPUT' && textTypes.has(el.type),
-    readModel: (el, probe) => base(el, probe, el.value),
+    readModel: (el, probe) => ({ ...base(el, probe, el.value), available: plain(el, probe) }),
     async performWrite(el, instruction, ctx) {
       const reason = guards(el);
       if (reason) return noWrite(reason);
+      if (!plain(el)) return noWrite('control_or_version_changed');
       const value = String(targetValue(instruction) ?? '');
       if (el.value && !equal(el.value, value)) return noWrite('existing_value');
       if (equal(el.value, value)) return { strategy: 'native', attempts: 0 };
-      await nativeSet(el, value, ctx);
+      await nativeSet(el, value, { ...ctx, async check() {
+        await ctx.check();
+        if (!plain(el)) throw Error('control_or_version_changed');
+      } });
       await tick();
       return { strategy: 'native', attempts: 1 };
     }

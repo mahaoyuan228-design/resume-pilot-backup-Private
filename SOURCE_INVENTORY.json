@@ -1,6 +1,6 @@
 {
   "version": "0.1.4.9",
-  "sumsSha256": "b5027321a25d8f2b9866bd619ebe747ee380f793da80363c2fa73fe0f5d65f81",
+  "sumsSha256": "687e461d7a59f03b88300f9baa169c94163e53357ff14bfd85a7be2966ae1ce1",
   "inventory": [
     {
       "path": "manifest.json",
@@ -280,8 +280,8 @@
     },
     {
       "path": "src/content/engine.js",
-      "sha256": "8b441bfce56134d844aeeeaaa8f94fa68fa1dab4e29744e79462217f6add4b85",
-      "sourceSha256": "8b441bfce56134d844aeeeaaa8f94fa68fa1dab4e29744e79462217f6add4b85",
+      "sha256": "b06dc289a16bad3365647abe2badeac8e8139d561d240720a3b2e124cf2b031f",
+      "sourceSha256": "b06dc289a16bad3365647abe2badeac8e8139d561d240720a3b2e124cf2b031f",
       "kind": "frozen-product"
     },
     {
@@ -838,8 +838,8 @@
     },
     {
       "path": "src/content/controls/registry.js",
-      "sha256": "7820d2d8ea444324ae5154f46edbccf5816e0171d225c05ecc1ef587a240e217",
-      "sourceSha256": "7820d2d8ea444324ae5154f46edbccf5816e0171d225c05ecc1ef587a240e217",
+      "sha256": "077e0f4fcb4b33bdb18a2aa4e1871e778ac8204e37919d3dfd4a2f54c09effc9",
+      "sourceSha256": "077e0f4fcb4b33bdb18a2aa4e1871e778ac8204e37919d3dfd4a2f54c09effc9",
       "kind": "frozen-product"
     },
     {
@@ -850,8 +850,8 @@
     },
     {
       "path": "src/content/controls/native.js",
-      "sha256": "1b368fc71f3db390f613dd43be8dbd21dddbd69abf600e265339aa6075a611df",
-      "sourceSha256": "1b368fc71f3db390f613dd43be8dbd21dddbd69abf600e265339aa6075a611df",
+      "sha256": "9f397822bc48cec4b256e3976829bada533f32b92ce0c7cffbd211a3ee124b4a",
+      "sourceSha256": "9f397822bc48cec4b256e3976829bada533f32b92ce0c7cffbd211a3ee124b4a",
       "kind": "frozen-product"
     },
     {
@@ -868,14 +868,14 @@
     },
     {
       "path": "src/background/controls-write.mjs",
-      "sha256": "4f9074a80218180ccc1e2286e50043d7bf8af14fac45c6ec34db3e02ffa96c80",
-      "sourceSha256": "4f9074a80218180ccc1e2286e50043d7bf8af14fac45c6ec34db3e02ffa96c80",
+      "sha256": "db50ae52eae526293f8aaf98641fc84af556ee2894e242f1e49b338db5e051ce",
+      "sourceSha256": "db50ae52eae526293f8aaf98641fc84af556ee2894e242f1e49b338db5e051ce",
       "kind": "frozen-product"
     },
     {
       "path": "src/content/controls/extended-controls.js",
-      "sha256": "dc0f94e976d0360b76509ee0375b8d3be4086936358607096272463037c7ee2d",
-      "sourceSha256": "dc0f94e976d0360b76509ee0375b8d3be4086936358607096272463037c7ee2d",
+      "sha256": "2f3a0af1a3bd12d85905a54b2a61a2d47a3856491c9cd39afdbf08a5697ed6e2",
+      "sourceSha256": "2f3a0af1a3bd12d85905a54b2a61a2d47a3856491c9cd39afdbf08a5697ed6e2",
       "kind": "frozen-product"
     },
     {
@@ -1210,14 +1210,14 @@
     },
     {
       "path": "tests/l1-extended-controls.test.mjs",
-      "sha256": "1f60a56a8ca4cd3b9a830801868cc9bd4731414023a8d0e1d7e20272f744f615",
-      "sourceSha256": "1f60a56a8ca4cd3b9a830801868cc9bd4731414023a8d0e1d7e20272f744f615",
+      "sha256": "d5cad8ba064ea3acdde6f6c49db8fafe400902207bc211a2a81ebd222cca0153",
+      "sourceSha256": "d5cad8ba064ea3acdde6f6c49db8fafe400902207bc211a2a81ebd222cca0153",
       "kind": "selected-ats-r2-offline-regression"
     },
     {
       "path": "tests/l1-write-route.test.mjs",
-      "sha256": "66d13285e067ca6ab00c693b5329ce7fd495c387aa8b4e35a40392522ebae1a6",
-      "sourceSha256": "66d13285e067ca6ab00c693b5329ce7fd495c387aa8b4e35a40392522ebae1a6",
+      "sha256": "a383e18b2c6807fb24b012de56315508011bb895a579946e2a52be53aa735065",
+      "sourceSha256": "a383e18b2c6807fb24b012de56315508011bb895a579946e2a52be53aa735065",
       "kind": "selected-ats-r2-offline-regression"
     },
     {
@@ -1414,14 +1414,14 @@
     },
     {
       "path": "tests/l1-select-readback.test.mjs",
-      "sha256": "8138c856d306f597cb62a195dce76eeb397b58204f2bc902a44b9fcf448c4335",
-      "sourceSha256": "8138c856d306f597cb62a195dce76eeb397b58204f2bc902a44b9fcf448c4335",
+      "sha256": "9cbcb744aa543eacc276cbac832b5e1e27972b28b9207a503faa374fd1a9efe2",
+      "sourceSha256": "9cbcb744aa543eacc276cbac832b5e1e27972b28b9207a503faa374fd1a9efe2",
       "kind": "selected-l1-shadow-regression"
     },
     {
       "path": "tests/l1-textarea-richtext.test.mjs",
-      "sha256": "bc362d9857101a3c7b00682745a8285946040797344510c9ed25ae818373a515",
-      "sourceSha256": "bc362d9857101a3c7b00682745a8285946040797344510c9ed25ae818373a515",
+      "sha256": "d7ef4935c64edd754c32be30be8c08cc83d59abaee59bb5d20be776911d6b0f6",
+      "sourceSha256": "d7ef4935c64edd754c32be30be8c08cc83d59abaee59bb5d20be776911d6b0f6",
       "kind": "selected-l1-shadow-regression"
     },
     {
@@ -1573,6 +1573,48 @@
       "sha256": "fa2d778c5289f59cfa902f759ff5ccced1e6043c6ff02fa445310283a6730149",
       "sourceSha256": "fa2d778c5289f59cfa902f759ff5ccced1e6043c6ff02fa445310283a6730149",
       "kind": "selected-ats-label-resolve-offline-regression"
+    },
+    {
+      "path": "tests/cms-basic-info-gaps.test.mjs",
+      "kind": "selected-ats-edu-select-label-offline-regression",
+      "sha256": "40d92986feb7d1e858b89a18e7d473ebd38cbab5f611b3e6372292d9f7c39fd8",
+      "sourceSha256": "40d92986feb7d1e858b89a18e7d473ebd38cbab5f611b3e6372292d9f7c39fd8"
+    },
+    {
+      "path": "tests/cms-decision-nanyue-name-phone.test.mjs",
+      "kind": "selected-ats-edu-select-label-offline-regression",
+      "sha256": "fb769a3ee1aa585f31908ce2c383c262621d8e3857829a3dc755c0c61892027d",
+      "sourceSha256": "fb769a3ee1aa585f31908ce2c383c262621d8e3857829a3dc755c0c61892027d"
+    },
+    {
+      "path": "tests/cms-row-d-preexisting-trial.test.mjs",
+      "kind": "selected-ats-edu-select-label-offline-regression",
+      "sha256": "283b6c7f0595fc1798a6e31ad7b12d4b4eebc2bdd9e12d5bd9cb776db87168a7",
+      "sourceSha256": "283b6c7f0595fc1798a6e31ad7b12d4b4eebc2bdd9e12d5bd9cb776db87168a7"
+    },
+    {
+      "path": "tests/engine-edu-select-label.test.mjs",
+      "kind": "selected-ats-edu-select-label-offline-regression",
+      "sha256": "8d2e99ccd3f1b5fbe228ac926e7f43c8f881c8bab6872794c140e19e26617fcd",
+      "sourceSha256": "8d2e99ccd3f1b5fbe228ac926e7f43c8f881c8bab6872794c140e19e26617fcd"
+    },
+    {
+      "path": "tests/engine-edu-section-boundary.test.mjs",
+      "kind": "selected-ats-edu-select-label-offline-regression",
+      "sha256": "9087c871626ec5744ccea44bf9653e5b49a9bdf165958d8e254c0ac1878548d5",
+      "sourceSha256": "9087c871626ec5744ccea44bf9653e5b49a9bdf165958d8e254c0ac1878548d5"
+    },
+    {
+      "path": "tests/l1-edu-control-candidates.test.mjs",
+      "kind": "selected-ats-edu-select-label-offline-regression",
+      "sha256": "40cc66e2ec78131f7090effb37d74dd64d3df15651ee35011a5db27ecb786e6a",
+      "sourceSha256": "40cc66e2ec78131f7090effb37d74dd64d3df15651ee35011a5db27ecb786e6a"
+    },
+    {
+      "path": "tests/l1-ivu-filterable-readback.test.mjs",
+      "kind": "selected-ats-edu-select-label-offline-regression",
+      "sha256": "566d50d71515bca7786cb82d3b2c3bd9818ce8f81ee95199a83ee3cc70189423",
+      "sourceSha256": "566d50d71515bca7786cb82d3b2c3bd9818ce8f81ee95199a83ee3cc70189423"
     }
   ]
 }

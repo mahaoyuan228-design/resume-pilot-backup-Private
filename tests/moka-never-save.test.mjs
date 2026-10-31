@@ -93,7 +93,7 @@ test('an entirely occupied form causes no writes or focus events', async (t) => 
   assert.equal(events, 0);
 });
 
-test('ancestor-hidden, inert, readonly, disabled, and nontext controls fail preflight without writes', async (t) => {
+test('unavailable controls stay manual while other fields fill with readback', async (t) => {
   const mutations = {
     'ancestor display:none': (node) => { node.parentElement.style.display = 'none'; },
     'ancestor visibility:hidden': (node) => { node.parentElement.style.visibility = 'hidden'; },
@@ -117,9 +117,11 @@ test('ancestor-hidden, inert, readonly, disabled, and nontext controls fail pref
     neverSave(ctx, result);
     assert.equal(result.ok, false, name);
     assert.equal(result.reason, 'form_not_ready', name);
-    assert.equal(result.writeAttempted, false, name);
+    assert.equal(result.writeAttempted, true, name);
     assert.equal(result.results.find((row) => row.label === '手机号码').reason, 'control_not_found', name);
-    assert.deepEqual(snapshot(ctx), before, name);
+    assert.equal(input(ctx, 'mobile').value, before.find(([key]) => key === 'mobile')[1], name);
+    assert.equal(input(ctx, 'fullName').value, values.fullName, name);
+    assert.equal(input(ctx, 'email').value, values.email, name);
   }
 });
 
@@ -266,7 +268,7 @@ test('final readback catches later reactive changes to an earlier field', async 
   assert.deepEqual(snapshot(ctx), [['fullName', 'LATE-REACTIVE-NAME'], ['mobile', ''], ['email', ''], ['years', '0']]);
 });
 
-test('wrong pages and unconfirmed profiles remain unclaimed and never write', async (t) => {
+test('wrong-page hints allow filling while unconfirmed profiles remain unclaimed', async (t) => {
   const ctx = boot();
   const wrong = boot(fixture, 'https://example.com/moka-basic-form.html');
   t.after(() => { ctx.window.close(); wrong.window.close(); });
@@ -276,10 +278,10 @@ test('wrong pages and unconfirmed profiles remain unclaimed and never write', as
   assert.equal(blocked.writeAttempted, false);
   const wrongPage = await fill(wrong);
   neverSave(wrong, wrongPage);
-  assert.equal(wrongPage.reason, 'wrong_page');
-  assert.equal(wrongPage.writeAttempted, false);
+  assert.equal(wrongPage.advisoryHints[0].reason, 'wrong_page');
+  assert.equal(wrongPage.writeAttempted, true);
   assert.equal(input(ctx, 'fullName').value, '');
-  assert.equal(input(wrong, 'fullName').value, '');
+  assert.equal(input(wrong, 'fullName').value, values.fullName);
 });
 // Rebind only existing fixture nodes/classes. These adversarial state changes
 // are offline safety cases, not a claim that a live tenant uses this lifecycle.

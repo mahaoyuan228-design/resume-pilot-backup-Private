@@ -228,7 +228,7 @@ test('the sync list is the runner import graph plus the injected writer', () => 
   assert.deepEqual([...seen].sort(), [...RUNTIME_FILES].sort());
 });
 
-test('the page expression guards the shipped open clicks and does not click save', () => {
+test('the page expression guards actions while the writer requires an open editor', () => {
   const expression = buildPageExpression();
   assert.match(expression, /\.sec-context > \.sec-detail/);
   assert.match(expression, /\.el-icon-edit-outline/);
@@ -236,8 +236,7 @@ test('the page expression guards the shipped open clicks and does not click save
   assert.match(expression, /添加/);
   assert.match(expression, /新增/);
   assert.match(educationSource, /\.sec-context > \.sec-detail/);
-  assert.match(educationSource, /\.el-icon-edit-outline/);
-  assert.match(educationSource, /\['添加','新增'\]/);
+  assert.match(educationSource, /manual_open_editor_required/);
   assert.match(source, /ResumeGthEducationTextTrial\.fullTrial/);
   assert.match(source, /src\/content\/gth-education\.js/);
   assert.match(source, /disallowed_non_get/);
@@ -544,6 +543,14 @@ function armEditor(window, triggerId) {
       section.querySelector('#edu-form').remove();
     });
   });
+  // Fixture setup models the user's navigation, before the engine is invoked.
+  window.document.getElementById(triggerId).click();
+  const request = liveFillRequest(triggerId === 'edu-add' ? { TARGET_MODE: 'new' } : {});
+  Object.assign(window.document.getElementById('edu-form').dataset, {
+    resumeGthEducationRecordIndex: triggerId === 'edu-add' ? 'new' : '0',
+    resumeGthEducationRequestId: request.requestId,
+    resumeGthEducationProfileIndex: String(request.profileIndex),
+  });
 }
 
 test('the hook blocks a non-GET and the inspect shows no title 编辑', async () => {
@@ -563,7 +570,7 @@ test('the hook blocks a non-GET and the inspect shows no title 编辑', async ()
   assert.equal(page.clicks.includes('保存'), false);
 });
 
-test('fullTrial opens the row icon, fills plain fields, and the runner cancels', async () => {
+test('fullTrial fills the user-opened row and the runner cancels', async () => {
   const page = liveWindow(resumeHtml());
   armEditor(page.window, 'edu-edit');
   const result = await page.window.ResumeGthEducationTextTrial.fullTrial(liveFillRequest({}));
@@ -608,12 +615,12 @@ test('fullTrial opens the row icon, fills plain fields, and the runner cancels',
   assert.deepEqual(Array.from(page.api.clicks(), (click) => String(click.label)), ['编辑', '取消']);
 });
 
-test('fullTrial new mode clicks 添加 and still does not save', async () => {
+test('fullTrial fills a user-opened new form and still does not save', async () => {
   const page = liveWindow(resumeHtml({ mode: 'new' }));
   armEditor(page.window, 'edu-add');
   const result = await page.window.ResumeGthEducationTextTrial.fullTrial(liveFillRequest({ TARGET_MODE: 'new' }));
   assert.equal(result.ok, true, result.reason);
-  assert.equal(result.addClickCount, 1);
+  assert.equal(result.addClickCount, 0);
   assert.equal(result.targetMode, 'new');
   assert.equal(result.softwareClickedSave, false);
   assert.equal(page.window.document.getElementById('school').value, '复旦大学');

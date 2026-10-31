@@ -741,23 +741,8 @@
       let editors = sectionForms(sections);
       if (editors.length > 1) stop('intent_editor_not_unique');
       if (otherSectionForms(sections).length) stop('other_section_editor_open');
-      if (!editors.length) {
-        const links = [...sections[SECTION_INDEX].querySelectorAll('.title_ a.h-e-btn')]
-          .filter(node => visible(node) && norm(node.textContent) === '编辑');
-        if (links.length !== 1) stop('intent_edit_not_unique');
-        const href = links[0].getAttribute('href');
-        if (href && !/^(#|javascript:(?:;|void\(0\)))$/iu.test(href)) stop('intent_edit_not_unique');
-        step('editor_open');
-        await boundAction(() => { if (!links[0]?.isConnected) stop('profile_action_target_changed'); return links[0].click(); });
-        openedByUs = true;
-        form = await waitFor(() => {
-          sections = page();
-          const found = sectionForms(sections);
-          if (found.length > 1) stop('intent_editor_not_unique');
-          if (otherSectionForms(sections).length) stop('other_section_editor_open');
-          return found.length === 1 && found[0].querySelector('.el-form-item') ? found[0] : null;
-        });
-      } else form = editors[0];
+      if (!editors.length) stop('entry_activation_manual');
+      form = editors[0];
       result.editorLeftOpen = true;
       if (outside(page()) !== otherBefore || performance.timeOrigin !== origin) stop('intent_other_values_changed');
       const plans = [];

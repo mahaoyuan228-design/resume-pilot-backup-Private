@@ -259,7 +259,7 @@
 
   async function fillTextWithNeighbors(label, value, options = {}, neighborSnapshots = null) {
     const expected = norm(value);
-    if (!pageAllowed(options) || !TEXT_LABELS.includes(label) || !expected) {
+    if ((!pageAllowed(options) && options.advisory !== true) || !TEXT_LABELS.includes(label) || !expected) {
       return seal({
         label, ok: false,
         reason: !pageAllowed(options) ? 'wrong_page' : !TEXT_LABELS.includes(label) ? 'label_not_allowed' : 'empty_value',
@@ -428,18 +428,7 @@
   }
 
   async function fillBasicUnsealed(rawValues = {}, options = {}) {
-    if (!pageAllowed(options)) {
-      return {
-        ok: false,
-        siteId: SITE_ID,
-        reason: 'wrong_page',
-        href: location.href,
-        results: [],
-        writeAttempted: false,
-        saved: false,
-        skippedSave: true
-      };
-    }
+    const pageHint = pageAllowed(options) ? null : { status: 'manual', reason: 'wrong_page', advisory: true };
 
     const profile = rawValues.profile;
     const allowExplicit = rawValues.allowExplicitValues === true;
@@ -497,39 +486,16 @@
       ['邮箱', values.email]
     ];
     const formReadiness = await prepareForm(options);
-    const classified = textPlan.map(([label, value]) => ({ ...classifyField(label), expected: norm(value) }));
-    if (!formReadiness.ok || classified.some((row) => !row.ready)) {
-      return {
-        ok: false,
-        status: formReadiness.status === 'unsupported' ? 'unsupported' : 'manual',
-        formReadiness,
-        siteId: SITE_ID,
-        href: location.href,
-        title: document.title,
-        reason: 'form_not_ready',
-        saved: false,
-        skippedSave: true,
-        writeAttempted: false,
-        profileSource: allowExplicit ? 'explicit' : 'resumeProfile',
-        results: classified.map((row) => ({
-          label: row.label,
-          ok: false,
-          reason: row.ready ? 'skipped_form_not_ready' : row.reason,
-          matchCount: row.matchCount,
-          controlCount: row.controlCount ?? null,
-          before: '',
-          after: '',
-          expected: row.expected
-        }))
-      };
-    }
+    let classified = textPlan.map(([label, value]) => ({ ...classifyField(label), expected: norm(value) }));
+    const manualResults = classified.filter(row => !row.ready).map(row => ({ label: row.label, ok: false, status: 'manual', reason: row.reason, before: '', after: '', expected: row.expected, writeAttempted: false }));
+    classified = classified.filter(row => row.ready);
     const neighbors = snapshotTextNeighbors(classified.map((row) => row.control));
     const snapshots = classified.map((row) => ({
       label: row.label, item: row.item, control: row.control, before: row.control.value, expected: row.expected
     }));
     const results = [];
     let failed = false;
-    for (const [label, value] of textPlan) {
+    for (const [label, value] of textPlan.filter(([label]) => classified.some(row => row.label === label))) {
       if (failed) {
         results.push({ label, ok: false, reason: 'skipped_previous_failure', writeAttempted: false, expected: norm(value) });
         continue;
@@ -541,7 +507,7 @@
         failed = true;
         continue;
       }
-      const result = await fillTextWithNeighbors(label, value, options, neighbors);
+      const result = await fillTextWithNeighbors(label, value, { ...options, advisory: true }, neighbors);
       results.push(result);
       failed = !result.ok;
     }
@@ -586,9 +552,11 @@
       results.find((row) => row.label === snapshot.label)?.reason === 'skipped_previous_failure')
       .map((snapshot) => ({ ...snapshot, beforeRaw: snapshot.before })));
     return withNeighborReadback({
-      ok,
+      ok: ok && manualResults.length === 0,
+      status: manualResults.length ? 'manual' : undefined,
+      advisoryHints: [pageHint, formReadiness].filter(hint => hint && hint.ok !== true),
       formReadiness,
-      reason: neighborChanged ? 'neighbor_changed' : ok ? 'readback_matched' : 'readback_mismatch',
+      reason: neighborChanged ? 'neighbor_changed' : !ok ? 'readback_mismatch' : manualResults.length ? 'form_not_ready' : 'readback_matched',
       siteId: SITE_ID,
       href: location.href,
       title: document.title,
@@ -603,7 +571,7 @@
       planSummary: plan
         ? { reason: plan.reason, readyCount: plan.fields.filter((f) => f.ready).length, blockerCount: plan.blockers.length }
         : { reason: 'explicit_override' },
-      results
+      results: textPlan.map(([label]) => results.find(row => row.label === label) || manualResults.find(row => row.label === label)).filter(Boolean)
     }, neighbors);
   }
 

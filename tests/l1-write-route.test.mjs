@@ -327,7 +327,7 @@ test('ordinary birthday part placeholders read empty while unbound parts remain 
   const previousListener = h.window.__resumeQuickFillEngineListener;
   h.window.__resumeQuickFillEngineRevision = 15;
   h.window.eval(source('src/content/engine.js'));
-  assert.equal(h.window.__resumeQuickFillEngineRevision, 24);
+  assert.equal(h.window.__resumeQuickFillEngineRevision, 25);
   assert.notEqual(h.window.__resumeQuickFillEngineListener, previousListener);
   let events = 0;
   for (const type of ['input', 'change', 'click']) h.window.document.addEventListener(type, () => events++);
@@ -664,15 +664,17 @@ test('ordinary RESUME_FILL reaches an input-backed ud-select only with the opt-i
     const h = await harness({ enabled: scenario !== 'off' }); t.after(() => h.dom.window.close());
     const f = syntheticUdSelect(h, { version: scenario === 'version' ? 'unknown-2' : 'fixture-contract-1', readonly: scenario === 'readonly' });
     const result = await h.fill();
-    assert.equal(result.ok, scenario === 'enabled', JSON.stringify(result));
+    assert.equal(result.ok, true, JSON.stringify(result));
     if (scenario === 'enabled') {
       assert.equal(result.data.fields[0].adapter, 'ud-select');
       assert.equal(result.data.fields[0].adapterStatus, 'success');
       assert.equal(f.input.value, '离线姓名');
       assert.equal(f.props.value, 'name-code');
     } else {
-      assert.equal(result.readiness.status, 'manual');
-      assert.equal(result.writeStarted, false);
+      if (result.data.formReadiness.status !== 'ready')
+        assert.equal(result.data.advisoryHints[0].blocking, false);
+      assert.ok(result.data.fields.every(field => field.status !== 'verified'));
+      assert.equal(h.calls.filter(call => call.func?.name === 'writeControlInPage').length, 0);
       assert.equal(f.input.value, '', scenario);
       assert.equal(f.props.value, '', scenario);
     }
@@ -692,10 +694,11 @@ test('manual editor opening refreshes MAIN candidates before filling an opt-in w
     widget = syntheticUdSelect(h);
   };
   h.window.document.querySelector('button').addEventListener('click', openEditor);
-  const blocked = await h.fill();
-  assert.equal(blocked.ok, false);
-  assert.equal(blocked.fillNotStarted, true);
-  assert.equal(blocked.writeStarted, false);
+  const scanned = await h.fill();
+  assert.equal(scanned.ok, true);
+  assert.equal(scanned.data.formReadiness.status, 'manual');
+  assert.equal(scanned.data.advisoryHints[0].blocking, false);
+  assert.equal(h.calls.filter(call => call.func?.name === 'writeControlInPage').length, 0);
   assert.equal(edits, 0);
   assert.equal(widget, undefined);
   // Model the user's independent editor opening, then issue a fresh fill.
@@ -711,6 +714,63 @@ test('manual editor opening refreshes MAIN candidates before filling an opt-in w
   assert.equal(widget.portal.hidden, true);
   assert.equal(h.window.document.querySelector('header input').value, 'KEEP_HEADER');
   assert.ok(h.calls.filter(call => call.func?.name === 'readControlCandidatesInPage').length >= 2);
+});
+
+test('ATS runner API scans the current document through the same bound generic writer', async t => {
+  const h = await harness({ enabled: false, html: '<div role="alert">Please sign in to continue</div>'
+    + '<form><label>姓名<input id="name"></label><label>邮箱<input id="mail"></label>'
+    + '<label>未知字段<input id="unknown"></label><button type="button">新建简历</button><button>保存</button></form>' });
+  t.after(() => h.window.close());
+  h.data.resumeProfile.email = 'offline@example.test';
+  h.data.resumeProfile.confirmedFields.push('email');
+  const binding = await captureProfileBinding(h.window.chrome.storage.local);
+  let clicks = 0;
+  h.window.document.addEventListener('click', () => clicks++);
+  const result = await h.window.ResumeQuickFillFillCurrentPage(clone(h.data.resumeProfile), binding);
+  assert.equal(result.ok, true, JSON.stringify(result));
+  assert.equal(result.advisoryHints[0].status, 'login_required');
+  for (const id of ['name', 'mail']) {
+    const field = result.fields.find(row => row.id === id);
+    assert.equal(field.status, 'verified');
+    assert.equal(field.beforeValue, '');
+    assert.equal(field.currentValue, h.window.document.getElementById(id).value);
+  }
+  assert.equal(result.fields.find(row => row.id === 'unknown').semanticStatus, 'manual');
+  assert.equal(result.writeAttempted, true);
+  assert.equal(result.skippedSave, true);
+  assert.equal(result.saved, false);
+  assert.equal(result.softwareClickedSave, false);
+  assert.equal(result.softwareClickedSubmit, false);
+  assert.equal(result.liveSupportClaimed, false);
+  assert.equal(clicks, 0);
+});
+
+for (const [name, evidence, status] of [
+  ['login hint', '<div role="alert">Please sign in to continue</div>', 'login_required'],
+  ['empty required region', '<div aria-required="true"></div>', 'form_not_ready'],
+  ['unknown required widget', '<div role="combobox" aria-label="未知字段" aria-required="true"></div>', 'manual'],
+]) test(`opt-in MAIN write and dual readback continue despite ${name}`, async t => {
+  const h = await harness({ enabled: true, html: `${evidence}<form><label for="name">姓名</label><input id="name">`
+    + '<label>未知字段<input id="unknown"></label><button type="button">编辑简历</button>'
+    + '<button type="button">新建简历</button><button>保存</button><button>提交</button></form>' });
+  t.after(() => h.window.close());
+  let clicks = 0;
+  h.window.document.addEventListener('click', () => clicks++);
+  const before = await h.inspect();
+  assert.equal(before.data.formReadiness.status, status);
+  const result = await h.fill();
+  assert.equal(result.ok, true, JSON.stringify(result));
+  assert.equal(result.data.advisoryHints[0].status, status);
+  const field = result.data.fields.find(row => row.id === 'name');
+  assert.equal(field.status, 'verified');
+  assert.equal(field.beforeValue, '');
+  assert.equal(field.currentValue, '离线姓名');
+  assert.equal(h.window.document.getElementById('name').value, '离线姓名');
+  assert.equal(result.data.fields.find(row => row.id === 'unknown').semanticStatus, 'manual');
+  assert.equal(h.calls.filter(call => call.func?.name === 'writeControlInPage').length, 1);
+  assert.equal(h.calls.filter(call => call.func?.name === 'verifyControlInPage').length, 1);
+  assert.equal(clicks, 0);
+  assert.equal(result.data.liveSupportClaimed, false);
 });
 
 test('intent arrays project only individually confirmed entries into the opt-in route', async t => {
@@ -828,10 +888,10 @@ test('ordinary richtext candidates reject nested, disabled and unconfirmed frame
     h.data.resumeProfile = { schemaVersion: 1, selfEvaluation: '安全边界', confirmedFields: ['selfEvaluation'] };
     const result = await h.fill();
     const readOnly = html.includes('contenteditable="false"') || html.includes('aria-disabled="true"');
-    assert.equal(result.ok, !readOnly, JSON.stringify(result));
+    assert.equal(result.ok, true, JSON.stringify(result));
     if (readOnly) {
-      assert.equal(result.readiness.status, 'form_not_ready');
-      assert.equal(result.writeStarted, false);
+      assert.equal(result.data.formReadiness.status, 'form_not_ready');
+      assert.equal(result.data.advisoryHints[0].blocking, false);
     }
     assert.equal(h.window.document.getElementById('prose').textContent, '');
     assert.equal(h.calls.filter(call => call.func?.name === 'writeControlInPage').length, 0);

@@ -7,7 +7,7 @@ import {awaitCmsPageDocumentFocus} from './cms-page-focus.mjs';
 import {CMS_QUESTION_TEMPLATES,CMS_QUESTION_PAGE,planCmsRegionFact,CMS_REGION_FACT_FAIL_CLOSED_REASONS} from '../profile/site-question-templates.js';
 import {seedCmsBasicFromEducation,CMS_BASIC_NEVER_SEED,CMS_BASIC_SEEDABLE} from '../profile/cms-basic-seed-from-education.mjs';
 import {SITE_FACTS_KEY} from '../profile/cms-education-site-facts.mjs';
-import {requireAutoFormReady,autoFormReadinessFailure} from './auto-form-readiness.mjs';
+import {requireAutoFormReady,autoFormReadinessFailure,appendAutoAdvisory as recordAutoAdvisory} from './auto-form-readiness.mjs';
 
 const PAGE=CMS_QUESTION_PAGE;
 const ORIGIN=new URL(PAGE).origin;
@@ -34,18 +34,24 @@ const saveClaim=(...reports)=>({
 });
 const anySaveClaim=flags=>flags.saveAttempted||flags.softwareClickedSave||flags.softwareClickedSubmit||flags.softwareClickedDelete
   ||flags.savedOnSite||flags.submitted;
-// Basic-fill target page. Default 招商 baseline; a hotjob same-shell tenant may be passed as message.cmsPage.
-// Only https://wecruit.hotjob.cn/SU<id>/pb/resumeOperation.html (no query/hash) is accepted. Photo/education/
-// internship paths remain pinned to the 招商 baseline in their own modules (engine CMS_PHOTO_PAGE etc.).
+// The target is read-only context. Any HTTPS hotjob page can be scanned;
+// tenant identifiers scope confirmed facts and trust, not page readiness.
 const CMS_TENANT_PAGE_RE=/^https:\/\/wecruit\.hotjob\.cn\/(SU[0-9A-Za-z]{8,64})\/pb\/resumeOperation\.html$/u;
-export function resolveCmsBasicTarget(cmsPage){
-  if(cmsPage===undefined||cmsPage===null||cmsPage==='')return {page:PAGE,su:CMS_TENANT_PAGE_RE.exec(PAGE)[1],baseline:true,trustScope:ORIGIN};
-  if(typeof cmsPage!=='string'||cmsPage.length>200)fail('cms_basic_page_invalid');
-  const match=CMS_TENANT_PAGE_RE.exec(cmsPage);
-  if(!match)fail('cms_basic_page_invalid');
-  if(cmsPage===PAGE)return {page:PAGE,su:match[1],baseline:true,trustScope:ORIGIN};
-  // Tenant trust is scoped per SU, matching popup authorizationScope().
-  return {page:cmsPage,su:match[1],baseline:false,trustScope:`${ORIGIN}/${match[1]}/`};
+function isCmsAutoHost(value) {
+  try {
+    const url = new URL(value);
+    return url.protocol === 'https:' && !url.username && !url.password && !url.port
+      && (url.hostname === 'hotjob.cn' || url.hostname.endsWith('.hotjob.cn'));
+  } catch { return false; }
+}
+export function resolveCmsBasicTarget(cmsPage) {
+  if (cmsPage === undefined || cmsPage === null || cmsPage === '') cmsPage = PAGE;
+  if (typeof cmsPage !== 'string' || cmsPage.length > 400 || !isCmsAutoHost(cmsPage)) fail('cms_basic_page_invalid');
+  const url = new URL(cmsPage), page = url.origin + url.pathname;
+  const su = /^\/(SU[0-9A-Za-z]{8,64})\//u.exec(url.pathname)?.[1] || null;
+  const baseline = page === PAGE;
+  return { page, su, baseline, trustScope: baseline ? ORIGIN : su ? url.origin + '/' + su + '/' : url.origin,
+    advisoryHints: CMS_TENANT_PAGE_RE.test(page) ? [] : [{ reason: 'cms_basic_page_invalid', advisory: true, blocking: false }] };
 }
 
 function probePageFunc(expectedSignature,pageUrl){
@@ -182,43 +188,14 @@ export function createCmsBasicAutoRunner({api=globalThis.chrome,verifyBeforeFill
     if(verifyBeforeFill)try{await bounded(verifyBeforeFill,15000);}catch{fail('license_required');}
   };
 
-  async function findCmsTab(excludeTabId=null,{openIfMissing=false,page=PAGE}={}){
-    const PAGE=page;
-    const tabs=await api.tabs.query({});
-    const exact=tabs.filter(tab=>base(tab.url)===PAGE&&tab.id!==excludeTabId);
-    if(exact.length===1)return {tab:exact[0],kind:'exact'};
-    if(exact.length>1){
-      const ranked=[...exact].sort((a,b)=>((b.lastAccessed||0)-(a.lastAccessed||0))||((b.id||0)-(a.id||0)));
-      return {tab:ranked.find(tab=>tab.active)||ranked[0],kind:'exact_multi'};
-    }
-    const related=tabs.filter(tab=>typeof tab.url==='string'&&tab.id!==excludeTabId&&(/hotjob\.cn/u.test(tab.url)||/wecruit/u.test(tab.url)));
-    if(related.length){
-      const err=Error('cms_basic_login_or_wrong_page');
-      err.helpUrl=related[0].url;
-      err.helpReason='CMS resumeOperation.html not open; related tab may need login/SSO';
-      throw err;
-    }
-    if(openIfMissing){
-      const created=await api.tabs.create({url:PAGE,active:true});
-      for(let i=0;i<30;i+=1){
-        await sleep(500);
-        const tab=await api.tabs.get(created.id);
-        if(base(tab.url)===PAGE&&tab.status==='complete')return {tab,kind:'opened'};
-        if(typeof tab.url==='string'&&(/hotjob\.cn|wecruit/u.test(tab.url))&&base(tab.url)!==PAGE){
-          const err=Error('cms_basic_login_or_wrong_page');
-          err.helpUrl=tab.url;
-          err.helpReason='Opened CMS URL redirected away from resumeOperation.html; login/SSO likely required';
-          throw err;
-        }
-      }
-      const tab=await api.tabs.get(created.id);
-      if(base(tab.url)===PAGE)return {tab,kind:'opened_partial'};
-      const err=Error('cms_basic_login_or_wrong_page');
-      err.helpUrl=tab.url||PAGE;
-      err.helpReason='Opened CMS resume URL but page did not settle on resumeOperation.html';
-      throw err;
-    }
-    fail('cms_basic_tab_missing');
+  async function findCmsTab(excludeTabId = null) {
+    // The user opens the editor. Never navigate to an edit/new-resume page.
+    const tabs = await api.tabs.query({});
+    const candidates = tabs.filter(tab => tab.id !== excludeTabId && isCmsAutoHost(tab.url));
+    const ranked = [...candidates].sort((a, b) => ((b.lastAccessed || 0) - (a.lastAccessed || 0)) || ((b.id || 0) - (a.id || 0)));
+    const tab = ranked.find(row => row.active) || ranked[0];
+    if (!tab) fail('cms_basic_tab_missing');
+    return { tab, kind: candidates.length > 1 ? 'exact_multi' : 'exact' };
   }
 
   async function focusTab(tab){
@@ -232,8 +209,7 @@ export function createCmsBasicAutoRunner({api=globalThis.chrome,verifyBeforeFill
   async function probe(tabId,PAGE,signature=SIGNATURE){
     const rows=await api.scripting.executeScript({target:{tabId},world:'MAIN',func:probePageFunc,args:[signature,PAGE]});
     const doc=rows?.length===1&&rows[0].frameId===0?rows[0].result:null;
-    if(!doc)fail('cms_basic_probe_failed');
-    return doc;
+    return doc || {ok:false,reason:'cms_basic_probe_failed'};
   }
 
   async function unlockIfSafe(tabId){
@@ -289,7 +265,7 @@ export function createCmsBasicAutoRunner({api=globalThis.chrome,verifyBeforeFill
     await bounded(()=>dispatchBoundSource(api.storage.local,binding,()=>api.scripting.executeScript({target:{tabId:tab.id},files}),lifecycleOptions),20000);
     let response;
     try{
-      await requireAutoFormReady(api,tab.id);
+      recordAutoAdvisory(readiness, await requireAutoFormReady(api, tab.id));
       response=await bounded(()=>dispatchBoundSource(api.storage.local,binding,()=>api.tabs.sendMessage(tab.id,{
         type:'RESUME_FILL',profile:raw,attachment:null,photoUploads:null,profileBinding:binding
       }),lifecycleOptions),timeoutMs);
@@ -400,10 +376,14 @@ export function createCmsBasicAutoRunner({api=globalThis.chrome,verifyBeforeFill
       return report;
     }
     const openIfMissing=message.openIfMissing===true;
-    const target=resolveCmsBasicTarget(message.cmsPage);
+    let target=resolveCmsBasicTarget(message.cmsPage);
     const report={version:1,kind:'cms_basic_auto',mode,at:Date.now(),steps:[],helpNeeded:false,
       saveAttempted:false,writeAttempted:false,liveSupportClaimed:false,cmsPage:target.page,tenantSu:target.su,baselineSu:target.baseline};
+    report.advisoryHints = [...target.advisoryHints];
     const found=await findCmsTab(sender?.tab?.id,{openIfMissing,page:target.page});
+    target = resolveCmsBasicTarget(found.tab.url);
+    Object.assign(report, {cmsPage:target.page,tenantSu:target.su,baselineSu:target.baseline});
+    recordAutoAdvisory(report, {advisoryHints:target.advisoryHints});
     report.steps.push({find:found.kind,tabId:found.tab.id,url:found.tab.url||null});
     await focusTab(found.tab);
     report.steps.push('focused_cms_tab');
@@ -414,27 +394,17 @@ export function createCmsBasicAutoRunner({api=globalThis.chrome,verifyBeforeFill
       report.steps.push({cms_page_focus:safe(error)});
     }
     report.formReadiness=await requireAutoFormReady(api,found.tab.id);
+    recordAutoAdvisory(report, report.formReadiness);
     const signatureMode=target.baseline?'baseline':'tenant';
     const signature=target.baseline?SIGNATURE:TENANT_SIGNATURE;
     report.steps.push({signatureMode,signature});
-    let probeResult=await probe(found.tab.id,target.page,signature);
-    if(!probeResult.ok){
-      for(let i=0;i<8&&!probeResult.ok;i+=1){await sleep(500);probeResult=await probe(found.tab.id,target.page,signature);}
-    }
+    const probeResult=await probe(found.tab.id,target.page,signature);
     report.steps.push({probe:probeResult.reason,ok:probeResult.ok===true,itemCount:probeResult.itemCount??null});
-    if(!probeResult.ok){
-      const login=probeResult.looksLogin===true||probeResult.reason==='cms_wrong_page';
-      if(login){
-        const err=Error('cms_basic_login_or_wrong_page');
-        err.helpUrl=probeResult.href||found.tab.url||target.page;
-        err.helpReason='CMS resume page not ready; login/SSO or wrong page';
-        throw err;
-      }
-      fail(probeResult.reason||'cms_basic_probe_failed');
-    }
+    recordAutoAdvisory(report, probeResult);
     const unlocked=await unlockIfSafe(found.tab.id);
     report.steps.push({unlock:unlocked});
     const readiness=await collectReadiness(found.tab,probeResult,target.page);
+    readiness.advisoryHints = report.advisoryHints;
     report.readiness={
       pageState:readiness.pageState,
       sectionPresent:readiness.page?.sectionPresent===true,

@@ -1,7 +1,7 @@
-// Feishu ATSX basic auto (tiny). Mirror CITICS_BASIC_AUTO shape.
+// ATS auto fills the current page with the shared engine; page probes are advisory.
 // Fill-without-save only. Never clicks 保存/提交/投递. Isolated siteId: feishu-atsx.
 // Live resume edit path is login-walled; host match only (no hard-coded edit path yet).
-import {requireAutoFormReady,autoFormReadinessFailure} from './auto-form-readiness.mjs';
+import {requireAutoFormReady,autoFormReadinessFailure,appendAutoAdvisory as recordAutoAdvisory} from './auto-form-readiness.mjs';
 import {captureProfileBinding,assertProfileBinding,canonicalProfileHash,
   dispatchBoundSource} from '../profile/profile-lifecycle.js';
 import {planFeishuAtsxBasicFromProfile,isFeishuAtsxHost} from '../content/feishu-atsx-profile-map.mjs';
@@ -14,9 +14,8 @@ const safe = (error) => {
   const value = typeof error === 'string' ? error : (error?.message || '');
   return typeof value === 'string' && /^[a-z0-9_]{2,100}$/u.test(value) ? value : 'feishu_atsx_basic_auto_failed';
 };
-const sleep = (ms) => new Promise((done) => setTimeout(done, ms));
 
-/** Fail-closed host/page resolver. Optional message.targetPage must be https on ATSX host. */
+/** Validate the target host; users open their own form page. */
 export function resolveFeishuAtsxTarget(targetPage) {
   if (targetPage === undefined || targetPage === null || targetPage === '') {
     return { page: SAMPLE_PAGE, host: 'gffunds.jobs.feishu.cn', sample: true };
@@ -106,43 +105,14 @@ export function createFeishuAtsxBasicAutoRunner({ api = globalThis.chrome, verif
     }
   };
 
-  async function findTab(excludeTabId = null, { openIfMissing = false, page = SAMPLE_PAGE } = {}) {
+  async function findTab(excludeTabId = null) {
+    // The user opens the editor. Never navigate to an edit/new-resume page.
     const tabs = await api.tabs.query({});
-    const exact = tabs.filter((tab) => typeof tab.url === 'string' && isFeishuAtsxTabUrl(tab.url) && tab.id !== excludeTabId);
-    if (exact.length === 1) return { tab: exact[0], kind: 'exact' };
-    if (exact.length > 1) {
-      const ranked = [...exact].sort((a, b) => ((b.lastAccessed || 0) - (a.lastAccessed || 0)) || ((b.id || 0) - (a.id || 0)));
-      return { tab: ranked.find((tab) => tab.active) || ranked[0], kind: 'exact_multi' };
-    }
-    const related = tabs.filter((tab) => typeof tab.url === 'string' && tab.id !== excludeTabId
-      && (/feishu\.cn|bytedance\.com|larksuite|mioffice/u.test(tab.url)));
-    if (related.length) {
-      const err = Error('feishu_atsx_basic_login_or_wrong_page');
-      err.helpUrl = related[0].url;
-      err.helpReason = 'Feishu ATSX host tab not open; related tab may need login';
-      throw err;
-    }
-    if (openIfMissing) {
-      const created = await api.tabs.create({ url: page, active: true });
-      for (let i = 0; i < 30; i += 1) {
-        await sleep(500);
-        const tab = await api.tabs.get(created.id);
-        if (isFeishuAtsxTabUrl(tab.url) && tab.status === 'complete') return { tab, kind: 'opened' };
-        if (typeof tab.url === 'string' && /feishu|bytedance|larksuite|mioffice/u.test(tab.url) && !isFeishuAtsxTabUrl(tab.url)) {
-          const err = Error('feishu_atsx_basic_login_or_wrong_page');
-          err.helpUrl = tab.url;
-          err.helpReason = 'Opened Feishu URL redirected off ATSX host; login likely required';
-          throw err;
-        }
-      }
-      const tab = await api.tabs.get(created.id);
-      if (isFeishuAtsxTabUrl(tab.url)) return { tab, kind: 'opened_partial' };
-      const err = Error('feishu_atsx_basic_login_or_wrong_page');
-      err.helpUrl = tab.url || page;
-      err.helpReason = 'Opened Feishu portal but did not settle on ATSX host';
-      throw err;
-    }
-    fail('feishu_atsx_basic_tab_missing');
+    const candidates = tabs.filter(tab => tab.id !== excludeTabId && isFeishuAtsxTabUrl(tab.url));
+    const ranked = [...candidates].sort((a, b) => ((b.lastAccessed || 0) - (a.lastAccessed || 0)) || ((b.id || 0) - (a.id || 0)));
+    const tab = ranked.find(row => row.active) || ranked[0];
+    if (!tab) fail('feishu_atsx_basic_tab_missing');
+    return { tab, kind: candidates.length > 1 ? 'exact_multi' : 'exact' };
   }
 
   async function focusTab(tab) {
@@ -188,42 +158,44 @@ export function createFeishuAtsxBasicAutoRunner({ api = globalThis.chrome, verif
     await assertProfileBinding(api.storage.local, binding, lifecycleOptions);
     const raw = await get('resumeProfile');
     if (await canonicalProfileHash(raw, lifecycleOptions.cryptoImpl) !== binding.profileHash) fail('profile_binding_changed');
-    const plan = planFeishuAtsxBasicFromProfile(raw);
-    if (!plan.ok) fail(plan.reason || 'profile_fields_unavailable');
 
     await bounded(() => dispatchBoundSource(
       api.storage.local,
       binding,
-      () => api.scripting.executeScript({ target: { tabId: tab.id }, files: ['src/content/controls/resume-form.js', 'src/content/feishu-atsx-basic.js'] }),
+      () => api.scripting.executeScript({ target: { tabId: tab.id }, files: ['src/core/matcher.js', 'src/content/controls/resume-form.js', 'src/content/engine.js'] }),
       lifecycleOptions
     ), 15000);
 
-    await requireAutoFormReady(api, tab.id);
+    recordAutoAdvisory(readiness, await requireAutoFormReady(api, tab.id));
 
     const replies = await bounded(() => dispatchBoundSource(
       api.storage.local,
       binding,
       () => api.scripting.executeScript({
         target: { tabId: tab.id },
-        func: (profile, profileBinding) => globalThis.ResumeFeishuAtsxBasic.fillBasic({ profile, profileBinding }),
+        func: (profile, profileBinding) => globalThis.ResumeQuickFillFillCurrentPage(profile, profileBinding),
         args: [raw, binding]
       }),
       lifecycleOptions
     ), 60000);
 
     await assertProfileBinding(api.storage.local, binding, lifecycleOptions);
-    const report = replies?.[0]?.result;
+    const response = replies?.[0]?.result;
+    const report = response?.data ? { ...response, ...response.data } : response;
     if (!report || typeof report !== 'object') fail('feishu_atsx_fill_empty_response');
-    if (report.siteId && report.siteId !== SITE_ID) fail('feishu_atsx_site_isolation');
-    if (report.saved === true || report.skippedSave !== true) fail('feishu_atsx_save_policy_violation');
+    if (report.saved === true || report.skippedSave !== true || report.saveAttempted === true
+      || report.softwareClickedSave === true || report.softwareClickedSubmit === true
+      || report.softwareClickedDelete === true || report.savedOnSite === true || report.submitted === true) fail('feishu_atsx_save_policy_violation');
+    if (Array.isArray(report.advisoryHints)) recordAutoAdvisory(readiness, report);
     return {
       state: report.ok === true ? 'completed' : 'failed',
       reason: report.ok === true ? null : (report.reason || 'feishu_atsx_fill_partial'),
-      writeStarted: report.writeAttempted === true,
+      writeStarted: report.writeStarted === true || report.writeAttempted === true,
       softwareClickedSave: false,
       softwareClickedSubmit: false,
       saved: false,
-      results: Array.isArray(report.results) ? report.results : [],
+      advisoryHints: readiness.advisoryHints,
+      results: Array.isArray(report.fields) ? report.fields : Array.isArray(report.results) ? report.results : [],
       profileSource: report.profileSource || 'resumeProfile',
       href: report.href || tab.url || null
     };
@@ -246,49 +218,18 @@ export function createFeishuAtsxBasicAutoRunner({ api = globalThis.chrome, verif
       skippedSave: true,
       liveSupportClaimed: false
     };
+    report.advisoryHints = [];
     const found = await findTab(sender?.tab?.id, { openIfMissing, page: target.page });
     report.steps.push({ find: found.kind, tabId: found.tab.id, url: found.tab.url || null });
     await focusTab(found.tab);
     report.formReadiness = await requireAutoFormReady(api, found.tab.id);
+    recordAutoAdvisory(report, report.formReadiness);
     report.steps.push('focused_feishu_atsx_tab');
-    await bounded(() => api.scripting.executeScript({
-      target: { tabId: found.tab.id },
-      files: ['src/content/controls/resume-form.js', 'src/content/feishu-atsx-basic.js']
-    }), 15000);
-    const prepared = await bounded(() => api.scripting.executeScript({
-      target: { tabId: found.tab.id },
-      func: () => globalThis.ResumeFeishuAtsxBasic.prepareForm({ readinessTimeoutMs: 2000 })
-    }), 10000);
-    const formReadiness = prepared?.[0]?.result;
-    report.preparation = formReadiness;
-    if (formReadiness?.ok !== true) {
-      report.ok = false;
-      report.status = formReadiness?.status === 'unsupported' ? 'unsupported' : 'manual';
-      report.reason = 'form_not_ready';
-      report.helpNeeded = true;
-      await api.storage.local.set({ resumeFeishuAtsxBasicAutoRun: report });
-      return report;
-    }
-    let probeResult = await probe(found.tab.id);
-    if (!probeResult.ok) {
-      for (let i = 0; i < 8 && !probeResult.ok; i += 1) {
-        await sleep(500);
-        probeResult = await probe(found.tab.id);
-      }
-    }
+    const probeResult = await probe(found.tab.id);
     report.steps.push({ probe: probeResult.reason, ok: probeResult.ok === true });
-    if (!probeResult.ok) {
-      const login = probeResult.looksLogin === true
-        || /login_or_wrong_page|wrong_page|shell_no_form/u.test(probeResult.reason || '');
-      if (login) {
-        const err = Error('feishu_atsx_basic_login_or_wrong_page');
-        err.helpUrl = probeResult.href || found.tab.url || target.page;
-        err.helpReason = 'Feishu ATSX resume form not ready; login or DOM harvest still needed';
-        throw err;
-      }
-      fail(probeResult.reason || 'feishu_atsx_basic_probe_failed');
-    }
+    recordAutoAdvisory(report, probeResult);
     const readiness = await collectReadiness(found.tab, probeResult);
+    readiness.advisoryHints = report.advisoryHints;
     report.readiness = {
       pageState: readiness.pageState,
       foundLabels: readiness.page?.foundLabels || [],
@@ -310,7 +251,7 @@ export function createFeishuAtsxBasicAutoRunner({ api = globalThis.chrome, verif
     report.fill = {
       ok: filled.state === 'completed',
       fieldCount: filled.results.length,
-      matched: filled.results.filter((row) => row.ok).length
+      matched: filled.results.filter((row) => row.status === 'verified').length
     };
     report.ok = filled.state === 'completed';
     if (!report.ok) report.reason = filled.reason || 'feishu_atsx_fill_failed';

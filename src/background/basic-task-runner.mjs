@@ -260,7 +260,8 @@ export function createBasicTaskRunner({api=globalThis.chrome,verifyBeforeFill=nu
       await exactTab(tabId);
       if(stable(basicCandidate(await get('resumeProfile'),educationIndex))!==stable(candidate))fail('basic_job_profile_changed');
       if((await get(pendingKey(tabId)))?.requestId!==requestId)fail('basic_job_pending_changed');
-      await requireAutoFormReady(api,tabId);
+      const formReadiness=await requireAutoFormReady(api,tabId);
+      await save({formReadiness,liveSupportClaimed:false});
       sent=true;
       const response=await bounded(()=>dispatchBoundSource(api.storage.local,binding,()=>api.tabs.sendMessage(tabId,{type:'GTH_BASIC_TRIAL',requestId,educationIndex,replaceExisting,profile:candidate.profile,profileBinding:binding}),lifecycleOptions));
       await assertProfileBinding(api.storage.local,binding,lifecycleOptions);

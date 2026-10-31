@@ -437,17 +437,7 @@
   }
 
   async function fillBasic(rawValues = {}, options = {}) {
-    if (!pageAllowed(options)) {
-      return {
-        ok: false,
-        siteId: SITE_ID,
-        reason: 'wrong_page',
-        href: location.href,
-        results: [],
-        ...NEVER_SAVE,
-        writeAttempted: false
-      };
-    }
+    const pageHint = pageAllowed(options) ? null : { status: 'manual', reason: 'wrong_page', advisory: true };
 
     const profile = rawValues.profile;
     const allowExplicit = rawValues.allowExplicitValues === true;
@@ -502,29 +492,9 @@
       ['手机号码', values.mobile],
       ['邮箱', values.email]
     ];
-    const classified = textPlan.map(([label, value]) => ({ ...classifyField(label), expected: norm(value) }));
-    if (classified.some((row) => !row.ready)) {
-      return {
-        ok: false,
-        siteId: SITE_ID,
-        href: location.href,
-        title: document.title,
-        reason: 'form_not_ready',
-        ...NEVER_SAVE,
-        writeAttempted: false,
-        profileSource: allowExplicit ? 'explicit' : 'resumeProfile',
-        results: classified.map((row) => ({
-          label: row.label,
-          ok: false,
-          reason: row.ready ? 'skipped_form_not_ready' : row.reason,
-          matchCount: row.matchCount,
-          controlCount: row.controlCount ?? null,
-          before: '',
-          after: '',
-          expected: row.expected
-        }))
-      };
-    }
+    let classified = textPlan.map(([label, value]) => ({ ...classifyField(label), expected: norm(value) }));
+    const manualResults = classified.filter(row => !row.ready).map(row => ({ label: row.label, ok: false, status: 'manual', reason: row.reason, before: '', after: '', expected: row.expected, writeAttempted: false }));
+    classified = classified.filter(row => row.ready);
     const neighbors = snapshotTextNeighbors(classified.map((row) => row.control));
     const snapshots = classified.map((row) => ({ ...row, original: row.control.value }));
     const results = [];
@@ -583,12 +553,14 @@
       .map((row) => ({ ...row, beforeRaw: row.original })));
     const ok = !failure;
     return withNeighborReadback({
-      ok,
+      ok: ok && manualResults.length === 0,
+      status: manualResults.length ? 'manual' : undefined,
+      advisoryHints: [pageHint, manualResults.length ? { status: 'manual', reason: 'form_not_ready', advisory: true } : null].filter(hint => hint && hint.ok !== true),
       siteId: SITE_ID,
       href: location.href,
       title: document.title,
       ...NEVER_SAVE,
-      reason: failure || (writes.length ? 'readback_matched' : 'skipped_existing'),
+      reason: failure || (manualResults.length ? 'form_not_ready' : writes.length ? 'readback_matched' : 'skipped_existing'),
       writeAttempted: writes.length > 0,
       restored: rollback.length > 0 && rollback.every((row) => row.restored) && skippedPreserved && unvisited.neighborsPreserved,
       restoredCount: rollback.filter((row) => row.restored).length,
@@ -600,7 +572,7 @@
       planSummary: plan
         ? { reason: plan.reason, readyCount: plan.fields.filter((f) => f.ready).length, blockerCount: plan.blockers.length }
         : { reason: 'explicit_override' },
-      results
+      results: textPlan.map(([label]) => results.find(row => row.label === label) || manualResults.find(row => row.label === label)).filter(Boolean)
     }, neighbors);
   }
 

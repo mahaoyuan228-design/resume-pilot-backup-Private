@@ -351,7 +351,7 @@ test('GTH_OTHER_AUTO keeps liveSupportClaimed false when the page claims support
   assert.equal(response.saveAttempted, false);
 });
 
-test('GTH_OTHER_AUTO related GTH tab without edit → login helpNeeded', async () => {
+test('GTH_OTHER_AUTO related GTH tab without edit records a readiness hint', async () => {
   const data = {
     resumeProfile: { schemaVersion: 1, fullName: 'S', customAnswers: {}, confirmedFields: [] },
     resumeProfileLifecycle: { version: 1, epoch: '00000000-0000-4000-8000-000000000001', state: 'ready' },
@@ -398,9 +398,9 @@ test('GTH_OTHER_AUTO related GTH tab without edit → login helpNeeded', async (
     lifecycleOptions: { locks: { request: async (_n, _o, work) => work() }, cryptoImpl: globalThis.crypto },
   });
   const response = await invoke({ type: 'GTH_OTHER_AUTO', mode: 'readiness' });
-  assert.equal(response.ok, false);
-  assert.equal(response.reason, 'gth_other_login_or_wrong_page');
-  assert.equal(response.helpNeeded, true);
+  assert.equal(response.ok, true);
+  assert.ok(response.advisoryHints.some(row => row.reason === 'gth_other_probe_failed'));
+  assert.equal(response.helpNeeded, false);
   assert.equal(response.saveAttempted, false);
 });
 

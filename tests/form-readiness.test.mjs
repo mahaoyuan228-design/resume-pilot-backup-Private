@@ -160,7 +160,7 @@ const blockedCases = [
   ['OTP challenge without login evidence', '<form><label>验证码<input autocomplete="one-time-code"></label></form>', 'manual'],
   ['cross-origin iframe', '<form><iframe src="https://other.example.test/form"></iframe></form>', 'manual'],
 ];
-for (const [name, html, status] of blockedCases) test(`generic ${name} fails closed without effects`, t => {
+for (const [name, html, status] of blockedCases) test(`generic ${name} is a read-only advisory`, t => {
   const f = fixture(t, html);
   assertReadiness(f.inspect(), status);
   f.assertInert();
@@ -202,39 +202,64 @@ const engineBlockedCases = [
   ['unknown', '<main><h1>未知页面</h1><button type="button">保存</button></main>', 'manual'],
 ];
 for (const enabled of [false, true]) for (const [name, html, status] of engineBlockedCases)
-  test(`ordinary inspect and fill share ${name} page readiness before writes (opt-in ${enabled})`, async t => {
+  test(`ordinary inspect and fill preserve ${name} advisory (opt-in ${enabled})`, async t => {
     const f = fixture(t, html, { engine: true, enabled });
     const inspected = await f.request('RESUME_INSPECT');
     assert.equal(inspected.ok, true, JSON.stringify(inspected));
     assertReadiness(inspected.data.formReadiness, status);
     f.assertInert();
     const filled = await f.request('RESUME_FILL');
-    assert.equal(filled.ok, false, JSON.stringify(filled));
-    assert.equal(filled.fillNotStarted, true);
-    assert.equal(filled.writeStarted, false);
-    assert.equal(filled.error, status);
-    assert.equal(filled.status, status);
-    assert.equal(filled.reason, inspected.data.formReadiness.reason);
-    assert.equal(filled.writeAttempted, false);
-    assert.equal(filled.saveAttempted, false);
-    assert.equal(filled.liveSupportClaimed, false);
-    assertReadiness(filled.readiness, status);
+    assert.equal(filled.ok, true, JSON.stringify(filled));
+    assert.equal(filled.data.formReadiness.reason, inspected.data.formReadiness.reason);
+    assert.equal(filled.data.formReadiness.blocking, false);
+    assert.equal(filled.data.liveSupportClaimed, false);
+    assertReadiness(filled.data.advisoryHints[0], status);
     f.assertInert();
   });
 
-test('non-ready engine stops before legacy entry preparation and preserves its reason', async t => {
+test('non-ready engine scans without legacy entry preparation and preserves its reason', async t => {
   const f = fixture(t, '<main><form></form><button type="button">进入简历</button></main>', { engine: true });
   let preparations = 0;
   f.window.ResumeFormFlow = { readiness: f.window.ResumeFormFlow.readiness,
     inspect() { preparations++; throw Error('unexpected_entry_inspection'); },
     ensure() { preparations++; throw Error('unexpected_entry_preparation'); } };
   const result = await f.request('RESUME_FILL');
-  assert.equal(result.ok, false);
-  assert.equal(result.status, 'form_not_ready');
-  assert.equal(result.reason, 'form_shell');
-  assert.equal(result.writeStarted, false);
+  assert.equal(result.ok, true);
+  assert.equal(result.data.formReadiness.status, 'form_not_ready');
+  assert.equal(result.data.advisoryHints[0].reason, 'form_shell');
+  assert.deepEqual(Array.from(result.data.fields), []);
   assert.equal(preparations, 0);
   f.assertInert();
+});
+
+for (const [name, evidence, status] of [
+  ['login hint', '<div role="alert">Please sign in to continue</div>', 'login_required'],
+  ['empty required region', '<div aria-required="true"></div>', 'form_not_ready'],
+  ['unknown required widget', '<div role="combobox" aria-label="未知字段" aria-required="true"></div>', 'manual'],
+]) test(`${name} still fills and reads the current editor`, async t => {
+  const f = fixture(t, `${evidence}<form><label>姓名<input id="applicant" required></label>`
+    + '<label>未知字段<input id="unknown"></label><button type="button">编辑简历</button>'
+    + '<button type="button">新建简历</button><button>保存</button><button>提交</button></form>',
+  { engine: true });
+  let clicks = 0;
+  f.document.addEventListener('click', () => clicks++);
+  const before = await f.request('RESUME_INSPECT');
+  assertReadiness(before.data.formReadiness, status);
+  assert.equal(f.document.getElementById('applicant').value, '');
+  const result = await f.request('RESUME_FILL');
+  assert.equal(result.ok, true, JSON.stringify(result));
+  assertReadiness(result.data.advisoryHints[0], status);
+  const field = result.data.fields.find(row => row.id === 'applicant');
+  assert.equal(field.status, 'verified');
+  assert.equal(field.beforeValue, '');
+  assert.equal(field.currentValue, '离线示例');
+  assert.equal(f.document.getElementById('applicant').value, '离线示例');
+  assert.equal(result.data.fields.find(row => row.id === 'unknown').semanticStatus, 'manual');
+  assert.equal(clicks, 0);
+  assert.equal(f.effects.network, 0);
+  assert.equal(f.effects.formActions, 0);
+  assert.equal(f.effects.history, 0);
+  assert.equal(f.effects.frameReads, 0);
 });
 
 for (const enabled of [false, true]) test(`ordinary inspect reports an editable required application (opt-in ${enabled})`, async t => {

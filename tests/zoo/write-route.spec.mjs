@@ -44,17 +44,21 @@ test('packaged host permission gate stops an unknown origin without injection or
   } finally { await zoo.close(); }
 });
 
-test('packaged auto readiness gate preserves page state and Never-Save for every status', async ({}, testInfo) => {
+test('packaged auto readiness hints stay passive and current-page fill continues for every status', async ({}, testInfo) => {
   const zoo = await startZoo('write-route');
   try {
     const bridge = await zoo.page.context().newPage();
     await bridge.goto(new URL('/manifest.json', zoo.worker.url()).href);
     await zoo.page.bringToFront();
+    const profile = { schemaVersion: 1, fullName: '离线申请人', confirmedFields: ['fullName'] };
+    const profileBinding = await zoo.bind(profile);
+    await zoo.inject(['src/core/matcher.js', 'src/core/domain-memory.js', 'src/content/engine.js']);
     const results = [];
     for (const status of ['ready', 'login_required', 'form_not_ready', 'manual']) {
       await zoo.page.evaluate(status => {
         document.querySelector('#readiness-state')?.remove();
         document.querySelector('form').removeAttribute('aria-busy');
+        document.querySelector('#fullName').value = '';
         const state = document.createElement('section'); state.id = 'readiness-state';
         if (status === 'login_required') state.innerHTML = '<h2 role="alert">Please sign in to continue</h2>';
         if (status === 'form_not_ready') document.querySelector('form').setAttribute('aria-busy', 'true');
@@ -65,14 +69,22 @@ test('packaged auto readiness gate preserves page state and Never-Save for every
       const result = await bridge.evaluate(async tabId => {
         const gate = await import(chrome.runtime.getURL('src/background/auto-form-readiness.mjs'));
         try { return await gate.requireAutoFormReady(chrome, tabId); }
-        catch (error) { return { reason: error.message, ...gate.autoFormReadinessFailure(error) }; }
+        catch (error) { return { failed: true, reason: error.message, ...gate.autoFormReadinessFailure(error) }; }
       }, zoo.tabId);
-      expect(result, JSON.stringify(result)).toMatchObject({ status,
+      expect(result.failed).toBeUndefined();
+      expect(result, JSON.stringify(result)).toMatchObject({ status, blocking: false, advisory: status !== 'ready',
         writeStarted: false, writeAttempted: false, saveAttempted: false, liveSupportClaimed: false });
       expect(result.reason).toBeTruthy();
       expect(await zoo.readback()).toEqual(before);
       expect(await zoo.page.content()).toBe(markup);
-      results.push(result);
+      const fill = await zoo.worker.evaluate(async ({ tabId, profile, profileBinding }) => chrome.tabs.sendMessage(tabId,
+        { type: 'RESUME_FILL', profile, profileBinding }), { tabId: zoo.tabId, profile, profileBinding });
+      expect(fill.ok, JSON.stringify(fill)).toBe(true);
+      expect(fill.data.formReadiness).toMatchObject({ status, blocking: false });
+      expect(fill.data.fields.find(row => row.path === 'fullName')).toMatchObject({ status: 'verified' });
+      expect(await zoo.page.locator('#fullName').inputValue()).toBe(profile.fullName);
+      expect(await zoo.page.locator('#neighbor').inputValue()).toBe('ZOO_NEIGHBOR_KEEP');
+      results.push({ hint: result, fill });
     }
     const evidence = await zoo.evidence();
     expect(evidence).toMatchObject({ neverSave: true, liveSupportClaimed: false,

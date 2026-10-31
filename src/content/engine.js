@@ -8,7 +8,8 @@
   if(nativeMessages.hasListeners?.()===false)globalThis.__resumeNativeListenersResetObserved=true;
   if(globalThis.__resumeQuickFillInstalled){
     existingListenerAlive=!!ownedListener&&nativeMessages.hasListener?.(ownedListener)===true;
-    if(existingListenerAlive&&globalThis.__resumeQuickFillEngineRevision===24&&typeof globalThis.ResumeQuickFillGthInspect==='function')return;
+    if(existingListenerAlive&&globalThis.__resumeQuickFillEngineRevision===25&&typeof globalThis.ResumeQuickFillGthInspect==='function'
+      &&typeof globalThis.ResumeQuickFillFillCurrentPage==='function')return;
     if(existingListenerAlive){if(fillState.pending)throw Error('profile_write_context_busy');nativeMessages.removeListener(ownedListener);existingListenerAlive=false;}
     else if(!ownedListener&&nativeMessages.hasListeners?.()===true&&!globalThis.__resumeNativeListenersResetObserved)throw Error('extension_reload_required');
   }
@@ -1486,7 +1487,11 @@
   }
 
   function currentFormReadiness() {
-    return globalThis.ResumeFormFlow?.readiness?.inspect({ confirmedEditable: [...atsControlTargets.keys()] }) || null;
+    let diagnosis;
+    try { diagnosis = globalThis.ResumeFormFlow?.readiness?.inspect({ confirmedEditable: [...atsControlTargets.keys()] }); }
+    catch { /* Readiness cannot prevent the independent field scan. */ }
+    return { ...(diagnosis || { status: 'manual', reason: 'form_readiness_unavailable', liveSupportClaimed: false }),
+      advisory: diagnosis?.status !== 'ready', blocking: false };
   }
 
   function setNativeValue(control, value) {
@@ -2038,7 +2043,8 @@
       requireVisibleFillPage();if(write)context.writeStarted=true;
     }};
     globalThis.ResumeProfileWriteContext=context;
-    try{await context.check(false);const result=await fillOwnedContent(profile,attachment,photoUploads);await context.check(false);return result;}
+    try{await context.check(false);const result=await fillOwnedContent(profile,attachment,photoUploads);await context.check(false);
+      return {...result,writeStarted:context.writeStarted,writeAttempted:context.writeStarted};}
     finally{if(globalThis.ResumeProfileWriteContext===context)delete globalThis.ResumeProfileWriteContext;}
   }
   async function setBoundNativeValue(control,value,verifyTarget=null){
@@ -2114,38 +2120,18 @@
       && (await chrome.storage.local.get('resumeAtsEngineWriteEnabled')).resumeAtsEngineWriteEnabled === true;
     if (atsEngineWriteEnabled) await loadAtsControlTargets(true);
     else if (typeof atsControlTargets !== 'undefined') { atsControlTargets.clear(); atsControlPeers.clear(); }
+    const advisoryHints = [];
     if (location.origin + location.pathname === CMS_PHOTO_PAGE) {
       const session = typeof globalThis.ResumeCmsSession?.check === "function"
         ? await globalThis.ResumeCmsSession.check() : null;
       if (session?.authenticated !== true) {
-        const error = new Error(session?.reason || "site_session_unverified");
-        error.fillNotStarted = true;error.writeStarted = false;throw error;
+        advisoryHints.push({ status: 'login_required', reason: session?.reason || 'site_session_unverified',
+          advisory: true, blocking: false, liveSupportClaimed: false });
       }
       requireVisibleFillPage();
     }
-    const formFlow = globalThis.ResumeFormFlow;
-    const initialReadiness = currentFormReadiness();
-    if (initialReadiness && initialReadiness.status !== 'ready') throw Object.assign(Error(initialReadiness.status), {
-      fillNotStarted: true, writeStarted: false, readiness: initialReadiness });
-    const formReady = () => collect(profile, attachment).some(entry => entry.reason === 'ready'
-      && entry.path && entry.path !== 'sessionAttachment' && entry.answer != null
-      && (!entry.control.readOnly || atsControlTargets.has(entry.control)) && !entry.control.disabled
-      && visible(entry.control, atsControlTargets.has(entry.control))
-      && !entry.control.closest('[aria-busy="true"],[aria-readonly="true"],[inert]'));
-    if (formFlow && !formReady() && formFlow.inspect().entryCount > 0) {
-      const readiness = await formFlow.ensure({ ready: async () => {
-        // Revealing an editor replaces the inspected control roots. Refresh the
-        // read-only candidate scan so opt-in widgets retain their MAIN evidence.
-        if (atsEngineWriteEnabled) await loadAtsControlTargets(true);
-        return formReady();
-      },
-        allowEntry: true, check: () => globalThis.ResumeProfileWriteContext.check(false) });
-      if (!readiness.ok) throw Object.assign(Error(readiness.reason), {
-        fillNotStarted: true, writeStarted: false, readiness });
-    }
     const formReadiness = currentFormReadiness();
-    if (formReadiness && formReadiness.status !== 'ready') throw Object.assign(Error(formReadiness.status), {
-      fillNotStarted: true, writeStarted: false, readiness: formReadiness });
+    if (formReadiness.advisory) advisoryHints.push(formReadiness);
     const results = atsEngineWriteEnabled ? [] : await ensureRepeatRows(profile);
     let decodedAttachment = null;
     const processed = new Set();
@@ -2214,10 +2200,11 @@
         }
         processed.add(entry.control);
         if (!record) {
-          record = { key, entry, scope: originalScope, signature: entrySignature(original), result: fresh };
+          record = { key, entry, scope: originalScope, signature: entrySignature(original),
+            result: { ...fresh, beforeValue: fresh.currentValue } };
           records.set(key, record);
           for (const token of tokens) ids.set(token, record);
-          results.push(fresh);
+          results.push(record.result);
         }
         const result = record.result;
         if (rebindFailure) {
@@ -2490,7 +2477,7 @@
     const validationGaps = currentValidationGaps();
     return { url: location.href, title: document.title,
       fields: [...results, ...cmsUncollectedQuestions(finalEntries, photoRows), ...photoRows],
-      ...(atsEngineWriteEnabled ? { liveSupportClaimed: false } : {}),
+      formReadiness, advisoryHints, liveSupportClaimed: false,
       ...(validationGaps ? { validationGaps } : {}),
       savedOnSite: null, submitted: null, softwareClickedSubmit: false };
   }
@@ -2525,8 +2512,7 @@
     return {ok:true,data:{requestId:record.requestId,state:record.state,...(record.state==='settled'?{outcome}:{})}};
   }
 
-  // A deliberately narrow GTH trial. The general RESUME_FILL route remains
-  // blocked on this site; this route can touch only one confirmed empty field.
+  // A deliberately narrow GTH trial; the user must open its editor first.
   async function gthSalaryTrial(profile, requestId) {
     const page = "https://hr.gtht.com/resume/edit/";
     const titles = ["基本信息", "教育经历", "求职意向", "工作经验",
@@ -2583,21 +2569,7 @@
       if (forms.length > 1 || (forms.length === 1 && !sections[2].contains(forms[0])))
         fail("editor_structure_changed");
       const outsideBefore = otherSections(sections);
-      if (!forms.length) {
-        const links = [...sections[2].querySelectorAll(".title_ a.h-e-btn")]
-          .filter((node) => M.normalize(node.textContent) === "编辑" && visible(node));
-        if (links.length !== 1) fail("edit_link_not_unique");
-        await checkProfileWrite(); links[0].click();
-        const deadline = Date.now() + 4000;
-        do {
-          await pause(60);
-          sections = sectionsNow();
-          forms = sections.flatMap((section) => [...section.querySelectorAll("form")]);
-          if (forms.length > 1 || (forms.length === 1 && !sections[2].contains(forms[0])))
-            fail("editor_structure_changed");
-          if (forms.length === 1 && forms[0].querySelector(".el-form-item")) break;
-        } while (Date.now() < deadline);
-      }
+      if (!forms.length) fail('entry_activation_manual');
       if (forms.length !== 1 || !sections[2].contains(forms[0])
         || otherSections(sections) !== outsideBefore) fail("editor_structure_changed");
       const form = forms[0];
@@ -2712,11 +2684,6 @@
       sendResponse({ ok: false, error: "invalid_request_id", writeStarted: false });
       return false;
     }
-    if (message.type === "RESUME_FILL"
-      && `${location.origin}${location.pathname}` === "https://hr.gtht.com/resume/edit/") {
-      sendResponse({ ok: false, error: "gth_read_only" });
-      return false;
-    }
     if (message.type === "RESUME_FILL" || message.type === "GTH_SALARY_TRIAL") {
       if (document.visibilityState !== "visible") {
         sendResponse({ ok: false, error: "page_hidden",
@@ -2766,7 +2733,18 @@
         sendResponse(reply);
       });
     return true;
-  };chrome.runtime.onMessage.addListener(engineListener);globalThis.__resumeQuickFillEngineListener=engineListener;globalThis.__resumeQuickFillEngineRevision=24;}
+  };chrome.runtime.onMessage.addListener(engineListener);globalThis.__resumeQuickFillEngineListener=engineListener;globalThis.__resumeQuickFillEngineRevision=25;}
+  // ATS runners and the popup share the current-document scan and field writer.
+  globalThis.ResumeQuickFillFillCurrentPage = async (profile, profileBinding) => {
+    if (fillState.pending) throw Object.assign(Error('fill_in_progress'), { fillNotStarted: true, writeStarted: false });
+    fillState.pending = true;
+    try {
+      await loadFieldMemory();
+      const result = await fill(profile || {}, null, null, profileBinding);
+      return { ...result, ok: true, skippedSave: true, saved: false, neverSave: true,
+        softwareClickedSave: false, softwareClickedSubmit: false, liveSupportClaimed: false };
+    } finally { fillState.pending = false; }
+  };
   globalThis.ResumeQuickFillGthInspect = (profile) => {
     if (`${location.origin}${location.pathname}` !== "https://hr.gtht.com/resume/edit/")
       throw new Error("gth_inspect_wrong_page");

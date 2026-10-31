@@ -244,7 +244,7 @@ test('another section editor blocks intent fill and is not saved', async () => {
   assert.equal(dom.window.document.getElementById('foreign-value').value, 'other-section');
 });
 
-test('a closed editor is opened from the unique 编辑 link and cancelled when nothing was written', async () => {
+test('a closed editor keeps the unique 编辑 link untouched and requests manual activation', async () => {
   const { dom, clicks, api } = page({ formOpen: false, salary: '300000' });
   const intent = dom.window.document.getElementById('intent');
   const form = dom.window.document.createElement('form');
@@ -259,12 +259,12 @@ test('a closed editor is opened from the unique 编辑 link and cancelled when n
     form.remove();
   });
   const result = await api.trial(request());
-  assert.equal(clicks.edit, 1);
+  assert.equal(clicks.edit, 0);
   assert.equal(clicks.save, 0);
-  assert.equal(clicks.cancel, 1);
+  assert.equal(clicks.cancel, 0);
   assert.equal(result.writeStarted, false);
   assert.equal(result.editorLeftOpen, false);
-  assert.equal(result.reason, 'picker_structure_changed');
+  assert.equal(result.reason, 'entry_activation_manual');
   assert.equal(result.writeStarted, false);
   assert.equal(result.ok, false);
 });

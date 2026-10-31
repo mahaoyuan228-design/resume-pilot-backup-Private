@@ -171,52 +171,35 @@ async function harness({ trialResponse, statusOutcome = 'verified_preexisting', 
 
 for (const [status, reason] of [['login_required', 'visible_login_wall'],
   ['form_not_ready', 'form_loading'], ['manual', 'required_control_unrecognized']]) {
-  for (const mode of ['readiness', 'fill']) test(`GTH_BASIC_AUTO ${mode} stops on ${status} despite ok:true`, async () => {
+  for (const mode of ['readiness', 'fill']) test(`${'GTH_BASIC_AUTO'} ${mode} records ${status} and continues`, async () => {
     const verdict = { ok: true, status, reason, liveSupportClaimed: false };
     const h = await harness({ formReadiness: [verdict] });
     const result = await h.invoke({ type: 'GTH_BASIC_AUTO', mode, educationIndex: 5, originConfirmed: true });
-    assert.equal(result.ok, false);
-    assert.equal(result.reason, reason);
-    assert.equal(result.status, status);
-    assert.deepEqual(result.formReadiness, verdict);
-    assert.equal(result.fillNotStarted, true);
-    assert.equal(result.writeStarted, false);
-    assert.equal(result.writeAttempted, false);
+    assert.equal(result.formReadiness.reason, reason);
+    assert.equal(result.advisoryHints[0].reason, reason);
+    assert.equal(result.advisoryHints[0].blocking, false);
     assert.equal(result.saveAttempted, false);
     assert.equal(result.liveSupportClaimed, false);
-    assert.equal(h.stats.readiness, 1);
-    assert.equal(h.stats.probe, 0);
-    assert.equal(h.stats.trial, 0);
-    assert.equal(h.stats.status, 0);
-    assert.equal(h.stats.inject, 0);
-    assert.equal(h.data[`resumePendingFillReview:${tabId}`], undefined);
-    assert.equal(h.data.resumeGthBasicAutoRun.reason, reason);
-    assert.equal(h.data.resumeGthBasicAutoRun.status, status);
+    assert.equal(h.stats.readiness, mode === 'fill' ? 2 : 1);
+    assert.equal(h.stats.probe, 1);
+    assert.equal(h.stats.trial, mode === 'fill' ? 1 : 0);
+    assert.equal(h.stats.inject, mode === 'fill' ? 1 : 0);
+    if (mode === 'fill') assert.ok(result.job.fields.some(row => row.status === 'verified'));
+    assert.equal(h.data.resumeGthBasicAutoRun.advisoryHints[0].reason, reason);
   });
 
-  test(`GTH_BASIC_AUTO rechecks ${status} before dispatch and clears pending`, async () => {
+  test(`GTH_BASIC_AUTO rechecks ${status} and continues dispatch/readback`, async () => {
     const verdict = { ok: true, status, reason, liveSupportClaimed: false };
     const h = await harness({ formReadiness: [{ status: 'ready', reason: 'visible_editable_form' }, verdict] });
     const result = await h.invoke({ type: 'GTH_BASIC_AUTO', mode: 'fill', educationIndex: 5, originConfirmed: true });
-    assert.equal(result.ok, false);
-    assert.equal(result.reason, reason);
-    assert.equal(result.status, status);
-    assert.deepEqual(result.formReadiness, verdict);
-    assert.equal(result.writeAttempted, false);
+    assert.equal(result.advisoryHints[0].reason, reason);
+    assert.equal(result.advisoryHints[0].blocking, false);
     assert.equal(result.saveAttempted, false);
     assert.equal(result.liveSupportClaimed, false);
-    const job = h.data[basicJobKey(tabId)];
-    assert.equal(job.state, 'stopped_before_write');
-    assert.equal(job.reason, reason);
-    assert.equal(job.status, status);
-    assert.deepEqual(job.formReadiness, verdict);
-    assert.equal(job.writeStarted, false);
     assert.equal(h.stats.readiness, 2);
-    assert.equal(h.stats.trial, 0);
-    assert.equal(h.stats.status, 0);
+    assert.equal(h.stats.trial, 1);
     assert.equal(h.stats.inject, 1);
-    assert.equal(h.data[`resumePendingFillReview:${tabId}`], undefined);
-    assert.equal(h.data.resumeGthBasicAutoRun.status, status);
+    assert.ok(result.job.fields.some(row => row.status === 'verified'));
   });
 }
 
@@ -311,7 +294,7 @@ test('GTH_BASIC_AUTO fill dispatches trial once and never Save', async () => {
   assert.equal(JSON.stringify(response).includes('已支持'), false);
 });
 
-test('GTH_BASIC_AUTO related GTH tab without edit → login helpNeeded', async () => {
+test('GTH_BASIC_AUTO related GTH tab without edit records a readiness hint', async () => {
   const data = {
     resumeProfile: fixture(),
     resumeProfileLifecycle: { version: 1, epoch, state: 'ready' },
@@ -339,6 +322,7 @@ test('GTH_BASIC_AUTO related GTH tab without edit → login helpNeeded', async (
     });
   runner = createGthBasicAutoRunner({
     api: {
+      permissions: { getAll: async () => ({ origins: ['https://*/*'] }), contains: async () => true },
       storage: { local: storage },
       runtime: {
         id: autoSender.id,
@@ -358,9 +342,9 @@ test('GTH_BASIC_AUTO related GTH tab without edit → login helpNeeded', async (
     lifecycleOptions: { locks: { request: async (_n, _o, work) => work() }, cryptoImpl: globalThis.crypto },
   });
   const response = await invoke({ type: 'GTH_BASIC_AUTO', mode: 'readiness', educationIndex: 5 });
-  assert.equal(response.ok, false);
-  assert.equal(response.reason, 'gth_basic_login_or_wrong_page');
-  assert.equal(response.helpNeeded, true);
+  assert.equal(response.ok, true);
+  assert.ok(response.advisoryHints.some(row => row.reason === 'gth_basic_probe_failed'));
+  assert.equal(response.helpNeeded, false);
   assert.equal(response.saveAttempted, false);
 });
 

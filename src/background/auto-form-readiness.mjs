@@ -1,4 +1,4 @@
-// Shared read-only gates. Host access never implies field or live site support.
+// Host permission is required; page readiness is a read-only advisory.
 const stopped = (status, reason) => ({ status, reason, readOnly: true,
   neverSave: true, fillNotStarted: true, saveAttempted: false, writeStarted: false,
   writeAttempted: false, saved: false, skippedSave: true, liveSupportClaimed: false });
@@ -69,6 +69,17 @@ export async function requireAutoFormReady(api, tabId) {
   return requirePageFormReady(api, tabId);
 }
 
+export function appendAutoAdvisory(report, diagnosis) {
+  if (!diagnosis) return;
+  const hints = diagnosis.advisoryHints || (diagnosis.status === 'ready' || diagnosis.ok === true ? [] : [diagnosis]);
+  report.advisoryHints ||= [];
+  for (const hint of hints) {
+    if (!report.advisoryHints.some(row => row.status === hint.status && row.reason === hint.reason))
+      report.advisoryHints.push({ ...hint, advisory: true, blocking: false });
+  }
+  return diagnosis;
+}
+
 // Also used by the read-only direct-CDP harness, which has no extension context.
 export async function requirePageFormReady(api, tabId) {
   let formReadiness;
@@ -77,16 +88,15 @@ export async function requirePageFormReady(api, tabId) {
     const replies = await api.scripting.executeScript({ target: { tabId },
       func: () => globalThis.ResumeFormFlow?.readiness?.inspect() });
     formReadiness = replies?.[0]?.result;
-  } catch { /* Unavailable page evidence must never permit a write. */ }
-  if (!['ready', 'login_required', 'form_not_ready', 'manual'].includes(formReadiness?.status)) {
+  } catch { /* Missing page evidence is advisory too; field guards still apply. */ }
+  if (typeof formReadiness?.status !== 'string') {
     formReadiness = { status: 'manual', reason: 'form_readiness_unavailable',
       readOnly: true, neverSave: true, saveAttempted: false, writeStarted: false,
       writeAttempted: false, saved: false, skippedSave: true, liveSupportClaimed: false };
   }
-  if (formReadiness.status !== 'ready') {
-    throw Object.assign(Error(formReadiness.reason || formReadiness.status), { formReadiness });
-  }
-  return formReadiness;
+  const advisory = formReadiness.status !== 'ready';
+  return { ...formReadiness, advisory, blocking: false,
+    advisoryHints: advisory ? [{ ...formReadiness, advisory: true, blocking: false }] : [] };
 }
 
 export function autoFormReadinessFailure(error) {

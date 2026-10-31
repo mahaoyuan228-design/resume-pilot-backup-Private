@@ -2,7 +2,7 @@
 // Entry routes are observations, never permission to activate page handlers.
 (() => {
   'use strict';
-  if (globalThis.ResumeFormFlow?.version === 1 && globalThis.ResumeFormFlow.revision === 3) return;
+  if (globalThis.ResumeFormFlow?.version === 1 && globalThis.ResumeFormFlow.revision === 4) return;
   const normalize = value => String(value ?? '').normalize('NFKC').replace(/\s+/gu, '').trim();
   const actions = new Map([
     ['创建简历', 'create'], ['新建简历', 'create'],
@@ -45,7 +45,7 @@
   const rendered = node => visible(node) && node.getClientRects().length > 0;
   const unavailable = node => node.matches(':disabled') || node.closest('[aria-disabled="true"],[aria-readonly="true"],fieldset[disabled]');
   function inspectReadiness({ confirmedEditable = [] } = {}) {
-    const result = (status, reason, counts = {}) => ({ status, reason,
+    const result = (status, reason, counts = {}) => ({ status, reason, advisory: status !== 'ready', blocking: false,
       visibleControlCount: 0, editableControlCount: 0, visibleRequiredCount: 0, editableRequiredCount: 0,
       ...counts, ...navigationFlags, neverSave: true, saveAttempted: false });
     if (document.visibilityState !== 'visible') return result('form_not_ready', 'page_hidden');
@@ -254,5 +254,5 @@
   }
   const navigation = Object.freeze({ version: 1, inspect: inspectNavigation, plan: navigationPlan, liveSupportClaimed: false });
   const readiness = Object.freeze({ version: 1, inspect: inspectReadiness, liveSupportClaimed: false });
-  globalThis.ResumeFormFlow = Object.freeze({ version: 1, revision: 3, inspect, ensure, navigation, readiness, liveSupportClaimed: false });
+  globalThis.ResumeFormFlow = Object.freeze({ version: 1, revision: 4, inspect, ensure, navigation, readiness, liveSupportClaimed: false });
 })();

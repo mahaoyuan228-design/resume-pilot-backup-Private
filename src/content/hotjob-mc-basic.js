@@ -818,7 +818,7 @@
     if (!pageAllowed(options)) return seal({ ok: false, status: 'manual', reason: 'wrong_page', entryAttempted: false, writeAttempted: false });
     if (!globalThis.ResumeFormFlow) return seal({ ok: ready(), status: ready() ? 'ready' : 'unsupported',
       reason: ready() ? 'form_ready' : 'form_not_ready', entryAttempted: false, writeAttempted: false });
-    return globalThis.ResumeFormFlow.ensure({ ready, allowEntry: options.allowEntry !== false,
+    return globalThis.ResumeFormFlow.ensure({ ready, allowEntry: false,
       timeoutMs: options.readinessTimeoutMs ?? 2000, check: async () => {
         if (!pageAllowed(options)) throw Error('form_document_changed');
         await globalThis.ResumeProfileWriteContext?.check(false);
@@ -831,15 +831,8 @@
   }
 
   async function fillBasic(rawValues = {}, options = {}) {
-    if (!pageAllowed(options)) {
-      return seal({
-        ok: false,
-        reason: 'wrong_page',
-        href: location.href,
-        results: [],
-        writeAttempted: false
-      });
-    }
+    const pageHint = pageAllowed(options) ? null : { status: 'manual', reason: 'wrong_page', advisory: true };
+
     const blocked = requestBlock(rawValues, FILL_BASIC_KEYS);
     if (blocked) {
       return seal({
@@ -897,40 +890,18 @@
       values = plan.values;
     }
 
-    if (globalThis.ResumeFormFlow) {
-      const readiness = await prepareForm({ ...options, profileBinding: rawValues.profileBinding || options.profileBinding });
-      if (!readiness.ok) return seal({ ok: false, status: readiness.status, reason: 'form_not_ready',
-        readiness, href: location.href, results: [], writeAttempted: false });
-    }
+    const readiness = await prepareForm({ ...options, allowEntry: false, profileBinding: rawValues.profileBinding || options.profileBinding });
     const textPlan = [
       ['姓名', values.fullName],
       ['移动电话', values.mobile],
       ['电子邮箱', values.email]
     ];
-    const classified = textPlan.map(([label, value]) => ({ ...classifyText(label), expected: norm(value) }));
-    if (classified.some((row) => !row.ready)) {
-      return seal({
-        ok: false,
-        reason: 'control_drift',
-        href: location.href,
-        title: document.title,
-        writeAttempted: false,
-        profileSource: allowExplicit ? 'explicit' : 'resumeProfile',
-        results: classified.map((row) => ({
-          label: row.label,
-          ok: false,
-          reason: row.ready ? 'skipped_control_drift' : row.reason,
-          matchCount: row.matchCount ?? null,
-          controlCount: row.controlCount ?? null,
-          before: '',
-          after: '',
-          expected: row.expected
-        }))
-      });
-    }
+    let classified = textPlan.map(([label, value]) => ({ ...classifyText(label), expected: norm(value) }));
+    const manualResults = classified.filter(row => !row.ready).map(row => ({ label: row.label, ok: false, status: 'manual', reason: row.reason, before: '', after: '', expected: row.expected, writeAttempted: false }));
+    classified = classified.filter(row => row.ready);
     const snapshots = classified.map((row) => ({ label: row.label, before: readText(row.item) }));
     const results = [];
-    for (const [label, value] of textPlan) {
+    for (const [label, value] of textPlan.filter(([label]) => classified.some(row => row.label === label))) {
       results.push(await fillText(label, value));
     }
     const fillOk = results.every((row) => row.ok);
@@ -947,10 +918,14 @@
     const neighbor = readNeighbor();
 
     return seal({
-      ok: fillOk,
+      ok: fillOk && manualResults.length === 0,
+      reason: manualResults.length ? 'control_drift' : fillOk ? 'readback_matched' : 'readback_mismatch',
+      status: manualResults.length ? 'manual' : undefined,
+      readiness,
+      advisoryHints: [pageHint, readiness].filter(hint => hint && hint.ok !== true),
       href: location.href,
       title: document.title,
-      writeAttempted: true,
+      writeAttempted: results.some(row => row.writeAttempted === true),
       restored: doRestore === true,
       restore,
       neighbor,
@@ -958,7 +933,7 @@
       planSummary: plan
         ? { reason: plan.reason, readyCount: plan.fields.filter((f) => f.ready).length, blockerCount: plan.blockers.length }
         : { reason: 'explicit_override' },
-      results
+      results: textPlan.map(([label]) => results.find(row => row.label === label) || manualResults.find(row => row.label === label)).filter(Boolean)
     });
   }
 

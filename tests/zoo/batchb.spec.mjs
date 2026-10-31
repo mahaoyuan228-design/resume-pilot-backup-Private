@@ -24,7 +24,7 @@ async function record(testInfo, zoo, result) {
 }
 
 for (const family of ['hotjob', 'beisen']) {
-  test(`batch B ${family}: unverified resume entry remains manual before filling`, async ({}, testInfo) => {
+  test(`batch B ${family}: current-page scan leaves resume entry manual`, async ({}, testInfo) => {
     const zoo = await startZoo(family === 'hotjob' ? 'batchb-hotjob-entry' : 'batchb-beisen-summary');
     try {
       const file = family === 'hotjob' ? 'src/content/hotjob-mc-basic.js' : 'src/content/beisen-2022-basic.js';
@@ -38,9 +38,10 @@ for (const family of ['hotjob', 'beisen']) {
       }, [{ family, values }]);
       expect(result, JSON.stringify(result)).toMatchObject({ ok: false, status: 'manual',
         writeAttempted: false, liveSupportClaimed: false, saved: false, skippedSave: true,
-        readiness: { status: 'manual', entryAttempted: false, writeAttempted: false,
-          entryPlan: { status: 'manual', activation: 'manual', navigationAttempted: false } } });
-      expect(result.results).toHaveLength(0);
+        readiness: { ok: false, reason: 'form_not_ready', entryAttempted: false, writeAttempted: false } });
+      expect(result.advisoryHints).toContainEqual(expect.objectContaining({ reason: 'form_not_ready' }));
+      expect(result.results).toHaveLength(3);
+      expect(result.results.every(row => row.status === 'manual' && !row.ok && !row.writeAttempted)).toBe(true);
       expect(await zoo.page.locator('input[id="fullName"]').count()).toBe(0);
       expect(await zoo.page.content()).toBe(beforeDom);
       const reads = await record(testInfo, zoo, result);
@@ -118,7 +119,7 @@ for (const variant of ['', 'busy']) test(`batch B Feishu: waits for delayed ${va
 });
 
 for (const variant of ['', 'partial', 'busy']) {
-  test(`batch B Feishu: ${variant || 'empty'} shell times out without fake writes`, async ({}, testInfo) => {
+  test(`batch B Feishu: ${variant || 'empty'} shell hint still scans current fields`, async ({}, testInfo) => {
     const zoo = await startZoo('batchb-feishu-shell', variant);
     try {
       await zoo.inject([flow, 'src/content/feishu-atsx-basic.js']);
@@ -126,10 +127,17 @@ for (const variant of ['', 'partial', 'busy']) {
       const result = await zoo.execute(async values => ResumeFeishuAtsxBasic.fillBasic(values,
         { synthetic: true, readinessTimeoutMs: 120 }), [values]);
       expect(result, JSON.stringify(result)).toMatchObject({ ok: false, reason: 'form_not_ready',
-        writeAttempted: false, saved: false, skippedSave: true, liveSupportClaimed: false });
+        writeAttempted: variant === 'partial', saved: false, skippedSave: true, liveSupportClaimed: false,
+        formReadiness: { ok: false, reason: 'form_not_ready' } });
       expect(['unsupported', 'manual']).toContain(result.status);
-      expect(result.results.every(row => !row.ok)).toBe(true);
-      expect(await zoo.readback()).toEqual(before);
+      if (variant === 'partial') {
+        expect(result.results[0]).toMatchObject({ ok: true, before: '', after: values.fullName, writeAttempted: true });
+        expect(result.results.slice(1).every(row => row.status === 'manual' && !row.ok && !row.writeAttempted)).toBe(true);
+        expect((await zoo.readback()).model).toMatchObject({ fullName: values.fullName, mobile: '', email: '' });
+      } else {
+        expect(result.results.every(row => row.status === 'manual' && !row.ok && !row.writeAttempted)).toBe(true);
+        expect(await zoo.readback()).toEqual(before);
+      }
       await record(testInfo, zoo, result);
     } finally { await zoo.close(); }
   });

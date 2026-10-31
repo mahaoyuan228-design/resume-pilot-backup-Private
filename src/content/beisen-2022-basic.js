@@ -232,7 +232,7 @@
       label, ok: false, reason, before: '', after: '', expected,
       writeAttempted: false, saved: false, skippedSave: true, liveSupportClaimed: false, ...extra
     });
-    if (!pageAllowed(options)) return blocked('wrong_page');
+    if (!pageAllowed(options) && options.advisory !== true) return blocked('wrong_page');
     if (!TEXT_LABELS.includes(label)) return blocked('label_not_allowed');
     if (!expected) return blocked('empty_value');
     const row = classifyField(label);
@@ -393,7 +393,7 @@
     if (!pageAllowed(options)) return { ok: false, status: 'manual', reason: 'wrong_page', entryAttempted: false, writeAttempted: false, liveSupportClaimed: false };
     if (!globalThis.ResumeFormFlow) return { ok: ready(), status: ready() ? 'ready' : 'unsupported',
       reason: ready() ? 'form_ready' : 'form_not_ready', entryAttempted: false, writeAttempted: false, liveSupportClaimed: false };
-    return globalThis.ResumeFormFlow.ensure({ ready, allowEntry: options.allowEntry !== false,
+    return globalThis.ResumeFormFlow.ensure({ ready, allowEntry: false,
       timeoutMs: options.readinessTimeoutMs ?? 2000, check: async () => {
         if (!pageAllowed(options)) throw Error('form_document_changed');
         await globalThis.ResumeProfileWriteContext?.check(false);
@@ -406,19 +406,7 @@
   }
 
   async function fillBasic(rawValues = {}, options = {}) {
-    if (!pageAllowed(options)) {
-      return {
-        ok: false,
-        siteId: SITE_ID,
-        reason: 'wrong_page',
-        href: location.href,
-        results: [],
-        saved: false,
-        skippedSave: true,
-        liveSupportClaimed: false,
-        writeAttempted: false
-      };
-    }
+    const pageHint = pageAllowed(options) ? null : { status: 'manual', reason: 'wrong_page', advisory: true };
 
     const profile = rawValues.profile;
     const allowExplicit = rawValues.allowExplicitValues === true;
@@ -472,49 +460,22 @@
       values = plan.values;
     }
 
-    if (globalThis.ResumeFormFlow) {
-      const readiness = await prepareForm({ ...options, profileBinding: rawValues.profileBinding || options.profileBinding });
-      if (!readiness.ok) return { ok: false, siteId: SITE_ID, status: readiness.status, reason: 'form_not_ready',
-        readiness, href: location.href, results: [], writeAttempted: false, saved: false,
-        skippedSave: true, liveSupportClaimed: false };
-    }
+    const readiness = await prepareForm({ ...options, allowEntry: false, profileBinding: rawValues.profileBinding || options.profileBinding });
     const textPlan = [
       ['姓名', values.fullName],
       ['手机号码', values.mobile],
       ['邮箱', values.email]
     ];
-    const classified = textPlan.map(([label, value]) => {
+    let classified = textPlan.map(([label, value]) => {
       const row = classifyField(label);
       return { ...row, expected: norm(value), beforeRaw: row.control?.value };
     });
-    if (classified.some((row) => !row.ready)) {
-      return {
-        ok: false,
-        siteId: SITE_ID,
-        href: location.href,
-        title: document.title,
-        reason: 'form_not_ready',
-        saved: false,
-        skippedSave: true,
-        liveSupportClaimed: false,
-        writeAttempted: false,
-        profileSource: allowExplicit ? 'explicit' : 'resumeProfile',
-        results: classified.map((row) => ({
-          label: row.label,
-          ok: false,
-          reason: row.ready ? 'skipped_form_not_ready' : row.reason,
-          matchCount: row.matchCount,
-          controlCount: row.controlCount ?? null,
-          before: '',
-          after: '',
-          expected: row.expected
-        }))
-      };
-    }
+    const manualResults = classified.filter(row => !row.ready).map(row => ({ label: row.label, ok: false, status: 'manual', reason: row.reason, before: '', after: '', expected: row.expected, writeAttempted: false }));
+    classified = classified.filter(row => row.ready);
     const neighbors = snapshotTextNeighbors(classified.map((row) => row.control));
     const results = [];
     const written = [];
-    for (const [label, value] of textPlan) {
+    for (const [label, value] of textPlan.filter(([label]) => classified.some(row => row.label === label))) {
       if (results.some((row) => !row.ok)) {
         results.push({ label, ok: false, reason: 'skipped_after_failure', before: '', after: '', expected: norm(value), writeAttempted: false });
         continue;
@@ -526,7 +487,7 @@
         continue;
       }
       const snapshot = row.ready ? { label, item: row.item, control: row.control, beforeRaw: row.control.value, writtenValue: String(value) } : null;
-      const result = await fillTextWithNeighbors(label, value, options, neighbors);
+      const result = await fillTextWithNeighbors(label, value, { ...options, advisory: true }, neighbors);
       results.push(result);
       if (result.writeAttempted && snapshot) written.push({ ...snapshot, beforeRaw: result.beforeRaw });
     }
@@ -581,7 +542,10 @@
     const unvisited = readTextNeighbors(classified.filter((snapshot) =>
       results.find((row) => row.label === snapshot.label)?.reason === 'skipped_after_failure'));
     return withNeighborReadback({
-      ok,
+      ok: ok && manualResults.length === 0,
+      status: manualResults.length ? 'manual' : undefined,
+      readiness,
+      advisoryHints: [pageHint, readiness].filter(hint => hint && hint.ok !== true),
       siteId: SITE_ID,
       href: location.href,
       title: document.title,
@@ -589,7 +553,7 @@
       skippedSave: true,
       liveSupportClaimed: false,
       writeAttempted: written.length > 0,
-      reason: neighborChanged ? 'neighbor_changed' : ok ? (written.length ? 'readback_matched' : 'existing_values_skipped') : 'readback_mismatch',
+      reason: neighborChanged ? 'neighbor_changed' : !ok ? 'readback_mismatch' : manualResults.length ? 'form_not_ready' : written.length ? 'readback_matched' : 'existing_values_skipped',
       restored: !ok && written.length > 0 && restore.every((row) => row.restored) && skippedPreserved && unvisited.neighborsPreserved,
       unvisitedPreserved: unvisited.neighborsPreserved,
       unvisited: unvisited.neighbors,
@@ -598,7 +562,7 @@
       planSummary: plan
         ? { reason: plan.reason, readyCount: plan.fields.filter((f) => f.ready).length, blockerCount: plan.blockers.length }
         : { reason: 'explicit_override' },
-      results
+      results: textPlan.map(([label]) => results.find(row => row.label === label) || manualResults.find(row => row.label === label)).filter(Boolean)
     }, neighbors);
   }
 

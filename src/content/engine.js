@@ -8,7 +8,7 @@
   if(nativeMessages.hasListeners?.()===false)globalThis.__resumeNativeListenersResetObserved=true;
   if(globalThis.__resumeQuickFillInstalled){
     existingListenerAlive=!!ownedListener&&nativeMessages.hasListener?.(ownedListener)===true;
-    if(existingListenerAlive&&globalThis.__resumeQuickFillEngineRevision===28&&typeof globalThis.ResumeQuickFillGthInspect==='function'
+    if(existingListenerAlive&&globalThis.__resumeQuickFillEngineRevision===29&&typeof globalThis.ResumeQuickFillGthInspect==='function'
       &&typeof globalThis.ResumeQuickFillFillCurrentPage==='function')return;
     if(existingListenerAlive){if(fillState.pending)throw Error('profile_write_context_busy');nativeMessages.removeListener(ownedListener);existingListenerAlive=false;}
     else if(!ownedListener&&nativeMessages.hasListeners?.()===true&&!globalThis.__resumeNativeListenersResetObserved)throw Error('extension_reload_required');
@@ -1185,7 +1185,93 @@
     });
   }
 
+  // A select's search input is never its committed value. Keep this route
+  // limited to the bound education major; other fields retain their writers.
+  const majorSearchControls = new WeakSet(), majorCustomControls = new WeakMap();
+  const componentToken = (node, name) => [...node.classList].some(token =>
+    new RegExp(`(?:^|[-_])(?:${name})(?:[-_]|$)`, 'iu').test(token));
+  const majorRoot = control => {
+    for (let node = control; node && !node.matches('form,body,html'); node = node.parentElement)
+      if (node.matches('[role="combobox"]') || componentToken(node, 'Dropdown-container')
+        || node.matches('.dropdown') && [...node.querySelectorAll('*')].some(child => child.matches('[role="listbox"]')
+          || componentToken(child, 'Dropdown-dropdown|dropdown-menu|Select-menu'))) return node;
+    return null;
+  };
+  const majorShown = node => {
+    if (!node?.isConnected || !node.getClientRects().length) return false;
+    for (let part = node; part; part = part.parentElement) {
+      const style = getComputedStyle(part);
+      if (part.hidden || part.getAttribute('aria-hidden') === 'true' || style.display === 'none'
+        || ['hidden', 'collapse'].includes(style.visibility)) return false;
+    }
+    return true;
+  };
+  const majorEmptyText = value => /暂无选项|没有找到|添加.*全称|^(?:请选择|请输入|选择|select|no\s+(?:options|results))(?:.*)?$/iu.test(String(value).trim());
+  function majorPlainEditor(control, slot) {
+    if (!control.matches('input[type="text"],input:not([type])') || control.matches('[role],[aria-autocomplete],[aria-haspopup],[list]')) return false;
+    for (let node = control; node && slot.contains(node); node = node.parentElement) {
+      if (node.matches(ANSWER_WIDGET_SELECTOR) || componentToken(node, 'select|autocomplete|cascader|picker|calendar|tree|date-editor|Dropdown-container')) return false;
+      if (node === slot) break;
+    }
+    return true;
+  }
+  function majorSelectShape(control) {
+    const root = majorRoot(control);
+    if (!root) return null;
+    const invalid = { root, available: false, menus: [], displays: [] };
+    if (majorRoot(root.parentElement)) return invalid;
+    const editors = [root, ...root.querySelectorAll('input,select,textarea,[contenteditable]')]
+      .filter(node => node.matches('input:not([type="hidden"]),select,textarea,[contenteditable]'));
+    if (editors.length !== 1 || editors[0] !== control || !control.matches('input[type="text"],input[type="search"],input:not([type])')) return invalid;
+    const refs = [root, ...root.querySelectorAll('[aria-controls],[aria-owns]')];
+    const ids = [...new Set(refs.flatMap(node => ['aria-controls', 'aria-owns'].flatMap(name =>
+      (node.getAttribute(name) || '').split(/\s+/u).filter(Boolean))))];
+    let menus;
+    if (ids.length) {
+      if (ids.length !== 1) return invalid;
+      const targets = [...document.querySelectorAll('[id]')].filter(node => node.id === ids[0]);
+      const owners = [...document.querySelectorAll('[aria-controls],[aria-owns]')].filter(node =>
+        ['aria-controls', 'aria-owns'].some(name => (node.getAttribute(name) || '').split(/\s+/u).includes(ids[0])));
+      if (targets.length !== 1 || !targets[0].matches('[role="listbox"]')
+        || owners.some(node => node !== root && !root.contains(node))) return invalid;
+      menus = targets;
+    } else {
+      const candidates = [...root.querySelectorAll('*')].filter(node => node.matches('[role="listbox"]')
+        || componentToken(node, 'Dropdown-dropdown|dropdown-menu|Select-menu'));
+      menus = candidates.filter(node => !candidates.some(parent => parent !== node && parent.contains(node)));
+    }
+    const displays = [...root.querySelectorAll('*')].filter(node =>
+      (node.hasAttribute('data-selected-value') || componentToken(node, '(?:Input-)?display-value|selected-value'))
+      && !menus.some(menu => menu.contains(node)));
+    if (menus.length > 1 || displays.length > 1 || menus[0]?.querySelector('input,select,textarea,[role="listbox"]')
+      || [...root.querySelectorAll('*')].some(node => node !== control && majorRoot(node) === node
+        && (node.matches('.dropdown,[role="combobox"]') || componentToken(node, 'Dropdown-container')))) return invalid;
+    return { root, menus, displays, available: displays.length === 1 || menus.length === 1 && control.matches('[role="combobox"]') };
+  }
+  function majorSelectedValue(control) {
+    const custom = majorCustomControls.get(control);
+    if (custom && custom.slot.isConnected && custom.slot.contains(control) && majorPlainEditor(control, custom.slot))
+      return majorEmptyText(control.value) ? '' : control.value;
+    const shape = majorSelectShape(control);
+    if (!shape?.available) return '';
+    const display = shape.displays[0];
+    // While open, a real existing selection still needs preservation. Success
+    // additionally requires closure in majorSelectionMatches below.
+    if (display) return !majorShown(display) || majorEmptyText(display.textContent) ? '' : display.textContent.trim();
+    const chosen = [...shape.menus[0].querySelectorAll('[role="option"][aria-selected="true"]')];
+    return chosen.length === 1 && exactOptionText(chosen[0].textContent) === exactOptionText(control.value)
+      && !majorEmptyText(chosen[0].textContent) ? chosen[0].textContent.trim() : '';
+  }
+  function majorSelectionMatches(control, answer) {
+    const shape = majorSelectShape(control);
+    return !!majorSelectedValue(control) && exactOptionText(majorSelectedValue(control)) === exactOptionText(answer)
+      && (!shape || shape.available && !shape.menus.some(majorShown)
+        && ![shape.root, ...shape.menus].some(node => node.matches('[aria-busy="true"]')
+          || node.querySelector('[aria-busy="true"],[role="progressbar"]'))
+        && ![shape.root, control].some(node => node.getAttribute('aria-expanded') === 'true'));
+  }
   function meaningfulCurrent(control, radioOptions = null, antUnnamed = false) {
+    if (majorSearchControls.has(control)) return majorSelectedValue(control);
     if (['slider', 'rate'].includes(atsControlTargets.get(control)?.type) && control.matches('[role="slider"]')) return control.getAttribute('aria-valuenow') || '';
     if (richtextControl(control)) return richtextValue(control);
     if(cmsCheckboxControl(control)) {
@@ -1476,6 +1562,12 @@
         const raw = result.path.startsWith('customAnswers.') ? profile.customAnswers?.[result.path.slice(14)]
           : result.path.split('.').reduce((value, part) => value != null && Object.hasOwn(value, part) ? value[part] : undefined, profile);
         if (typeof raw === 'string') result.answer = raw;
+      }
+      if (key === 'major' && control instanceof HTMLInputElement && /^education\.\d+\.major$/u.test(result.path || '') && majorRoot(control)) {
+        majorSearchControls.add(control);
+        if (result.reason === 'ready' && !atsControlTargets.has(control) && !majorSelectShape(control)?.available) {
+          result.reason = 'select_ownership_unconfirmed'; result.semanticStatus = 'manual';
+        }
       }
       if (result.reason === "ready") result.reason = controlConstraint(control, result.answer, atsControlTargets.has(control)) || "ready";
       if (detectedRepeat && !repeatPlanMatches(detectedRepeat)) { result.reason = 'field_changed'; result.semanticStatus = 'manual'; }
@@ -2116,6 +2208,7 @@
   function answerMatches(entry, attachment) {
     const control = entry.control;
     if (!control.isConnected) return false;
+    if (majorSearchControls.has(control)) return majorSelectionMatches(control, Array.isArray(entry.answer) ? entry.answer[0] : entry.answer);
     if(entry.kind==='cms_checkbox_group')return !!entry.checkboxFact
       && meaningfulCurrent(control)===JSON.stringify(entry.checkboxFact.answers.map(exactOptionText).sort());
     if(entry.kind==='cms_region') {
@@ -2295,6 +2388,129 @@
     const proto=control instanceof HTMLTextAreaElement?HTMLTextAreaElement.prototype:HTMLInputElement.prototype,setter=Object.getOwnPropertyDescriptor(proto,'value')?.set;
     await checkProfileWrite();requireVisibleFillPage();verifyTarget?.(false);requireWritableControl(control);if(setter)setter.call(control,value);else control.value=value;
     for(const type of ['input','change','blur']){await checkProfileWrite();requireVisibleFillPage();verifyTarget?.(true);requireWritableControl(control,true);control.dispatchEvent(new Event(type,{bubbles:true}));}
+  }
+
+  async function fillMajorSelect(initial, answer, profile, attachment) {
+    let entry = initial, control = entry.control;
+    const shape = majorSelectShape(control), root = shape?.root;
+    let menu = shape?.menus[0] || null;
+    const fail = reason => ({ status: 'skipped', semanticStatus: 'manual', reason });
+    if (!shape?.available || !majorShown(control) || control.readOnly) return fail('select_ownership_unconfirmed');
+    const desired = String(answer), beforeUrl = location.href, scope = entryScope(control), slot = root.parentElement;
+    const context = globalThis.ResumeProfileWriteContext;
+    const dialogs = new Set([...document.querySelectorAll('[role="dialog"]')].filter(majorShown));
+    const enabled = node => !node.matches(':disabled,[disabled],[aria-disabled="true"]')
+      && !node.closest('[disabled],[aria-disabled="true"],[inert]');
+    const safeAction = node => {
+      if (/保存|提交|编辑|新建|save|submit|edit|create/iu.test([node.textContent,
+        ...['aria-label', 'title', 'value'].map(name => node.getAttribute(name) || '')].join(' '))) return false;
+      for (let part = node; part && part !== slot; part = part.parentElement) {
+        if (part.matches('a[href],input[type="submit"],input[type="image"]')
+          || part.matches('button') && !part.matches('button[type="button"]')
+          || [...part.attributes].some(attr => /^(?:formaction|formmethod|data-method|hx-post|hx-put|hx-delete|hx-patch)$/iu.test(attr.name))) return false;
+      }
+      return true;
+    };
+    const busy = () => [root, menu].filter(Boolean).some(node => node.matches('[aria-busy="true"]')
+      || node.querySelector('[aria-busy="true"],[role="progressbar"]'));
+    const options = () => [...menu.querySelectorAll('*')].filter(node =>
+      (node.matches('[role="option"]') || componentToken(node, 'Select-option|select-option|dropdown-option'))
+      && !node.parentElement.closest('[role="option"]') && enabled(node) && majorShown(node)
+      && !majorEmptyText(node.textContent) && safeAction(node));
+    let customMode = false, selectionClicked = false;
+    async function guard(write = false) {
+      await context.check(write);
+      requireVisibleFillPage(); requireWritableControl(control, context.writeStarted);
+      if (location.href !== beforeUrl || !slot?.isConnected || !slot.contains(control)
+        || !control.isConnected || entryScope(control) !== scope || !majorShown(control) || !enabled(control)
+        || control.readOnly || control.closest('[aria-readonly="true"]'))
+        throw Error('field_changed');
+      const live = collect(profile, attachment).filter(candidate => logicalEntryKey(candidate) === logicalEntryKey(initial));
+      if (live.length !== 1 || live[0].control !== control || entrySignature(live[0]) !== entrySignature(initial)
+        || !sameRepeatBinding(initial, live[0])) throw Error('field_changed');
+      if ([...document.querySelectorAll('[role="dialog"]')].some(node => majorShown(node) && !dialogs.has(node)))
+        throw Error('select_custom_manual');
+      if (!customMode) {
+        const current = majorSelectShape(control);
+        if (!menu && current?.root === root && current.menus.length === 1) menu = current.menus[0];
+        const closed = !write && selectionClicked && current?.menus.length === 0 && !majorShown(menu);
+        if (!current?.available || current.root !== root || (current.menus[0] || null) !== menu && !closed
+          || current.displays[0] !== shape.displays[0]) throw Error('select_ownership_unconfirmed');
+        const selected = majorSelectedValue(control);
+        if (selected && exactOptionText(selected) !== exactOptionText(desired)) throw Error('existing_value');
+      } else if (!majorPlainEditor(control, slot) || control.value && control.value !== desired) throw Error('select_custom_manual');
+      if ([...document.querySelectorAll('[role="listbox"]')].some(node => node !== menu && majorShown(node)))
+        throw Error('select_overlay_ambiguous');
+      if (write && !customMode && busy()) throw Error('select_control_busy');
+    }
+    async function click(target, confirmed = () => true) {
+      await guard(true);
+      if (!target.isConnected || !majorShown(target) || !enabled(target) || !safeAction(target)
+        || target !== control && !menu.contains(target) || !confirmed()) throw Error('select_action_unconfirmed');
+      target.click();
+    }
+    async function type(events) {
+      await guard(true);
+      if (control.maxLength >= 0 && desired.length > control.maxLength) throw Error('value_too_long');
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(control, desired);
+      for (const type of events) { await guard(true); control.dispatchEvent(new Event(type, { bubbles: true })); }
+    }
+    await guard();
+    // Search-only events leave selection/blur to the owning option or the
+    // explicitly entered custom-text mode. No Enter (implicit form submit).
+    await click(control);
+    for (let wait = 0; wait < 40 && !menu; wait++) { await guard(); await new Promise(resolve => setTimeout(resolve, 20)); }
+    if (!menu) return fail('select_ownership_unconfirmed');
+    await type(['input']);
+    for (let count = 0; count < 80; count++) {
+      await guard();
+      const hits = options().filter(node => exactOptionText(node.textContent) === exactOptionText(desired));
+      if (hits.length > 1) return fail('ambiguous_option');
+      if (!busy() && hits.length === 1) {
+        const target = hits[0];
+        await click(target, () => {
+          const fresh = options().filter(node => exactOptionText(node.textContent) === exactOptionText(desired));
+          return !busy() && fresh.length === 1 && fresh[0] === target;
+        });
+        selectionClicked = true;
+        for (let wait = 0; wait < 60; wait++) {
+          await guard();
+          if (majorSelectionMatches(control, desired)) return { status: 'verified', reason: 'readback_matched' };
+          await new Promise(resolve => setTimeout(resolve, 20));
+        }
+        return { status: 'failed', reason: 'readback_mismatch' };
+      }
+      await new Promise(resolve => setTimeout(resolve, 20));
+    }
+    // Waited for dependent/remote options first. Only a unique, explicit local
+    // add-full-name action is eligible, never a generic save/confirm button.
+    const names = new Set(initial.labels.map(label => M.normalize(label).replace(/(?:名称|名字|全称)$/u, '')));
+    const additions = () => [...menu.querySelectorAll('button[type="button"]')].filter(node =>
+      majorShown(node) && enabled(node) && safeAction(node)
+      && [...names].some(name => name && M.normalize(node.textContent) === `添加${name}全称`));
+    await guard();
+    const adds = additions();
+    if (busy() || !majorShown(menu) || adds.length !== 1 || options().length) return fail('option_not_found');
+    const add = adds[0];
+    await click(add, () => additions().length === 1 && additions()[0] === add && !busy() && !options().length);
+    // A custom-text transition may replace the input. Rebind only inside the
+    // original slot with the same confirmed path, question and record identity.
+    const live = collect(profile, attachment).filter(candidate => logicalEntryKey(candidate) === logicalEntryKey(initial));
+    if (live.length !== 1 || !slot?.isConnected || !slot.contains(live[0].control)
+      || entryScope(live[0].control) !== scope || entrySignature(live[0]) !== entrySignature(initial)
+      || !sameRepeatBinding(initial, live[0]) || !majorPlainEditor(live[0].control, slot)) return fail('select_custom_manual');
+    entry = live[0]; control = entry.control; customMode = true;
+    majorSearchControls.add(control); majorCustomControls.set(control, { slot });
+    context.activeControl = control;
+    context.activeRepeatCheck = () => {
+      const current = collect(profile, attachment).filter(candidate => logicalEntryKey(candidate) === logicalEntryKey(initial));
+      if (current.length !== 1 || current[0].control !== control || entrySignature(current[0]) !== entrySignature(initial)
+        || !sameRepeatBinding(initial, current[0])) throw Error('field_changed');
+    };
+    await type(['input', 'change', 'blur']);
+    await guard();
+    return { status: majorSelectionMatches(control, desired) ? 'verified' : 'failed',
+      reason: majorSelectionMatches(control, desired) ? 'readback_matched' : 'readback_mismatch', currentValue: majorSelectedValue(control) };
   }
 
   function atsControlSelector(control) {
@@ -2557,6 +2773,11 @@
           if (atsEngineWriteEnabled) {
             record.readbackId = await fillAtsControl(entry, result);
             continue;
+          } else if (majorSearchControls.has(control) && majorRoot(control)) {
+            Object.assign(result, await fillMajorSelect(entry, answer, profile, attachment));
+            const live = collect(profile, attachment).filter(candidate => logicalEntryKey(candidate) === key);
+            result.currentValue = live.length === 1 ? meaningfulCurrent(live[0].control) : '';
+            continue;
           } else if (entry.kind === "ant_degree_select") {
             Object.assign(result, await fillAntDegreeSelect(entry, answer));
             const live = currentDegreeControl(control);
@@ -2670,6 +2891,7 @@
             "unconfirmed_profile_value", "question_scope_unconfirmed", "existing_value"].includes(error?.message)
             ? error.message : "control_error";
           result.detail = String(error?.message || error).slice(0, 150);
+          if (/^select_/u.test(error?.message || '')) { result.reason = error.message; result.semanticStatus = 'manual'; }
           if (["cms_ant_v3_select", "cms_school_search",'cms_region'].includes(entry.kind) && visibleCmsAntV3Dropdowns().length) {
             cmsMenuBlocked = true;
           }
@@ -3010,7 +3232,7 @@
         sendResponse(reply);
       });
     return true;
-  };chrome.runtime.onMessage.addListener(engineListener);globalThis.__resumeQuickFillEngineListener=engineListener;globalThis.__resumeQuickFillEngineRevision=28;}
+  };chrome.runtime.onMessage.addListener(engineListener);globalThis.__resumeQuickFillEngineListener=engineListener;globalThis.__resumeQuickFillEngineRevision=29;}
   // ATS runners and the popup share the current-document scan and field writer.
   globalThis.ResumeQuickFillFillCurrentPage = async (profile, profileBinding) => {
     if (fillState.pending) throw Object.assign(Error('fill_in_progress'), { fillNotStarted: true, writeStarted: false });

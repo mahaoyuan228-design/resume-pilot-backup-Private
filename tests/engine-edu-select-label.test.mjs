@@ -326,7 +326,7 @@ test('reinjection replaces a revision 27 listener once before resolving wrapped 
   h.w.__resumeQuickFillEngineRevision = 27;
   h.w.eval(source('src/content/engine.js'));
   const current = h.w.__resumeQuickFillEngineListener;
-  assert.notEqual(current, previous); assert.equal(h.w.__resumeQuickFillEngineRevision, 28);
+  assert.notEqual(current, previous); assert.equal(h.w.__resumeQuickFillEngineRevision, 29);
   assert.equal(h.listeners.length, 1); assert.equal(h.listeners[0], current);
   h.w.eval(source('src/content/engine.js'));
   assert.equal(h.w.__resumeQuickFillEngineListener, current); assert.equal(h.listeners.length, 1);

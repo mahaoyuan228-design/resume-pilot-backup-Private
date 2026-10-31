@@ -151,6 +151,9 @@ function boot(options = {}) {
 }
 
 async function trial(page, env = ENV) {
+  // The fixture user opens the record; the writer may only fill this form.
+  page.doc.querySelector('#education-edit')?.click();
+  page.doc.querySelector('#education-form').dataset.resumeGthEducationRecordIndex = '0';
   const result = await page.window.ResumeGthEducationTextTrial.fullTrial(liveFillRequest(env));
   const read = page.api.read(ALL_QUESTIONS);
   const rows = buildFieldRows({
@@ -309,7 +312,7 @@ test('picker-looking foreign actions and dispatched save clicks cannot bypass th
   } finally { page.api.restore(); page.dom.window.close(); }
 });
 
-test('before-write failure retains concrete control DOM after the writer auto-cancels', async () => {
+test('before-write failure retains the user-opened editor and its control DOM', async () => {
   for (const scenario of [
     { options: { lockedDegree: true }, env: { FIELDS: '学历', DEGREE: '硕士' }, q: '学历', reason: 'locked_degree_conflict' },
     { options: { malformedMonth: true }, env: { FIELDS: '在校时间', START_DATE: ENV.START_DATE, END_DATE: ENV.END_DATE }, q: '在校时间', reason: 'education_month_structure_changed' }
@@ -320,13 +323,13 @@ test('before-write failure retains concrete control DOM after the writer auto-ca
       assert.equal(result.ok, false);
       assert.equal(result.reason, scenario.reason);
       assert.equal(result.writeStarted, false);
-      assert.equal(page.doc.querySelector('#education-form'), null);
-      assert.equal(page.observed.cancels, 1);
+      assert.ok(page.doc.querySelector('#education-form'));
+      assert.equal(page.observed.cancels, 0);
       const retained = read.readback.find(row => row.q === scenario.q);
       assert.equal(retained.reason, 'control_not_supported');
       assert.equal(retained.value, null);
-      assert.equal(retained.detail, 'editor_closed_after_trial');
-      assert.equal(retained.dom.stage, 'before_cancel');
+      assert.equal(retained.detail, scenario.options.lockedDegree ? 'site_control_disabled' : 'month_structure_changed');
+      assert.equal(retained.dom.stage, undefined);
       assert.equal(retained.dom.itemCount, 1);
       if (scenario.q === '学历') {
         assert.equal(retained.dom.items[0].controls[0].disabled, true);
@@ -339,7 +342,7 @@ test('before-write failure retains concrete control DOM after the writer auto-ca
       assert.equal(evidence.reason, 'control_not_supported');
       assert.equal(evidence.detail, scenario.reason);
       assert.equal(evidence.value, null);
-      assert.equal(evidence.dom.stage, 'before_cancel');
+      assert.equal(evidence.dom.stage, undefined);
       assert.equal(page.observed.saves, 0);
     } finally { page.api.restore(); page.dom.window.close(); }
   }

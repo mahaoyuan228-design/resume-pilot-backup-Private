@@ -74,9 +74,10 @@ test('a listed wildcard does not override Chrome denial; unknown origin stops be
   assert.deepEqual(h.calls.request, []);
 });
 
-test('granted host access still requires ready form evidence and is checked again on each invocation', async () => {
+test('host access is checked again on each invocation while ready evidence stays advisory', async () => {
   const h = harness();
-  assert.deepEqual(await requireAutoFormReady(h.api, tabId), h.readiness);
+  assert.deepEqual(await requireAutoFormReady(h.api, tabId), { ...h.readiness,
+    advisory: false, blocking: false, advisoryHints: [] });
   assert.equal(h.calls.script.length, 2);
   h.api.permissions.contains = async () => false;
   await assert.rejects(() => requireAutoFormReady(h.api, tabId), /host_permission_missing/);
@@ -84,23 +85,16 @@ test('granted host access still requires ready form evidence and is checked agai
   assert.deepEqual(h.calls.request, []);
 });
 
-test('host permission cannot bypass manual form readiness', async () => {
+test('host permission permits scanning with a manual form readiness hint', async () => {
   const h = harness();
   Object.assign(h.readiness, { status: 'manual', reason: 'iframe_or_captcha_manual' });
   let fieldWrites = 0;
-  await assert.rejects(async () => {
-    await requireAutoFormReady(h.api, tabId);
-    fieldWrites++;
-  }, error => {
-    const failure = autoFormReadinessFailure(error);
-    assert.equal(failure.status, 'manual');
-    assert.equal(failure.formReadiness.reason, 'iframe_or_captcha_manual');
-    assert.equal(failure.fillNotStarted, true);
-    assert.equal(failure.writeStarted, false);
-    assert.equal(failure.liveSupportClaimed, false);
-    return true;
-  });
-  assert.equal(fieldWrites, 0);
+  const readiness = await requireAutoFormReady(h.api, tabId);
+  fieldWrites++;
+  assert.equal(readiness.status, 'manual');
+  assert.equal(readiness.advisoryHints[0].reason, 'iframe_or_captcha_manual');
+  assert.equal(readiness.blocking, false);
+  assert.equal(fieldWrites, 1);
   assert.deepEqual(h.calls.request, []);
 });
 

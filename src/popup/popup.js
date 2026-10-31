@@ -324,7 +324,7 @@ function setBusy(value) {
   if (value) renderAftercare();
   elements.exportReport.disabled = value || !aftercareSnapshot;
   elements.inspect.disabled = value;
-  elements.fill.disabled = value || !activeTab || isGthSite(activeTab.url) || !lastInspection;
+  elements.fill.disabled = value || !activeTab || !lastInspection;
   elements.gthSalaryButton.disabled = value || (gthPendingReview
     ? !activeTab || activeTab.url !== GTH_RESUME_PAGE
     : !gthSalaryEligible || fillOutcomeUncertain);
@@ -925,14 +925,20 @@ function cmbRouteMessage(reason) {
   return copy[reason] || "招行试填没有完成。请核对网页后再决定。";
 }
 
+function formReadinessHint(readiness) {
+  if (!readiness || readiness.status === "ready") return "";
+  const hints = {
+    login: "页面可能需要登录", login_required: "页面可能需要登录",
+    wrong_page: "请核对当前页面", page_invalid: "请核对当前页面",
+    form_not_ready: "页面可能尚未就绪", form_unrecognized: "部分表单可能无法识别",
+    manual: "部分字段可能需要手动处理"
+  };
+  return `${hints[readiness.status] || "请核对页面状态"}；已继续扫描当前页面。`;
+}
+
 async function sendCmb(type, tab, selectedOwnerToken) {
   const files = cmbBasicInjectFiles(tab.url);
   if (!files) throw new Error("当前不是招商银行页面。");
-  if (type === "RESUME_FILL" && !isCmbResumeEditPage(tab.url)) {
-    const error = new Error(cmbRouteMessage("wrong_page"));
-    error.fillNotStarted = true;
-    throw error;
-  }
   if (type === "RESUME_FILL") {
     const origin = authorizationScope(tab.url);
     const { resumeTrustedOrigins } = await chrome.storage.local.get("resumeTrustedOrigins");
@@ -1019,12 +1025,8 @@ async function send(type) {
     throw error;
   }
   const selectedOwnerToken=await popupFileOwner.ensure();
-  if (isGthSite(tab.url)) {
-    if (type === "RESUME_FILL")
-      throw new Error("国泰海通自动填写尚未完成真实验收；当前只提供逐段识别，不会发送填写请求。");
-    return inspectGth(tab, await loadProfile());
-  }
-  if (isCmb(tab.url)) return sendCmb(type, tab, selectedOwnerToken);
+  if (isCmb(tab.url) && isCmbResumeEditPage(tab.url))
+    return sendCmb(type, tab, selectedOwnerToken);
   if (type === "RESUME_FILL") {
     const origin = authorizationScope(tab.url);
     const { resumeTrustedOrigins } = await chrome.storage.local.get("resumeTrustedOrigins");
@@ -1215,6 +1217,8 @@ async function render(data, filled = false) {
     ? `分区盘点 ${data.questionsInventoried} 题 · 控件识别 ${fields.length} · 自动填写待验收`
     : filled ? `本次新填并读回 ${writtenAndVerified}${reapplied ? ` · 本次重填并读回 ${reapplied}` : ""} · 页面原有同值 ${preexistingSame} · 失败 ${failed} · 待处理 ${fields.length - verified - failed}`
       : `可填写 ${actionable} · 待处理 ${fields.length - actionable}`;
+  const readinessHint = formReadinessHint(data.formReadiness);
+  if (readinessHint) elements.summary.textContent += ` · ${readinessHint}`;
   for (const field of fields) {
     const row = document.createElement("div");
     row.className = "field";
@@ -1350,8 +1354,7 @@ async function perform(type) {
     setBusy(false);
     if (pendingInspect) {
       pendingInspect = false;
-      if (!activeTab || !isGthSite(activeTab.url))
-        queueMicrotask(() => perform("RESUME_INSPECT"));
+      queueMicrotask(() => perform("RESUME_INSPECT"));
     }
   }
 }
@@ -2297,10 +2300,7 @@ async function performGthEducationOpenFill() {
 }
 
 function refreshInspection() {
-  if (busy) pendingInspect = !activeTab || !isGthSite(activeTab.url);
-  else if (activeTab && isGthSite(activeTab.url)) {
-    setMessage("国泰海通逐段识别需要点击“重新识别”；该站自动填写尚未验收。", false);
-  }
+  if (busy) pendingInspect = true;
   else perform("RESUME_INSPECT");
 }
 
@@ -2475,8 +2475,6 @@ getTab().then(async (tab) => {
       return;
     }
     setBusy(false);
-    setMessage(isGthResumePage(tab.url)
-      ? "点击“重新识别”，软件会逐段查看问题并核对原值；国泰海通自动填写尚未验收。"
-      : "请先进入国泰海通简历编辑页；该站自动填写尚未验收。");
+    perform("RESUME_INSPECT");
   } else perform("RESUME_INSPECT");
 }).catch(() => perform("RESUME_INSPECT"));

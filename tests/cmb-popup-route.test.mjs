@@ -1,6 +1,6 @@
 /**
- * Popup route: career.cmbchina.com injects cmb-basic and never the CMS engine.
- * Fill outcomes use the same fail-closed rules as CMB_BASIC_AUTO.
+ * Popup route keeps the CMB editor writer; other current pages use the generic engine.
+ * CMB fill outcomes keep their readback and Never-Save guards.
  * 招行 is not claimed supported.
  */
 import test from 'node:test';
@@ -48,7 +48,7 @@ test('isCmb recognizes career.cmbchina.com and refuses CMS, GTH, and lookalike h
 
 test('popup routes a CMB tab to cmb-basic and does not widen the CMS resume match', () => {
   assert.match(popup, /import \{isCmb,cmbBasicInjectFiles\} from "\.\.\/content\/cmb-profile-map\.mjs"/);
-  assert.match(popup, /if \(isCmb\(tab\.url\)\) return sendCmb\(type, tab, selectedOwnerToken\)/);
+  assert.match(popup, /if \(isCmb\(tab\.url\) && isCmbResumeEditPage\(tab\.url\)\)\s+return sendCmb\(type, tab, selectedOwnerToken\)/);
   assert.match(popup, /type: "CMB_BASIC_FILL"/);
   assert.match(popup, /type: "CMB_BASIC_PROBE"/);
   assert.match(popup, /cmbBasicInjectFiles\(tab\.url\)/);
@@ -224,17 +224,74 @@ test('popup probe lists the resume contract and asks for help off the edit page'
   assert.equal(cmsPage.reason, 'cmb_site_isolation');
 });
 
-test('popup refuses a fill on the login page before authorization, injection, or messaging', async () => {
-  const route = popup.slice(popup.indexOf('async function sendCmb('), popup.indexOf('async function send(type)'));
-  let calls = 0;
-  const send = runInNewContext(`(${route.trim()})`, {
-    cmbBasicInjectFiles, isCmbResumeEditPage,
-    cmbRouteMessage: (reason) => reason,
-    chrome: new Proxy({}, { get() { calls += 1; throw Error('unexpected_api'); } })
+for (const [url, status, type = 'RESUME_FILL'] of [
+  ['https://career.cmbchina.com/login', 'wrong_page'],
+  ['https://hr.gtht.com/resume/edit/', 'form_not_ready'],
+  ['https://ats.example.test/resume/edit', 'login_required'],
+  ['https://career.cmbchina.com/login', 'wrong_page', 'RESUME_INSPECT'],
+  ['https://hr.gtht.com/resume/edit/', 'form_not_ready', 'RESUME_INSPECT']
+]) {
+  test(`popup ${type} scans the current page and returns the ${status} advisory with fields`, async () => {
+    const route = popup.slice(popup.indexOf('async function send(type)'), popup.indexOf('\nfunction renderValidationGaps('));
+    const tab = { id: 1, url };
+    const binding = { epoch: 'offline-binding' };
+    const profile = { fullName: 'Offline Applicant', confirmedFields: ['fullName'] };
+    const formReadiness = { status, reason: 'offline_page_hint', advisory: true, liveSupportClaimed: false };
+    const fields = [{ id: 'name', status: 'verified', before: '', after: profile.fullName, reason: 'readback_matched' }];
+    const calls = { permission: 0, script: [], message: [], receipt: [] };
+    const send = runInNewContext(`(${route.trim()})`, {
+      attachmentReady: Promise.resolve(), getTab: async () => tab,
+      requireHostPermission: async () => { calls.permission++; },
+      popupFileOwner: { ensure: async () => 'owner', assert: async () => binding },
+      isGthSite: value => new URL(value).hostname === 'hr.gtht.com',
+      isCmb, isCmbResumeEditPage,
+      inspectGth: () => assert.fail('fill must reach the current-page engine'),
+      sendCmb: () => assert.fail('a non-editor URL must reach the current-page engine'),
+      authorizationScope: value => new URL(value).origin,
+      loadProfile: async () => profile, attachmentInput: { files: [] }, cachedAttachment: null,
+      isCmsResumePage: () => false, isCmsPhotoResumePage: () => false,
+      SCRIPT_TIMEOUT_MS: 100, FILL_TIMEOUT_MS: 100, INSPECT_TIMEOUT_MS: 100,
+      boundedChromeCall: work => work(), assertProfileBinding: async () => {},
+      withProfileBinding: async (_local, _binding, work) => work(),
+      dispatchBoundSource: async (_local, _binding, work) => work(),
+      pendingReviewFor: async () => null, beginRecentRequest: async () => {},
+      pendingFillReviewKey: () => 'pending', showRecentResult: () => {},
+      replacePendingReview: async () => {}, clearLegacyPendingReview: async () => {},
+      rememberResult: async (...args) => { calls.receipt.push(args); }, fillOutcomeUncertain: false,
+      chrome: {
+        storage: { local: { get: async () => ({ resumeTrustedOrigins: [new URL(url).origin] }), set: async () => {} } },
+        scripting: { executeScript: async request => { calls.script.push(request); } },
+        tabs: { sendMessage: async (id, message) => {
+          assert.equal(id, tab.id); calls.message.push(message);
+          return { ok: true, data: { fields, formReadiness, neverSave: true, liveSupportClaimed: false } };
+        } }
+      }
+    });
+    const result = await send(type);
+    assert.equal(calls.permission, 1);
+    assert.equal(calls.script.length, 1);
+    assert.ok(calls.script[0].files.includes('src/content/engine.js'));
+    assert.equal(calls.message.length, 1);
+    assert.equal(calls.message[0].type, type);
+    assert.equal(calls.message[0].profile, profile);
+    assert.equal(result.formReadiness, formReadiness);
+    assert.equal(result.fields, fields);
+    assert.equal(result.neverSave, true);
+    assert.equal(result.liveSupportClaimed, false);
+    if (type === 'RESUME_FILL') assert.equal(calls.receipt[0][3], fields);
+    else assert.equal(calls.receipt.length, 0);
   });
-  await assert.rejects(send('RESUME_FILL', { id: 1, url: 'https://career.cmbchina.com/login' }),
-    (error) => error.message === 'wrong_page' && error.fillNotStarted === true);
-  assert.equal(calls, 0);
+}
+
+test('popup renders readiness as an advisory after scanning', () => {
+  const source = popup.slice(popup.indexOf('function formReadinessHint('), popup.indexOf('async function sendCmb('));
+  const hint = runInNewContext(`(${source.trim()})`);
+  assert.equal(hint(undefined), '');
+  assert.equal(hint({ status: 'ready' }), '');
+  for (const status of ['login_required', 'wrong_page', 'form_not_ready', 'form_unrecognized', 'page_invalid', 'manual']) {
+    assert.match(hint({ status }), /已继续扫描当前页面/);
+  }
+  assert.match(popup, /formReadinessHint\(data\.formReadiness\)/);
 });
 
 test('popup and auto reject Never-Save attempts even when only a result row reports them', () => {

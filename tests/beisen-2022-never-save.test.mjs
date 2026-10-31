@@ -101,7 +101,7 @@ test('placeholder attributes on an empty existing input do not count as a value'
   assert.equal(input.placeholder, '请填写姓名');
 });
 
-test('ancestor-hidden controls fail preflight before any field is written', async (t) => {
+test('ancestor-hidden targets stay manual while other fields fill', async (t) => {
   for (const mutation of [
     (node) => { node.hidden = true; },
     (node) => { node.style.display = 'none'; },
@@ -122,13 +122,13 @@ test('ancestor-hidden controls fail preflight before any field is written', asyn
     assertNeverSave(result, commits);
     assert.equal(result.ok, false);
     assert.equal(result.reason, 'form_not_ready');
-    assert.equal(result.writeAttempted, false);
+    assert.equal(result.writeAttempted, true);
     assert.equal(result.results.find((row) => row.label === '手机号码').reason, 'control_not_found');
-    assert.deepEqual(inputs(document), before);
+    assert.deepEqual(inputs(document), { ...before, fullName: values.fullName, email: values.email });
   }
 });
 
-test('readonly, disabled, and non-text input drift fail without writes', async (t) => {
+test('readonly and non-text targets stay untouched while other fields fill', async (t) => {
   for (const mutation of [
     (input) => { input.readOnly = true; },
     (input) => { input.disabled = true; },
@@ -140,13 +140,13 @@ test('readonly, disabled, and non-text input drift fail without writes', async (
     const result = await api.fillBasic(values, options);
     assertNeverSave(result, commits);
     assert.equal(result.ok, false);
-    assert.equal(result.writeAttempted, false);
-    assert.equal(result.results[0].reason, 'control_not_found');
-    assert.deepEqual(inputs(document), before);
+    assert.equal(result.writeAttempted, true);
+    assert.equal(result.results[0].status, 'manual');
+    assert.deepEqual(inputs(document), { ...before, mobile: values.mobile, email: values.email });
   }
 });
 
-test('direct text API refuses empty values, unknown labels, neighbors, and wrong hosts', async (t) => {
+test('direct text guards reject unsafe requests while batch wrong-page hints remain advisory', async (t) => {
   const { api, document, dom, commits } = boot(t);
   for (const [label, value, reason] of [
     ['姓名', '  ', 'empty_value'], ['工作年限', '9', 'label_not_allowed'], ['未知字段', 'x', 'label_not_allowed']
@@ -163,8 +163,9 @@ test('direct text API refuses empty values, unknown labels, neighbors, and wrong
   assert.equal(result.reason, 'wrong_page');
   const batch = await api.fillBasic(values, options);
   assertNeverSave(batch, commits);
-  assert.equal(batch.writeAttempted, false);
-  assert.deepEqual(inputs(document), { fullName: '', mobile: '', email: '', years: '0' });
+  assert.equal(batch.writeAttempted, true);
+  assert.equal(batch.advisoryHints[0].reason, 'wrong_page');
+  assert.deepEqual(inputs(document), { fullName: values.fullName, mobile: values.mobile, email: values.email, years: '0' });
 });
 
 test('existing ambiguous fixture and unconfirmed profiles remain read-only', async (t) => {

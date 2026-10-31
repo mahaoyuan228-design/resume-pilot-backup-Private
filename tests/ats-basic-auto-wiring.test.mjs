@@ -79,7 +79,7 @@ test('resolveMokaTarget: sample default + host accept/refuse', () => {
 });
 
 function makeHarness({
-  createRunner, autoHtml, messageType, tabUrl, probeReason, probeOk = true,
+  createRunner, autoHtml, messageType, tabUrl, probeReason, probeOk = true, fillResult = null,
   formReadiness = { status: 'ready', reason: 'visible_editable_form' }, formReadinessSequence = null, permission = true,
   preparation = { ok: true, status: 'ready', reason: 'form_ready', entryAttempted: false, writeAttempted: false }, foundLabels = ['姓名', '手机号码', '邮箱']
 }) {
@@ -141,6 +141,7 @@ function makeHarness({
             stats.readinessInject += 1;
             return [];
           }
+          assert.deepEqual(request.files, ['src/core/matcher.js', 'src/content/controls/resume-form.js', 'src/content/engine.js']);
           stats.inject += 1;
           return [];
         }
@@ -155,8 +156,9 @@ function makeHarness({
             stats.prepare += 1;
             return [{ result: clone(preparation) }];
           }
-          if (src.includes('fillBasic')) {
+          if (src.includes('ResumeQuickFillFillCurrentPage')) {
             stats.fill += 1;
+            if (fillResult) return [{ result: clone(fillResult) }];
             return [{
               result: {
                 ok: true,
@@ -167,7 +169,7 @@ function makeHarness({
                 saved: false,
                 skippedSave: true,
                 writeAttempted: true,
-                results: foundLabels.map((label) => ({ label, ok: true })),
+                results: foundLabels.map((label) => ({ label, ok: true, status: 'verified' })),
                 href: tabUrl
               }
             }];
@@ -234,8 +236,8 @@ test('BEISEN_2022_BASIC_AUTO: wrong sender rejected; fill path never save', asyn
   assert.equal(filled.saveAttempted, false);
   assert.equal(filled.skippedSave, true);
   assert.equal(filled.writeAttempted, true);
-  assert.equal(h.stats.inject, 2);
-  assert.equal(h.stats.prepare, 1);
+  assert.equal(h.stats.inject, 1);
+  assert.equal(h.stats.prepare, 0);
   assert.equal(h.stats.fill, 1);
 });
 
@@ -277,12 +279,10 @@ test('resolveHotjobMcTarget: sample default + host/SU path accept/refuse', () =>
   );
   assert.equal(ok.sample, false);
   assert.equal(ok.su, 'SU661f37091eb8053acd6cdf3d');
-  assert.equal(ok.page, 'https://wecruit.hotjob.cn/SU661f37091eb8053acd6cdf3d/mc/deliver/operationResumer');
+  assert.equal(ok.page, 'https://wecruit.hotjob.cn/SU661f37091eb8053acd6cdf3d/mc/deliver/operationResumer?x=1');
   for (const bad of [
     'http://wecruit.hotjob.cn/SU661f37091eb8053acd6cdf3d/mc/deliver/operationResumer',
     'https://hotjob.cn.evil.com/SU661f37091eb8053acd6cdf3d/mc/deliver/operationResumer',
-    'https://wecruit.hotjob.cn/SU661f37091eb8053acd6cdf3d/pb/resumeOperation.html',
-    'https://wecruit.hotjob.cn/mc/deliver/operationResumer',
     'https://gffunds.jobs.feishu.cn/',
     'https://app.mokahr.com/',
     'https://user:pass@wecruit.hotjob.cn/SU661f37091eb8053acd6cdf3d/mc/deliver/operationResumer',
@@ -292,11 +292,12 @@ test('resolveHotjobMcTarget: sample default + host/SU path accept/refuse', () =>
     isHotjobMcTabUrl('https://wecruit.hotjob.cn/SU661f37091eb8053acd6cdf3d/mc/deliver/operationResumer'),
     true
   );
-  assert.equal(isHotjobMcTabUrl('https://wecruit.hotjob.cn/SU661f37091eb8053acd6cdf3d/pb/resumeOperation.html'), false);
+  assert.equal(isHotjobMcTabUrl('https://wecruit.hotjob.cn/SU661f37091eb8053acd6cdf3d/pb/resumeOperation.html'), true);
+  assert.equal(resolveHotjobMcTarget('https://fixture.hotjob.cn/').advisoryHints[0].reason, 'hotjob_mc_page_invalid');
   assert.equal(isHotjobMcTabUrl('https://app.mokahr.com/x'), false);
 });
 
-test('HOTJOB_MC_BASIC_AUTO: wrong sender + invalid targetPage refused; readiness no write', async () => {
+test('HOTJOB_MC_BASIC_AUTO: wrong sender refused; same-system page warning does not block', async () => {
   const h = makeHarness({
     createRunner: createHotjobMcBasicAutoRunner,
     autoHtml: 'src/auto/hotjob-mc-basic-auto.html',
@@ -314,10 +315,10 @@ test('HOTJOB_MC_BASIC_AUTO: wrong sender + invalid targetPage refused; readiness
     openIfMissing: false,
     targetPage: 'https://wecruit.hotjob.cn/SU661f37091eb8053acd6cdf3d/pb/resumeOperation.html'
   });
-  assert.equal(refused.ok, false);
-  assert.match(refused.reason, /hotjob_mc_page_invalid|hotjob_mc_basic/);
+  assert.equal(refused.ok, true);
+  assert.equal(refused.advisoryHints[0].reason, 'hotjob_mc_page_invalid');
   assert.equal(refused.saveAttempted, false);
-  assert.equal(h.stats.probe, 0);
+  assert.equal(h.stats.probe, 1);
   const ready = await h.invoke({ type: 'HOTJOB_MC_BASIC_AUTO', mode: 'readiness', openIfMissing: false });
   assert.equal(ready.ok, true);
   assert.equal(ready.siteId, 'hotjob-mc');
@@ -332,8 +333,8 @@ test('HOTJOB_MC_BASIC_AUTO: wrong sender + invalid targetPage refused; readiness
   assert.equal(filled.saveAttempted, false);
   assert.equal(filled.skippedSave, true);
   assert.equal(filled.writeAttempted, true);
-  assert.equal(h.stats.inject, 2);
-  assert.equal(h.stats.prepare, 1);
+  assert.equal(h.stats.inject, 1);
+  assert.equal(h.stats.prepare, 0);
   assert.equal(h.stats.fill, 1);
 });
 
@@ -343,7 +344,7 @@ const autoScenarios = [
   { createRunner: createBeisen2022BasicAutoRunner, autoHtml: 'src/auto/beisen-2022-basic-auto.html', messageType: 'BEISEN_2022_BASIC_AUTO', tabUrl: 'https://synthetic.zhiye.com/resume', probeReason: 'beisen_2022_page_ready', storageKey: 'resumeBeisen2022BasicAutoRun' },
   { createRunner: createFeishuAtsxBasicAutoRunner, autoHtml: 'src/auto/feishu-atsx-basic-auto.html', messageType: 'FEISHU_ATSX_BASIC_AUTO', tabUrl: 'https://synthetic.jobs.feishu.cn/resume', probeReason: 'feishu_atsx_page_ready', storageKey: 'resumeFeishuAtsxBasicAutoRun' }
 ];
-const stoppedStates = [
+const advisoryStates = [
   { status: 'login_required', reason: 'visible_login_wall' },
   { status: 'form_not_ready', reason: 'form_loading' },
   { status: 'manual', reason: 'iframe_or_captcha_manual' }
@@ -370,73 +371,91 @@ for (const scenario of autoScenarios) {
     }
   });
 
-  test(`${scenario.messageType}: ready is checked before probe and again before writing`, async () => {
+  test(`${scenario.messageType}: ready is observed before probe and writing without opening an editor`, async () => {
     const h = makeHarness(scenario);
     const result = await h.invoke({ type: scenario.messageType, mode: 'fill', openIfMissing: false });
     assert.equal(result.ok, true);
     assert.equal(result.formReadiness.status, 'ready');
     assert.equal(h.stats.readiness, 2);
     assert.equal(h.stats.fill, 1);
+    assert.equal(h.stats.prepare, 0);
     assert.equal(result.saveAttempted, false);
     assert.equal(result.liveSupportClaimed, false);
   });
 
-  for (const formReadiness of stoppedStates) {
-    test(`${scenario.messageType}: ${formReadiness.status} stops before preparation, probe or fill`, async () => {
+  for (const formReadiness of advisoryStates) {
+    test(`${scenario.messageType}: ${formReadiness.status} is retained as a hint while fill/readback continues`, async () => {
       for (const mode of ['readiness', 'fill']) {
         const h = makeHarness({ ...scenario, formReadiness });
         const result = await h.invoke({ type: scenario.messageType, mode, openIfMissing: false });
-        assert.equal(result.ok, false);
-        assert.equal(result.status, formReadiness.status);
-        assert.equal(result.reason, formReadiness.reason);
+        assert.equal(result.ok, true);
         assert.equal(result.formReadiness.reason, formReadiness.reason);
-        assert.equal(result.writeAttempted, false);
+        assert.equal(result.advisoryHints[0].reason, formReadiness.reason);
+        assert.equal(result.advisoryHints[0].blocking, false);
+        assert.equal(result.writeAttempted, mode === 'fill');
         assert.equal(result.saveAttempted, false);
         assert.equal(result.skippedSave, true);
         assert.equal(result.liveSupportClaimed, false);
-        assert.equal(h.stats.readiness, 1);
+        assert.equal(h.stats.readiness, mode === 'fill' ? 2 : 1);
         assert.equal(h.stats.prepare, 0);
-        assert.equal(h.stats.probe, 0);
-        assert.equal(h.stats.fill, 0);
-        assert.equal(h.data[scenario.storageKey].reason, formReadiness.reason);
+        assert.equal(h.stats.probe, 1);
+        assert.equal(h.stats.fill, mode === 'fill' ? 1 : 0);
+        assert.equal(h.data[scenario.storageKey].advisoryHints[0].reason, formReadiness.reason);
+        if (mode === 'fill') assert.ok(result.job.results.every(row => row.ok));
       }
     });
   }
 
-  test(`${scenario.messageType}: changed readiness prevents the first field write`, async () => {
-    const blocked = stoppedStates[0];
-    const h = makeHarness({ ...scenario, formReadinessSequence: [{ status: 'ready', reason: 'visible_editable_form' }, blocked] });
+  test(`${scenario.messageType}: readiness changes and failed ATS probe remain hints while filling`, async () => {
+    const blocked = advisoryStates[0];
+    const h = makeHarness({ ...scenario, probeOk: false, probeReason: 'login_or_wrong_page',
+      formReadinessSequence: [{ status: 'ready', reason: 'visible_editable_form' }, blocked] });
     const result = await h.invoke({ type: scenario.messageType, mode: 'fill', openIfMissing: false });
-    assert.equal(result.ok, false);
-    assert.equal(result.status, blocked.status);
-    assert.equal(result.reason, blocked.reason);
-    assert.equal(result.writeAttempted, false);
+    assert.equal(result.ok, true);
+    assert.deepEqual(result.advisoryHints.map(row => row.reason), ['login_or_wrong_page', blocked.reason]);
+    assert.equal(result.writeAttempted, true);
     assert.equal(result.saveAttempted, false);
     assert.equal(result.liveSupportClaimed, false);
     assert.equal(h.stats.readiness, 2);
-    assert.ok(h.stats.probe > 0);
-    assert.equal(h.stats.fill, 0);
-    assert.equal(h.data[scenario.storageKey].reason, blocked.reason);
+    assert.equal(h.stats.probe, 1);
+    assert.equal(h.stats.fill, 1);
+    assert.ok(result.job.results.every(row => row.ok));
+    assert.equal(h.data[scenario.storageKey].advisoryHints[1].reason, blocked.reason);
   });
 }
 
-for (const scenario of [
-  { createRunner: createHotjobMcBasicAutoRunner, autoHtml: 'src/auto/hotjob-mc-basic-auto.html', messageType: 'HOTJOB_MC_BASIC_AUTO', tabUrl: 'https://wecruit.hotjob.cn/SU00000000/mc/deliver/operationResumer', probeReason: 'hotjob_mc_page_ready' },
-  { createRunner: createBeisen2022BasicAutoRunner, autoHtml: 'src/auto/beisen-2022-basic-auto.html', messageType: 'BEISEN_2022_BASIC_AUTO', tabUrl: 'https://synthetic.zhiye.com/resume', probeReason: 'beisen_2022_page_ready' },
-  { createRunner: createFeishuAtsxBasicAutoRunner, autoHtml: 'src/auto/feishu-atsx-basic-auto.html', messageType: 'FEISHU_ATSX_BASIC_AUTO', tabUrl: 'https://synthetic.jobs.feishu.cn/resume', probeReason: 'feishu_atsx_page_ready' },
-]) {
-  test(`${scenario.messageType}: failed form preparation prevents probe and fill`, async () => {
-    const h = makeHarness({ ...scenario, preparation: { ok: false, status: 'manual', reason: 'form_not_ready', entryAttempted: false, writeAttempted: false } });
+for (const scenario of autoScenarios) {
+  test(`${scenario.messageType}: generic field readbacks and manual rows survive the runner`, async () => {
+    const fields = [
+      { id: 'contact-name', path: 'fullName', status: 'verified', reason: 'readback_matched', beforeValue: '', currentValue: 'Synthetic Customer B' },
+      { id: 'unknown-field', status: 'manual', reason: 'field_unrecognized', beforeValue: '', currentValue: '' }
+    ];
+    const h = makeHarness({ ...scenario, fillResult: { ok: true, data: {
+      fields, writeStarted: true, saved: false, skippedSave: true,
+      advisoryHints: [{ reason: 'form_unrecognized', advisory: true, blocking: false }]
+    } } });
     const result = await h.invoke({ type: scenario.messageType, mode: 'fill', openIfMissing: false });
-    assert.equal(result.ok, false);
-    assert.equal(result.reason, 'form_not_ready');
-    assert.equal(result.writeAttempted, false);
-    assert.equal(result.liveSupportClaimed, false);
-    assert.equal(result.status, 'manual');
-    if (scenario.messageType === 'FEISHU_ATSX_BASIC_AUTO') assert.equal(result.helpNeeded, true);
-    assert.equal(h.stats.prepare, 1);
-    assert.equal(h.stats.probe, 0);
-    assert.equal(h.stats.fill, 0);
+    assert.equal(result.ok, true);
+    assert.deepEqual(result.job.results, fields);
+    assert.equal(result.fill.fieldCount, 2);
+    assert.equal(result.fill.matched, 1);
+    assert.equal(result.advisoryHints[0].reason, 'form_unrecognized');
+    assert.equal(h.stats.fill, 1);
+    assert.equal(h.stats.prepare, 0);
+    assert.equal(result.saveAttempted, false);
+  });
+
+  test(`${scenario.messageType}: generic engine save/submit claims still fail closed`, async () => {
+    for (const claim of ['saved', 'saveAttempted', 'softwareClickedSave', 'softwareClickedSubmit', 'softwareClickedDelete', 'savedOnSite', 'submitted']) {
+      const h = makeHarness({ ...scenario, fillResult: { ok: true, data: {
+        fields: [], skippedSave: true, [claim]: true
+      } } });
+      const result = await h.invoke({ type: scenario.messageType, mode: 'fill', openIfMissing: false });
+      assert.equal(result.ok, false, claim);
+      assert.match(result.reason, /save_policy_violation/);
+      assert.equal(result.liveSupportClaimed, false);
+      assert.equal(h.stats.fill, 1);
+    }
   });
 }
 

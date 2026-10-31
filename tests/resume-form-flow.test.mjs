@@ -130,7 +130,7 @@ test('transient readiness must settle before success', async t => {
   assert.equal(result.reason, 'form_not_ready');
 });
 
-test('general engine stops on a readonly summary before entry inspection despite unrelated header inputs', async t => {
+test('general engine scans a readonly summary without entering edit despite unrelated header inputs', async t => {
   const f = fixture(t, '<header><input id="search" type="search" value="KEEP_SEARCH"><input id="unlabelled" value="KEEP_HEADER"></header><section><label>姓名<input readonly value="摘要姓名"></label><button type="button">编辑简历</button></section>');
   f.window.Element.prototype.getClientRects = () => [{ width: 10, height: 10 }];
   let listener, edits = 0, requests = 0;
@@ -150,12 +150,9 @@ test('general engine stops on a readonly summary before entry inspection despite
     fullName: '离线示例', phone: '13800000000', email: 'offline@example.test',
     confirmedFields: ['fullName', 'phone', 'email'],
   }, profileBinding: { version: 1 } }, { id: 'offline-extension' }, resolve));
-  assert.equal(result.ok, false, JSON.stringify(result));
-  assert.equal(result.fillNotStarted, true);
-  assert.equal(result.writeStarted, false);
-  assert.equal(result.error, 'form_not_ready');
-  assert.equal(result.status, 'form_not_ready');
-  assert.equal(result.reason, 'form_read_only');
+  assert.equal(result.ok, true, JSON.stringify(result));
+  assert.equal(result.data.formReadiness.status, 'form_not_ready');
+  assert.equal(result.data.advisoryHints[0].reason, 'form_read_only');
   assert.equal(edits, 0);
   assert.equal(requests, 0);
   assert.equal(f.document.querySelector('#fullName'), null);

@@ -1,7 +1,7 @@
-// Hotjob mc (antd-mobile H5) basic auto. Mirror MOKA/FEISHU/BEISEN shape.
+// ATS auto fills the current page with the shared engine; page probes are advisory.
 // Fill-without-save only. Never clicks 下一步/保存/提交. Isolated siteId: hotjob-mc.
-// Fail-closed: https + *.hotjob.cn + /SU*/mc/deliver/operationResumer (host + SU path).
-import {requireAutoFormReady,autoFormReadinessFailure} from './auto-form-readiness.mjs';
+// Host validation protects URL isolation; a differing form path is advisory.
+import {requireAutoFormReady,autoFormReadinessFailure,appendAutoAdvisory as recordAutoAdvisory} from './auto-form-readiness.mjs';
 import {captureProfileBinding,assertProfileBinding,canonicalProfileHash,
   dispatchBoundSource} from '../profile/profile-lifecycle.js';
 import {planHotjobMcBasicFromProfile,isHotjobMcHost,isHotjobMcPath} from '../content/hotjob-mc-profile-map.mjs';
@@ -15,9 +15,8 @@ const safe = (error) => {
   const value = typeof error === 'string' ? error : (error?.message || '');
   return typeof value === 'string' && /^[a-z0-9_]{2,100}$/u.test(value) ? value : 'hotjob_mc_basic_auto_failed';
 };
-const sleep = (ms) => new Promise((done) => setTimeout(done, ms));
 
-/** Fail-closed host+SU path resolver. Optional message.targetPage must be https mc operationResumer. */
+/** Validate the target host; users open their own form page. */
 export function resolveHotjobMcTarget(targetPage) {
   if (targetPage === undefined || targetPage === null || targetPage === '') {
     return { page: SAMPLE_PAGE, host: 'wecruit.hotjob.cn', su: SAMPLE_SU, sample: true };
@@ -27,21 +26,21 @@ export function resolveHotjobMcTarget(targetPage) {
   try { u = new URL(targetPage); } catch { fail('hotjob_mc_page_invalid'); }
   if (u.protocol !== 'https:') fail('hotjob_mc_page_invalid');
   if (!isHotjobMcHost(u.hostname)) fail('hotjob_mc_page_invalid');
-  if (!isHotjobMcPath(u.pathname)) fail('hotjob_mc_page_invalid');
   if (u.username || u.password || u.port) fail('hotjob_mc_page_invalid');
   const suMatch = /^\/(SU[0-9A-Za-z]{8,64})\//u.exec(u.pathname);
   return {
-    page: `${u.origin}${u.pathname}`,
+    page: `${u.origin}${u.pathname}${u.search}${u.hash}`,
     host: u.hostname.toLowerCase(),
     su: suMatch ? suMatch[1] : null,
-    sample: false
+    sample: false,
+    advisoryHints: isHotjobMcPath(u.pathname) ? [] : [{ reason: 'hotjob_mc_page_invalid', advisory: true, blocking: false }]
   };
 }
 
 export function isHotjobMcTabUrl(url) {
   try {
     const u = new URL(url);
-    return u.protocol === 'https:' && isHotjobMcHost(u.hostname) && isHotjobMcPath(u.pathname);
+    return u.protocol === 'https:' && isHotjobMcHost(u.hostname);
   } catch {
     return false;
   }
@@ -129,43 +128,14 @@ export function createHotjobMcBasicAutoRunner({ api = globalThis.chrome, verifyB
     }
   };
 
-  async function findTab(excludeTabId = null, { openIfMissing = false, page = SAMPLE_PAGE } = {}) {
+  async function findTab(excludeTabId = null) {
+    // The user opens the editor. Never navigate to an edit/new-resume page.
     const tabs = await api.tabs.query({});
-    const exact = tabs.filter((tab) => typeof tab.url === 'string' && isHotjobMcTabUrl(tab.url) && tab.id !== excludeTabId);
-    if (exact.length === 1) return { tab: exact[0], kind: 'exact' };
-    if (exact.length > 1) {
-      const ranked = [...exact].sort((a, b) => ((b.lastAccessed || 0) - (a.lastAccessed || 0)) || ((b.id || 0) - (a.id || 0)));
-      return { tab: ranked.find((tab) => tab.active) || ranked[0], kind: 'exact_multi' };
-    }
-    const related = tabs.filter((tab) => typeof tab.url === 'string' && tab.id !== excludeTabId
-      && /hotjob\.cn/u.test(tab.url));
-    if (related.length) {
-      const err = Error('hotjob_mc_basic_login_or_wrong_page');
-      err.helpUrl = related[0].url;
-      err.helpReason = 'hotjob mc path tab not open; related hotjob tab may be pb shell or need login';
-      throw err;
-    }
-    if (openIfMissing) {
-      const created = await api.tabs.create({ url: page, active: true });
-      for (let i = 0; i < 30; i += 1) {
-        await sleep(500);
-        const tab = await api.tabs.get(created.id);
-        if (isHotjobMcTabUrl(tab.url) && tab.status === 'complete') return { tab, kind: 'opened' };
-        if (typeof tab.url === 'string' && /hotjob\.cn/u.test(tab.url) && !isHotjobMcTabUrl(tab.url)) {
-          const err = Error('hotjob_mc_basic_login_or_wrong_page');
-          err.helpUrl = tab.url;
-          err.helpReason = 'Opened hotjob URL but not mc operationResumer; login or wrong shell';
-          throw err;
-        }
-      }
-      const tab = await api.tabs.get(created.id);
-      if (isHotjobMcTabUrl(tab.url)) return { tab, kind: 'opened_partial' };
-      const err = Error('hotjob_mc_basic_login_or_wrong_page');
-      err.helpUrl = tab.url || page;
-      err.helpReason = 'Opened hotjob portal but did not settle on mc operationResumer';
-      throw err;
-    }
-    fail('hotjob_mc_basic_tab_missing');
+    const candidates = tabs.filter(tab => tab.id !== excludeTabId && isHotjobMcTabUrl(tab.url));
+    const ranked = [...candidates].sort((a, b) => ((b.lastAccessed || 0) - (a.lastAccessed || 0)) || ((b.id || 0) - (a.id || 0)));
+    const tab = ranked.find(row => row.active) || ranked[0];
+    if (!tab) fail('hotjob_mc_basic_tab_missing');
+    return { tab, kind: candidates.length > 1 ? 'exact_multi' : 'exact' };
   }
 
   async function focusTab(tab) {
@@ -205,24 +175,6 @@ export function createHotjobMcBasicAutoRunner({ api = globalThis.chrome, verifyB
     };
   }
 
-  async function prepareForm(tab) {
-    await license();
-    const binding = await captureProfileBinding(api.storage.local, lifecycleOptions);
-    const raw = await get('resumeProfile');
-    if (await canonicalProfileHash(raw, lifecycleOptions.cryptoImpl) !== binding.profileHash) fail('profile_binding_changed');
-    const plan = planHotjobMcBasicFromProfile(raw);
-    if (!plan.ok) fail(plan.reason || 'profile_fields_unavailable');
-    await bounded(() => dispatchBoundSource(api.storage.local, binding,
-      () => api.scripting.executeScript({ target: { tabId: tab.id },
-        files: ['src/content/controls/resume-form.js', 'src/content/hotjob-mc-basic.js'] }), lifecycleOptions), 15000);
-    const replies = await bounded(() => dispatchBoundSource(api.storage.local, binding,
-      () => api.scripting.executeScript({ target: { tabId: tab.id },
-        func: profileBinding => globalThis.ResumeHotjobMcBasic.prepareForm({ readinessTimeoutMs: 2000, profileBinding }),
-        args: [binding],
-      }), lifecycleOptions), 10000);
-    await assertProfileBinding(api.storage.local, binding, lifecycleOptions);
-    return replies?.[0]?.result || { ok: false, status: 'unsupported', reason: 'form_not_ready', writeAttempted: false };
-  }
 
   async function runFill(tab, readiness) {
     await license();
@@ -230,43 +182,44 @@ export function createHotjobMcBasicAutoRunner({ api = globalThis.chrome, verifyB
     await assertProfileBinding(api.storage.local, binding, lifecycleOptions);
     const raw = await get('resumeProfile');
     if (await canonicalProfileHash(raw, lifecycleOptions.cryptoImpl) !== binding.profileHash) fail('profile_binding_changed');
-    const plan = planHotjobMcBasicFromProfile(raw);
-    if (!plan.ok) fail(plan.reason || 'profile_fields_unavailable');
 
     await bounded(() => dispatchBoundSource(
       api.storage.local,
       binding,
-      () => api.scripting.executeScript({ target: { tabId: tab.id }, files: ['src/content/controls/resume-form.js', 'src/content/hotjob-mc-basic.js'] }),
+      () => api.scripting.executeScript({ target: { tabId: tab.id }, files: ['src/core/matcher.js', 'src/content/controls/resume-form.js', 'src/content/engine.js'] }),
       lifecycleOptions
     ), 15000);
 
-    await requireAutoFormReady(api, tab.id);
+    recordAutoAdvisory(readiness, await requireAutoFormReady(api, tab.id));
 
     const replies = await bounded(() => dispatchBoundSource(
       api.storage.local,
       binding,
       () => api.scripting.executeScript({
         target: { tabId: tab.id },
-        func: (profile, profileBinding) =>
-          globalThis.ResumeHotjobMcBasic.fillBasic({ profile, profileBinding }, { restore: false }),
+        func: (profile, profileBinding) => globalThis.ResumeQuickFillFillCurrentPage(profile, profileBinding),
         args: [raw, binding]
       }),
       lifecycleOptions
     ), 60000);
 
     await assertProfileBinding(api.storage.local, binding, lifecycleOptions);
-    const report = replies?.[0]?.result;
+    const response = replies?.[0]?.result;
+    const report = response?.data ? { ...response, ...response.data } : response;
     if (!report || typeof report !== 'object') fail('hotjob_mc_fill_empty_response');
-    if (report.siteId && report.siteId !== SITE_ID) fail('hotjob_mc_site_isolation');
-    if (report.saved === true || report.skippedSave !== true) fail('hotjob_mc_save_policy_violation');
+    if (report.saved === true || report.skippedSave !== true || report.saveAttempted === true
+      || report.softwareClickedSave === true || report.softwareClickedSubmit === true
+      || report.softwareClickedDelete === true || report.savedOnSite === true || report.submitted === true) fail('hotjob_mc_save_policy_violation');
+    if (Array.isArray(report.advisoryHints)) recordAutoAdvisory(readiness, report);
     return {
       state: report.ok === true ? 'completed' : 'failed',
       reason: report.ok === true ? null : (report.reason || 'hotjob_mc_fill_partial'),
-      writeStarted: report.writeAttempted === true,
+      writeStarted: report.writeStarted === true || report.writeAttempted === true,
       softwareClickedSave: false,
       softwareClickedSubmit: false,
       saved: false,
-      results: Array.isArray(report.results) ? report.results : [],
+      advisoryHints: readiness.advisoryHints,
+      results: Array.isArray(report.fields) ? report.fields : Array.isArray(report.results) ? report.results : [],
       profileSource: report.profileSource || 'resumeProfile',
       href: report.href || tab.url || null
     };
@@ -290,41 +243,18 @@ export function createHotjobMcBasicAutoRunner({ api = globalThis.chrome, verifyB
       liveSupportClaimed: false,
       tenantSu: target.su || null
     };
+    report.advisoryHints = [...(target.advisoryHints || [])];
     const found = await findTab(sender?.tab?.id, { openIfMissing, page: target.page });
     report.steps.push({ find: found.kind, tabId: found.tab.id, url: found.tab.url || null });
     await focusTab(found.tab);
     report.formReadiness = await requireAutoFormReady(api, found.tab.id);
+    recordAutoAdvisory(report, report.formReadiness);
     report.steps.push('focused_hotjob_mc_tab');
-    if (mode === 'fill') {
-      report.preparation = await prepareForm(found.tab);
-      if (!report.preparation.ok) {
-        report.ok = false;
-        report.status = report.preparation.status || 'unsupported';
-        report.reason = report.preparation.reason || 'form_not_ready';
-        await api.storage.local.set({ resumeHotjobMcBasicAutoRun: report });
-        return report;
-      }
-    }
-    let probeResult = await probe(found.tab.id);
-    if (!probeResult.ok) {
-      for (let i = 0; i < 8 && !probeResult.ok; i += 1) {
-        await sleep(500);
-        probeResult = await probe(found.tab.id);
-      }
-    }
+    const probeResult = await probe(found.tab.id);
     report.steps.push({ probe: probeResult.reason, ok: probeResult.ok === true });
-    if (!probeResult.ok) {
-      const login = probeResult.looksLogin === true
-        || /login_or_wrong_page|wrong_page|shell_no_form/u.test(probeResult.reason || '');
-      if (login) {
-        const err = Error('hotjob_mc_basic_login_or_wrong_page');
-        err.helpUrl = probeResult.href || found.tab.url || target.page;
-        err.helpReason = 'hotjob mc resume form not ready; login or wrong shell';
-        throw err;
-      }
-      fail(probeResult.reason || 'hotjob_mc_basic_probe_failed');
-    }
+    recordAutoAdvisory(report, probeResult);
     const readiness = await collectReadiness(found.tab, probeResult);
+    readiness.advisoryHints = report.advisoryHints;
     report.readiness = {
       pageState: readiness.pageState,
       foundLabels: readiness.page?.foundLabels || [],
@@ -346,7 +276,7 @@ export function createHotjobMcBasicAutoRunner({ api = globalThis.chrome, verifyB
     report.fill = {
       ok: filled.state === 'completed',
       fieldCount: filled.results.length,
-      matched: filled.results.filter((row) => row.ok).length
+      matched: filled.results.filter((row) => row.status === 'verified').length
     };
     report.ok = filled.state === 'completed';
     if (!report.ok) report.reason = filled.reason || 'hotjob_mc_fill_failed';

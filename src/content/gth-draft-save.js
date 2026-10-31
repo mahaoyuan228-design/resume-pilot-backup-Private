@@ -261,7 +261,7 @@
       if(await sha(page().map(footprint))!==closedHash||forms(page()).length!==0)stop('draft_closed_boundary_changed');
       await write({state:'reopening_for_server_readback'});
       if(stable(page().map(footprint))!==closedSerialized||forms(page()).length!==0)stop('draft_closed_boundary_changed');
-      await bound(input);if(stable(page().map(footprint))!==closedSerialized||forms(page()).length!==0)stop('draft_closed_boundary_changed');edits[0].click();editClicks=1;
+      await bound(input);if(stable(page().map(footprint))!==closedSerialized||forms(page()).length!==0)stop('draft_closed_boundary_changed');stop('entry_activation_manual');
       let reopened=null;const readDeadline=Date.now()+20000;
       do{await pause(100);try{reopened=capture(String(index),{requireMarker:false,recordCount:closedCount});break;}
         catch(error){if(!(error instanceof Stop)||!['draft_editor_not_unique','draft_questions_changed','draft_plain_shape_changed','draft_degree_shape_changed','draft_date_shape_changed','draft_category_shape_changed','draft_radio_shape_changed','draft_required_values_missing'].includes(error.code))throw error;}
@@ -378,7 +378,7 @@
       const target=rows(sections[1])[index],edits=[...target.querySelectorAll('a')].filter(node=>visible(node)&&node.querySelector('.el-icon-edit-outline'));
       if(edits.length!==1||edits[0].getAttribute('href')&&!/^(#|javascript:(?:;|void\(0\)))$/iu.test(edits[0].getAttribute('href')))stop('draft_readback_edit_not_unique');
       await bound(input);if(forms(page()).length||stable(page().map(footprint))!==closedSerialized)stop('draft_refresh_closed_boundary_changed');
-      edits[0].click();editClicks=1;
+      stop('entry_activation_manual');
       let reopened=null;const deadline=Date.now()+20000;
       do{await pause(100);try{reopened=capture(String(index),{requireMarker:false,recordCount:proof.recordCountAfter});break;}
         catch(error){if(!(error instanceof Stop)||!['draft_editor_not_unique','draft_questions_changed','draft_plain_shape_changed','draft_degree_shape_changed','draft_date_shape_changed','draft_category_shape_changed','draft_radio_shape_changed','draft_required_values_missing'].includes(error.code))throw error;}

@@ -112,7 +112,7 @@ test('HTML placeholder attributes do not make empty text values occupied', async
   assertNeverSave(result, actions);
 });
 
-test('hidden, inert, or aria-hidden ancestors reject the whole form before any write', async (t) => {
+test('hidden targets stay manual while other editable fields fill', async (t) => {
   const variations = [
     (node) => { node.style.display = 'none'; },
     (node, control) => { node.style.visibility = 'hidden'; control.style.visibility = 'visible'; },
@@ -131,14 +131,16 @@ test('hidden, inert, or aria-hidden ancestors reject the whole form before any w
     const result = await api.fillBasic(values(), options);
     assert.equal(result.ok, false);
     assert.equal(result.reason, 'form_not_ready');
-    assert.equal(result.writeAttempted, false);
-    assert.equal(result.results[1].reason, 'control_not_found');
-    assert.deepEqual(snapshot(document), before);
+    assert.equal(result.writeAttempted, true);
+    assert.equal(result.results[1].status, 'manual');
+    assert.equal(input(document, 'mobile').value, before.find(row => row.name === 'mobile').value);
+    assert.equal(input(document, 'fullName').value, values().fullName);
+    assert.equal(input(document, 'email').value, values().email);
     assertNeverSave(result, actions);
   }
 });
 
-test('readonly, disabled, aria-disabled, and unsupported input types reject before any write', async (t) => {
+test('readonly and unsupported targets stay untouched while other fields fill', async (t) => {
   const variations = [
     (control) => { control.readOnly = true; },
     (control) => { control.disabled = true; },
@@ -154,9 +156,11 @@ test('readonly, disabled, aria-disabled, and unsupported input types reject befo
     const before = snapshot(document);
     const result = await api.fillBasic(values(), options);
     assert.equal(result.ok, false);
-    assert.equal(result.writeAttempted, false);
+    assert.equal(result.writeAttempted, true);
     assert.equal(result.results[1].reason, 'control_not_found');
-    assert.deepEqual(snapshot(document), before);
+    assert.equal(input(document, 'mobile').value, before.find(row => row.name === 'mobile').value);
+    assert.equal(input(document, 'fullName').value, values().fullName);
+    assert.equal(input(document, 'email').value, values().email);
     assertNeverSave(result, actions);
   }
 });
@@ -173,7 +177,7 @@ test('existing ambiguous/missing fixture rejects with no writes or commit action
   assertNeverSave(result, actions);
 });
 
-test('direct text fill rejects wrong page, unsupported labels, and empty values', async (t) => {
+test('direct text guards reject unsafe requests while batch wrong-page hints remain advisory', async (t) => {
   const { api, document, actions } = boot(t);
   const before = snapshot(document);
   for (const [label, value, reason] of [['工作年限', '9', 'label_not_allowed'], ['姓名', '  ', 'empty_value']]) {
@@ -190,8 +194,9 @@ test('direct text fill rejects wrong page, unsupported labels, and empty values'
 
   const wrong = boot(t, { url: 'https://example.com/feishu-atsx-basic-form.html' });
   const result = await wrong.api.fillBasic(values(), options);
-  assert.equal(result.reason, 'wrong_page');
-  assert.equal(result.writeAttempted, false);
+  assert.equal(result.advisoryHints[0].reason, 'wrong_page');
+  assert.equal(result.writeAttempted, true);
+  assert.equal(input(wrong.document, 'fullName').value, values().fullName);
   assertNeverSave(result, wrong.actions);
 });
 

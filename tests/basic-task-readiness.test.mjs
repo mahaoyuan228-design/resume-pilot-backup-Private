@@ -81,38 +81,34 @@ async function harness(t, formReadiness) {
 
 for (const [status, reason] of [['login_required', 'visible_login_wall'],
   ['form_not_ready', 'form_loading'], ['manual', 'required_control_unrecognized']]) {
-  test(`basic task ${status} stops and clears pending before trial dispatch`, async t => {
+  test(`basic task ${status} records the hint and continues trial dispatch`, async t => {
     const formReadiness = { ok: true, status, reason, writeAttempted: false, liveSupportClaimed: false };
     const h = await harness(t, formReadiness);
     const job = await h.run();
     assert.equal(job.state, 'stopped_before_write');
-    assert.equal(job.reason, reason);
-    assert.equal(job.status, status);
-    assert.deepEqual(job.formReadiness, formReadiness);
-    assert.equal(job.fillNotStarted, true);
+    assert.equal(job.reason, 'fixture_stopped_before_write');
+    assert.equal(job.formReadiness.status, status);
+    assert.equal(job.formReadiness.reason, reason);
+    assert.equal(job.formReadiness.advisory, true);
+    assert.equal(job.formReadiness.blocking, false);
+    assert.equal(job.formReadiness.advisoryHints[0].reason, reason);
     assert.equal(job.writeStarted, false);
-    assert.equal(job.writeAttempted, false);
-    assert.equal(job.saveAttempted, false);
     assert.equal(job.liveSupportClaimed, false);
-    assert.deepEqual(h.stats, { readiness: 1, trial: 0, status: 0, receipts: 0 });
+    assert.deepEqual(h.stats, { readiness: 1, trial: 1, status: 1, receipts: 1 });
     assert.equal(h.data[pendingKey], undefined);
   });
 }
 
-test('basic task missing form-ready API stops with an explicit unavailable reason', async t => {
+test('basic task missing form-ready API preserves the unavailable hint and continues trial dispatch', async t => {
   const h = await harness(t, undefined);
   const job = await h.run();
   assert.equal(job.state, 'stopped_before_write');
-  assert.equal(job.reason, 'form_readiness_unavailable');
-  assert.equal(job.status, 'manual');
-  assert.equal(job.formReadiness.reason, job.reason);
-  assert.equal(job.formReadiness.status, job.status);
-  assert.equal(job.fillNotStarted, true);
+  assert.equal(job.reason, 'fixture_stopped_before_write');
+  assert.equal(job.formReadiness.reason, 'form_readiness_unavailable');
+  assert.equal(job.formReadiness.status, 'manual');
   assert.equal(job.writeStarted, false);
-  assert.equal(job.writeAttempted, false);
-  assert.equal(job.saveAttempted, false);
   assert.equal(job.liveSupportClaimed, false);
-  assert.deepEqual(h.stats, { readiness: 1, trial: 0, status: 0, receipts: 0 });
+  assert.deepEqual(h.stats, { readiness: 1, trial: 1, status: 1, receipts: 1 });
   assert.equal(h.data[pendingKey], undefined);
 });
 

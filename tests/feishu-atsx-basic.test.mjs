@@ -6,6 +6,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { resolve } from 'node:path';
+import { JSDOM } from 'jsdom';
 import {
   FEISHU_ATSX_SITE_ID,
   FEISHU_ATSX_TEXT_LABELS,
@@ -123,41 +124,33 @@ test('synthetic harness fill-without-save readback for 3 basic fields', { timeou
   assert.deepEqual(evidence.neverSave?.labels, []);
 });
 
-test('ambiguous or missing JS-confirmed fields fail closed and never save', { timeout: 120000 }, () => {
-  const run = spawnSync(process.execPath, [
-    'scripts/auto-feishu-atsx-basic.mjs',
-    '--synthetic',
-    '--case',
-    'ambiguous'
-  ], {
-    cwd: root,
-    encoding: 'utf8',
-    timeout: 90000,
-    env: { ...process.env, MODE: 'fill' }
-  });
-  assert.equal(run.status, 0, run.stderr || run.stdout);
-  const evidence = JSON.parse(
-    readFileSync(resolve(root, 'dist/auto-runs/feishu-atsx-basic-ambiguous-latest.json'), 'utf8')
-  );
-  assert.equal(evidence.siteId, 'feishu-atsx');
-  assert.equal(evidence.ok, true);
-  assert.equal(evidence.reason, 'ambiguous_fail_closed');
-  assert.equal(evidence.saved, false);
-  assert.equal(evidence.skippedSave, true);
-  assert.equal(evidence.formFillClaimed, false);
-  assert.equal(evidence.liveEdge, false);
-  assert.equal(evidence.fill?.ok, false);
-  assert.equal(evidence.fill?.reason, 'form_not_ready');
-  assert.equal(evidence.fill?.writeAttempted, false);
-  const reasons = Object.fromEntries((evidence.fill?.results || []).map((row) => [row.label, row.reason]));
-  assert.equal(reasons['姓名'], 'field_ambiguous');
-  assert.equal(reasons['邮箱'], 'item_not_found');
-  assert.equal(reasons['手机号码'], 'skipped_form_not_ready');
-  assert.equal(evidence.unchanged, true);
-  assert.equal(evidence.neverSave?.clicks, 0);
-  const ambiguous = readFileSync(resolve(root, 'tests/fixtures/feishu-atsx-basic-ambiguous.html'), 'utf8');
-  assert.match(ambiguous, /class="atsx-form-item"/);
-  assert.match(ambiguous, /class="atsx-input"/);
+test('ambiguous fields stay manual while the current editable field fills and reads back', async t => {
+  const html = readFileSync(resolve(root, 'tests/fixtures/feishu-atsx-basic-ambiguous.html'), 'utf8');
+  const dom = new JSDOM(html, { url: 'https://fixture.example.test/resume', pretendToBeVisual: true, runScripts: 'outside-only' });
+  t.after(() => dom.window.close());
+  const { window } = dom, { document } = window;
+  let clicks = 0;
+  document.addEventListener('click', () => clicks++, true);
+  document.querySelector('[name="mobile"]').value = '';
+  window.ResumeFormFlow = { ensure: async () => ({ ok: false, status: 'manual', reason: 'form_not_ready', entryAttempted: false, writeAttempted: false }) };
+  window.eval(source);
+  const result = await window.ResumeFeishuAtsxBasic.fillBasic({ allowExplicitValues: true, fullName: 'SYNTHETIC_NAME', mobile: '13800138000', email: 'synthetic@example.test' });
+  assert.equal(result.ok, false);
+  assert.equal(result.status, 'manual');
+  assert.equal(result.advisoryHints[0].reason, 'wrong_page');
+  assert.equal(result.writeAttempted, true);
+  assert.equal(result.results[0].status, 'manual');
+  assert.equal(result.results[0].reason, 'field_ambiguous');
+  assert.equal(result.results[1].ok, true);
+  assert.equal(result.results[1].before, '');
+  assert.equal(result.results[1].after, '13800138000');
+  assert.equal(document.querySelector('[name="mobile"]').value, '13800138000');
+  assert.equal(document.querySelector('[name="fullName-a"]').value, 'KEEP-A');
+  assert.equal(result.results[2].status, 'manual');
+  assert.equal(result.saved, false);
+  assert.equal(result.skippedSave, true);
+  assert.equal(result.liveSupportClaimed, false);
+  assert.equal(clicks, 0);
 });
 
 test('synthetic readiness finds three labels', { timeout: 120000 }, () => {

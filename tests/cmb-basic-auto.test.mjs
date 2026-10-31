@@ -76,7 +76,8 @@ test('resolveCmbTarget accepts the resume edit host and refuses aliases that are
   assert.equal(exact.sample, false);
   assert.equal(exact.host, 'career.cmbchina.com');
   assert.equal(isCmbTabUrl(TAB), true);
-  assert.equal(isCmbTabUrl('https://career.cmbchina.com/login?redirect=%2Fcenter%2Fresume'), false);
+  assert.equal(isCmbTabUrl('https://career.cmbchina.com/login?redirect=%2Fcenter%2Fresume'), true);
+  assert.equal(resolveCmbTarget('https://career.cmbchina.com/login').advisoryHints[0].reason, 'cmb_page_invalid');
   for (const bad of [
     'http://career.cmbchina.com/center/resume',
     'https://cmb-recruitment-mobile.paas.cmbchina.com/',
@@ -84,7 +85,6 @@ test('resolveCmbTarget accepts the resume edit host and refuses aliases that are
     'https://wecruit.hotjob.cn/SU1/pb/resumeOperation.html',
     'https://hr.gtht.com/',
     'https://user:pass@career.cmbchina.com/center/resume',
-    'https://career.cmbchina.com/login',
     42,
     {}
   ]) assert.throws(() => resolveCmbTarget(bad), /cmb_page_invalid/, String(bad));
@@ -283,45 +283,42 @@ for (const formReadiness of [
   { status: 'form_not_ready', reason: 'form_loading' },
   { status: 'manual', reason: 'iframe_or_captcha_manual' }
 ]) {
-  test(`CMB_BASIC_AUTO: ${formReadiness.status} stops before probe or fill`, async () => {
+  test(`CMB_BASIC_AUTO: ${formReadiness.status} is a hint while fill/readback continues`, async () => {
     for (const mode of ['readiness', 'fill']) {
       const h = harness({ formReadiness });
       const result = await h.invoke({ type: 'CMB_BASIC_AUTO', mode, openIfMissing: false });
-      assert.equal(result.ok, false);
-      assert.equal(result.status, formReadiness.status);
-      assert.equal(result.reason, formReadiness.reason);
+      assert.equal(result.ok, true);
       assert.equal(result.formReadiness.reason, formReadiness.reason);
-      assert.equal(result.writeAttempted, false);
+      assert.equal(result.advisoryHints[0].reason, formReadiness.reason);
+      assert.equal(result.advisoryHints[0].blocking, false);
+      assert.equal(result.writeAttempted, mode === 'fill');
       assert.equal(result.saveAttempted, false);
       assert.equal(result.skippedSave, true);
       assert.equal(result.liveSupportClaimed, false);
-      assert.equal(h.stats.readiness, 1);
-      assert.equal(h.stats.probe, 0);
-      assert.equal(h.stats.inject, 0);
-      assert.equal(h.stats.fill, 0);
-      assert.equal(h.data.resumeCmbBasicAutoRun.reason, formReadiness.reason);
-      assert.equal(h.data['resumePendingFillReview:42'], undefined);
+      assert.equal(h.stats.readiness, mode === 'fill' ? 2 : 1);
+      assert.equal(h.stats.probe, 1);
+      assert.equal(h.stats.fill, mode === 'fill' ? 1 : 0);
+      assert.equal(h.data.resumeCmbBasicAutoRun.advisoryHints[0].reason, formReadiness.reason);
+      if (mode === 'fill') assert.equal(result.job.state, 'completed');
     }
   });
 }
 
-test('CMB_BASIC_AUTO: changed readiness prevents the first field write', async () => {
+test('CMB_BASIC_AUTO: changed readiness remains a hint while filling', async () => {
   const h = harness({ formReadinessSequence: [
     { status: 'ready', reason: 'visible_editable_form' },
     { status: 'form_not_ready', reason: 'form_loading' }
   ] });
   const result = await h.invoke({ type: 'CMB_BASIC_AUTO', mode: 'fill', openIfMissing: false });
-  assert.equal(result.ok, false);
-  assert.equal(result.status, 'form_not_ready');
-  assert.equal(result.reason, 'form_loading');
-  assert.equal(result.writeAttempted, false);
+  assert.equal(result.ok, true);
+  assert.equal(result.advisoryHints[0].reason, 'form_loading');
+  assert.equal(result.writeAttempted, true);
   assert.equal(result.saveAttempted, false);
   assert.equal(result.liveSupportClaimed, false);
   assert.equal(h.stats.readiness, 2);
-  assert.ok(h.stats.probe > 0);
-  assert.equal(h.stats.fill, 0);
-  assert.equal(h.data.resumeCmbBasicAutoRun.reason, 'form_loading');
-  assert.equal(h.data['resumePendingFillReview:42'], undefined);
+  assert.equal(h.stats.probe, 1);
+  assert.equal(h.stats.fill, 1);
+  assert.equal(result.job.state, 'completed');
 });
 
 test('CMB_BASIC_AUTO keeps a submit or savedOnSite claim and does not report ok', async () => {

@@ -91,13 +91,15 @@ test('resolveCmsTarget refuses non wecruit/SU/resumeOperation targets', () => {
 });
 
 test('SW resolveCmsBasicTarget: baseline default, tenant scope, refusal', () => {
-  assert.deepEqual(resolveCmsBasicTarget(undefined), { page: CMS_QUESTION_PAGE, su: CMS_BASELINE_SU, baseline: true, trustScope: 'https://wecruit.hotjob.cn' });
+  assert.deepEqual(resolveCmsBasicTarget(undefined), { page: CMS_QUESTION_PAGE, su: CMS_BASELINE_SU, baseline: true, trustScope: 'https://wecruit.hotjob.cn', advisoryHints: [] });
   assert.equal(resolveCmsBasicTarget(CMS_QUESTION_PAGE).baseline, true);
   const t = resolveCmsBasicTarget(ZL_PAGE);
   assert.equal(t.baseline, false);
   assert.equal(t.su, ZL);
   assert.equal(t.trustScope, `https://wecruit.hotjob.cn/${ZL}/`);
-  for (const bad of [`${ZL_PAGE}?a=1`, 'https://gszq.hotjob.cn/SU6879a7b3e57172288b60df9d/pb/resumeOperation.html', 42, {}])
+  assert.equal(resolveCmsBasicTarget(`${ZL_PAGE}?a=1`).page, ZL_PAGE);
+  assert.equal(resolveCmsBasicTarget('https://fixture.hotjob.cn/').advisoryHints[0].reason, 'cms_basic_page_invalid');
+  for (const bad of ['https://outside.example.test/form', 'https://user:pass@fixture.hotjob.cn/', 'http://fixture.hotjob.cn/', 42, {}])
     assert.throws(() => resolveCmsBasicTarget(bad), /cms_basic_page_invalid/);
 });
 
@@ -121,6 +123,7 @@ function swHarness({ tabUrl, trusted = [] }) {
   const sender = { id: 'ext', url: 'chrome-extension://ext/src/auto/cms-basic-auto.html?mode=readiness' };
   const tabBase = (() => { const u = new URL(tabUrl); return u.origin + u.pathname; })();
   const api = {
+    permissions: { getAll: async () => ({ origins: ['https://*/*'] }), contains: async () => true },
     storage: { local: storage },
     runtime: { id: 'ext', getURL: (p) => 'chrome-extension://ext/' + p,
       getManifest: () => ({ background: { service_worker: 'src/background/worker.mjs' } }) },
@@ -142,6 +145,7 @@ function swHarness({ tabUrl, trusted = [] }) {
     scripting: {
       executeScript: async (req) => {
         if (req.files) return [];
+        if (String(req.func).includes('ResumeFormFlow')) return [{ frameId: 0, result: { status: 'ready', reason: 'visible_editable_form' } }];
         if (String(req.func).includes('hasFocus')) return [{ frameId: 0, result: { hasFocus: true, visible: true } }];
         stats.probeArgs.push(req.args?.[1]);
         stats.probeSigs.push(req.args?.[0]);
@@ -204,12 +208,13 @@ test('SW baseline probe keeps the full three-heading signature', async () => {
   assert.deepEqual(sig.signature, ['个人基本信息必填', '自我评价必填', '教育经历必填']);
 });
 
-test('SW without cmsPage still rejects a tenant tab (baseline unchanged)', async () => {
+test('SW without cmsPage scans the current tenant tab', async () => {
   const h = swHarness({ tabUrl: ZL_PAGE });
   const r = await h.invoke({ type: 'CMS_BASIC_AUTO', mode: 'readiness' });
-  assert.equal(r.ok, false);
-  assert.equal(r.reason, 'cms_basic_login_or_wrong_page');
-  assert.equal(r.tenantSu, CMS_BASELINE_SU);
+  assert.equal(r.ok, true);
+  assert.equal(r.tenantSu, ZL);
+  assert.equal(r.cmsPage, ZL_PAGE);
+  assert.equal(h.stats.created.length, 0);
 });
 
 test('SW tenant fill: per-SU trust scope, one RESUME_FILL, never Save', async () => {
@@ -237,7 +242,7 @@ test('SW tenant fill: per-SU trust scope, one RESUME_FILL, never Save', async ()
 test('SW refuses invalid cmsPage before touching tabs', async () => {
   const h = swHarness({ tabUrl: ZL_PAGE });
   const r = await h.invoke({ type: 'CMS_BASIC_AUTO', mode: 'fill', originConfirmed: true,
-    cmsPage: 'https://gszq.hotjob.cn/SU6879a7b3e57172288b60df9d/pb/resumeOperation.html' });
+    cmsPage: 'https://outside.example.test/form' });
   assert.equal(r.ok, false);
   assert.equal(r.reason, 'cms_basic_page_invalid');
   assert.equal(h.stats.fill, 0);

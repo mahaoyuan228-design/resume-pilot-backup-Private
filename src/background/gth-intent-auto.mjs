@@ -1,3 +1,4 @@
+import {appendAutoAdvisory as recordAutoAdvisory} from './auto-form-readiness.mjs';
 // GTH 求职意向 auto (mirror GTH_SIMPLE_AUTO). Default: readiness.
 // Fill sends GTH_INTENT_FILL to the shipped content script. It does not use the
 // removed test hook. Never clicks Save/submit. ok is true only when every
@@ -232,42 +233,14 @@ export function createGthIntentAutoRunner({api=globalThis.chrome,verifyBeforeFil
     if(verifyBeforeFill)try{await bounded(verifyBeforeFill,15000);}catch{fail('license_required');}
   };
 
-  async function findGthTab(excludeTabId=null,{openIfMissing=false}={}){
-    const tabs=await api.tabs.query({});
-    const exact=tabs.filter(tab=>tab.url===PAGE&&tab.id!==excludeTabId);
-    if(exact.length===1)return {tab:exact[0],kind:'exact'};
-    if(exact.length>1){
-      const ranked=[...exact].sort((a,b)=>((b.lastAccessed||0)-(a.lastAccessed||0))||((b.id||0)-(a.id||0)));
-      return {tab:ranked.find(tab=>tab.active)||ranked[0],kind:'exact_multi'};
-    }
-    const related=tabs.filter(tab=>typeof tab.url==='string'&&tab.id!==excludeTabId&&/gtht\.com/u.test(tab.url));
-    if(related.length){
-      const err=Error('gth_intent_login_or_wrong_page');
-      err.helpUrl=related[0].url;
-      err.helpReason='GTH resume/edit/ not open; related tab may need login/SSO/QR';
-      throw err;
-    }
-    if(openIfMissing){
-      const created=await api.tabs.create({url:PAGE,active:true});
-      for(let i=0;i<30;i+=1){
-        await sleep(500);
-        const tab=await api.tabs.get(created.id);
-        if(tab.url===PAGE&&tab.status==='complete')return {tab,kind:'opened'};
-        if(typeof tab.url==='string'&&tab.url.includes('gtht.com')&&tab.url!==PAGE){
-          const err=Error('gth_intent_login_or_wrong_page');
-          err.helpUrl=tab.url;
-          err.helpReason='Opened GTH URL redirected away from resume/edit/; login/SSO likely required';
-          throw err;
-        }
-      }
-      const tab=await api.tabs.get(created.id);
-      if(tab.url===PAGE)return {tab,kind:'opened_partial'};
-      const err=Error('gth_intent_login_or_wrong_page');
-      err.helpUrl=tab.url||PAGE;
-      err.helpReason='Opened GTH edit URL but page did not settle on resume/edit/';
-      throw err;
-    }
-    fail('gth_intent_tab_missing');
+  async function findGthTab(excludeTabId = null) {
+    // The user opens the editor. Never navigate to an edit/new-resume page.
+    const tabs = await api.tabs.query({});
+    const candidates = tabs.filter(tab => tab.id !== excludeTabId && typeof tab.url==='string' && tab.url.startsWith(`${ORIGIN}/`));
+    const ranked = [...candidates].sort((a, b) => ((b.lastAccessed || 0) - (a.lastAccessed || 0)) || ((b.id || 0) - (a.id || 0)));
+    const tab = ranked.find(row => row.active) || ranked[0];
+    if (!tab) fail('gth_intent_tab_missing');
+    return { tab, kind: candidates.length > 1 ? 'exact_multi' : 'exact' };
   }
 
   async function focusTab(tab){
@@ -283,8 +256,7 @@ export function createGthIntentAutoRunner({api=globalThis.chrome,verifyBeforeFil
       target:{tabId},world:'MAIN',func:probePageFunc,args:[TITLES,SECTION_INDEX,SECTION]
     });
     const doc=rows?.length===1&&rows[0].frameId===0?rows[0].result:null;
-    if(!doc)fail('gth_intent_probe_failed');
-    return doc;
+    return doc || {ok:false,reason:'gth_intent_probe_failed'};
   }
 
   async function collectReadiness(tab,probeResult){
@@ -360,26 +332,16 @@ export function createGthIntentAutoRunner({api=globalThis.chrome,verifyBeforeFil
     const openIfMissing=message.openIfMissing!==false;
     const report={version:1,kind:'gth_intent_auto',mode,at:Date.now(),section:SECTION,
       steps:[],helpNeeded:false,saveAttempted:false,writeAttempted:false};
+    report.advisoryHints = [];
     const found=await findGthTab(sender?.tab?.id,{openIfMissing});
     report.steps.push({find:found.kind,tabId:found.tab.id,url:found.tab.url||null});
     await focusTab(found.tab);
     report.steps.push('focused_gth_tab');
-    let probeResult=await probe(found.tab.id);
-    if(!probeResult.ok){
-      for(let i=0;i<8&&!probeResult.ok;i+=1){await sleep(500);probeResult=await probe(found.tab.id);}
-    }
+    const probeResult=await probe(found.tab.id);
     report.steps.push({probe:probeResult.reason,ok:probeResult.ok===true});
-    if(!probeResult.ok){
-      const login=probeResult.looksLogin===true||probeResult.reason==='gth_wrong_page';
-      if(login){
-        const err=Error('gth_intent_login_or_wrong_page');
-        err.helpUrl=probeResult.href||found.tab.url||PAGE;
-        err.helpReason='GTH edit page not ready; login/SSO/QR or wrong page';
-        throw err;
-      }
-      fail(probeResult.reason||'gth_intent_probe_failed');
-    }
+    recordAutoAdvisory(report, probeResult);
     const readiness=await collectReadiness(found.tab,probeResult);
+    readiness.advisoryHints = report.advisoryHints;
     report.readiness={
       pageState:readiness.pageState,
       editorOpen:readiness.page?.editorOpen===true,

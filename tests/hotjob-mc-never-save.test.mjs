@@ -155,7 +155,7 @@ test('offline fill readback matches allowed text + 性别/证件类型 and never
   assert.ok(selects.every((row) => row.ok === true && row.liveSupportClaimed === false && row.clickedOption === true));
 });
 
-test('empty, unknown, 国籍/地区, and drifted controls fail closed with no write', async () => {
+test('empty, unknown, 国籍/地区, and drifted targets stay untouched while other fields fill', async () => {
   const dom = boot();
   const api = dom.window.ResumeHotjobMcBasic;
   const { document } = dom.window;
@@ -255,7 +255,9 @@ test('empty, unknown, 国籍/地区, and drifted controls fail closed with no wr
   }, { synthetic: true, restore: false });
   assert.equal(drifted.ok, false);
   assert.equal(drifted.reason, 'control_drift');
-  assert.equal(drifted.writeAttempted, false);
+  assert.equal(drifted.writeAttempted, true);
+  assert.equal(itemByLabel(strayDoc, '移动电话').querySelector('input').value, '13800138000');
+  assert.equal(itemByLabel(strayDoc, '电子邮箱').querySelector('input').value, 'mc.user@example.com');
   assert.equal(drifted.liveSupportClaimed, false);
   assert.equal(drifted.results.find((row) => row.label === '姓名')?.reason, 'control_drift');
   assert.equal(itemByLabel(strayDoc, '姓名').querySelector('.am-input-control input').value, '');

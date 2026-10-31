@@ -6,7 +6,7 @@
 // siteId cmb plus a non-empty verified result list. A requested field that is
 // ambiguous, unsupported, or unsettled is failed and stays pending review.
 // It is not omitted so the other rows can complete.
-import {requireAutoFormReady,autoFormReadinessFailure} from './auto-form-readiness.mjs';
+import {requireAutoFormReady,autoFormReadinessFailure,appendAutoAdvisory as recordAutoAdvisory} from './auto-form-readiness.mjs';
 import {captureProfileBinding,assertProfileBinding,canonicalProfileHash,
   dispatchBoundSource,withProfileBinding} from '../profile/profile-lifecycle.js';
 import {planCmbBasicFromProfile,cmbRequestedFillBlockers,cmbBirthDateReadinessView,CMB_REQUESTED_FILL_FAIL_CLOSED_REASONS,
@@ -66,7 +66,7 @@ export function cmbHostPermissionGranted(manifest) {
   return Array.isArray(list) && list.includes(CMB_HOST_MATCH);
 }
 
-/** Fail-closed page resolver. Optional message.targetPage must be https resume edit. */
+/** Validate HTTPS/host; an unexpected form path is advisory. */
 export function resolveCmbTarget(targetPage) {
   if (targetPage === undefined || targetPage === null || targetPage === '') {
     return { page: SAMPLE_PAGE, host: 'career.cmbchina.com', sample: true };
@@ -76,13 +76,13 @@ export function resolveCmbTarget(targetPage) {
   try { u = new URL(targetPage); } catch { fail('cmb_page_invalid'); }
   if (u.protocol !== 'https:') fail('cmb_page_invalid');
   if (!isCmbHost(u.hostname)) fail('cmb_page_invalid');
-  if (!isCmbResumeEditPath(u.pathname)) fail('cmb_page_invalid');
   if (u.username || u.password || u.port) fail('cmb_page_invalid');
-  return { page: `${u.origin}${u.pathname}`, host: u.hostname.toLowerCase(), sample: false };
+  return { page: `${u.origin}${u.pathname}${u.search}${u.hash}`, host: u.hostname.toLowerCase(), sample: false,
+    advisoryHints: isCmbResumeEditPath(u.pathname) ? [] : [{ reason: 'cmb_page_invalid', advisory: true, blocking: false }] };
 }
 
 export function isCmbTabUrl(url) {
-  return isCmbResumeEditPage(url);
+  try { const parsed = new URL(url); return parsed.protocol === 'https:' && !parsed.username && !parsed.password && !parsed.port && isCmbHost(parsed.hostname); } catch { return false; }
 }
 
 const CMB_LABEL_PATH = {
@@ -401,42 +401,14 @@ export function createCmbBasicAutoRunner({ api = globalThis.chrome, verifyBefore
     if (!cmbHostPermissionGranted(api.runtime.getManifest?.())) fail('cmb_host_permission_missing');
   };
 
-  async function findTab(excludeTabId = null, { openIfMissing = false, page = SAMPLE_PAGE } = {}) {
+  async function findTab(excludeTabId = null) {
+    // The user opens the editor. Never navigate to an edit/new-resume page.
     const tabs = await api.tabs.query({});
-    const exact = tabs.filter((tab) => typeof tab.url === 'string' && isCmbTabUrl(tab.url) && tab.id !== excludeTabId);
-    if (exact.length === 1) return { tab: exact[0], kind: 'exact' };
-    if (exact.length > 1) {
-      const ranked = [...exact].sort((a, b) => ((b.lastAccessed || 0) - (a.lastAccessed || 0)) || ((b.id || 0) - (a.id || 0)));
-      return { tab: ranked.find((tab) => tab.active) || ranked[0], kind: 'exact_multi' };
-    }
-    const related = tabs.filter((tab) => typeof tab.url === 'string' && tab.id !== excludeTabId && /career\.cmbchina\.com/u.test(tab.url));
-    if (related.length) {
-      const err = Error('cmb_basic_login_or_wrong_page');
-      err.helpUrl = related[0].url;
-      err.helpReason = 'CMB resume edit tab not open; related tab may need login';
-      throw err;
-    }
-    if (openIfMissing) {
-      const created = await api.tabs.create({ url: page, active: true });
-      for (let i = 0; i < 30; i += 1) {
-        await sleep(500);
-        const tab = await api.tabs.get(created.id);
-        if (isCmbTabUrl(tab.url) && tab.status === 'complete') return { tab, kind: 'opened' };
-        if (typeof tab.url === 'string' && /career\.cmbchina\.com/u.test(tab.url) && !isCmbTabUrl(tab.url)) {
-          const err = Error('cmb_basic_login_or_wrong_page');
-          err.helpUrl = tab.url;
-          err.helpReason = 'Opened CMB URL redirected off the resume edit path; login likely required';
-          throw err;
-        }
-      }
-      const tab = await api.tabs.get(created.id);
-      if (isCmbTabUrl(tab.url)) return { tab, kind: 'opened_partial' };
-      const err = Error('cmb_basic_login_or_wrong_page');
-      err.helpUrl = tab.url || page;
-      err.helpReason = 'Opened CMB portal but did not settle on /center/resume';
-      throw err;
-    }
-    fail('cmb_basic_tab_missing');
+    const candidates = tabs.filter(tab => tab.id !== excludeTabId && isCmbTabUrl(tab.url));
+    const ranked = [...candidates].sort((a, b) => ((b.lastAccessed || 0) - (a.lastAccessed || 0)) || ((b.id || 0) - (a.id || 0)));
+    const tab = ranked.find(row => row.active) || ranked[0];
+    if (!tab) fail('cmb_basic_tab_missing');
+    return { tab, kind: candidates.length > 1 ? 'exact_multi' : 'exact' };
   }
 
   async function focusTab(tab) {
@@ -507,7 +479,7 @@ export function createCmbBasicAutoRunner({ api = globalThis.chrome, verifyBefore
       lifecycleOptions
     ), 15000);
 
-    await requireAutoFormReady(api, tab.id);
+    recordAutoAdvisory(readiness, await requireAutoFormReady(api, tab.id));
 
     await withProfileBinding(
       api.storage.local,
@@ -581,31 +553,18 @@ export function createCmbBasicAutoRunner({ api = globalThis.chrome, verifyBefore
       complete: false,
       pendingReviewRequired: false
     };
+    report.advisoryHints = [...(target.advisoryHints || [])];
     const found = await findTab(sender?.tab?.id, { openIfMissing, page: target.page });
     report.steps.push({ find: found.kind, tabId: found.tab.id, url: found.tab.url || null });
     await focusTab(found.tab);
     report.formReadiness = await requireAutoFormReady(api, found.tab.id);
+    recordAutoAdvisory(report, report.formReadiness);
     report.steps.push('focused_cmb_tab');
-    let probeResult = await probe(found.tab.id);
-    if (!probeResult.ok) {
-      for (let i = 0; i < 8 && !probeResult.ok; i += 1) {
-        await sleep(500);
-        probeResult = await probe(found.tab.id);
-      }
-    }
+    const probeResult = await probe(found.tab.id);
     report.steps.push({ probe: probeResult.reason, ok: probeResult.ok === true });
-    if (!probeResult.ok) {
-      const login = probeResult.looksLogin === true
-        || /login_or_wrong_page|wrong_page|shell_no_form/u.test(probeResult.reason || '');
-      if (login) {
-        const err = Error('cmb_basic_login_or_wrong_page');
-        err.helpUrl = probeResult.href || found.tab.url || target.page;
-        err.helpReason = 'CMB resume form not ready; login or DOM harvest still needed';
-        throw err;
-      }
-      fail(probeResult.reason || 'cmb_basic_probe_failed');
-    }
+    recordAutoAdvisory(report, probeResult);
     const readiness = await collectReadiness(found.tab, probeResult);
+    readiness.advisoryHints = report.advisoryHints;
     report.readiness = {
       pageState: readiness.pageState,
       foundLabels: readiness.page?.foundLabels || [],

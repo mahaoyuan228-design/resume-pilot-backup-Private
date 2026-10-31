@@ -348,27 +348,8 @@
       if(editors.length>1)stop('basic_editor_not_unique');
       if(otherSectionForms(sections).length)stop('other_section_editor_open');
       if(menus().length)stop('basic_other_menu_open');
-      if(!editors.length){
-        const links=[...sections[0].querySelectorAll('a.h-e-btn')].filter(node=>visible(node)&&norm(node.textContent)==='编辑');
-        if(links.length!==1||!enabled(links[0])||links[0].closest('.title_')!==sections[0].querySelector('.title_')
-          ||links[0].closest('[disabled],[aria-disabled="true"],.is-disabled,.disabled,[formaction]')
-          ||links[0].getAttribute('href')&&!/^(#|javascript:(?:;|void\(0\)))$/iu.test(links[0].getAttribute('href')))
-          stop('basic_edit_not_unique');
-        const edit=links[0],editTitle=edit.closest('.title_'),editHref=edit.getAttribute('href');
-        step('editor_open');await boundAction(()=>{
-          const live=page(),current=[...live[0].querySelectorAll('a.h-e-btn')].filter(node=>visible(node)&&norm(node.textContent)==='编辑');
-          if(!edit.isConnected||live[0]!==sections[0]||current.length!==1||current[0]!==edit
-            ||!enabled(edit)||edit.closest('.title_')!==editTitle||editTitle!==live[0].querySelector('.title_')
-            ||edit.closest('[disabled],[aria-disabled="true"],.is-disabled,.disabled,[formaction]')
-            ||edit.getAttribute('href')!==editHref||forms(live).length||otherSectionForms(live).length||menus().length)
-            stop('basic_edit_not_unique');
-          return edit.click();
-        });openedByUs=true;
-        form=await waitFor(()=>{sections=page();const all=forms(sections);
-          if(all.length>1)stop('basic_editor_not_unique');
-          if(otherSectionForms(sections).length)stop('other_section_editor_open');
-          return all.length===1&&all[0].querySelector('.el-form-item')?all[0]:null;});
-      }else form=editors[0];
+      if (!editors.length) stop('manual_open_editor_required');
+      form = editors[0];
       result.editorLeftOpen=true;
       if(outside(page())!==otherBefore||performance.timeOrigin!==origin)stop('basic_other_values_changed');
       const questionRows=()=>[...form.querySelectorAll('.el-form-item')].map(ownLabel);

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { requireCdpAutoFormReady, autoFormReadinessFailure } from '../scripts/lib/ats-extension-harness.mjs';
+import { requireCdpAutoFormReady } from '../scripts/lib/ats-extension-harness.mjs';
 
 const source = readFileSync(new URL('../src/content/controls/resume-form.js', import.meta.url), 'utf8');
 function cdp(formReadiness, { failInjection = false, exception = false } = {}) {
@@ -21,10 +21,10 @@ function cdp(formReadiness, { failInjection = false, exception = false } = {}) {
   };
 }
 
-test('direct CDP auto accepts only ready and performs read-only source/inspection calls', async () => {
+test('direct CDP readiness performs read-only source/inspection calls', async () => {
   const readiness = { status: 'ready', reason: 'visible_editable_form' };
   const h = cdp(readiness);
-  assert.deepEqual(await requireCdpAutoFormReady(h.send), readiness);
+  assert.deepEqual(await requireCdpAutoFormReady(h.send), { ...readiness, advisory: false, blocking: false, advisoryHints: [] });
   assert.equal(h.commands.length, 2);
   assert.ok(h.commands.every(command => command.method === 'Runtime.evaluate' && command.returnByValue === true));
   assert.doesNotMatch(h.commands[1].expression, /fillBasic|fillSelect|\.click\(|dispatchEvent/);
@@ -33,27 +33,22 @@ test('direct CDP auto accepts only ready and performs read-only source/inspectio
 for (const readiness of [
   { status: 'login_required', reason: 'visible_login_wall' },
   { status: 'form_not_ready', reason: 'form_loading' },
-  { status: 'manual', reason: 'iframe_or_captcha_manual' }
+  { status: 'manual', reason: 'iframe_or_captcha_manual' },
+  { status: 'wrong_page', reason: 'wrong_page' },
+  { status: 'page_invalid', reason: 'page_invalid' },
+  { status: 'form_unrecognized', reason: 'form_unrecognized' }
 ]) {
-  test(`direct CDP auto stops on ${readiness.status} and preserves the reason without a write`, async () => {
+  test(`direct CDP auto preserves ${readiness.status} as a hint and continues`, async () => {
     const h = cdp(readiness);
     let writes = 0;
-    await assert.rejects(async () => {
-      await requireCdpAutoFormReady(h.send);
-      writes += 1;
-    }, error => {
-      assert.equal(error.message, readiness.reason);
-      const failure = autoFormReadinessFailure(error);
-      assert.equal(failure.status, readiness.status);
-      assert.deepEqual(failure.formReadiness, readiness);
-      assert.equal(failure.fillNotStarted, true);
-      assert.equal(failure.writeStarted, false);
-      assert.equal(failure.writeAttempted, false);
-      assert.equal(failure.saveAttempted, false);
-      assert.equal(failure.liveSupportClaimed, false);
-      return true;
-    });
-    assert.equal(writes, 0);
+    const result = await requireCdpAutoFormReady(h.send);
+    writes += 1; // Synthetic continuation; this harness itself only reads.
+    assert.equal(result.status, readiness.status);
+    assert.equal(result.reason, readiness.reason);
+    assert.equal(result.advisory, true);
+    assert.equal(result.blocking, false);
+    assert.deepEqual(result.advisoryHints, [{ ...readiness, advisory: true, blocking: false }]);
+    assert.equal(writes, 1);
     assert.equal(h.commands.length, 2);
   });
 }
@@ -64,16 +59,16 @@ for (const [label, value, options, count] of [
   ['injection transport failure', undefined, { failInjection: true }, 1],
   ['injection exception', undefined, { exception: true }, 1]
 ]) {
-  test(`direct CDP auto fails closed on ${label}`, async () => {
+  test(`direct CDP auto reports ${label} as an unavailable advisory`, async () => {
     const h = cdp(value, options);
-    await assert.rejects(() => requireCdpAutoFormReady(h.send), error => {
-      assert.equal(error.message, 'form_readiness_unavailable');
-      assert.equal(error.formReadiness.status, 'manual');
-      assert.equal(error.formReadiness.writeAttempted, false);
-      assert.equal(error.formReadiness.saveAttempted, false);
-      assert.equal(error.formReadiness.liveSupportClaimed, false);
-      return true;
-    });
+    const result = await requireCdpAutoFormReady(h.send);
+    assert.equal(result.reason, 'form_readiness_unavailable');
+    assert.equal(result.status, 'manual');
+    assert.equal(result.blocking, false);
+    assert.equal(result.advisoryHints.length, 1);
+    assert.equal(result.writeAttempted, false);
+    assert.equal(result.saveAttempted, false);
+    assert.equal(result.liveSupportClaimed, false);
     assert.equal(h.commands.length, count);
   });
 }

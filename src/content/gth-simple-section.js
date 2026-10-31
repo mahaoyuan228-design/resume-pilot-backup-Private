@@ -127,21 +127,7 @@
       if (forms.length > 1 || (forms.length === 1 && !sections[4].contains(forms[0])))
         stop('editor_structure_changed');
       const outsideBefore = otherSections(sections);
-      if (!forms.length) {
-        const links = [...sections[4].querySelectorAll('.title_ a.h-e-btn')]
-          .filter(node => norm(node.textContent) === '编辑' && visible(node));
-        if (links.length !== 1) stop('edit_link_not_unique');
-        await boundAction(()=>{if(!(links[0])?.isConnected)stop('profile_action_target_changed');return links[0].click();});
-        const deadline = Date.now() + 4000;
-        do {
-          await pause(60);
-          sections = requirePage(timeOrigin);
-          forms = formsOf(sections);
-          if (forms.length > 1 || (forms.length === 1 && !sections[4].contains(forms[0])))
-            stop('editor_structure_changed');
-          if (forms.length === 1 && forms[0].querySelector('.el-form-item')) break;
-        } while (Date.now() < deadline);
-      }
+      if (!forms.length) stop('manual_open_editor_required');
       if (forms.length !== 1 || !sections[4].contains(forms[0])
         || otherSections(sections) !== outsideBefore) stop('editor_structure_changed');
       const form = forms[0];

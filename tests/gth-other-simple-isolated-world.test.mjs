@@ -207,6 +207,9 @@ test('skills section ignores a TEST answer and writes the confirmed profile fact
     doc.getElementById('target').insertAdjacentHTML('beforeend', `<form>${control('职业技能与特长', { tag: 'textarea' })}</form>`);
   });
   const profile = confirmedProfile('职业技能与特长', [['职业技能与特长', 'Python / SQL']]);
+  // The user opens the section before invoking fill.
+  doc.getElementById('edit').click();
+  editRun.clicks.length = 0;
   const result = await editRun.context.ResumeGthSimpleSection.fill({
     sectionName: '职业技能与特长', profile, profileBinding: binding,
   });
@@ -216,6 +219,6 @@ test('skills section ignores a TEST answer and writes the confirmed profile fact
   assert.equal(doc.getElementById('field-职业技能与特长').value, 'Python / SQL');
   assert.equal(String(result.fields[0].path), 'customAnswers.职业技能与特长');
   assert.equal(result.fields[0].reason, 'readback_matched');
-  assert.deepEqual(editRun.clicks.map((node) => String(node.textContent).trim()), ['编辑']);
+  assert.deepEqual(editRun.clicks, []);
   assertNeverSaved(editRun.clicks);
 });

@@ -39,7 +39,7 @@ test('probe scopes basic forms; other sections warn', () => {
   assert.doesNotMatch(probe, /forms\.length!==1\|\|forms\[0\]!==form/);
 });
 
-test('basic edit link drift during its binding await never reaches click', async () => {
+test('a closed basic editor never activates edit regardless of its link state', async () => {
   const titles = ['基本信息', '教育经历', '求职意向', '工作经验', '职业技能与特长', '附件简历', '其他信息'];
   const cases = [
     ['caption', (link) => { link.textContent = '保存'; }],
@@ -80,9 +80,9 @@ test('basic edit link drift during its binding await never reaches click', async
         profileBinding: { version: 1, epoch: 'basic-editor-fixture', profileHash: 'a'.repeat(64) },
         profile: { confirmedFields: [] } });
       assert.deepEqual(clicks, [], name);
-      assert.equal(bindingChecks, 2, name);
+      assert.equal(bindingChecks, 1, name);
       assert.equal(result.ok, false, name);
-      assert.equal(result.reason, 'basic_edit_not_unique', name);
+      assert.equal(result.reason, 'manual_open_editor_required', name);
       assert.equal(result.writeStarted, false, name);
       assert.equal(result.softwareClickedSave, false, name);
       assert.equal(result.softwareClickedSubmit, false, name);

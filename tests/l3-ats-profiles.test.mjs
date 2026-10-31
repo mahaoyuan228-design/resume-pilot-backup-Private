@@ -64,7 +64,7 @@ test('every ATS profile delegates common fields and manual outcomes to the same 
 function engine(t, hostname, enabled, { previousRevision = null } = {}) {
   const dom = new JSDOM(`<!doctype html><body><form><fieldset><legend>基本信息</legend>
     <label>未识别题目<input id="unknown"></label>
-    <label>姓名<input id="ambiguous" aria-label="邮箱"></label>
+    <label for="ambiguous">姓名</label><label for="ambiguous">邮箱</label><input id="ambiguous">
     <label>邮箱<input id="neighbor" value="KEEP_NEIGHBOR"></label>
     </fieldset></form></body>`, {
     url: `https://${hostname}/resume`, pretendToBeVisual: true, runScripts: 'outside-only',
@@ -78,7 +78,7 @@ function engine(t, hostname, enabled, { previousRevision = null } = {}) {
   if (oldListener) {
     listeners.add(oldListener);
     Object.assign(window, { __resumeQuickFillInstalled: true, __resumeQuickFillEngineRevision: previousRevision,
-      __resumeQuickFillEngineListener: oldListener, ResumeQuickFillGthInspect() {} });
+      __resumeQuickFillEngineListener: oldListener, ResumeQuickFillGthInspect() {}, ResumeQuickFillFillCurrentPage() {} });
   }
   for (const event of ['click', 'input', 'change', 'blur', 'pointerdown', 'mousedown', 'submit'])
     window.document.addEventListener(event, () => { effects++; }, true);
@@ -113,13 +113,13 @@ function engine(t, hostname, enabled, { previousRevision = null } = {}) {
   };
 }
 
-test('reinjection replaces a revision 11 listener once and retains the current ATS-aware listener', async t => {
-  const fixture = engine(t, 'offline.mokahr.com', false, { previousRevision: 11 });
+for (const previousRevision of [11, 25]) test(`reinjection replaces a revision ${previousRevision} listener once and retains the current ATS-aware listener`, async t => {
+  const fixture = engine(t, 'offline.mokahr.com', false, { previousRevision });
   assert.equal(fixture.listeners.has(fixture.oldListener), false);
   assert.equal(fixture.listeners.size, 1);
   const listener = [...fixture.listeners][0];
   assert.equal(fixture.window.__resumeQuickFillEngineListener, listener);
-  assert.ok(fixture.window.__resumeQuickFillEngineRevision > 11);
+  assert.ok(fixture.window.__resumeQuickFillEngineRevision > previousRevision);
   const { fields } = await fixture.request('RESUME_INSPECT');
   assert.equal(fields.length, 3);
   assert.ok(fields.every(field => field.atsProfile === 'moka'));

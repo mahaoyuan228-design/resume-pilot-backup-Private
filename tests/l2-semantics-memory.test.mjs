@@ -211,7 +211,7 @@ test('real engine applies only confirmed same-page metadata memory and preserves
 });
 
 test('public inspect and ordinary fill retain explicit manual semantics for unknown and ambiguous labels', async () => {
-  const h = await engine('<form><fieldset><legend>基本信息</legend><label>联络端点<input id="unknown"></label><label>姓名<input id="ambiguous" aria-label="邮箱"></label></fieldset><label>未识别题目<input id="unscoped"></label></form>');
+  const h = await engine('<form><fieldset><legend>基本信息</legend><label>联络端点<input id="unknown"></label><label for="ambiguous">姓名</label><label for="ambiguous">邮箱</label><input id="ambiguous"></fieldset><label>未识别题目<input id="unscoped"></label></form>');
   const profile = { fullName: '离线姓名', email: 'offline@example.test', confirmedFields: ['fullName', 'email'] };
   const inspected = await h.inspect(profile);
   assert.equal(inspected.fields.length, 3);

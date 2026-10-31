@@ -105,6 +105,7 @@ const reasons = {
   readback_reapplied: "本次重填已有记录并读回一致",
   missing_profile_value: "尚无已确认的对应答案", unconfirmed_profile_value: "资料尚未核对",
   invalid_profile_value: "资料格式需检查", multiple_profile_values: "有多个备选值",
+  login_form_detected: "请先登录",
   ambiguous_label: "问题含义不明确", unknown_question: "题目尚未建立资料对应",
   section_unconfirmed: "分区含义尚未确认，需手动填写",
   profile_field_unavailable: "尚无对应资料项，需手动填写",
@@ -1219,6 +1220,9 @@ async function render(data, filled = false) {
       : `可填写 ${actionable} · 待处理 ${fields.length - actionable}`;
   const readinessHint = formReadinessHint(data.formReadiness);
   if (readinessHint) elements.summary.textContent += ` · ${readinessHint}`;
+  if (Array.isArray(data.advisoryHints) && data.advisoryHints.some(hint => hint?.reason === "login_form_detected")) {
+    elements.summary.textContent += ` · ${reasons.login_form_detected}`;
+  }
   for (const field of fields) {
     const row = document.createElement("div");
     row.className = "field";

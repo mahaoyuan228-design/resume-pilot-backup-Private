@@ -8,7 +8,7 @@
   if(nativeMessages.hasListeners?.()===false)globalThis.__resumeNativeListenersResetObserved=true;
   if(globalThis.__resumeQuickFillInstalled){
     existingListenerAlive=!!ownedListener&&nativeMessages.hasListener?.(ownedListener)===true;
-    if(existingListenerAlive&&globalThis.__resumeQuickFillEngineRevision===25&&typeof globalThis.ResumeQuickFillGthInspect==='function'
+    if(existingListenerAlive&&globalThis.__resumeQuickFillEngineRevision===26&&typeof globalThis.ResumeQuickFillGthInspect==='function'
       &&typeof globalThis.ResumeQuickFillFillCurrentPage==='function')return;
     if(existingListenerAlive){if(fillState.pending)throw Error('profile_write_context_busy');nativeMessages.removeListener(ownedListener);existingListenerAlive=false;}
     else if(!ownedListener&&nativeMessages.hasListeners?.()===true&&!globalThis.__resumeNativeListenersResetObserved)throw Error('extension_reload_required');
@@ -72,14 +72,80 @@
   }
   const RESERVED_TYPES = new Set(["hidden", "password", "search", "submit", "reset", "button", "image", "checkbox"]);
   const MANUAL_CONTROL_SELECTOR = 'iframe,[data-captcha],[class*="captcha" i],[id*="captcha" i],[name*="captcha" i],input[autocomplete="one-time-code"]';
-  const manualControlReason = control => control.closest(MANUAL_CONTROL_SELECTOR) ? "iframe_or_captcha_manual" : null;
+  const LOGIN_REGION_SELECTOR = '[role="form"],[role="dialog"],[role="region"],[role="group"],section,fieldset,article,.section,.form-section,[data-section]';
+  function loginSignal(node) {
+    if (node.matches('input:not([type="button"]):not([type="submit"]):not([type="reset"])')) {
+      if (node.type === 'password' || node.autocomplete === 'one-time-code') return true;
+      if (node.closest('[data-captcha],[class*="captcha" i],[id*="captcha" i],[name*="captcha" i]')) return true;
+      const item = node.closest('.ant-form-item,.el-form-item,.ivu-form-item,.form-item,.form-group,.field,[data-field],[data-form-item]');
+      const itemLabels = item ? [...item.querySelectorAll('label,.label,[data-label],.ant-form-item-label,.el-form-item__label,.ivu-form-item-label,.form-item-label,.field-label')]
+        .map(label => label.textContent) : [];
+      const text = ['name', 'id', 'aria-label', 'placeholder'].map(name => node.getAttribute(name) || '')
+        .concat([...(node.labels || [])].map(label => label.textContent), itemLabels).join(' ');
+      const by = (node.getAttribute('aria-labelledby') || '').split(/\s+/)
+        .map(id => document.getElementById(id)?.textContent || '').join(' ');
+      return /验证码|驗證碼|captcha|verification[\s_-]*code|one[\s_-]*time[\s_-]*(?:code|password)|(?:^|[\s_-])otp(?:$|[\s_-])/iu.test(`${text} ${by}`);
+    }
+    const text = String(node.getAttribute('aria-label') || node.textContent?.trim() || node.value || '')
+      .normalize('NFKC').replace(/\s+/gu, '').trim();
+    return /(?:获取|发送|重新获取|重新发送)(?:短信)?验证码|^(?:(?:立即|安全|快速|确认|继续|一键|账号|验证码|手机)?登录(?:并注册|\/注册)?|signin|login|(?:send|get)(?:verification)?code)$/iu.test(text);
+  }
+  function loginScope(signal) {
+    // Native ownership includes controls associated through form= outside the
+    // form subtree. A semantic region bounds a form-less login panel.
+    const form = signal.form || signal.closest('form');
+    if (form) return form;
+    const ariaForm = signal.closest('[role="form"]');
+    if (ariaForm) return ariaForm;
+    const navigation = signal.closest('header,nav,[role="navigation"]');
+    const region = signal.closest(LOGIN_REGION_SELECTOR);
+    if (region && (!navigation || navigation.contains(region))) return region;
+    // Component wrappers often have no form/region semantics. Use the first
+    // local ancestor sharing the challenge/button with an answer editor.
+    for (let root = signal.parentElement; root && root !== document.body && root !== document.documentElement; root = root.parentElement) {
+      const editors = [...root.querySelectorAll('input,select,textarea,[contenteditable="true"]')]
+        .filter(node => {
+          const region = node.closest(LOGIN_REGION_SELECTOR);
+          return node !== signal && !node.form && (!region || region.contains(root))
+            && !['hidden', 'button', 'submit', 'reset', 'image'].includes(node.type);
+        });
+      if (editors.length) return root;
+      if (root === navigation) break;
+    }
+    // A navigation action without its own editor is not a login form. Never
+    // borrow an editor through body/html to turn the whole page into one.
+    const parent = signal.parentElement;
+    return signal.matches('input') && parent !== document.body && parent !== document.documentElement ? parent : null;
+  }
+  function loginFormScopes() {
+    return new Set([...document.querySelectorAll('input,button,[role="button"]')]
+      .filter(loginSignal).map(loginScope).filter(Boolean));
+  }
+  function inLoginScope(control, scope) {
+    const form = control.form || control.closest('form');
+    if (scope.matches('form')) return form === scope;
+    if (scope.matches('[role="form"]')) return control.closest('[role="form"]') === scope;
+    if (form && (!scope.matches(LOGIN_REGION_SELECTOR) || !scope.contains(form))) return false;
+    const region = control.closest(LOGIN_REGION_SELECTOR);
+    // A page header's login action cannot claim an independent resume region.
+    return scope.contains(control) && (!region || region === scope || region.contains(scope));
+  }
+  function loginControlReason(control, scopes = loginFormScopes()) {
+    return [...scopes].some(scope => inLoginScope(control, scope)) ? 'login_form_detected' : null;
+  }
+  const manualControlReason = (control, scopes) => loginControlReason(control, scopes)
+    || (control.closest(MANUAL_CONTROL_SELECTOR) ? "iframe_or_captcha_manual" : null);
+  function loginAdvisoryHints() {
+    return loginFormScopes().size ? [{ status: 'login_required', reason: 'login_form_detected',
+      message: '请先登录', advisory: true, blocking: false, liveSupportClaimed: false }] : [];
+  }
   function requireWritableControl(control, writeStarted = false) {
     const reason = manualControlReason(control);
     if (reason) throw Object.assign(Error(reason), { writeStarted });
   }
-  function manualControlEntry(control, position) {
+  function manualControlEntry(control, position, reason = manualControlReason(control)) {
     return { id: fieldId(control, position), labels: labelTexts(control), kind: control.tagName.toLowerCase(),
-      key: null, control, semanticStatus: "manual", reason: "iframe_or_captcha_manual" };
+      key: null, control, semanticStatus: "manual", reason: reason || "iframe_or_captcha_manual" };
   }
   const PAGE_HIDDEN_DURING_FILL = "fill_interrupted_page_hidden";
   const CMS_PHOTO_PAGE = "https://wecruit.hotjob.cn/SU629dbc0c0dcad452299bc0f7/pb/resumeOperation.html";
@@ -157,51 +223,105 @@
     return owners.size === 1 && owners.has(widget(control));
   }
 
+  const FORM_ITEM_SELECTOR = '.ant-form-item,.el-form-item,.ivu-form-item,.form-item,.form-group,.field,[data-field],[data-form-item]';
+  const ITEM_QUESTION_SELECTOR = '.ant-form-item-label,.el-form-item__label,.ivu-form-item-label,.form-item-label,.field-label,.label,[data-label]';
+  const SECTION_SELECTOR = 'fieldset,section,.section,.form-section,[role="group"],[role="region"],[data-section]';
+  function cleanQuestion(value) {
+    const text = String(value || '').replace(/\s+/gu, ' ').trim();
+    const prompt = text.normalize('NFKC').replace(/^[*\s:：]+/u, '');
+    // Prompts are not questions, including prompts placed in a label node.
+    return /^(?:请(?:选择|输入|填写|选取)|please\b|select(?:\s|$)|enter(?:\s|$)|placeholder\b)/iu.test(prompt)
+      || /^[\s*＊:：.\-—]*$/u.test(text) ? '' : text;
+  }
+
+  function questionText(node) {
+    if (!node) return '';
+    if (node.matches?.('input,select,textarea,button,[contenteditable],[hidden],[aria-hidden="true"],'
+      + '[class*="display-value"],[class*="selected-value"],[class*="selection-item"]')) return '';
+    const copy = node.cloneNode(true);
+    copy.querySelectorAll?.('input,select,textarea,button,[contenteditable],script,style,[hidden],[aria-hidden="true"],'
+      + '[class*="display-value"],[class*="selected-value"],[class*="selection-item"]')
+      .forEach(item => item.remove());
+    return cleanQuestion(copy.textContent);
+  }
+
+  function generalSection(control) {
+    for (let section = control.parentElement?.closest(SECTION_SELECTOR); section;
+      section = section.parentElement?.closest(SECTION_SELECTOR)) {
+      const labelledBy = section.getAttribute('aria-labelledby');
+      const ids = labelledBy?.trim().split(/\s+/u).map(id => document.getElementById(id));
+      let name = ids?.length && ids.every(Boolean) ? ids.map(questionText).join(' ').trim() : '';
+      name ||= cleanQuestion(section.getAttribute('aria-label'));
+      if (!name) {
+        const candidates = [...section.querySelectorAll('legend,h1,h2,h3,h4,h5,h6,[role="heading"],[data-section-title],.section-title,.form-section-title,.group-title')]
+          .filter(node => node.closest(SECTION_SELECTOR) === section);
+        const headings = candidates.filter(node => !candidates.some(other => other !== node && node.contains(other)));
+        if (headings.length === 1) name = questionText(headings[0]);
+      }
+      if (name) return { element: section, name };
+    }
+    return null;
+  }
+
   function labelTexts(control) {
-    const found = [];
-    const add = (value) => {
-      const clean = String(value || "").replace(/\s+/g, " ").trim();
-      if (clean && !found.includes(clean)) found.push(clean);
-    };
-    // The Ant form item's own label is the question. A placeholder may be a
-    // generic hint or even name a different fact; it must not veto that label.
-    const antQuestion = formItemQuestion(control.closest(".ant-form-item"));
-    if (questionOwnsControl(antQuestion, control, control.closest('.ant-form-item'))) {
-      add(antQuestion.textContent);
-      return found;
+    const texts = nodes => [...new Set(nodes.map(questionText).filter(Boolean))];
+    const item = control.closest(FORM_ITEM_SELECTOR);
+    if (item) {
+      // Component question containers outrank even an associated label in
+      // their answer subtree. Option/display labels are a different source.
+      for (const selector of [ITEM_QUESTION_SELECTOR, 'label']) {
+        const candidates = [...item.querySelectorAll(selector)]
+          .filter(label => label.closest(FORM_ITEM_SELECTOR) === item)
+          .flatMap(label => {
+            const children = label.matches('label') ? [] : [...label.querySelectorAll('label')]
+              .filter(child => child.closest(FORM_ITEM_SELECTOR) === item);
+            return children.length ? children : [label];
+          })
+          .filter(label => !label.matches('.ant-radio-wrapper,.el-radio,.ivu-radio-wrapper'));
+        const own = candidates.filter(label => !candidates.some(other => other !== label && label.contains(other))
+          && questionOwnsControl(label, control, item));
+        const labels = texts(own);
+        if (labels.length) return labels;
+      }
     }
-    const slider = atsControlTargets.get(control);
-    const sliderRoot = ['slider', 'rate', 'transfer'].includes(slider?.type) ? document.querySelector(slider.rootSelector) : null;
-    const ownLabels = [...(control.labels || []), ...document.querySelectorAll('label[for]')]
-      .filter(label => label.control === control || control.id && label.htmlFor === control.id
-        || sliderRoot?.id && label.htmlFor === sliderRoot.id);
-    for (const label of ownLabels) {
-      if (!questionOwnsControl(label, control, label)) continue;
-      const copy = label.cloneNode(true);
-      copy.querySelectorAll("input,select,textarea,button,[contenteditable]").forEach((item) => item.remove());
-      add(copy.textContent);
+    const candidate = atsControlTargets.get(control);
+    const widgetRoot = ['slider', 'rate', 'transfer'].includes(candidate?.type) ? document.querySelector(candidate.rootSelector) : null;
+    const ownLabels = [...new Set([...(control.labels || []), ...document.querySelectorAll('label[for]')])]
+      .filter(label => (label.control === control || control.id && label.htmlFor === control.id
+        || widgetRoot?.id && label.htmlFor === widgetRoot.id) && questionOwnsControl(label, control, label));
+    const labels = texts(ownLabels);
+    if (labels.length) return labels;
+    const labelledBy = control.getAttribute('aria-labelledby') || widgetRoot?.getAttribute('aria-labelledby');
+    if (labelledBy) {
+      const nodes = labelledBy.trim().split(/\s+/u).map(id => document.getElementById(id));
+      if (nodes.every(Boolean)) {
+        const text = texts(nodes).join(' ');
+        if (text) return [text];
+      }
     }
-    add(control.getAttribute("aria-label"));
-    if (sliderRoot && sliderRoot !== control) add(sliderRoot.getAttribute('aria-label'));
-    const labelledBy = control.getAttribute("aria-labelledby") || sliderRoot?.getAttribute('aria-labelledby');
-    if (labelledBy) for (const id of labelledBy.split(/\s+/)) add(document.getElementById(id)?.textContent);
-    // Ant Design and Element UI often put the question on the enclosing form
-    // item without associating it with the native input. Take only that item's
-    // own, unique label so a nested repeat row cannot borrow another question.
-    const elementItem = control.closest(".el-form-item");
-    if (elementItem) {
-      const ownLabels = [...elementItem.querySelectorAll(".el-form-item__label")]
-        .filter((label) => label.closest(".el-form-item") === elementItem);
-      if (ownLabels.length === 1 && questionOwnsControl(ownLabels[0], control, elementItem)) add(ownLabels[0].textContent);
+    for (const node of [control, widgetRoot].filter(Boolean)) {
+      const text = cleanQuestion(node.getAttribute('aria-label'));
+      if (text) return [text];
     }
-    add(control.getAttribute("placeholder"));
-    add(control.getAttribute("title"));
-    if (!found.length) {
-      const near = control.closest(".form-item,.form-group,.field,[data-field]");
-      const label = near?.querySelector("label,.label,[data-label]");
-      if (questionOwnsControl(label, control, near)) add(label.textContent);
+    // Only an adjacent, non-interactive text belongs to this editor. Never
+    // borrow a previous row's question or a shared multi-editor heading.
+    for (let node = control; node?.parentElement; node = node.parentElement) {
+      if (node === item) break;
+      const scope = node.parentElement;
+      let previous = node.previousSibling;
+      while (previous && (previous.nodeType === 8 || !previous.textContent?.trim())) previous = previous.previousSibling;
+      if (!scope.matches('label') && previous && (previous.nodeType === 3 || previous.nodeType === 1
+        && !previous.matches('input,select,textarea,button,a,h1,h2,h3,h4,h5,h6,legend,[role="heading"]')
+        && !previous.querySelector('input,select,textarea,button,a,[contenteditable]'))
+        && questionOwnsControl(previous, control, scope)) {
+        const text = questionText(previous);
+        if (text) return [text];
+      }
+      if (scope.matches('form,' + SECTION_SELECTOR)) break;
     }
-    return found;
+    const section = generalSection(control);
+    if (section && questionOwnsControl(section.element, control, section.element)) return [section.name];
+    return [];
   }
 
   function repeatContext(control) {
@@ -321,10 +441,16 @@
     const gth = !cms && !cmb && gthPage ? gthSection(control) : null;
     const fieldset = !cms && !cmb && !gthPage ? control.closest("fieldset") : null;
     const legend = fieldset?.querySelector(":scope > legend");
+    const generic = !cms && !cmb && !gthPage ? generalSection(control) : null;
+    // A single editor can be named by its group heading (e.g. “邮箱”). Such
+    // a question is not also an unknown resume-section restriction.
+    const headingIsQuestion = generic && !M.sectionKind(generic.name)
+      && labelTexts(control).some(label => M.normalize(label) === M.normalize(generic.name))
+      && questionOwnsControl(generic.element, control, generic.element);
     const form = control.closest("form");
     const oneForm = form && document.querySelectorAll("form").length === 1;
     const sectionName = cms?.name || cmb?.name || gth?.name
-      || (gthPage ? "" : M.normalize(legend?.textContent)
+      || (gthPage ? "" : headingIsQuestion ? "" : M.normalize(legend?.textContent || generic?.name)
         || (form?.id ? `form:${form.id}` : oneForm ? "form:single" : ""));
     let rowContext = "none";
     if (cms) {
@@ -1012,6 +1138,7 @@
   }
 
   function collect(profile, attachment = null, trialScope = null) {
+    const loginScopes = loginFormScopes();
     // A trial root is resolved before any classification/current-value read.
     // All ordinary callers keep the existing document-wide collection path.
     const query = selector => trialScope
@@ -1060,11 +1187,13 @@
     const regionControls=query('.cascader-plugins-wrap').filter(cmsRegionControl);
     const checkboxControls=query('.ant-checkbox-group').filter(cmsCheckboxControl);
     const entries = [...controls, ...cmsControls,...regionControls,...checkboxControls].map((control, position) => {
-      if (manualControlReason(control)) return manualControlEntry(control, position);
+      const manualReason = manualControlReason(control, loginScopes);
+      if (manualReason) return manualControlEntry(control, position, manualReason);
       const radio = control instanceof HTMLInputElement && control.type === "radio";
       const group = radio ? radioGroup(control) : null;
       const radioOptions = group?.options || null;
       const labels = radio ? group.labels : labelTexts(control);
+      const conflictingLabels = !radio && new Set(labels.map(M.normalize)).size > 1;
       const section = namedSection(control);
       const legacyMatch = M.classify(labels);
       const explicitRepeat = repeatContext(control);
@@ -1161,9 +1290,9 @@
           : acceptsAttachment(control, attachment) ? "ready" : "attachment_type_not_accepted";
       } else if (!labels.length) {
         result.reason = "unlabelled_field";
-      } else if (legacyMatch.reason === "ambiguous_label"
+      } else if (conflictingLabels || legacyMatch.reason === "ambiguous_label"
         || (fieldSection && !cmsSection(control) && semantic.status === "manual" && !remembered)) {
-        result.reason = legacyMatch.reason === "ambiguous_label" ? "ambiguous_label" : semantic.reason;
+        result.reason = conflictingLabels || legacyMatch.reason === "ambiguous_label" ? "ambiguous_label" : semantic.reason;
         result.semanticStatus = "manual";
       } else if ((semantic.status === "mapped" && (!legacyMatch.key || semantic.context)) || remembered) {
         const path = remembered?.profileKey || semantic.profileKey;
@@ -1232,9 +1361,10 @@
     return entries;
   }
 
-  function publicEntry(entry) {
-    if (manualControlReason(entry.control)) {
-      const { control, ...manual } = manualControlEntry(entry.control, 0);
+  function publicEntry(entry, loginScopes) {
+    const reason = manualControlReason(entry.control, loginScopes);
+    if (reason) {
+      const { control, ...manual } = manualControlEntry(entry.control, 0, reason);
       return { ...manual, id: entry.id, currentValue: "" };
     }
     const { control, answer, radioOptions, antUnnamedRadio,regionFact,checkboxFact,cmsBasicAddress, ...plain } = entry;
@@ -1367,6 +1497,7 @@
       const found = cmsPhotoTarget(slot);
       if (found.reason) { row.reason = found.reason; continue; }
       const { item, input } = found;
+      if (loginControlReason(input)) { row.reason = 'login_form_detected'; continue; }
       if (cmsPhotoPresent(item, input)) { row.reason = "photo_existing_value"; continue; }
       const photo = photoUploads?.[slot];
       if (!photo) continue;
@@ -1382,7 +1513,7 @@
         }
         const transfer = new DataTransfer();
         transfer.items.add(file);
-        await checkProfileWrite(); input.files = transfer.files;
+        await checkProfileWrite(); requireWritableControl(input); input.files = transfer.files;
         const assigned = input.files?.[0];
         const original = new Uint8Array(await file.arrayBuffer());
         const assignedBytes = assigned ? new Uint8Array(await assigned.arrayBuffer()) : null;
@@ -1397,7 +1528,7 @@
         if (beforeInput.reason || beforeInput.item !== item || beforeInput.input !== input || input.files?.[0] !== assigned) {
           row.status = "failed"; row.reason = "photo_target_changed"; continue;
         }
-        await checkProfileWrite(); input.dispatchEvent(new Event("input", { bubbles: true }));
+        await checkProfileWrite(); requireWritableControl(input, true); input.dispatchEvent(new Event("input", { bubbles: true }));
         requireVisibleFillPage();
         const beforeChange = cmsPhotoTarget(slot);
         row.nativeInputConnectedBeforeChange = input.isConnected;
@@ -1406,7 +1537,7 @@
         }
         // rc-upload consumes this FileList once and replaces the native input
         // with a new key. Never dispatch to that replacement or refill it.
-        await checkProfileWrite(); input.dispatchEvent(new Event("change", { bubbles: true }));
+        await checkProfileWrite(); requireWritableControl(input, true); input.dispatchEvent(new Event("change", { bubbles: true }));
         row.changeEventsDispatched = 1;
         let complete = false;
         for (let attempt = 0; attempt < 80; attempt += 1) {
@@ -1443,6 +1574,11 @@
         }
       } catch (error) { if(/^profile_[a-z_]+$/u.test(error?.message||''))throw error;
         if (error?.message === PAGE_HIDDEN_DURING_FILL) throw error;
+        if (error?.message === 'login_form_detected') {
+          Object.assign(row, { status: error.writeStarted ? 'failed' : 'skipped', reason: error.message,
+            writeStarted: error.writeStarted === true, semanticStatus: 'manual' });
+          continue;
+        }
         row.status = "failed";
         row.reason = "control_error";
       } finally {
@@ -1477,12 +1613,14 @@
 
   function inspect(profile, attachment) {
     const entries = collect(profile, attachment);
+    const loginScopes = loginFormScopes();
     const validationGaps = currentValidationGaps();
     return { url: location.href, title: document.title,
-      fields: [...entries.map(publicEntry), ...cmsUncollectedQuestions(entries)],
+      fields: [...entries.map(entry => publicEntry(entry, loginScopes)), ...cmsUncollectedQuestions(entries)],
       entry: globalThis.ResumeFormFlow?.inspect() || null,
       navigation: globalThis.ResumeFormFlow?.navigation?.inspect() || null,
       formReadiness: currentFormReadiness(),
+      advisoryHints: loginAdvisoryHints(),
       ...(validationGaps ? { validationGaps } : {}) };
   }
 
@@ -1842,7 +1980,13 @@
           break;
         }
         requireVisibleFillPage();
-        await checkProfileWrite(); button.click();
+        await checkProfileWrite();
+        if (loginControlReason(button)) {
+          issues.push({ id: `repeat-add-${kind}`, labels: [], kind: 'repeat_add_button', path: null,
+            status: 'skipped', reason: 'login_form_detected', currentValue: '' });
+          break;
+        }
+        button.click();
         await new Promise((resolve) => setTimeout(resolve, 100));
         requireVisibleFillPage();
         const next = document.querySelectorAll(`[data-repeat-kind="${kind}"]`).length;
@@ -2040,7 +2184,9 @@
       if(globalThis.ResumeProfileWriteContext!==context)throw Error('profile_write_context_changed');
       let verdict;try{verdict=await chrome.runtime.sendMessage({type:'RESUME_PROFILE_BINDING_CHECK',profileBinding});}catch{}
       if(verdict?.allowed!==true){const error=Error('profile_binding_changed');error.writeStarted=context.writeStarted;error.fillNotStarted=!context.writeStarted;throw error;}
-      requireVisibleFillPage();if(write)context.writeStarted=true;
+      requireVisibleFillPage();
+      if(context.activeControl)requireWritableControl(context.activeControl,context.activeControlWriteStarted===true);
+      if(write){context.writeStarted=true;if(context.activeControl)context.activeControlWriteStarted=true;}
     }};
     globalThis.ResumeProfileWriteContext=context;
     try{await context.check(false);const result=await fillOwnedContent(profile,attachment,photoUploads);await context.check(false);
@@ -2079,10 +2225,11 @@
   async function fillAtsControl(entry, result) {
     const context = globalThis.ResumeProfileWriteContext;
     await context.check(false);
+    requireWritableControl(entry.control);
     const response = await chrome.runtime.sendMessage({ type: 'RESUME_ATS_CONTROL_WRITE',
       selector: atsControlSelector(entry.control), path: entry.path, value: entry.answer,
       profileBinding: context.profileBinding, timeOrigin: performance.timeOrigin });
-    if (response?.writeStarted === true) context.writeStarted = true;
+    if (response?.writeStarted === true) { context.writeStarted = true; context.activeControlWriteStarted = true; }
     await context.check(false);
     if (!response || response.liveSupportClaimed !== false) throw Error('control_result_invalid');
     result.adapter = response.adapter || null;
@@ -2132,6 +2279,7 @@
     }
     const formReadiness = currentFormReadiness();
     if (formReadiness.advisory) advisoryHints.push(formReadiness);
+    advisoryHints.push(...loginAdvisoryHints());
     const results = atsEngineWriteEnabled ? [] : await ensureRepeatRows(profile);
     let decodedAttachment = null;
     const processed = new Set();
@@ -2292,6 +2440,9 @@
         let genericWriteStarted = false;
         try {
           requireVisibleFillPage();
+          requireWritableControl(control);
+          globalThis.ResumeProfileWriteContext.activeControl = control;
+          globalThis.ResumeProfileWriteContext.activeControlWriteStarted = false;
           const answer = Array.isArray(entry.answer) ? entry.answer[0] : entry.answer;
           if (atsEngineWriteEnabled) {
             record.readbackId = await fillAtsControl(entry, result);
@@ -2396,7 +2547,7 @@
           result.currentValue = meaningfulCurrent(control, entry.radioOptions, entry.antUnnamedRadio);
         } catch (error) { if(/^profile_[a-z_]+$/u.test(error?.message||''))throw error;
           if (error?.message === PAGE_HIDDEN_DURING_FILL) throw error;
-          if (error?.message === "iframe_or_captcha_manual") {
+          if (["iframe_or_captcha_manual", "login_form_detected"].includes(error?.message)) {
             Object.assign(result, { status: error.writeStarted ? "failed" : "skipped", semanticStatus: "manual",
               reason: error.message, writeStarted: error.writeStarted === true,
               currentValue: error.writeStarted ? meaningfulCurrent(control, entry.radioOptions, entry.antUnnamedRadio) : "" });
@@ -2418,6 +2569,9 @@
           if (["cms_birth_date", "cms_education_date"].includes(entry.kind) && visibleCmsCalendarPortals().length) {
             cmsCalendarBlocked = true;
           }
+        } finally {
+          globalThis.ResumeProfileWriteContext.activeControl = null;
+          globalThis.ResumeProfileWriteContext.activeControlWriteStarted = false;
         }
       }
       await new Promise((resolve) => setTimeout(resolve, awaitingDependentOptions ? 350 : 40));
@@ -2475,6 +2629,7 @@
     // cannot infer the remote site's final state from local DOM readback alone.
     const photoRows = atsEngineWriteEnabled ? [] : await fillCmsPhotos(photoUploads);
     const validationGaps = currentValidationGaps();
+    if (!advisoryHints.some(hint => hint.reason === 'login_form_detected')) advisoryHints.push(...loginAdvisoryHints());
     return { url: location.href, title: document.title,
       fields: [...results, ...cmsUncollectedQuestions(finalEntries, photoRows), ...photoRows],
       formReadiness, advisoryHints, liveSupportClaimed: false,
@@ -2733,7 +2888,7 @@
         sendResponse(reply);
       });
     return true;
-  };chrome.runtime.onMessage.addListener(engineListener);globalThis.__resumeQuickFillEngineListener=engineListener;globalThis.__resumeQuickFillEngineRevision=25;}
+  };chrome.runtime.onMessage.addListener(engineListener);globalThis.__resumeQuickFillEngineListener=engineListener;globalThis.__resumeQuickFillEngineRevision=26;}
   // ATS runners and the popup share the current-document scan and field writer.
   globalThis.ResumeQuickFillFillCurrentPage = async (profile, profileBinding) => {
     if (fillState.pending) throw Object.assign(Error('fill_in_progress'), { fillNotStarted: true, writeStarted: false });

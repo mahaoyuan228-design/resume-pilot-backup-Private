@@ -59,7 +59,7 @@ function boot(t, enabled, { markup = html, profile = { fullName: '离线姓名',
   } };
 }
 
-for (const enabled of [false, true]) test(`ordinary inspect/fill leaves frames, challenges and unknown fields manual (opt-in ${enabled})`, async t => {
+for (const enabled of [false, true]) test(`ordinary inspect/fill leaves challenge forms, frames and unknown fields inert (opt-in ${enabled})`, async t => {
   const f = boot(t, enabled);
   const ids = ['frame', 'data-challenge', 'class-challenge', 'id-challenge', 'name-challenge', 'otp', 'widget'];
   for (const type of ['RESUME_INSPECT', 'RESUME_FILL']) {
@@ -69,14 +69,16 @@ for (const enabled of [false, true]) test(`ordinary inspect/fill leaves frames, 
       const field = fields.find(row => row.id === id);
       assert.ok(field, id);
       assert.equal(field.semanticStatus, 'manual', id);
-      assert.equal(field.reason, 'iframe_or_captcha_manual', id);
+      assert.equal(field.reason, 'login_form_detected', id);
       assert.equal(field.path, undefined, id);
       assert.equal(field.mappingContext, undefined, id);
       if (type === 'RESUME_FILL') assert.equal(field.status, 'skipped', id);
     }
     assert.equal(fields.find(row => row.id === 'unknown').semanticStatus, 'manual');
-    assert.equal(fields.find(row => row.id === 'neighbor').reason, 'existing_value');
-    assert.equal(fields.find(row => row.id === 'neighbor').path, 'email');
+    // OTP evidence protects the entire containing form, including a known
+    // email field. The existing value is neither inspected for filling nor changed.
+    assert.equal(fields.find(row => row.id === 'neighbor').reason, 'login_form_detected');
+    assert.equal(fields.find(row => row.id === 'neighbor').path, undefined);
     f.assertInert();
   }
 });
@@ -118,7 +120,7 @@ for (const scenario of dynamicCases) for (const mutateAt of scenario.checks)
     assert.equal(fields.length, 1);
     const field = fields[0], written = mutateAt > 3;
     assert.equal(field.semanticStatus, 'manual');
-    assert.equal(field.reason, 'iframe_or_captcha_manual');
+    assert.equal(field.reason, ['text', 'radio', 'file'].includes(scenario.kind) ? 'login_form_detected' : 'iframe_or_captcha_manual');
     assert.equal(field.status, written ? 'failed' : 'skipped');
     assert.equal(field.writeStarted, written);
     assert.equal(field.mappingContext, undefined);

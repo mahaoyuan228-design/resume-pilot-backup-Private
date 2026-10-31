@@ -5,7 +5,7 @@
   'use strict';
   // Rebuild old registries so reinjection installs current dropdown readback
   // contracts as well as the current model resolver.
-  if (globalThis.ResumeControls?.version === 1 && globalThis.ResumeControls.revision === 22) return;
+  if (globalThis.ResumeControls?.version === 1 && globalThis.ResumeControls.revision === 23) return;
   const adapters = new Map();
   // Executable dropdown/choice plans stay bound to their original widget in MAIN.
   // Serialized shadow observations carry no authority to write another root.
@@ -468,7 +468,7 @@
     } catch { return { ...manual('component_probe_failed'), adapter: null }; }
   }
   const helpers = Object.freeze({ norm, equal, prose, proseEqual, richtextValue, empty, tick, makePlan, switchPlan, safeClick, nativeSet, confirmSearchOption, confirmTreeNode, check, clickAllowed, clean, validDate });
-  globalThis.ResumeControls = Object.freeze({ version: 1, revision: 22, mode: 'shadow', liveSupportClaimed: false,
+  globalThis.ResumeControls = Object.freeze({ version: 1, revision: 23, mode: 'shadow', liveSupportClaimed: false,
     register, createAdapter, resolve, inspect, plan, helpers, list: () => ordered().map(a => ({ name: a.name, lib: a.lib, type: a.type, priority: a.priority || 0 })),
     verify: (el, instruction, ctx) => resolve(el)?.verify(el, instruction, ctx) || Promise.resolve({ status: 'unsupported', reason: 'control_or_version_unconfirmed' }) });
 })();

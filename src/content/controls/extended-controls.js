@@ -32,10 +32,21 @@
     const root = p.controlRoot || el;
     const input = inputOf(root);
     let domValue = input?.value ?? '';
-    if (p.componentName === 'iSelect') domValue = H.norm(root.querySelector('.ivu-select-selected-value')?.textContent || '');
+    let displayAvailable = true;
+    if (p.componentName === 'iSelect') {
+      if (p.filterable) {
+        // iView's single filterable select renders its committed label in
+        // the search input, with no selected-value span. Read that public
+        // surface independently of the component's authoritative value.
+        const inputs = all(root, 'input:not([type="hidden"])');
+        displayAvailable = inputs.length === 1 && inputs[0].matches('.ivu-select-input')
+          && inputs[0].closest('.ivu-select') === root;
+        domValue = displayAvailable ? H.norm(inputs[0].value) : '';
+      } else domValue = H.norm(root.querySelector('.ivu-select-selected-value')?.textContent || '');
+    }
     const readableOptions = options => options.every(option => option.valueSupported !== false
       && (!option.children?.length || readableOptions(option.children)));
-    return { ...p, available: p.available && readableOptions(p.options || []), domValue };
+    return { ...p, available: p.available && displayAvailable && readableOptions(p.options || []), domValue };
   }
   function datePlan(fact, model) {
     if (model.type && model.type !== 'date') return unsupported('date_type_unconfirmed');
@@ -55,6 +66,8 @@
     // Object-valued and multiple-select callback conventions need separate
     // samples. Do not guess an onChange payload from a visible option label.
     if (model.multiple || Array.isArray(model.value)) return unsupported('multiple_select_unconfirmed');
+    if (model.componentName === 'iSelect' && model.filterable && H.empty(model.value) && !H.empty(model.domValue))
+      return unsupported('existing_value');
     return H.makePlan(fact, model, { type: 'select' });
   }
   async function waitFor(get, ctx, turns = 50) {

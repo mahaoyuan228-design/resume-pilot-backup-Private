@@ -28,6 +28,76 @@ function boot(html = '', libraries = false) {
     get: id => window.document.getElementById(id) };
 }
 
+test('custom dropdown queries cannot become native text or verify a typed value', async t => {
+  for (const classes of ['dropdown', 'Dropdown-container-fixture', 'ui-Dropdown-container-fixture']) {
+    const f = boot(`<div class="${classes}"><label><span class="Input-display-value-fixture"></span>
+      <input id="query" value="SYNTHETIC_MAJOR"></label><div class="Dropdown-dropdown-fixture">
+      <span>暂无选项</span><button type="button">添加专业全称</button></div></div>`);
+    t.after(() => f.dom.window.close());
+    const input = f.get('query');
+    assert.equal(f.R.resolve(input), null, classes);
+    assert.equal(f.R.plan(input, { value: 'SYNTHETIC_MAJOR' }).status, 'manual', classes);
+    assert.equal((await f.R.verify(input, { value: 'SYNTHETIC_MAJOR' }, { settleMs: 0 })).status, 'unsupported');
+    assert.equal(input.value, 'SYNTHETIC_MAJOR');
+    assert.equal(f.get('neighbor').value, 'KEEP');
+    assert.deepEqual(f.effects, []);
+    assert.equal(f.R.liveSupportClaimed, false);
+  }
+});
+
+test('dropdown query guard preserves ordinary text and actual native select contracts', async t => {
+  const f = boot(`<input id="plain"><div class="Dropdown-container-fixture"><select id="choice">
+    <option value="">请选择</option><option value="MAJOR_CODE">SYNTHETIC_MAJOR</option></select></div>`);
+  t.after(() => f.dom.window.close());
+  for (const [id, value, name] of [['plain', 'SYNTHETIC_TEXT', 'native-text'], ['choice', 'MAJOR_CODE', 'native-select']]) {
+    const element = f.get(id), adapter = f.R.resolve(element), plan = f.R.plan(element, { value });
+    assert.equal(adapter.name, name); assert.equal(plan.status, 'planned');
+    await adapter.write(element, plan, ctx);
+    assert.equal((await adapter.verify(element, plan, { settleMs: 0 })).status, 'success');
+    assert.equal(element.value, value);
+  }
+  assert.equal(f.get('neighbor').value, 'KEEP');
+  assert.equal(f.effects.some(([type]) => type === 'click' || type === 'submit'), false);
+});
+
+test('owned ARIA comboboxes inside generic dropdown shells retain their selection contract', async t => {
+  for (const classes of ['dropdown', 'ui-Dropdown-container-fixture']) {
+    const f = boot(`<div class="${classes}"><input id="query" type="search" role="combobox"
+      aria-autocomplete="list" aria-controls="choices" aria-expanded="false">
+      <div id="choices" role="listbox" hidden></div></div>`);
+    t.after(() => f.dom.window.close());
+    const input = f.get('query'), menu = f.get('choices'), desired = 'SYNTHETIC_MAJOR';
+    input.addEventListener('click', () => { menu.hidden = false; input.setAttribute('aria-expanded', 'true'); });
+    input.addEventListener('input', () => {
+      const option = f.window.document.createElement('div'); option.setAttribute('role', 'option'); option.textContent = desired;
+      option.addEventListener('click', () => { option.setAttribute('aria-selected', 'true'); menu.hidden = true; input.setAttribute('aria-expanded', 'false'); });
+      menu.replaceChildren(option);
+    });
+    const adapter = f.R.resolve(input), plan = f.R.plan(input, { value: desired });
+    assert.equal(adapter.name, 'native-combobox-search'); assert.equal(plan.status, 'planned');
+    await adapter.write(input, plan, ctx);
+    assert.equal((await adapter.verify(input, plan, { settleMs: 0 })).status, 'success');
+    assert.equal(menu.hidden, true); assert.equal(f.get('neighbor').value, 'KEEP');
+  }
+});
+
+test('a retained native text plan cannot verify or write after the input becomes a dropdown query', async t => {
+  const f = boot('<div id="wrapper"><input id="query"></div>');
+  t.after(() => f.dom.window.close());
+  const input = f.get('query'), wrapper = f.get('wrapper'), desired = 'SYNTHETIC_MAJOR';
+  const adapter = f.R.resolve(input), plan = f.R.plan(input, { value: desired });
+  wrapper.className = 'Dropdown-container-fixture'; input.value = desired;
+  assert.notEqual((await adapter.verify(input, plan, { settleMs: 0 })).status, 'success');
+  assert.equal((await adapter.write(input, plan, ctx)).status, 'unsupported');
+  input.value = ''; wrapper.className = '';
+  let checks = 0;
+  await assert.rejects(adapter.write(input, plan, { allowWrite: true, async check() {
+    if (++checks === 2) wrapper.className = 'Dropdown-container-fixture';
+  } }), /control_or_version_changed/u);
+  assert.equal(input.value, ''); assert.deepEqual(f.effects, []);
+  assert.equal(f.get('neighbor').value, 'KEEP');
+});
+
 test('known Vue select names cannot bind sibling controls through a shared field root', t => {
   for (const name of ['ElSelect', 'ASelect', 'iSelect']) {
     for (const [value, type] of [['+86', 'tel'], ['----', 'date']]) {

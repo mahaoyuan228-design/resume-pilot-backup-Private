@@ -87,6 +87,7 @@ function loadCmsFns() {
   globalThis.HTMLInputElement = dom.window.HTMLInputElement;
   globalThis.HTMLTextAreaElement = dom.window.HTMLTextAreaElement;
   globalThis.HTMLSelectElement = dom.window.HTMLSelectElement;
+  globalThis.Node = dom.window.Node;
   globalThis.getComputedStyle = () => ({ display: 'block', visibility: 'visible' });
   globalThis.document = fixtureDocument;
   const RESERVED_TYPES = new Set(['hidden', 'password', 'search', 'submit', 'reset', 'button', 'image', 'checkbox']);
@@ -98,11 +99,11 @@ function loadCmsFns() {
 
 // Run the actual shared label resolver against DOM nodes so selector support,
 // clone/removal behavior and ownership checks stay identical to the engine.
-const labelFunctions = ['treeQueryControl', 'questionOwnsControl', 'cleanQuestion', 'questionText', 'generalSection', 'labelTexts'];
+const labelFunctions = ['treeQueryControl', 'answerWidget', 'questionOwnsControl', 'cleanQuestion', 'questionText', 'generalSection', 'labelTexts'];
 function labelConstants(src) {
-  return ['FORM_ITEM_SELECTOR', 'ITEM_QUESTION_SELECTOR', 'SECTION_SELECTOR']
+  return ['FORM_ITEM_SELECTOR', 'ITEM_QUESTION_SELECTOR', 'SECTION_SELECTOR', 'ANSWER_WIDGET_SELECTOR', 'ANSWER_TEXT_SELECTOR']
     .map(name => {
-      const declaration = src.match(new RegExp(`^  const ${name} = .+;$`, 'm'))?.[0];
+      const declaration = src.match(new RegExp(`^  const ${name} = [\\s\\S]+?;$`, 'm'))?.[0];
       assert.ok(declaration, name);
       return declaration;
     }).join('\n');
@@ -150,7 +151,7 @@ function selectPage({ rows = 1, dedicated = false, duplicateId = '' } = {}) {
     ? { alias: '__cms_basic_education_level', sectionName: '个人基本信息必填', rowContext: 'single' } : null;
   const disabled = () => false;
   const src = fs.readFileSync(path.join(root, 'src/content/engine.js'), 'utf8');
-  const names = ['collect', 'formItemQuestion', ...labelFunctions, 'fieldId', 'profileValue', 'cmsAntV3Answer', 'logicalEntryKey',
+  const names = ['collect', 'singleEducationContext', 'formItemQuestion', ...labelFunctions, 'fieldId', 'profileValue', 'cmsAntV3Answer', 'logicalEntryKey',
     'entrySignature', 'entryScope', 'publicEntry', 'meaningfulCurrent', 'exactOptionText', 'settleUnresolvedEntry', 'fillOwnedContent'];
   const deps = {
     M, cmsDecision, markDuplicateTargets, atsControlTargets: new Map(), atsControlPeers: new Set(),

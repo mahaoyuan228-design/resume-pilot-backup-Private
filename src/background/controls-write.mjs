@@ -13,6 +13,7 @@ export function readControlCandidatesInPage(expectedUrl, timeOrigin) {
   const registry = globalThis.ResumeControls;
   if (registry?.version !== 1 || registry.liveSupportClaimed !== false) throw Error('control_registry_missing');
   const names = new Set(['ivu-select', 'ivu-date', 'ud-select', 'ud-date', 'ud-cascader', 'phoenix-select', 'phoenix-cascader', 'phoenix-date',
+    'el-select', 'antdv1-select', 'el-cascader', 'antdv1-cascader',
     'native-date', 'native-month', 'my97-date', 'my97-datetime', 'antdv1-month',
     'native-time', 'el-time', 'antdv1-time',
     'native-date-range', 'el-date-range', 'antdv1-date-range', 'date-range-pair',
@@ -50,19 +51,20 @@ export function readControlCandidatesInPage(expectedUrl, timeOrigin) {
     // manual L1 path instead of letting the ordinary text writer fill them.
     if (inspection.status === 'manual' || !names.has(inspection.adapter) || !model
       || type !== 'input-mask' && !model.available || model.disabled || model.readonly) continue;
-    // Some TreeSelects render a focusable combobox root and create their
-    // query input only inside the popup. The root is their answer target.
-    if (!element.matches('input,textarea,[contenteditable]') && !['tree-select', 'slider', 'rate', 'transfer'].includes(type)) continue;
-    // A multiple select can own both display and search inputs. Expose one
+    // Flat selects and some TreeSelects render a focusable combobox face
+    // without an input. A confirmed owning component provides its model.
+    if (!element.matches('input,textarea,[contenteditable]') && !['select', 'tree-select', 'slider', 'rate', 'transfer'].includes(type)) continue;
+    // A choice widget can own both display and search inputs. Expose one
     // answer target and its root so ISOLATED cannot collect the peer as a field.
-    const root = ['multi-select', 'date-range', 'tree-select', 'slider', 'rate', 'transfer'].includes(type) ? registry.resolve(element)?.readModel(element).controlRoot : null;
+    const compound = ['select', 'select-search', 'cascader', 'multi-select', 'date-range', 'tree-select', 'slider', 'rate', 'transfer'].includes(type);
+    const root = compound ? registry.resolve(element)?.readModel(element).controlRoot : null;
     if (root && roots.has(root)) continue;
     const rootSelector = root && selectorOf(root);
     // Chips may be inserted before a search input's containing li. A unique
     // input under the confirmed root survives that harmless index change.
     const selector = !['slider', 'rate', 'transfer'].includes(type) && rootSelector && root.querySelectorAll('input:not([type="hidden"])').length === 1
       ? `${rootSelector} input:not([type="hidden"])` : selectorOf(element);
-    if (!selector || ['multi-select', 'date-range', 'tree-select', 'slider', 'rate', 'transfer'].includes(type) && !rootSelector) continue;
+    if (!selector || compound && !rootSelector) continue;
     if (root) roots.add(root);
     candidates.push({ selector, adapter: inspection.adapter, type, ...(rootSelector ? { rootSelector } : {}) });
   }

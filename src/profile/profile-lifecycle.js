@@ -101,16 +101,76 @@ export async function replaceProfileLifecycle(storage,mutation,replace,{cryptoIm
     return {result,epoch,unknownOperationsPreserved:Object.keys(audits).length};
   },{...options,cryptoImpl});
 }
+
+// Product-internal, top-frame CMS trial projection. Never exposed to extension
+// documents or accepted from a caller-supplied profile/answer. No storage writes.
+const CMS_ROW_D_PAGE='https://wecruit.hotjob.cn/SU629dbc0c0dcad452299bc0f7/pb/resumeOperation.html';
+const CMS_ROW_D_QUESTIONS=Object.freeze({expectedWorkNature:'期望工作性质',
+  researchInterests:'如应聘研究发展中心行业研究类岗位请勾选（建议仅勾选3~5项）'});
+const own=(value,key)=>Object.prototype.hasOwnProperty.call(value,key);
+const plain=value=>!!value&&typeof value==='object'&&!Array.isArray(value)
+  &&[Object.prototype,null].includes(Object.getPrototypeOf(value));
+const readyTrialPair=record=>plain(record)&&own(record,'resumeProfile')&&own(record,PROFILE_EPOCH_KEY)
+  &&plain(record.resumeProfile)&&record.resumeProfile.schemaVersion===1
+  &&plain(record[PROFILE_EPOCH_KEY])&&record[PROFILE_EPOCH_KEY].version===1
+  &&record[PROFILE_EPOCH_KEY].state==='ready'&&record[PROFILE_EPOCH_KEY].epoch!=='legacy'
+  &&validEpoch(record[PROFILE_EPOCH_KEY].epoch);
+async function boundCmsRowDProjection(storage,binding,target,options){
+  if(!own(CMS_ROW_D_QUESTIONS,target)||!validBinding(binding)||binding.epoch==='legacy')fail('profile_trial_request_invalid');
+  const pair=await storage.get(['resumeProfile',PROFILE_EPOCH_KEY]);
+  if(!readyTrialPair(pair))fail('profile_trial_not_ready');
+  await assertProfileBinding(storage,binding,options);
+  if(pair[PROFILE_EPOCH_KEY].epoch!==binding.epoch
+    ||await canonicalProfileHash(pair.resumeProfile,options.cryptoImpl)!==binding.profileHash)fail('profile_binding_changed');
+  const profile=pair.resumeProfile,question=CMS_ROW_D_QUESTIONS[target],path=`customAnswers.${question}`;
+  if(!Array.isArray(profile.customFacts)||profile.customFacts.length>100
+    ||!plain(profile.customAnswers)||!Array.isArray(profile.confirmedFields)||profile.confirmedFields.length>1000)
+    fail('profile_trial_fact_invalid');
+  // Match confirmedCustomAnswer's NFKC + ResumeMatcher.normalize equivalence
+  // before reducing the full profile; otherwise projection could hide ambiguity.
+  const normal=value=>typeof value!=='string'?'':target==='expectedWorkNature'
+    ?value.normalize('NFKC').replace(/\(必填\)|（必填）|\(选填\)|（选填）/g,'')
+      .replace(/[＊*：:！!？?，,。\.\s\u00a0]/g,'').trim().toLocaleLowerCase()
+    :value.normalize('NFKC').replace(/[＊*：:\s]/gu,'');
+  const facts=profile.customFacts.filter(fact=>normal(fact?.question)===normal(question));
+  if(facts.length!==1)fail('profile_trial_fact_not_unique');
+  const saved=facts[0];
+  if(saved.question!==question||saved.sitePageUrl!==CMS_ROW_D_PAGE||normal(saved.sectionName)!==normal('求职意向必填')
+    ||saved.rowContext!=='single'||!profile.confirmedFields.includes(path)
+    ||typeof saved.answer!=='string'||!saved.answer.trim()||saved.answer.length>4000
+    ||!own(profile.customAnswers,question)||saved.answer!==profile.customAnswers[question])fail('profile_trial_fact_invalid');
+  // Existing engine resolvers validate the answer format/option semantics later.
+  // Only this one confirmed fact enters collect; no full profile crosses IPC.
+  const projection={schemaVersion:1,customFacts:[{question,answer:saved.answer,sitePageUrl:CMS_ROW_D_PAGE,
+    sectionName:saved.sectionName,rowContext:'single'}],customAnswers:{[question]:saved.answer},confirmedFields:[path]};
+  await assertProfileBinding(storage,binding,options);
+  const after=await storage.get(['resumeProfile',PROFILE_EPOCH_KEY]);
+  if(!readyTrialPair(after)||after[PROFILE_EPOCH_KEY].epoch!==binding.epoch
+    ||await canonicalProfileHash(after.resumeProfile,options.cryptoImpl)!==binding.profileHash)fail('profile_binding_changed');
+  return projection;
+}
+
 export function installProfileBindingBridge({api=globalThis.chrome,...options}={}){
   const listener=(message,sender,sendResponse)=>{
-    if(message?.type!=='RESUME_PROFILE_BINDING_CHECK')return false;
+    const trial=message?.type==='RESUME_CMS_ROW_D_TRIAL_FACT';
+    if(!trial&&message?.type!=='RESUME_PROFILE_BINDING_CHECK')return false;
     if(sender?.id!==api.runtime.id){sendResponse({allowed:false,reason:'wrong_sender'});return false;}
     (async()=>{
+      if(trial&&(!sender.tab||Object.keys(message).sort().join('|')!=='profileBinding|target|type'))throw Error('profile_trial_request_invalid');
       if(sender.tab){
         let url;try{url=new URL(sender.url);}catch{throw Error('wrong_sender');}
         if(sender.frameId!==0||url.protocol!=='https:'||url.username||url.password
           ||!Number.isSafeInteger(sender.tab.id)||sender.tab.url!==sender.url)throw Error('wrong_sender');
         const tab=await api.tabs.get(sender.tab.id);if(tab?.url!==sender.url)throw Error('wrong_sender');
+        if(trial&&sender.url!==CMS_ROW_D_PAGE)throw Error('wrong_sender');
+      }
+      if(trial){
+        const projection=await boundCmsRowDProjection(api.storage.local,message.profileBinding,message.target,options);
+        const current=await api.tabs.get(sender.tab.id);
+        if(current?.url!==CMS_ROW_D_PAGE||sender.url!==current.url)throw Error('wrong_sender');
+        await assertProfileBinding(api.storage.local,message.profileBinding,options);
+        if((await api.tabs.get(sender.tab.id))?.url!==CMS_ROW_D_PAGE)throw Error('wrong_sender');
+        return {allowed:true,projection};
       }
       await assertProfileBinding(api.storage.local,message.profileBinding,options);return {allowed:true};
     })().then(sendResponse,error=>sendResponse({allowed:false,reason:/^profile_[a-z_]+$/u.test(error?.message||'')?error.message:'wrong_sender'}));return true;

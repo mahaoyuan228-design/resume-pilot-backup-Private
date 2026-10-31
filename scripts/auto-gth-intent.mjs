@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // One-shot: optional open GTH edit URL, reload SW, run GTH_INTENT_AUTO, save JSON.
-// Default mode=readiness. Set MODE=fill for fill-without-save. Never saves. Five intent fields via GTH_INTENT_TEST only.
+// Default mode=readiness. MODE=fill asks the background runner. The shipped pack
+// fails that fill closed before any page script. Never saves.
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';

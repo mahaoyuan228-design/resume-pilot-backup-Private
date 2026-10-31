@@ -1,0 +1,206 @@
+{
+  "source": "Structural excerpt of the 2026-10-23 hotjob pb resumeOperation probe for education-history 学校 and 城市. Classes, labels, and captured display tokens only. A fixture is not a live support claim.",
+  "page": {
+    "hostname": "wecruit.hotjob.cn",
+    "pathPattern": "/SU[0-9A-Za-z]{8,64}/pb/resumeOperation.html",
+    "samplePath": "/SU629dbc0c0dcad452299bc0f7/pb/resumeOperation.html",
+    "rootClass": "resume-operation-wrap",
+    "contentClass": "resume-content-wrap",
+    "childrenClass": "ant-form-item-children",
+    "itemClass": "ant-row ant-form-item",
+    "hasAntDesign": true,
+    "hasElForm": false,
+    "buttonLabels": ["保存", "返回"],
+    "forbiddenButtons": ["保存", "提交", "投递", "删除", "下一步", "返回", "确定"],
+    "addEducation": "添加新的教育经历"
+  },
+  "school": {
+    "label": "学校",
+    "kind": "select",
+    "controlClass": "ant-select ant-select-enabled ant-select-allow-clear",
+    "triggerClass": "ant-select-search__field",
+    "dropdownClass": "ant-select-dropdown ant-select-dropdown--single ant-select-dropdown-placement-bottomLeft",
+    "openClass": "ant-select ant-select-open ant-select-focused ant-select-enabled",
+    "openClassNote": "学校 was not individually opened. Dropdown class and ant-select-search__field are the same page's flat ant-select probes (国籍/地区, 民族, 婚姻状况, 政治面貌). Open/focused/enabled is the same page's 现居住地 click.",
+    "valueSample": "悉尼大学",
+    "optionsSample": ["悉尼大学"],
+    "optionsNote": "Interactive probe did not open 学校. The only captured display token is valueSample. clickOpens is select_dropdown.",
+    "clickOpens": "select_dropdown",
+    "cancel": "Escape",
+    "selectorClasses": "ant-row ant-form-item | label=学校 | ant-select ant-select-enabled ant-select-allow-clear",
+    "childrenTextSample": "请填写学校悉尼大学",
+    "childrenTextNote": "editAffordances text on span.ant-form-item-children. The inventory control remains the allow-clear ant-select. Read .ant-select-selection-selected-value. The concatenated children text is not an option list and is not the basic-block 毕业院校 row.",
+    "liveReadback": {
+      "note": "Same-page flat select: a closed .ant-select-search__field can have no client rect while .ant-select-selection[role=combobox] is visible. Read .ant-select-selection-selected-value, or strip a 请选择 plus the label placeholder.",
+      "selectedValueClass": "ant-select-selection-selected-value",
+      "placeholderClass": "ant-select-selection__placeholder",
+      "placeholderPrefix": "请选择",
+      "faceClass": "ant-select-selection",
+      "faceRole": "combobox"
+    },
+    "hiddenTextPartner": {
+      "note": "Live 2026-10-23 education-history 学校 is two ant-form-item rows. One is the visible allow-clear ant-select. The other has style display:none, one ant-input type=text, placeholder 请填写学校, and no ant-select. The hidden row is not a value source and is not written. Live ant-col wrappers are not part of locate. Not a support claim.",
+      "itemStyle": "display: none",
+      "label": "学校",
+      "placeholder": "请填写学校",
+      "controlClass": "ant-input",
+      "inputType": "text",
+      "hasSelect": false
+    }
+  },
+  "city": {
+    "label": "城市",
+    "kind": "cascader",
+    "controlClass": "ant-select ant-select-enabled",
+    "openClass": "ant-select ant-select-open ant-select-focused ant-select-enabled",
+    "openClassNote": "城市 was not opened. Open/focused/enabled is the same page's 现居住地 click, already required by the region cascader contract.",
+    "menuClass": "cascader-plugins-wrap",
+    "menuClassNote": "selectorClasses name ant-select ant-select-enabled and clickOpens is cascader. The wrap class is the same page's 现居住地 cascader. It was not repeated as a separate token on this row.",
+    "valueSample": "北京市",
+    "optionsSample": ["北京市"],
+    "optionsNote": "The 城市 menu was not opened. The only captured display token is valueSample. Do not copy the 现居住地 option list onto this row.",
+    "pageTextPair": "北京市 北京市",
+    "clickOpens": "cascader",
+    "cancel": "Escape",
+    "selectorClasses": "ant-row ant-form-item | label=城市 | ant-select ant-select-enabled",
+    "livePair": {
+      "note": "Page text shows the city token twice, the same dual-face shape as 现居住地 and 意向工作地点. Accept two .ant-select nodes only when both displays match and are non-empty. A different display, a hidden or disabled twin, allow-clear, or any count other than 1 or 2 fails closed.",
+      "selectCount": 2,
+      "sameDisplay": "北京市",
+      "selectedValueClass": "ant-select-selection-selected-value",
+      "placeholderClass": "ant-select-selection__placeholder",
+      "placeholderPrefix": "请选择"
+    }
+  },
+  "section": {
+    "hint": "从最高学历开始填写，填写至高中",
+    "anchor": "从最高学历开始填写",
+    "note": "Page text inside 教育经历, before 开始时间 / 学校 / 城市. sectionTitles was empty. The phrase is the textSample anchor, not a support claim. 个人基本信息 学位/学历/专业名称 sit before this phrase."
+  },
+  "degree": {
+    "label": "学位",
+    "kind": "select",
+    "controlClass": "ant-select ant-select-enabled ant-select-allow-clear",
+    "triggerClass": "ant-select-search__field",
+    "dropdownClass": "ant-select-dropdown ant-select-dropdown--single ant-select-dropdown-placement-bottomLeft",
+    "valueSample": "学士",
+    "optionsSample": ["学士"],
+    "optionsNote": "The 学位 menu was not opened. The education-history page text is 学士. The 个人基本信息 page text is 硕士 and is not an option on this row.",
+    "clickOpens": "select_dropdown",
+    "cancel": "Escape",
+    "selectorClasses": "ant-row ant-form-item | label=学位 | ant-select ant-select-enabled ant-select-allow-clear"
+  },
+  "level": {
+    "label": "学历",
+    "kind": "select",
+    "controlClass": "ant-select ant-select-enabled ant-select-allow-clear",
+    "triggerClass": "ant-select-search__field",
+    "dropdownClass": "ant-select-dropdown ant-select-dropdown--single ant-select-dropdown-placement-bottomLeft",
+    "valueSample": "本科",
+    "optionsSample": ["本科"],
+    "optionsNote": "The 学历 menu was not opened. The education-history page text is 本科. The 个人基本信息 page text is 硕士研究生 and is not an option on this row.",
+    "clickOpens": "select_dropdown",
+    "cancel": "Escape",
+    "selectorClasses": "ant-row ant-form-item | label=学历 | ant-select ant-select-enabled ant-select-allow-clear"
+  },
+  "major": {
+    "label": "专业名称",
+    "kind": "text",
+    "controlClass": "ant-input",
+    "inputType": "text",
+    "placeholder": "请填写专业名称",
+    "valueSample": "Economics Major, Financial Economics Minor",
+    "selectorClasses": "ant-row ant-form-item | label=专业名称 | ant-input | ph=请填写专业名称",
+    "note": "Education-history valueSample. The 个人基本信息 JSON valueSample is 金融学. Internal spaces are part of the probed text."
+  },
+  "rank": {
+    "label": "专业排名",
+    "kind": "select",
+    "controlClass": "ant-select ant-select-enabled ant-select-allow-clear",
+    "triggerClass": "ant-select-search__field",
+    "dropdownClass": "ant-select-dropdown ant-select-dropdown--single ant-select-dropdown-placement-bottomLeft",
+    "valueSample": "无排名",
+    "optionsSample": ["无排名"],
+    "optionsNote": "The 专业排名 menu was not opened. The only captured display token is valueSample.",
+    "clickOpens": "select_dropdown",
+    "cancel": "Escape",
+    "selectorClasses": "ant-row ant-form-item | label=专业排名 | ant-select ant-select-enabled ant-select-allow-clear"
+  },
+  "text": {
+    "controlClass": "ant-input",
+    "inputType": "text"
+  },
+  "outOfScope": {
+    "note": "Nearby rows this module must not fill. Basic 学位/学历/专业名称 are the 个人基本信息 page-text values and must stay put. 专业描述 stays empty and is not filled. Education-history 学位/学历/专业名称/专业排名 are degree, level, major, and rank.",
+    "graduation": {
+      "label": "毕业院校",
+      "token": "GRAD_KEEP"
+    },
+    "basicDegree": {
+      "label": "学位",
+      "token": "硕士",
+      "note": "个人基本信息 page text. Not the education-history 学士 row."
+    },
+    "basicLevel": {
+      "label": "学历",
+      "token": "硕士研究生",
+      "note": "个人基本信息 page text. Not the education-history 本科 row."
+    },
+    "basicMajor": {
+      "label": "专业名称",
+      "placeholder": "请填写专业名称",
+      "token": "金融学",
+      "note": "JSON valueSample on the 个人基本信息 专业名称 row. Not the education-history Economics string."
+    },
+    "historyDegree": {
+      "label": "学位",
+      "token": "学士",
+      "note": "Label alias of degree. The rendered education-history control is degree."
+    },
+    "historyLevel": {
+      "label": "学历",
+      "token": "本科",
+      "note": "Label alias of level. The rendered education-history control is level."
+    },
+    "historyMajor": {
+      "label": "专业名称",
+      "placeholder": "请填写专业名称",
+      "token": "Economics Major, Financial Economics Minor",
+      "note": "Label alias of major. The rendered education-history control is major."
+    },
+    "description": {
+      "label": "专业描述",
+      "placeholder": "请填写专业描述",
+      "token": "",
+      "note": "Probe valueSample is empty. Do not invent a description to fill."
+    },
+    "rank": {
+      "label": "专业排名",
+      "token": "无排名",
+      "note": "Label alias of rank. The rendered education-history control is rank. Do not treat this as a second row."
+    },
+    "residence": {
+      "label": "现居住地",
+      "controlClass": "ant-select ant-select-enabled",
+      "menuClass": "cascader-plugins-wrap",
+      "token": "RESIDENCE_KEEP"
+    },
+    "origin": {
+      "label": "籍贯",
+      "token": "ORIGIN_KEEP"
+    },
+    "start": {
+      "label": "开始时间",
+      "controlClass": "ant-calendar-picker-input ant-input",
+      "token": "START_KEEP"
+    },
+    "email": {
+      "label": "电子邮箱（请尽量使用163、qq等常见邮箱，尽量不要用gmail、hotmail等境外邮箱或学校邮箱）",
+      "token": "EMAIL_KEEP",
+      "note": "The label contains 学校 and is not the education-history row."
+    },
+    "photo": {
+      "label": "照片"
+    }
+  }
+}

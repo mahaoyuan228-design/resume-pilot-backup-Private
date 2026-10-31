@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <title>Beisen-2022 ambiguous/missing fixture (offline · provisional classes)</title>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 0; color: #212121; }
+    .bs-form-item { margin: 1rem 0; }
+    .bs-form-item-label { display: block; font-weight: 600; margin-bottom: 0.25rem; }
+    .bs-input { width: 100%; padding: 0.4rem 0.5rem; border: 1px solid #ccc; box-sizing: border-box; }
+  </style>
+</head>
+<body>
+  <div id="bsMain">
+    <p>Offline fail-closed case for siteId beisen-2022. Same provisional
+      <code>.bs-form-item</code> contract as the ready fixture. Duplicate 姓名 and a missing 邮箱.
+      Not a live selector harvest.</p>
+
+    <div class="bs-form-item" data-field="姓名">
+      <label class="bs-form-item-label">姓名</label>
+      <div class="bs-form-item-control">
+        <input class="bs-input" type="text" name="fullName-a" value="KEEP-A" />
+      </div>
+    </div>
+
+    <div class="bs-form-item" data-field="姓名-dup">
+      <label class="bs-form-item-label">姓名</label>
+      <div class="bs-form-item-control">
+        <input class="bs-input" type="text" name="fullName-b" value="KEEP-B" />
+      </div>
+    </div>
+
+    <div class="bs-form-item" data-field="手机号码">
+      <label class="bs-form-item-label">手机号码</label>
+      <div class="bs-form-item-control">
+        <input class="bs-input" type="tel" name="mobile" value="KEEP-PHONE" />
+      </div>
+    </div>
+
+    <button type="button" id="save-btn">保存</button>
+    <button type="button" id="submit-btn">提交</button>
+    <button type="button" id="deliver-btn">投递</button>
+  </div>
+</body>
+</html>

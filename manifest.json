@@ -6,12 +6,24 @@
   "permissions": [
     "activeTab",
     "scripting",
-    "storage"
+    "storage",
+    "tabs",
+    "declarativeNetRequest",
+    "declarativeNetRequestFeedback"
   ],
   "host_permissions": [
     "https://hr.gtht.com/*",
-    "https://wecruit.hotjob.cn/*"
+    "https://wecruit.hotjob.cn/*",
+    "https://careers.citics.com/*",
+    "https://*.jobs.feishu.cn/*",
+    "https://jobs.bytedance.com/*",
+    "https://*.jobs.f.mioffice.cn/*",
+    "https://jobs.f.mioffice.cn/*",
+    "https://*.zhiye.com/*",
+    "https://*.mokahr.com/*",
+    "https://career.cmbchina.com/*"
   ],
+  "optional_host_permissions": ["http://*/*", "https://*/*"],
   "background": {
     "service_worker": "src/background/worker.mjs",
     "type": "module"

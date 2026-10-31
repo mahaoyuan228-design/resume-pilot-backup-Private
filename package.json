@@ -1,0 +1,25 @@
+{
+  "name": "resume-pilot",
+  "private": true,
+  "scripts": {
+    "test:zoo": "playwright test --config tests/zoo/playwright.config.mjs",
+    "zoo:har": "node scripts/zoo-har.mjs",
+    "test:paid-qa": "node --test tests/paid-qa-runner.test.mjs",
+    "test:paid-rebuild": "node --test tests/build-paid-rebuild.test.mjs tests/guard-worker-auto-runners.test.mjs tests/product-paths-whitelist.test.mjs tests/pack-side-effect-import.test.mjs",
+    "test:windows-smoke": "npm run test:paid-rebuild && node --test tests/install-offline.test.mjs tests/build-offline-package.test.mjs tests/license-activation-code.test.mjs tests/license-offline-activation.test.mjs tests/license-signed-entitlement.test.mjs tests/license-entitlement-helpers.test.mjs tests/license-gate-fail-closed.test.mjs \"tests/l1-*.test.mjs\"",
+    "test:live-harvest": "node --test tests/live-harvest-readonly.test.mjs tests/live-harvest-fixtures.test.mjs tests/live-harvest-timeout.test.mjs"
+  },
+  "dependencies": {
+    "ws": "^8.18.3"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.64.1",
+    "ant-design-vue": "1.7.8",
+    "element-plus": "2.14.7",
+    "element-ui": "2.15.14",
+    "iview": "3.5.4",
+    "jsdom": "^26.1.0",
+    "vue": "2.7.16",
+    "vue3": "npm:vue@3.5.44"
+  }
+}

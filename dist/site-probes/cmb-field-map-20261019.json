@@ -1,0 +1,43 @@
+{
+  "probeDate": "2026-10-19",
+  "timezone": "Asia/Shanghai",
+  "href": "https://career.cmbchina.com/center/resume",
+  "siteIdProposed": "cmb",
+  "stack": "react+antd",
+  "notHotjob": true,
+  "cdpVueFingerprintFalsePositive": true,
+  "fieldCountsCdp": {
+    "inputs": 71,
+    "textareas": 5,
+    "buttons": 11,
+    "selects": 0
+  },
+  "personalLabels": [
+    "姓名",
+    "证件类型",
+    "证件号",
+    "性别",
+    "出生日期",
+    "手机号",
+    "邮箱",
+    "政治面貌",
+    "民族",
+    "体重",
+    "身高",
+    "生源地",
+    "出生地",
+    "招聘信息来源",
+    "面试期望城市",
+    "婚姻状况",
+    "现居住地",
+    "是否参加过正式工作"
+  ],
+  "firstSlice": [
+    "姓名",
+    "手机号",
+    "邮箱"
+  ],
+  "neverSave": true,
+  "saveLocksNameAndId": true,
+  "customerReady": false
+}

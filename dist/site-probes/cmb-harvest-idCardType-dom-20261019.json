@@ -1,0 +1,167 @@
+{
+  "ok": true,
+  "neverSave": true,
+  "url": "https://career.cmbchina.com/center/resume",
+  "harvestedAt": "2026-10-19T04:42:18.051Z",
+  "field": {
+    "ok": true,
+    "hitLabel": {
+      "text": "证件类型",
+      "forId": "resume_basicInfo_idCardType"
+    },
+    "byId": {
+      "id": "resume_basicInfo_idCardType",
+      "controls": "resume_basicInfo_idCardType_list"
+    },
+    "inputs": [
+      {
+        "id": "resume_basicInfo_idCardType",
+        "name": null,
+        "aria": "resume_basicInfo_idCardType_list",
+        "placeholder": null,
+        "className": "ant-select-selection-search-input"
+      },
+      {
+        "id": "resume_basicInfo_idCard",
+        "name": null,
+        "aria": null,
+        "placeholder": "请输入",
+        "className": "ant-input ant-input-status-success"
+      },
+      {
+        "id": "resume_basicInfo_politicalAffinity",
+        "name": null,
+        "aria": "resume_basicInfo_politicalAffinity_list",
+        "placeholder": null,
+        "className": "ant-select-selection-search-input"
+      },
+      {
+        "id": "resume_basicInfo_nation",
+        "name": null,
+        "aria": "resume_basicInfo_nation_list",
+        "placeholder": null,
+        "className": "ant-select-selection-search-input"
+      },
+      {
+        "id": "rc_select_13",
+        "name": null,
+        "aria": "rc_select_13_list",
+        "placeholder": null,
+        "className": "ant-select-selection-search-input"
+      },
+      {
+        "id": "rc_select_14",
+        "name": null,
+        "aria": "rc_select_14_list",
+        "placeholder": null,
+        "className": "ant-select-selection-search-input"
+      },
+      {
+        "id": "resume_basicInfo_channelType",
+        "name": null,
+        "aria": "resume_basicInfo_channelType_list",
+        "placeholder": null,
+        "className": "ant-select-selection-search-input"
+      },
+      {
+        "id": "resume_basicInfo_expectedInterviewCity",
+        "name": null,
+        "aria": "resume_basicInfo_expectedInterviewCity_list",
+        "placeholder": null,
+        "className": "ant-select-selection-search-input"
+      },
+      {
+        "id": "resume_basicInfo_maritalStatus",
+        "name": null,
+        "aria": "resume_basicInfo_maritalStatus_list",
+        "placeholder": null,
+        "className": "ant-select-selection-search-input"
+      },
+      {
+        "id": "resume_educationHistoryList_0_educationLevelCode",
+        "name": null,
+        "aria": "resume_educationHistoryList_0_educationLevelCode_list",
+        "placeholder": null,
+        "className": "ant-select-selection-search-input"
+      },
+      {
+        "id": "resume_familyList_0_relationship",
+        "name": null,
+        "aria": "resume_familyList_0_relationship_list",
+        "placeholder": null,
+        "className": "ant-select-selection-search-input"
+      },
+      {
+        "id": "rc_select_21",
+        "name": null,
+        "aria": "rc_select_21_list",
+        "placeholder": null,
+        "className": "ant-select-selection-search-input"
+      },
+      {
+        "id": "resume_familyList_1_relationship",
+        "name": null,
+        "aria": "resume_familyList_1_relationship_list",
+        "placeholder": null,
+        "className": "ant-select-selection-search-input"
+      },
+      {
+        "id": "rc_select_23",
+        "name": null,
+        "aria": "rc_select_23_list",
+        "placeholder": null,
+        "className": "ant-select-selection-search-input"
+      },
+      {
+        "id": "resume_skill_0_englishLevel",
+        "name": null,
+        "aria": "resume_skill_0_englishLevel_list",
+        "placeholder": null,
+        "className": "ant-select-selection-search-input"
+      },
+      {
+        "id": "resume_awardList_0_awardType",
+        "name": null,
+        "aria": "resume_awardList_0_awardType_list",
+        "placeholder": null,
+        "className": "ant-select-selection-search-input"
+      },
+      {
+        "id": "resume_awardList_0_awardLevel",
+        "name": null,
+        "aria": "resume_awardList_0_awardLevel_list",
+        "placeholder": null,
+        "className": "ant-select-selection-search-input"
+      }
+    ],
+    "scoped": {
+      "label": "证件类型",
+      "inputId": "resume_basicInfo_idCardType",
+      "listId": "resume_basicInfo_idCardType_list",
+      "selectClass": "ant-select ant-select-in-form-item ant-select-status-success ant-select-single ant-select-allow-clear ant-select-show-arrow",
+      "html": "<div class=\"ant-form-item form-item ant-form-item-has-success\"><div class=\"ant-row ant-form-item-row\"><div class=\"ant-col ant-form-item-label\"><label for=\"resume_basicInfo_idCardType\" class=\"ant-form-item-required\" title=\"\">证件类型<span role=\"img\" aria-label=\"question-circle\" rev=\"[object Object]\" class=\"anticon anticon-question-circle ques-tooltips\"><svg viewBox=\"64 64 896 896\" focusable=\"false\" data-icon=\"question-circle\" width=\"1em\" height=\"1em\" fill=\"currentColor\" aria-hidden=\"true\"><path d=\"M5"
+    },
+    "allLabels": [
+      {
+        "text": "证件类型",
+        "forId": "resume_basicInfo_idCardType"
+      },
+      {
+        "text": "证件号",
+        "forId": "resume_basicInfo_idCard"
+      },
+      {
+        "text": "关系类型",
+        "forId": "resume_familyList_0_relationship"
+      },
+      {
+        "text": "关系类型",
+        "forId": "resume_familyList_1_relationship"
+      },
+      {
+        "text": "荣誉类型",
+        "forId": "resume_awardList_0_awardType"
+      }
+    ]
+  }
+}

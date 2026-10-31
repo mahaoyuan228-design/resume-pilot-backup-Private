@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Offline generic ratings</title>
+  <link id="rate-ant-css" rel="stylesheet" href="/vendor/antd.css">
+  <link id="rate-element-css" rel="stylesheet" href="/vendor/element.css">
+  <link id="rate-plus-css" rel="stylesheet" href="/vendor/element-plus.css">
+  <link rel="stylesheet" href="/fixtures/zoo.css">
+  <style>
+    .rate-row { margin: 20px 0; min-height: 36px; }
+    .rate-row label { display: block; margin-bottom: 6px; }
+    .aria-rating { display: inline-flex; color: #d97706; font-size: 28px; }
+    .aria-rating > span { display: inline-block; width: 36px; cursor: pointer; }
+    .aria-rating > span[aria-selected="false"] { color: #9ca3af; }
+  </style>
+</head>
+<body>
+  <aside>Disposable ratings; Never-Save; liveSupportClaimed=false</aside>
+  <form id="rate-form">
+    <main id="app"></main>
+    <input id="neighbor" value="ZOO_NEIGHBOR_KEEP">
+    <input id="disabled-neighbor" value="ZOO_DISABLED_KEEP" disabled>
+    <div class="safety-buttons"><button type="button">保存</button><button type="button">提交</button><button type="button">下一步</button><button type="button">投递</button><button type="button">删除</button></div>
+  </form>
+  <script src="/vendor/vue.js"></script>
+  <script src="/vendor/moment.js"></script>
+  <script src="/vendor/antd.js"></script>
+  <script src="/vendor/element.js"></script>
+  <script>window.ZooVue2 = Vue;</script>
+  <script src="/vendor/vue3.js"></script>
+  <script src="/vendor/element-plus.js"></script>
+  <script src="/fixtures/rate.js"></script>
+</body>
+</html>

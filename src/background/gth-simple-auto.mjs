@@ -1,13 +1,21 @@
+import {appendAutoAdvisory as recordAutoAdvisory} from './auto-form-readiness.mjs';
 // GTH 职业技能与特长 auto (mirror GTH_BASIC_AUTO). Default: readiness.
 // Fill-without-save optional. Never clicks Save/Cancel/submit.
+// Ready only with a confirmed customAnswer and one matching customFact for
+// this page. Missing values fail closed. Nothing is invented.
+// liveSupportClaimed stays false. This path does not claim the site is supported.
+// Fill ok is true only after a settled readback. A Save/submit/delete or
+// savedOnSite/submitted claim is kept and fails closed.
 import {captureProfileBinding,assertProfileBinding,canonicalProfileHash,
   dispatchBoundSource,withProfileBinding} from '../profile/profile-lifecycle.js';
-import {evaluateGthSavePolicy,assertAutoNeverAttemptedSave} from './gth-save-policy.mjs';
+import {evaluateGthSavePolicy,assertAutoNeverAttemptedSave,gthAutoSiteClaims,gthAutoSiteClaimed} from './gth-save-policy.mjs';
+import {assessGthSkillsFill,shippedGthSkillsFill} from './gth-open-fills.mjs';
 
 const PAGE='https://hr.gtht.com/resume/edit/',ORIGIN='https://hr.gtht.com';
 const SECTION='职业技能与特长';
 const TITLES=['基本信息','教育经历','求职意向','工作经验','职业技能与特长','附件简历','其他信息'];
 const fail=reason=>{throw Error(reason);};
+const newRequestId=()=>`${Date.now()}-${Math.random().toString(36).slice(2,10)}`;
 const safe=error=>{const value=typeof error==='string'?error:(error?.message||'');return typeof value==='string'&&/^[a-z0-9_]{2,100}$/u.test(value)?value:'gth_simple_auto_failed';};
 const sleep=ms=>new Promise(done=>setTimeout(done,ms));
 
@@ -46,15 +54,39 @@ function probePageFunc(expectedTitles){
     ...(otherForms.length?{warning:'gth_other_section_editor_open'}:{})};
 }
 
+function matchingFact(profile,answer){
+  const facts=Array.isArray(profile?.customFacts)?profile.customFacts:[];
+  const matched=facts.filter(item=>item?.question===SECTION);
+  const fact=matched.length===1?matched[0]:null;
+  if(!fact||fact.answer!==answer||fact.sitePageUrl!==PAGE||fact.sectionName!==SECTION||fact.rowContext!=='none')return null;
+  return fact;
+}
 function skillsSource(profile){
   const answer=typeof profile?.customAnswers?.[SECTION]==='string'?profile.customAnswers[SECTION]:'';
+  const hasAnswer=!!answer.trim();
+  const fact=hasAnswer?matchingFact(profile,answer):null;
   const confirmed=Array.isArray(profile?.confirmedFields)&&profile.confirmedFields.includes(`customAnswers.${SECTION}`);
   return {
     section:SECTION,
-    hasAnswer:!!answer.trim(),
+    path:`customAnswers.${SECTION}`,
+    hasAnswer,
     answerLength:answer.trim().length,
+    factOk:!!fact,
     confirmed:confirmed===true,
-    ready:!!answer.trim()&&confirmed===true
+    ready:hasAnswer&&!!fact&&confirmed===true
+  };
+}
+function skillsFillProfile(profile){
+  const source=skillsSource(profile);
+  if(!source.ready)fail(source.hasAnswer?'profile_fact_unconfirmed':'missing_profile_value');
+  const answer=profile.customAnswers[SECTION];
+  const fact=matchingFact(profile,answer);
+  return {
+    customAnswers:{[SECTION]:answer},
+    confirmedFields:[`customAnswers.${SECTION}`],
+    customFacts:[{
+      question:SECTION,answer:fact.answer,sitePageUrl:fact.sitePageUrl,sectionName:fact.sectionName,rowContext:fact.rowContext
+    }]
   };
 }
 
@@ -76,42 +108,14 @@ export function createGthSimpleAutoRunner({api=globalThis.chrome,verifyBeforeFil
     if(verifyBeforeFill)try{await bounded(verifyBeforeFill,15000);}catch{fail('license_required');}
   };
 
-  async function findGthTab(excludeTabId=null,{openIfMissing=false}={}){
-    const tabs=await api.tabs.query({});
-    const exact=tabs.filter(tab=>tab.url===PAGE&&tab.id!==excludeTabId);
-    if(exact.length===1)return {tab:exact[0],kind:'exact'};
-    if(exact.length>1){
-      const ranked=[...exact].sort((a,b)=>((b.lastAccessed||0)-(a.lastAccessed||0))||((b.id||0)-(a.id||0)));
-      return {tab:ranked.find(tab=>tab.active)||ranked[0],kind:'exact_multi'};
-    }
-    const related=tabs.filter(tab=>typeof tab.url==='string'&&tab.id!==excludeTabId&&/gtht\.com/u.test(tab.url));
-    if(related.length){
-      const err=Error('gth_simple_login_or_wrong_page');
-      err.helpUrl=related[0].url;
-      err.helpReason='GTH resume/edit/ not open; related tab may need login/SSO/QR';
-      throw err;
-    }
-    if(openIfMissing){
-      const created=await api.tabs.create({url:PAGE,active:true});
-      for(let i=0;i<30;i+=1){
-        await sleep(500);
-        const tab=await api.tabs.get(created.id);
-        if(tab.url===PAGE&&tab.status==='complete')return {tab,kind:'opened'};
-        if(typeof tab.url==='string'&&tab.url.includes('gtht.com')&&tab.url!==PAGE){
-          const err=Error('gth_simple_login_or_wrong_page');
-          err.helpUrl=tab.url;
-          err.helpReason='Opened GTH URL redirected away from resume/edit/; login/SSO likely required';
-          throw err;
-        }
-      }
-      const tab=await api.tabs.get(created.id);
-      if(tab.url===PAGE)return {tab,kind:'opened_partial'};
-      const err=Error('gth_simple_login_or_wrong_page');
-      err.helpUrl=tab.url||PAGE;
-      err.helpReason='Opened GTH edit URL but page did not settle on resume/edit/';
-      throw err;
-    }
-    fail('gth_simple_tab_missing');
+  async function findGthTab(excludeTabId = null) {
+    // The user opens the editor. Never navigate to an edit/new-resume page.
+    const tabs = await api.tabs.query({});
+    const candidates = tabs.filter(tab => tab.id !== excludeTabId && typeof tab.url==='string' && tab.url.startsWith(`${ORIGIN}/`));
+    const ranked = [...candidates].sort((a, b) => ((b.lastAccessed || 0) - (a.lastAccessed || 0)) || ((b.id || 0) - (a.id || 0)));
+    const tab = ranked.find(row => row.active) || ranked[0];
+    if (!tab) fail('gth_simple_tab_missing');
+    return { tab, kind: candidates.length > 1 ? 'exact_multi' : 'exact' };
   }
 
   async function focusTab(tab){
@@ -125,8 +129,7 @@ export function createGthSimpleAutoRunner({api=globalThis.chrome,verifyBeforeFil
   async function probe(tabId){
     const rows=await api.scripting.executeScript({target:{tabId},world:'MAIN',func:probePageFunc,args:[TITLES]});
     const doc=rows?.length===1&&rows[0].frameId===0?rows[0].result:null;
-    if(!doc)fail('gth_simple_probe_failed');
-    return doc;
+    return doc || {ok:false,reason:'gth_simple_probe_failed'};
   }
 
   async function collectReadiness(tab,probeResult){
@@ -141,7 +144,7 @@ export function createGthSimpleAutoRunner({api=globalThis.chrome,verifyBeforeFil
       skills:source,profileBinding:binding,profileBindingError:bindingError,
       saveAllowedByPolicy:evaluateGthSavePolicy({fromAutoPath:true}).saveAllowedByPolicy,
       savePolicy:evaluateGthSavePolicy({fromAutoPath:true}),
-      note:'Auto path does not Save/submit; skills textarea only; existing non-empty different → soft-skip'
+      note:'Auto path does not Save/submit and does not claim the site is supported. 职业技能与特长 comes only from a confirmed customAnswer plus one matching customFact. Missing values fail closed.'
     };
   }
 
@@ -152,71 +155,71 @@ export function createGthSimpleAutoRunner({api=globalThis.chrome,verifyBeforeFil
     const raw=await get('resumeProfile');
     if(await canonicalProfileHash(raw,lifecycleOptions.cryptoImpl)!==binding.profileHash)fail('profile_binding_changed');
     const source=skillsSource(raw);
-    if(!source.ready)fail(source.hasAnswer?(source.confirmed?'skills_not_ready':'profile_fact_unconfirmed'):'missing_profile_value');
-    const answer=raw.customAnswers[SECTION];
+    if(!source.ready)fail(source.hasAnswer?'profile_fact_unconfirmed':'missing_profile_value');
+    const profile=skillsFillProfile(raw);
     const trusted=await get('resumeTrustedOrigins');
     if(!Array.isArray(trusted)||!trusted.includes(ORIGIN)){
       if(message.originConfirmed!==true)fail('simple_job_origin_unconfirmed');
       await withProfileBinding(api.storage.local,binding,()=>api.storage.local.set({resumeTrustedOrigins:[...(Array.isArray(trusted)?trusted:[]),ORIGIN].slice(-100)}),lifecycleOptions);
     }
-    await bounded(()=>dispatchBoundSource(api.storage.local,binding,()=>api.scripting.executeScript({target:{tabId:tab.id},files:['src/content/gth-simple-section.js']}),lifecycleOptions),15000);
-    const rows=await bounded(()=>dispatchBoundSource(api.storage.local,binding,()=>api.scripting.executeScript({
-      target:{tabId:tab.id},world:'ISOLATED',
-      func:async(payload)=>typeof globalThis.ResumeGthSimpleSection?.fill==='function'
-        ?globalThis.ResumeGthSimpleSection.fill(payload)
-        :{ok:false,reason:'simple_fill_missing'},
-      args:[{profileBinding:binding,sectionName:SECTION,answers:{[SECTION]:answer}}]
-    }),lifecycleOptions));
-    await assertProfileBinding(api.storage.local,binding,lifecycleOptions);
-    const response=rows?.length===1&&rows[0].frameId===0?rows[0].result:null;
-    if(!response||typeof response!=='object')fail('gth_simple_fill_no_response');
-    const field=Array.isArray(response.fields)&&response.fields.length===1?response.fields[0]:null;
-    const ok=response.ok===true&&response.sectionName===SECTION&&response.editorLeftOpen===true
-      &&response.softwareClickedSave===false&&response.softwareClickedSubmit===false
-      &&field&&field.question===SECTION
-      &&(field.status==='verified'&&['preexisting_same_value','readback_matched'].includes(field.reason)
-        ||field.status==='skipped'&&field.reason==='existing_value');
+    let response=null,failureReason=null,dispatched=false,dispatchClosed=false;
+    try{
+      response=await bounded(()=>dispatchBoundSource(api.storage.local,binding,()=>{
+        // A timed-out lock wait must not dispatch a fill later.
+        if(dispatchClosed)fail('gth_simple_auto_timeout');
+        return shippedGthSkillsFill({api,tab,requestId:newRequestId(),binding,profile,replaceExisting:false,
+          beforeSend:()=>{
+            if(dispatchClosed)fail('gth_simple_auto_timeout');
+            dispatched=true;
+          }});
+      },lifecycleOptions));
+      await assertProfileBinding(api.storage.local,binding,lifecycleOptions);
+      if(!response||typeof response!=='object')fail('gth_simple_fill_no_response');
+    }catch(error){
+      dispatchClosed=true;
+      if(!dispatched)throw error;
+      // Binding invalidation cannot erase an already received write/policy claim.
+      // A missing reply after dispatch proves neither a write nor a no-write.
+      failureReason=safe(error);
+    }
+    const claims=gthAutoSiteClaims(response);
+    const claimed=gthAutoSiteClaimed(claims);
+    const assessed=assessGthSkillsFill(response);
+    const ok=!failureReason&&!claimed&&assessed.ok===true;
+    const fields=!failureReason&&Array.isArray(response?.fields)?response.fields:[];
+    const field=fields.length===1?fields[0]:null;
     const job={
-      state:ok?(response.writeStarted?'completed':'completed'):'unknown',
-      reason:ok?null:safe(response.reason||'gth_simple_fill_invalid'),
-      outcome:ok?(field.reason==='readback_matched'?'verified'
-        :field.reason==='preexisting_same_value'?'verified_preexisting'
-        :field.reason==='existing_value'?'skipped_existing':'unknown'):'unknown',
+      state:ok?'completed':'unknown',
+      reason:claimed?'gth_simple_save_policy_violated':(failureReason||(ok?null:safe(assessed.reason||response?.reason||'gth_simple_fill_invalid'))),
+      ...(failureReason?{failureReason}:{}),
+      outcome:ok?assessed.outcome:'unknown',
       section:SECTION,
-      fields:response.fields||[],
-      writeStarted:response.writeStarted===true,
-      editorLeftOpen:response.editorLeftOpen===true,
-      softwareClickedSave:false,
-      softwareClickedSubmit:false
+      fields,
+      writeStarted:response?.writeStarted===true,
+      writeMayHaveStarted:response?.writeStarted===true||(dispatched&&response?.writeStarted!==false),
+      editorLeftOpen:response?.editorLeftOpen===true,
+      liveSupportClaimed:false,
+      complete:false,
+      ...claims
     };
-    return {job,responseSummary:{ok,writeStarted:job.writeStarted,reason:job.reason,field},outcome:job.outcome};
+    return {job,responseSummary:{ok,writeStarted:job.writeStarted,reason:job.reason,field,...claims},outcome:job.outcome};
   }
 
   async function auto(message,sender=null){
     const mode=['readiness','fill'].includes(message.mode)?message.mode:'readiness';
     const openIfMissing=message.openIfMissing!==false;
     const report={version:1,kind:'gth_simple_auto',mode,at:Date.now(),section:SECTION,
-      steps:[],helpNeeded:false,saveAttempted:false,writeAttempted:false};
+      steps:[],helpNeeded:false,saveAttempted:false,writeAttempted:false,liveSupportClaimed:false,complete:false};
+    report.advisoryHints = [];
     const found=await findGthTab(sender?.tab?.id,{openIfMissing});
     report.steps.push({find:found.kind,tabId:found.tab.id,url:found.tab.url||null});
     await focusTab(found.tab);
     report.steps.push('focused_gth_tab');
-    let probeResult=await probe(found.tab.id);
-    if(!probeResult.ok){
-      for(let i=0;i<8&&!probeResult.ok;i+=1){await sleep(500);probeResult=await probe(found.tab.id);}
-    }
+    const probeResult=await probe(found.tab.id);
     report.steps.push({probe:probeResult.reason,ok:probeResult.ok===true});
-    if(!probeResult.ok){
-      const login=probeResult.looksLogin===true||probeResult.reason==='gth_wrong_page';
-      if(login){
-        const err=Error('gth_simple_login_or_wrong_page');
-        err.helpUrl=probeResult.href||found.tab.url||PAGE;
-        err.helpReason='GTH edit page not ready; login/SSO/QR or wrong page';
-        throw err;
-      }
-      fail(probeResult.reason||'gth_simple_probe_failed');
-    }
+    recordAutoAdvisory(report, probeResult);
     const readiness=await collectReadiness(found.tab,probeResult);
+    readiness.advisoryHints = report.advisoryHints;
     report.readiness={
       pageState:readiness.pageState,
       editorOpen:readiness.page?.editorOpen===true,
@@ -237,13 +240,21 @@ export function createGthSimpleAutoRunner({api=globalThis.chrome,verifyBeforeFil
     }
 
     const filled=await runFill(found.tab,message,readiness);
-    report.writeAttempted=filled.job?.writeStarted===true;
+    report.writeMayHaveStarted=filled.job?.writeMayHaveStarted===true;
+    report.writeAttempted=filled.job?.writeStarted===true?true:(report.writeMayHaveStarted?null:false);
     report.steps.push({fill:filled.job?.state,outcome:filled.outcome});
     report.job=filled.job;
     report.fill=filled.responseSummary;
     report.saveAllowedByPolicy=evaluateGthSavePolicy({fromAutoPath:true}).saveAllowedByPolicy;
-    assertAutoNeverAttemptedSave(report);
-    report.ok=true;
+    const claims=gthAutoSiteClaims(filled.job);
+    Object.assign(report,claims);
+    const settled=filled.job?.state==='completed'&&filled.responseSummary?.ok===true&&!gthAutoSiteClaimed(claims);
+    report.ok=settled;
+    if(!report.ok)report.reason=filled.job?.reason||filled.responseSummary?.reason||'gth_simple_fill_failed';
+    try{assertAutoNeverAttemptedSave(report);}catch(error){
+      report.ok=false;
+      report.reason=report.reason||safe(error);
+    }
     await api.storage.local.set({resumeGthSimpleAutoRun:report});
     return report;
   }
@@ -256,7 +267,7 @@ export function createGthSimpleAutoRunner({api=globalThis.chrome,verifyBeforeFil
       const helpUrl=error?.helpUrl||PAGE;
       const help=reason==='gth_simple_login_or_wrong_page'||reason==='gth_simple_tab_missing'||/\/login\b/i.test(String(helpUrl));
       const payload={ok:false,reason,helpNeeded:help,helpUrl,helpReason:error?.helpReason||(help?'我需要帮助！请打开已登录的国泰海通简历编辑页 https://hr.gtht.com/resume/edit/':''),
-        mode:message?.mode||'readiness',saveAttempted:false,writeAttempted:false,at:Date.now(),version:1,kind:'gth_simple_auto'};
+        mode:message?.mode||'readiness',saveAttempted:false,saveAllowedByPolicy:false,writeAttempted:false,writeMayHaveStarted:false,liveSupportClaimed:false,complete:false,at:Date.now(),version:1,kind:'gth_simple_auto'};
       api.storage.local.set({resumeGthSimpleAutoRun:payload}).catch(()=>{});
       sendResponse(payload);
     });

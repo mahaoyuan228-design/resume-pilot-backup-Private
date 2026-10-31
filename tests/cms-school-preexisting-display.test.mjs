@@ -8,8 +8,8 @@ import vm from 'node:vm';
 
 const schoolSrc = await readFile(resolve('src/content/cms-education-multi-school.js'), 'utf8');
 
-test('school rev7 exports schoolDisplayMatches + preexisting under replaceExisting', () => {
-  assert.match(schoolSrc, /implementationRevision:7/);
+test('school rev8 exports schoolDisplayMatches + preexisting under replaceExisting', () => {
+  assert.match(schoolSrc, /implementationRevision:8/);
   assert.match(schoolSrc, /function schoolDisplayMatches\(/);
   assert.match(schoolSrc, /if \(reapplying\) return \{status:'verified',reason:'preexisting_same_value'/);
   assert.match(schoolSrc, /catalogMissSoft:\s*true/);
@@ -40,10 +40,10 @@ test('schoolDisplayMatches: 悉尼大学 ↔ bilingual profile; reject trivial s
 });
 
 
-test('controller rev16 + serialization use schoolDisplayEquals for school DOM/readback', async () => {
+test('controller rev21 + serialization use schoolDisplayEquals for school DOM/readback', async () => {
   const controllerSrc = await readFile(resolve('src/content/cms-record-controller.js'), 'utf8');
   const serialSrc = await readFile(resolve('src/content/cms-education-serialization.mjs'), 'utf8');
-  assert.match(controllerSrc, /implementationRevision:16/);
+  assert.match(controllerSrc, /implementationRevision:21/);
   assert.match(controllerSrc, /schoolDisplayEquals/);
   assert.match(controllerSrc, /equals=key==='school'\?schoolDisplayEquals:optionEquals/);
   assert.match(serialSrc, /schoolDisplayEquals/);

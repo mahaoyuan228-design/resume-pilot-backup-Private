@@ -1,0 +1,20 @@
+{
+  "schema": "cmb-rankingmajor-harvest/1",
+  "synthetic": true,
+  "dictOnly": true,
+  "dictRows": [
+    { "text": "前20%", "code": "RM002" },
+    { "text": "中等", "code": "RM003" },
+    { "text": "中下等", "code": "RM004" }
+  ],
+  "selector": ".ant-select",
+  "candidateCount": 3,
+  "control": {
+    "observedId": "fixtureRankingNode",
+    "nodeName": "select",
+    "role": "combobox",
+    "visible": true,
+    "disabled": false
+  },
+  "note": "Dictionary names are not a control. Attached selector and control are ignored."
+}

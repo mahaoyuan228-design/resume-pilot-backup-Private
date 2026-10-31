@@ -1,0 +1,96 @@
+{
+  "siteId": "cmb",
+  "field": "idCardType",
+  "label": "证件类型",
+  "refuseCodeWas": "live_id_card_type_select_fill_unclaimed",
+  "liveSelectFillClaimed": true,
+  "formFillClaimed": false,
+  "neverSave": true,
+  "ts": "2026-10-19T05:59:37.674Z",
+  "probe": {
+    "ok": true,
+    "reason": "matched",
+    "href": "https://career.cmbchina.com/center/resume",
+    "selectId": "resume_basicInfo_idCardType",
+    "targetText": "身份证",
+    "targetCode": "ID001",
+    "before": {
+      "text": "",
+      "title": "",
+      "code": "",
+      "placeholder": "请选择",
+      "open": false,
+      "classes": "ant-select ant-select-in-form-item ant-select-status-success ant-select-single ant-select-allow-clear ant-select-show-arrow"
+    },
+    "after": {
+      "text": "身份证",
+      "title": "身份证",
+      "code": "",
+      "placeholder": "",
+      "open": false,
+      "classes": "ant-select ant-select-in-form-item ant-select-status-success ant-select-focused ant-select-single ant-select-allow-clear ant-select-show-arrow"
+    },
+    "final": {
+      "text": "身份证",
+      "title": "身份证",
+      "code": "",
+      "placeholder": "",
+      "open": false,
+      "classes": "ant-select ant-select-in-form-item ant-select-status-success ant-select-focused ant-select-single ant-select-allow-clear ant-select-show-arrow"
+    },
+    "pick": {
+      "ok": true,
+      "reason": "clicked",
+      "optionsSample": [
+        {
+          "text": "身份证",
+          "title": "身份证"
+        },
+        {
+          "text": "非公务赴台证",
+          "title": "非公务赴台证"
+        },
+        {
+          "text": "台胞证",
+          "title": "台胞证"
+        },
+        {
+          "text": "签证 1",
+          "title": "签证 1"
+        },
+        {
+          "text": "签证 2",
+          "title": "签证 2"
+        },
+        {
+          "text": "签证 3",
+          "title": "签证 3"
+        },
+        {
+          "text": "其他证件",
+          "title": "其他证件"
+        },
+        {
+          "text": "暂住证",
+          "title": "暂住证"
+        },
+        {
+          "text": "人才居住证",
+          "title": "人才居住证"
+        },
+        {
+          "text": "因公护照",
+          "title": "因公护照"
+        }
+      ],
+      "optionsCount": 10
+    },
+    "restored": {
+      "ok": true,
+      "reason": "restore_skipped_empty_before"
+    },
+    "saveButtonCount": 0,
+    "neverSave": true,
+    "saved": false
+  }
+}

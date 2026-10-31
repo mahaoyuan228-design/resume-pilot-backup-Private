@@ -1,0 +1,196 @@
+{
+  "source": "Structural excerpt of the 2026-10-23 hotjob pb resumeOperation probe for basic text and flat controls. Classes, labels, placeholders, and menu text. Height and id-number placeholders plus their probed value samples are included for Never-Save readback. Applicant name, phone, email, address, and birth date stay omitted.",
+  "page": {
+    "hostname": "wecruit.hotjob.cn",
+    "pathPattern": "/SU[0-9A-Za-z]{8,64}/pb/resumeOperation.html",
+    "samplePath": "/SU629dbc0c0dcad452299bc0f7/pb/resumeOperation.html",
+    "rootClass": "resume-operation-wrap",
+    "contentClass": "resume-content-wrap",
+    "childrenClass": "ant-form-item-children",
+    "itemClass": "ant-row ant-form-item",
+    "hasAntDesign": true,
+    "hasElForm": false,
+    "buttonLabels": ["保存", "返回"],
+    "forbiddenButtons": ["保存", "提交", "投递", "删除", "下一步", "返回", "确定"]
+  },
+  "text": {
+    "controlClass": "ant-input",
+    "inputType": "text",
+    "fields": [
+      {
+        "key": "name",
+        "label": "姓名",
+        "placeholder": "请填写姓名"
+      },
+      {
+        "key": "height",
+        "label": "身高*?",
+        "placeholder": "（单位：cm）",
+        "valueSample": "182",
+        "verdict": "wireable_text",
+        "probeNote": "selectorClasses: ant-row ant-form-item | label=身高*? | ant-input | ph=（单位：cm）. Interactive action skip_text_no_open_needed."
+      },
+      {
+        "key": "idNumber",
+        "label": "证件号码",
+        "placeholder": "请填写证件号码",
+        "valueSample": "11010220020125231X",
+        "verdict": "wireable_text",
+        "probeNote": "selectorClasses: ant-row ant-form-item | label=证件号码 | ant-input | ph=请填写证件号码. valueSample is the probed display used only for preexisting readback."
+      },
+      {
+        "key": "phone",
+        "label": "移动电话（请填写中国大陆移动电话，以便接收短信通知）",
+        "placeholder": "请填写移动电话（请填写中国大陆移动电话，以便接收短信通知）"
+      },
+      {
+        "key": "email",
+        "label": "电子邮箱（请尽量使用163、qq等常见邮箱，尽量不要用gmail、hotmail等境外邮箱或学校邮箱）",
+        "placeholderOmitted": "Probe placeholder was truncated after gmail、hotm. It is not a selector."
+      }
+    ]
+  },
+  "gender": {
+    "label": "性别",
+    "controlClass": "ant-radio-input",
+    "inputType": "radio",
+    "triggerClass": "ant-radio-input",
+    "valueSample": "0/599/604",
+    "valueSampleNote": "Probe valueSample is an internal code triple, not display text. The page text sample beside 性别 is 男 and 女. Do not match 0, 599, or 604.",
+    "options": ["男", "女"],
+    "openCount": 0,
+    "cancel": "No menu. Interactive probe openCount was 0. Do not click a radio to cancel."
+  },
+  "select": {
+    "controlClass": "ant-select ant-select-enabled ant-select-allow-clear",
+    "triggerClass": "ant-select-search__field",
+    "dropdownClass": "ant-select-dropdown ant-select-dropdown--single ant-select-dropdown-placement-bottomLeft",
+    "openClass": "ant-select ant-select-open ant-select-focused ant-select-enabled",
+    "openClassNote": "Flat-select probes recorded the dropdown class and ant-select-search__field. The open/focused/enabled class string is the 现居住地 click on this same page, which hotjob-pb-region.js already requires for this ant-select widget.",
+    "cancel": "Escape",
+    "liveReadback": {
+      "note": "2026-10-23 live closed .ant-select-search__field has getClientRects().length 0 while .ant-select-selection[role=combobox] is visible. Clone text was 请选择 plus the label plus the value (请选择国籍/地区中国). Read .ant-select-selection-selected-value, or strip that placeholder prefix.",
+      "selectedValueClass": "ant-select-selection-selected-value",
+      "placeholderClass": "ant-select-selection__placeholder",
+      "placeholderPrefix": "请选择",
+      "faceClass": "ant-select-selection",
+      "faceRole": "combobox"
+    },
+    "fields": [
+      {
+        "key": "nation",
+        "label": "国籍/地区",
+        "valueSample": "中国",
+        "optionsSample": [
+          "中国",
+          "中国香港",
+          "中国澳门",
+          "中国台湾",
+          "阿尔巴尼亚",
+          "阿尔及利亚",
+          "阿富汗",
+          "阿根廷",
+          "爱尔兰",
+          "埃及",
+          "埃塞俄比亚",
+          "爱沙尼亚",
+          "阿拉伯联合酋长国",
+          "阿曼",
+          "安道尔",
+          "安哥拉",
+          "安提瓜和巴布达",
+          "澳大利亚",
+          "奥地利",
+          "阿塞拜疆"
+        ]
+      },
+      {
+        "key": "ethnic",
+        "label": "民族",
+        "valueSample": "汉族",
+        "optionsSample": [
+          "汉族",
+          "傣族",
+          "德昂族",
+          "侗族",
+          "东乡族",
+          "独龙族",
+          "鄂伦春族",
+          "俄罗斯族",
+          "鄂温克族",
+          "高山族",
+          "仡佬族",
+          "朝鲜族",
+          "哈尼族",
+          "哈萨克族",
+          "赫哲族",
+          "回族",
+          "基诺族",
+          "京族",
+          "景颇族",
+          "柯尔克孜族"
+        ]
+      },
+      {
+        "key": "marriage",
+        "label": "婚姻状况",
+        "valueSample": "未婚",
+        "optionsSample": ["未婚", "已婚", "离异", "丧偶"]
+      },
+      {
+        "key": "politics",
+        "label": "政治面貌",
+        "valueSample": "群众",
+        "optionsSample": ["中共党员", "中共预备党员", "民主党派", "无党派人士", "共青团员", "群众", "其他"]
+      },
+      {
+        "key": "idType",
+        "label": "证件类型",
+        "valueSample": "身份证",
+        "optionsSample": ["身份证"],
+        "optionsNote": "Interactive probe did not open 证件类型. The only probed token is the display valueSample. No other option text is included."
+      }
+    ]
+  },
+  "neighbors": {
+    "address": {
+      "label": "联系地址",
+      "controlClass": "ant-input",
+      "placeholder": "请填写联系地址",
+      "token": "NEIGHBOR_KEEP"
+    },
+    "birth": {
+      "label": "出生日期",
+      "controlClass": "ant-calendar-picker-input ant-input",
+      "token": "READONLY_DATE"
+    },
+    "residence": {
+      "label": "现居住地",
+      "controlClass": "ant-select ant-select-enabled",
+      "menuClass": "cascader-plugins-wrap",
+      "token": "北京市"
+    },
+    "interview": {
+      "label": "期望面试地点（供参考，实际安排将根据笔试通过名单确定）",
+      "token": "北京"
+    },
+    "obey": {
+      "label": "期望工作地是否服从分配",
+      "controlClass": "ant-radio-input",
+      "options": ["是", "否"]
+    },
+    "photo": {
+      "label": "照片",
+      "itemClass": "ant-row ant-form-item formItem41"
+    },
+    "portrait": {
+      "label": "个人照片",
+      "itemClass": "ant-row ant-form-item formItem49170547"
+    },
+    "note": {
+      "label": "评价内容",
+      "controlClass": "ant-input",
+      "token": "NEIGHBOR_NOTE"
+    }
+  }
+}

@@ -1,0 +1,60 @@
+{
+  "siteId": "cmb",
+  "field": "ethnicity",
+  "label": "民族",
+  "refuseCodeWas": "live_ethnicity_select_fill_unclaimed",
+  "liveSelectFillClaimed": true,
+  "formFillClaimed": false,
+  "neverSave": true,
+  "ts": "2026-10-19T06:00:04.144Z",
+  "probe": {
+    "ok": true,
+    "reason": "matched",
+    "href": "https://career.cmbchina.com/center/resume",
+    "selectId": "resume_basicInfo_nation",
+    "targetText": "汉族",
+    "targetCode": "NA0017",
+    "before": {
+      "text": "",
+      "title": "",
+      "code": "",
+      "placeholder": "请选择",
+      "open": false,
+      "classes": "ant-select ant-select-in-form-item ant-select-status-success ant-select-single ant-select-allow-clear ant-select-show-arrow ant-select-show-search"
+    },
+    "after": {
+      "text": "汉族",
+      "title": "汉族",
+      "code": "",
+      "placeholder": "",
+      "open": false,
+      "classes": "ant-select ant-select-in-form-item ant-select-status-success ant-select-focused ant-select-single ant-select-allow-clear ant-select-show-arrow ant-select-show-search"
+    },
+    "final": {
+      "text": "汉族",
+      "title": "汉族",
+      "code": "",
+      "placeholder": "",
+      "open": false,
+      "classes": "ant-select ant-select-in-form-item ant-select-status-success ant-select-focused ant-select-single ant-select-allow-clear ant-select-show-arrow ant-select-show-search"
+    },
+    "pick": {
+      "ok": true,
+      "reason": "clicked",
+      "optionsSample": [
+        {
+          "text": "汉族",
+          "title": "汉族"
+        }
+      ],
+      "optionsCount": 1
+    },
+    "restored": {
+      "ok": true,
+      "reason": "restore_skipped_empty_before"
+    },
+    "saveButtonCount": 0,
+    "neverSave": true,
+    "saved": false
+  }
+}

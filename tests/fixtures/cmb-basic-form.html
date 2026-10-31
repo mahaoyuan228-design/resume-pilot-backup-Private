@@ -1,0 +1,604 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <title>招商银行招聘 · CMB fixture (offline · CSS-confirmed ant classes)</title>
+  <meta name="description" content="招商银行，欢迎您" />
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 0; color: #1f2329; }
+    .nav { display: flex; gap: 1rem; padding: 0.75rem 1.25rem; border-bottom: 1px solid #e5e6eb; background: #fff; }
+    .nav span { color: #646a73; }
+    .portal { max-width: 720px; margin: 0 auto; padding: 1.5rem 1.25rem 3rem; }
+    .ant-form-item { margin: 1rem 0; }
+    .ant-form-item-label { display: block; font-weight: 600; margin-bottom: 0.25rem; }
+    .ant-form-item-control { line-height: 32px; }
+    .ant-input { width: 100%; padding: 0.4rem 0.5rem; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; }
+    .ant-radio-wrapper { display: inline-flex; align-items: center; gap: 0.35rem; margin-right: 1rem; }
+    .ant-radio { display: inline-flex; }
+    .footer { border-top: 1px solid #e5e6eb; padding: 1rem 1.25rem; color: #8f959e; font-size: 0.85rem; }
+    .note { color: #666; font-size: 0.85rem; }
+    .warn { color: #a61d24; font-size: 0.85rem; }
+    .ant-btn { padding: 0.35rem 0.9rem; }
+    .ant-btn-primary { background: #1677ff; color: #fff; border: 0; }
+  </style>
+</head>
+<body>
+  <!-- Public SPA shell: #root + /static/js/main.d37c8446.js (same hash as CDP 2026-10-18). -->
+  <div id="root">
+    <header class="nav">
+      <span>首页</span>
+      <span>校园招聘</span>
+      <span>社会招聘</span>
+      <span>数字金融训练营</span>
+      <span>应聘记录</span>
+      <span>个人简历</span>
+    </header>
+
+    <div class="portal">
+      <div id="fp-hint" hidden
+        data-stack="react createRoot ant-design career.cmbchina.com"
+        data-js-chunks="main.d37c8446.js main.02cda64a.css"
+        data-source="https://career.cmbchina.com/center/resume"
+        data-note="CSS-confirmed ant-form-item / ant-input in public CSS; NOT Vue"></div>
+
+      <h1>个人信息（fixture）</h1>
+      <p class="note">Offline stand-in for siteId <code>cmb</code>. Form class names
+        (<code>.ant-form-item</code> / <code>.ant-form-item-label</code> / <code>.ant-form-item-control</code> /
+        <code>input.ant-input</code>) are <strong>CSS-confirmed</strong> in public
+        <code>main.02cda64a.css</code> (bundle also ships <code>main.d37c8446.js</code> React+antd),
+        not invented from thin air. The 性别 block below is <strong>synthetic</strong>:
+        only the public CSS candidate names <code>.ant-form-item</code> /
+        <code>.ant-radio-wrapper</code> / <code>.ant-radio</code> are used.
+        Live radio DOM was not harvested. The 身高 block is also <strong>synthetic</strong>:
+        the same <code>.ant-form-item</code> / <code>input.ant-input</code> candidates as 姓名.
+        The label may include a CM suffix. The input value is numeric only.
+        Live height DOM was not harvested. The 体重 block is also <strong>synthetic</strong>:
+        the same <code>.ant-form-item</code> / <code>input.ant-input</code> candidates.
+        The label may include a KG suffix. The input value is numeric kilograms only.
+        Live weight DOM was not harvested. The 是否参加过正式工作 block is also
+        <strong>synthetic</strong>: the same public CSS candidates as 性别
+        (<code>.ant-form-item</code> / <code>.ant-radio-wrapper</code> / <code>.ant-radio</code>),
+        scoped by that label. Options are field-map 是 / 否 only.
+        Live formal-work radio DOM was not harvested. Do not claim live support.</p>
+      <p class="warn">页上提示：姓名 / 证件类型 / 证件号在简历<strong>保存后无法再次修改</strong> — 本脚手架永不点保存。</p>
+
+      <form class="ant-form" action="#" onsubmit="return false;">
+        <div class="ant-form-item" data-field="姓名">
+          <div class="ant-form-item-label"><label>姓名</label></div>
+          <div class="ant-form-item-control">
+            <input class="ant-input" type="text" name="fullName" value="" />
+          </div>
+        </div>
+
+        <div class="ant-form-item" data-field="手机号">
+          <div class="ant-form-item-label"><label>手机号</label></div>
+          <div class="ant-form-item-control">
+            <input class="ant-input" type="tel" name="mobile" value="" />
+          </div>
+        </div>
+
+        <div class="ant-form-item" data-field="邮箱">
+          <div class="ant-form-item-label"><label>邮箱</label></div>
+          <div class="ant-form-item-control">
+            <input class="ant-input" type="email" name="email" value="" />
+          </div>
+        </div>
+
+        <!--
+          SYNTHETIC gender radio. Not live CMB DOM.
+          Assumptions (public Ant Design Radio shape + public CSS class names only):
+          1. 性别 is one .ant-form-item whose label text is exactly 性别.
+          2. Each option is a label.ant-radio-wrapper whose remaining text is exactly 男 or 女.
+          3. The wrapper contains .ant-radio and a native input[type=radio].
+          4. Clicking the wrapper checks that input. Readback is input.checked, not .ant-radio-checked.
+          5. Radios in this item share a name so the browser clears the sibling.
+             Live Ant Radio.Group may be React-controlled and unnamed — unverified.
+          6. Other radio groups are separate .ant-form-item nodes and must not be clicked.
+        -->
+        <div class="ant-form-item" data-field="性别" data-dom="synthetic-public-css-candidate">
+          <div class="ant-form-item-label"><label>性别</label></div>
+          <div class="ant-form-item-control">
+            <label class="ant-radio-wrapper">
+              <span class="ant-radio"><input type="radio" name="cmb-synthetic-gender" value="男" /></span>
+              <span>男</span>
+            </label>
+            <label class="ant-radio-wrapper">
+              <span class="ant-radio"><input type="radio" name="cmb-synthetic-gender" value="女" /></span>
+              <span>女</span>
+            </label>
+          </div>
+        </div>
+
+        <!--
+          SYNTHETIC height text. Not live CMB DOM.
+          Assumptions (public CSS candidates only; live label string unharvested):
+          1. 身高 is its own .ant-form-item, separate from 体重 and 性别.
+          2. Label text is 身高, optionally followed by a CM unit (field map writes 身高 CM).
+          3. The control is one input.ant-input, the same public CSS candidate as 姓名 / 手机号 / 邮箱.
+          4. The value is numeric centimeters. CM stays on the label and is never written into the value.
+          5. The sibling unit span is synthetic chrome. Fill must not copy it into the input.
+        -->
+        <div class="ant-form-item" data-field="身高" data-dom="synthetic-public-css-candidate">
+          <div class="ant-form-item-label"><label>身高 CM</label></div>
+          <div class="ant-form-item-control">
+            <input class="ant-input" type="text" name="height" value="" />
+            <span data-unit="CM">CM</span>
+          </div>
+        </div>
+
+        <!--
+          SYNTHETIC weight text. Not live CMB DOM.
+          Assumptions (public CSS candidates only; live label string unharvested):
+          1. 体重 is its own .ant-form-item, separate from 身高 and 性别.
+          2. Label text is 体重, optionally followed by a KG unit (field map writes 体重 KG).
+          3. The control is one input.ant-input, the same public CSS candidate as 姓名 / 手机号 / 邮箱 / 身高.
+          4. The value is numeric kilograms. KG stays on the label and is never written into the value.
+          5. The sibling unit span is synthetic chrome. Fill must not copy it into the input.
+          Initial value 60 is the untouched baseline for the 姓名 / 性别 / 身高 knives.
+        -->
+        <div class="ant-form-item" data-field="体重" data-dom="synthetic-public-css-candidate">
+          <div class="ant-form-item-label"><label>体重 KG</label></div>
+          <div class="ant-form-item-control">
+            <input class="ant-input" type="text" name="weight" value="60" />
+            <span data-unit="KG">KG</span>
+          </div>
+        </div>
+
+        <!--
+          SYNTHETIC formal-work radio. Not live CMB DOM.
+          Field-map options only: 是 / 否. Live radio DOM was not harvested.
+          Assumptions (same public CSS candidates as 性别, label-scoped):
+          1. 是否参加过正式工作 is its own .ant-form-item. Label text is exactly that.
+          2. Each option is a label.ant-radio-wrapper whose remaining text is exactly 是 or 否.
+          3. The wrapper contains .ant-radio and a native input[type=radio].
+          4. Readback is input.checked, not .ant-radio-checked.
+          5. Radios in this item share a name so the browser clears the sibling.
+             Live Ant Radio.Group may be React-controlled and unnamed — unverified.
+          6. 性别 / 身高 / 体重 are separate items and must not be written by this fill.
+          Default checked 否 is the untouched baseline for the 性别 / 身高 / 体重 knives.
+        -->
+        <div class="ant-form-item" data-field="是否参加过正式工作" data-dom="synthetic-public-css-candidate" data-synthetic-neighbor="true">
+          <div class="ant-form-item-label"><label>是否参加过正式工作</label></div>
+          <div class="ant-form-item-control">
+            <label class="ant-radio-wrapper">
+              <span class="ant-radio"><input type="radio" name="cmb-synthetic-worked" value="是" /></span>
+              <span>是</span>
+            </label>
+            <label class="ant-radio-wrapper">
+              <span class="ant-radio"><input type="radio" name="cmb-synthetic-worked" value="否" checked /></span>
+              <span>否</span>
+            </label>
+          </div>
+        </div>
+
+
+        <!--
+          SYNTHETIC select stand-in. Option text and codes are from the 2026-10-19
+          getCommonDictMap harvest (cmb-live-gated-harvest-20261019.json). Element ids
+          are the harvested ids. The option-row markup is NOT a live dropdown contract:
+          menu open, virtual list, and show-search typing were not click-harvested.
+          --live still refuses. Never Save. 招行 is not supported.
+        -->
+        <div class="ant-form-item" data-field="婚姻状况" data-dom="synthetic-harvested-options">
+          <div class="ant-form-item-label"><label>婚姻状况（可选）</label></div>
+          <div class="ant-form-item-control">
+            <div class="ant-select" id="resume_basicInfo_maritalStatus">
+              <div class="ant-select-selector"><span class="ant-select-selection-item" data-code=""></span></div>
+              <div class="ant-select-dropdown" id="resume_basicInfo_maritalStatus_list" role="listbox">
+          <div class="ant-select-item-option" role="option" data-code="MS001" aria-selected="false">未婚</div>
+          <div class="ant-select-item-option" role="option" data-code="MS002" aria-selected="false">已婚</div>
+          <div class="ant-select-item-option" role="option" data-code="MS004" aria-selected="false">离异</div>
+          <div class="ant-select-item-option" role="option" data-code="MS007" aria-selected="false">已育</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="ant-form-item" data-field="政治面貌" data-dom="synthetic-harvested-options">
+          <div class="ant-form-item-label"><label>政治面貌</label></div>
+          <div class="ant-form-item-control">
+            <div class="ant-select" id="resume_basicInfo_politicalAffinity">
+              <div class="ant-select-selector"><span class="ant-select-selection-item" data-code=""></span></div>
+              <div class="ant-select-dropdown" id="resume_basicInfo_politicalAffinity_list" role="listbox">
+          <div class="ant-select-item-option" role="option" data-code="PA001" aria-selected="false">中国共产党党员</div>
+          <div class="ant-select-item-option" role="option" data-code="PA0010" aria-selected="false">九三学社社员</div>
+          <div class="ant-select-item-option" role="option" data-code="PA0011" aria-selected="false">台湾民主自治同盟盟员</div>
+          <div class="ant-select-item-option" role="option" data-code="PA0012" aria-selected="false">无党派民主人士</div>
+          <div class="ant-select-item-option" role="option" data-code="PA0013" aria-selected="false">群众</div>
+          <div class="ant-select-item-option" role="option" data-code="PA002" aria-selected="false">中国共产党预备党员</div>
+          <div class="ant-select-item-option" role="option" data-code="PA003" aria-selected="false">中国共产主义青年团团员</div>
+          <div class="ant-select-item-option" role="option" data-code="PA004" aria-selected="false">成员/中国国民党革命委员会</div>
+          <div class="ant-select-item-option" role="option" data-code="PA005" aria-selected="false">中国民主同盟盟员</div>
+          <div class="ant-select-item-option" role="option" data-code="PA006" aria-selected="false">成员/中国民主建国会</div>
+          <div class="ant-select-item-option" role="option" data-code="PA007" aria-selected="false">成员/中国民主促进会</div>
+          <div class="ant-select-item-option" role="option" data-code="PA008" aria-selected="false">党员/中国农工民主党</div>
+          <div class="ant-select-item-option" role="option" data-code="PA009" aria-selected="false">中国致公党党员</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="ant-form-item" data-field="民族" data-dom="synthetic-harvested-options">
+          <div class="ant-form-item-label"><label>民族</label></div>
+          <div class="ant-form-item-control">
+            <div class="ant-select ant-select-show-search" id="resume_basicInfo_nation" data-show-search="true">
+              <div class="ant-select-selector">
+                <span class="ant-select-selection-item" data-code=""></span>
+                <input class="ant-select-selection-search-input" type="search" value="" />
+              </div>
+              <div class="ant-select-dropdown" id="resume_basicInfo_nation_list" role="listbox">
+          <div class="ant-select-item-option" role="option" data-code="NA0017" aria-selected="false">汉族</div>
+          <div class="ant-select-item-option" role="option" data-code="NA001" aria-selected="false">阿昌族</div>
+          <div class="ant-select-item-option" role="option" data-code="NA0010" aria-selected="false">独龙族</div>
+          <div class="ant-select-item-option" role="option" data-code="NA0011" aria-selected="false">达翰尔族</div>
+          <div class="ant-select-item-option" role="option" data-code="NA0012" aria-selected="false">东乡族</div>
+          <div class="ant-select-item-option" role="option" data-code="NA0013" aria-selected="false">鄂温克族</div>
+          <div class="ant-select-item-option" role="option" data-code="NA0014" aria-selected="false">京族</div>
+          <div class="ant-select-item-option" role="option" data-code="NA0015" aria-selected="false">仡佬族</div>
+          <div class="ant-select-item-option" role="option" data-code="NA0016" aria-selected="false">高山族</div>
+          <div class="ant-select-item-option" role="option" data-code="NA0018" aria-selected="false">回族</div>
+          <div class="ant-select-item-option" role="option" data-code="NA0019" aria-selected="false">赫哲族</div>
+          <div class="ant-select-item-option" role="option" data-code="NA002" aria-selected="false">白族</div>
+          <div class="ant-select-item-option" role="option" data-code="NA0020" aria-selected="false">基诺族</div>
+          <div class="ant-select-item-option" role="option" data-code="NA0021" aria-selected="false">景颇族</div>
+          <div class="ant-select-item-option" role="option" data-code="NA0022" aria-selected="false">柯尔克孜族</div>
+          <div class="ant-select-item-option" role="option" data-code="NA0023" aria-selected="false">哈萨克族</div>
+          <div class="ant-select-item-option" role="option" data-code="NA0024" aria-selected="false">珞巴族</div>
+          <div class="ant-select-item-option" role="option" data-code="NA0025" aria-selected="false">拉祜族</div>
+          <div class="ant-select-item-option" role="option" data-code="NA0026" aria-selected="false">黎族</div>
+          <div class="ant-select-item-option" role="option" data-code="NA0027" aria-selected="false">傈僳族</div>
+          <div class="ant-select-item-option" role="option" data-code="NA0028" aria-selected="false">满族</div>
+          <div class="ant-select-item-option" role="option" data-code="NA0029" aria-selected="false">门巴族</div>
+          <div class="ant-select-item-option" role="option" data-code="NA003" aria-selected="false">布朗族</div>
+          <div class="ant-select-item-option" role="option" data-code="NA0030" aria-selected="false">蒙古族</div>
+          <div class="ant-select-item-option" role="option" data-code="NA0031" aria-selected="false">苗族</div>
+          <div class="ant-select-item-option" role="option" data-code="NA0032" aria-selected="false">仫佬族</div>
+          <div class="ant-select-item-option" role="option" data-code="NA0033" aria-selected="false">毛南族</div>
+          <div class="ant-select-item-option" role="option" data-code="NA0034" aria-selected="false">怒族</div>
+          <div class="ant-select-item-option" role="option" data-code="NA0035" aria-selected="false">纳西族</div>
+          <div class="ant-select-item-option" role="option" data-code="NA0036" aria-selected="false">鄂伦春族</div>
+          <div class="ant-select-item-option" role="option" data-code="NA0037" aria-selected="false">普米族</div>
+          <div class="ant-select-item-option" role="option" data-code="NA0038" aria-selected="false">羌族</div>
+          <div class="ant-select-item-option" role="option" data-code="NA0039" aria-selected="false">俄罗斯族</div>
+          <div class="ant-select-item-option" role="option" data-code="NA004" aria-selected="false">保安族</div>
+          <div class="ant-select-item-option" role="option" data-code="NA0040" aria-selected="false">畲族</div>
+          <div class="ant-select-item-option" role="option" data-code="NA0041" aria-selected="false">萨拉族</div>
+          <div class="ant-select-item-option" role="option" data-code="NA0042" aria-selected="false">水族</div>
+          <div class="ant-select-item-option" role="option" data-code="NA0043" aria-selected="false">塔吉克族</div>
+          <div class="ant-select-item-option" role="option" data-code="NA0044" aria-selected="false">土家族</div>
+          <div class="ant-select-item-option" role="option" data-code="NA0045" aria-selected="false">塔塔尔族</div>
+          <div class="ant-select-item-option" role="option" data-code="NA0046" aria-selected="false">土族</div>
+          <div class="ant-select-item-option" role="option" data-code="NA0047" aria-selected="false">维吾尔族</div>
+          <div class="ant-select-item-option" role="option" data-code="NA0048" aria-selected="false">乌孜别克族</div>
+          <div class="ant-select-item-option" role="option" data-code="NA0049" aria-selected="false">佤族</div>
+          <div class="ant-select-item-option" role="option" data-code="NA005" aria-selected="false">布依族</div>
+          <div class="ant-select-item-option" role="option" data-code="NA0050" aria-selected="false">锡伯族</div>
+          <div class="ant-select-item-option" role="option" data-code="NA0051" aria-selected="false">瑶族</div>
+          <div class="ant-select-item-option" role="option" data-code="NA0052" aria-selected="false">裕固族</div>
+          <div class="ant-select-item-option" role="option" data-code="NA0053" aria-selected="false">彝族</div>
+          <div class="ant-select-item-option" role="option" data-code="NA0054" aria-selected="false">藏族</div>
+          <div class="ant-select-item-option" role="option" data-code="NA0055" aria-selected="false">壮族</div>
+          <div class="ant-select-item-option" role="option" data-code="NA0056" aria-selected="false">其他</div>
+          <div class="ant-select-item-option" role="option" data-code="NA0057" aria-selected="false">哈尼族</div>
+          <div class="ant-select-item-option" role="option" data-code="NA006" aria-selected="false">朝鲜族</div>
+          <div class="ant-select-item-option" role="option" data-code="NA007" aria-selected="false">傣族</div>
+          <div class="ant-select-item-option" role="option" data-code="NA008" aria-selected="false">德昂族</div>
+          <div class="ant-select-item-option" role="option" data-code="NA009" aria-selected="false">侗族</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!--
+          Option text and codes are IdCardType from cmb-dictmap-full-20261019.json
+          (15 rows; no 请选择). Ids are harvested: #resume_basicInfo_idCardType and
+          resume_basicInfo_idCardType_list. Live selectClass has no show-search
+          (single, allow-clear, show-arrow). Option-row markup is still a synthetic
+          stand-in. --live refuses live_id_card_type_select_fill_unclaimed.
+          证件号 #resume_basicInfo_idCard is a text neighbor and is not filled.
+          Never Save. 招行 is not supported.
+        -->
+        <div class="ant-form-item" data-field="证件类型" data-dom="synthetic-harvested-options">
+          <div class="ant-form-item-label"><label class="ant-form-item-required" for="resume_basicInfo_idCardType">证件类型</label></div>
+          <div class="ant-form-item-control">
+            <div class="ant-select ant-select-single ant-select-allow-clear ant-select-show-arrow" id="resume_basicInfo_idCardType">
+              <div class="ant-select-selector"><span class="ant-select-selection-item" data-code=""></span></div>
+              <div class="ant-select-dropdown" id="resume_basicInfo_idCardType_list" role="listbox">
+          <div class="ant-select-item-option" role="option" data-code="ID001" aria-selected="false">身份证</div>
+          <div class="ant-select-item-option" role="option" data-code="ID0010" aria-selected="false">非公务赴台证</div>
+          <div class="ant-select-item-option" role="option" data-code="ID0011" aria-selected="false">台胞证</div>
+          <div class="ant-select-item-option" role="option" data-code="ID0012" aria-selected="false">签证 1</div>
+          <div class="ant-select-item-option" role="option" data-code="ID0013" aria-selected="false">签证 2</div>
+          <div class="ant-select-item-option" role="option" data-code="ID0014" aria-selected="false">签证 3</div>
+          <div class="ant-select-item-option" role="option" data-code="ID0015" aria-selected="false">其他证件</div>
+          <div class="ant-select-item-option" role="option" data-code="ID002" aria-selected="false">暂住证</div>
+          <div class="ant-select-item-option" role="option" data-code="ID003" aria-selected="false">人才居住证</div>
+          <div class="ant-select-item-option" role="option" data-code="ID004" aria-selected="false">因公护照</div>
+          <div class="ant-select-item-option" role="option" data-code="ID005" aria-selected="false">因私护照</div>
+          <div class="ant-select-item-option" role="option" data-code="ID006" aria-selected="false">公务赴港澳长证(多次)</div>
+          <div class="ant-select-item-option" role="option" data-code="ID007" aria-selected="false">非公务赴港澳长证</div>
+          <div class="ant-select-item-option" role="option" data-code="ID008" aria-selected="false">临时赴港澳证</div>
+          <div class="ant-select-item-option" role="option" data-code="ID009" aria-selected="false">公务赴台证</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!--
+          Education row 0 only. Options are Education minus placeholder ED000.
+          Ids harvested 2026-10-19. Select root class was not captured, so this
+          stand-in is non-search, same shape as 婚姻状况. Option rows are synthetic.
+          --live refuses live_education_level_select_fill_unclaimed.
+          School name and the other education controls are not in this fixture.
+          Never Save. 招行 is not supported.
+        -->
+        <div class="ant-form-item" data-field="学历" data-dom="synthetic-harvested-options">
+          <div class="ant-form-item-label"><label for="resume_educationHistoryList_0_educationLevelCode">学历</label></div>
+          <div class="ant-form-item-control">
+            <div class="ant-select" id="resume_educationHistoryList_0_educationLevelCode">
+              <div class="ant-select-selector"><span class="ant-select-selection-item" data-code=""></span></div>
+              <div class="ant-select-dropdown" id="resume_educationHistoryList_0_educationLevelCode_list" role="listbox">
+          <div class="ant-select-item-option" role="option" data-code="ED001" aria-selected="false">博士研究生</div>
+          <div class="ant-select-item-option" role="option" data-code="ED002" aria-selected="false">MBA</div>
+          <div class="ant-select-item-option" role="option" data-code="ED003" aria-selected="false">硕士研究生</div>
+          <div class="ant-select-item-option" role="option" data-code="ED004" aria-selected="false">本科</div>
+          <div class="ant-select-item-option" role="option" data-code="ED005" aria-selected="false">大专</div>
+          <div class="ant-select-item-option" role="option" data-code="ED006" aria-selected="false">中技（中专/技校/职高）</div>
+          <div class="ant-select-item-option" role="option" data-code="ED007" aria-selected="false">高中</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="ant-form-item" data-field="证件号" data-dom="harvested-text-not-filled">
+          <div class="ant-form-item-label"><label for="resume_basicInfo_idCard">证件号</label></div>
+          <div class="ant-form-item-control">
+            <input id="resume_basicInfo_idCard" class="ant-input" placeholder="请输入" value="" />
+          </div>
+        </div>
+
+        <!--
+          Family relationship rows 0 and 1. Options are the eight RelationshipType
+          rows. No placeholder. Ids harvested 2026-10-19. Select root class was not
+          captured, so each stand-in is non-search. Option rows are synthetic.
+          Each row is filled only by its own select id. --live refuses
+          live_relationship_select_fill_unclaimed.
+          Name and phone ids are present and are not filled. They have no 姓名 label
+          so the basic 姓名 field stays unique in this fixture.
+          Never Save. 招行 is not supported.
+        -->
+        <div class="ant-form-item" data-field="关系类型" data-row="0" data-dom="synthetic-harvested-options">
+          <div class="ant-form-item-label"><label for="resume_familyList_0_relationship">关系类型</label></div>
+          <div class="ant-form-item-control">
+            <div class="ant-select" id="resume_familyList_0_relationship">
+              <div class="ant-select-selector"><span class="ant-select-selection-item" data-code=""></span></div>
+              <div class="ant-select-dropdown" id="resume_familyList_0_relationship_list" role="listbox">
+          <div class="ant-select-item-option" role="option" data-code="RT0001" aria-selected="false">配偶</div>
+          <div class="ant-select-item-option" role="option" data-code="RT0002" aria-selected="false">父亲</div>
+          <div class="ant-select-item-option" role="option" data-code="RT0003" aria-selected="false">母亲</div>
+          <div class="ant-select-item-option" role="option" data-code="RT0004" aria-selected="false">子女</div>
+          <div class="ant-select-item-option" role="option" data-code="RT0005" aria-selected="false">紧急联络人</div>
+          <div class="ant-select-item-option" role="option" data-code="RT0006" aria-selected="false">兄弟</div>
+          <div class="ant-select-item-option" role="option" data-code="RT0007" aria-selected="false">姐妹</div>
+          <div class="ant-select-item-option" role="option" data-code="RT0008" aria-selected="false">其他相关人员</div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="ant-form-item" data-field="关系类型" data-row="1" data-dom="synthetic-harvested-options">
+          <div class="ant-form-item-label"><label for="resume_familyList_1_relationship">关系类型</label></div>
+          <div class="ant-form-item-control">
+            <div class="ant-select" id="resume_familyList_1_relationship">
+              <div class="ant-select-selector"><span class="ant-select-selection-item" data-code=""></span></div>
+              <div class="ant-select-dropdown" id="resume_familyList_1_relationship_list" role="listbox">
+          <div class="ant-select-item-option" role="option" data-code="RT0001" aria-selected="false">配偶</div>
+          <div class="ant-select-item-option" role="option" data-code="RT0002" aria-selected="false">父亲</div>
+          <div class="ant-select-item-option" role="option" data-code="RT0003" aria-selected="false">母亲</div>
+          <div class="ant-select-item-option" role="option" data-code="RT0004" aria-selected="false">子女</div>
+          <div class="ant-select-item-option" role="option" data-code="RT0005" aria-selected="false">紧急联络人</div>
+          <div class="ant-select-item-option" role="option" data-code="RT0006" aria-selected="false">兄弟</div>
+          <div class="ant-select-item-option" role="option" data-code="RT0007" aria-selected="false">姐妹</div>
+          <div class="ant-select-item-option" role="option" data-code="RT0008" aria-selected="false">其他相关人员</div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <input id="resume_familyList_0_name" class="ant-input" placeholder="请输入" value="" data-dom="harvested-text-not-filled" />
+        <input id="resume_familyList_0_phone" class="ant-input" placeholder="请输入" value="" data-dom="harvested-text-not-filled" />
+        <input id="resume_familyList_1_name" class="ant-input" placeholder="请输入" value="" data-dom="harvested-text-not-filled" />
+        <input id="resume_familyList_1_phone" class="ant-input" placeholder="请输入" value="" data-dom="harvested-text-not-filled" />
+
+        <!--
+          Award row 0 only. Options are the five AwardsLevel rows. No placeholder.
+          Ids harvested 2026-10-19. Select root class was not captured, so this
+          stand-in is non-search. Option rows are synthetic. A level is never
+          inferred from 奖项名称. --live refuses live_award_level_select_fill_unclaimed.
+          Award name and award date are present and are not filled.
+          Never Save. 招行 is not supported.
+        -->
+        <div class="ant-form-item" data-field="奖项名称" data-dom="harvested-text-not-filled">
+          <div class="ant-form-item-label"><label for="resume_awardList_0_awardName">奖项名称</label></div>
+          <div class="ant-form-item-control">
+            <input id="resume_awardList_0_awardName" class="ant-input" placeholder="请输入" value="" />
+          </div>
+        </div>
+        <div class="ant-form-item" data-field="获奖级别" data-dom="synthetic-harvested-options">
+          <div class="ant-form-item-label"><label for="resume_awardList_0_awardLevel">获奖级别</label></div>
+          <div class="ant-form-item-control">
+            <div class="ant-select" id="resume_awardList_0_awardLevel">
+              <div class="ant-select-selector"><span class="ant-select-selection-item" data-code=""></span></div>
+              <div class="ant-select-dropdown" id="resume_awardList_0_awardLevel_list" role="listbox">
+          <div class="ant-select-item-option" role="option" data-code="AL002" aria-selected="false">院校级</div>
+          <div class="ant-select-item-option" role="option" data-code="AL003" aria-selected="false">县市级</div>
+          <div class="ant-select-item-option" role="option" data-code="AL004" aria-selected="false">省区级</div>
+          <div class="ant-select-item-option" role="option" data-code="AL005" aria-selected="false">国家级</div>
+          <div class="ant-select-item-option" role="option" data-code="AL006" aria-selected="false">国际级</div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="ant-form-item" data-field="获奖时间" data-dom="harvested-text-not-filled">
+          <div class="ant-form-item-label"><label for="resume_awardList_0_awardDate">获奖时间</label></div>
+          <div class="ant-form-item-control">
+            <input id="resume_awardList_0_awardDate" class="ant-input" placeholder="请选择时间" value="" />
+          </div>
+        </div>
+
+        <!--
+          Skill row 0 only. Options are the ten EnglishLevel rows, including 其他.
+          No placeholder. Ids harvested 2026-10-19. Select root class was not
+          captured, so this stand-in is non-search. Option rows are synthetic.
+          托福 / 四级 / a score are not converted. --live refuses
+          live_english_level_select_fill_unclaimed.
+          The score input is present and is not filled.
+          Never Save. 招行 is not supported.
+        -->
+        <div class="ant-form-item" data-field="最高英语水平" data-dom="synthetic-harvested-options">
+          <div class="ant-form-item-label"><label for="resume_skill_0_englishLevel">最高英语水平</label></div>
+          <div class="ant-form-item-control">
+            <div class="ant-select" id="resume_skill_0_englishLevel">
+              <div class="ant-select-selector"><span class="ant-select-selection-item" data-code=""></span></div>
+              <div class="ant-select-dropdown" id="resume_skill_0_englishLevel_list" role="listbox">
+          <div class="ant-select-item-option" role="option" data-code="EL001" aria-selected="false">TOEFL</div>
+          <div class="ant-select-item-option" role="option" data-code="EL002" aria-selected="false">GRE</div>
+          <div class="ant-select-item-option" role="option" data-code="EL003" aria-selected="false">GMAT</div>
+          <div class="ant-select-item-option" role="option" data-code="EL004" aria-selected="false">IELTS</div>
+          <div class="ant-select-item-option" role="option" data-code="EL005" aria-selected="false">CET-4</div>
+          <div class="ant-select-item-option" role="option" data-code="EL006" aria-selected="false">CET-6</div>
+          <div class="ant-select-item-option" role="option" data-code="EL007" aria-selected="false">TEM-4</div>
+          <div class="ant-select-item-option" role="option" data-code="EL008" aria-selected="false">TEM-8</div>
+          <div class="ant-select-item-option" role="option" data-code="EL009" aria-selected="false">海外高中成绩</div>
+          <div class="ant-select-item-option" role="option" data-code="EL010" aria-selected="false">其他</div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="ant-form-item" data-field="分数" data-dom="harvested-text-not-filled">
+          <div class="ant-form-item-label"><label for="resume_skill_0_englishScore">分数</label></div>
+          <div class="ant-form-item-control">
+            <input id="resume_skill_0_englishScore" class="ant-input" placeholder="请输入" value="" />
+          </div>
+        </div>
+
+        <!--
+          招聘信息来源: harvested id resume_basicInfo_channelType.
+          Live node is the inner combobox input. The select root class was not
+          captured, so this stand-in is non-search. Option rows are synthetic.
+          Names stay exact, including the quotation marks. Abbreviations are not merged.
+          --live refuses live_channel_type_select_fill_unclaimed.
+          Never Save. 招行 is not supported.
+        -->
+        <div class="ant-form-item" data-field="招聘信息来源" data-dom="synthetic-harvested-options">
+          <div class="ant-form-item-label"><label for="resume_basicInfo_channelType">招聘信息来源</label></div>
+          <div class="ant-form-item-control">
+            <div class="ant-select" id="resume_basicInfo_channelType">
+              <div class="ant-select-selector"><span class="ant-select-selection-item" data-code=""></span></div>
+              <div class="ant-select-dropdown" id="resume_basicInfo_channelType_list" role="listbox">
+          <div class="ant-select-item-option" role="option" data-code="CT0014" aria-selected="false">招商银行官网</div>
+          <div class="ant-select-item-option" role="option" data-code="CT002" aria-selected="false">"招商银行招聘"微信公众号</div>
+          <div class="ant-select-item-option" role="option" data-code="CT0015" aria-selected="false">招商银行员工推荐</div>
+          <div class="ant-select-item-option" role="option" data-code="CT007" aria-selected="false">院校老师推荐</div>
+          <div class="ant-select-item-option" role="option" data-code="CT0012" aria-selected="false">校园宣讲会</div>
+          <div class="ant-select-item-option" role="option" data-code="CT0010" aria-selected="false">学校就业网站</div>
+          <div class="ant-select-item-option" role="option" data-code="CT008" aria-selected="false">校友/朋友推荐</div>
+          <div class="ant-select-item-option" role="option" data-code="CT0017" aria-selected="false">智联招聘</div>
+          <div class="ant-select-item-option" role="option" data-code="CT0011" aria-selected="false">牛客网</div>
+          <div class="ant-select-item-option" role="option" data-code="CT0019" aria-selected="false">刺猬实习</div>
+          <div class="ant-select-item-option" role="option" data-code="CT005" aria-selected="false">51job/应届生网</div>
+          <div class="ant-select-item-option" role="option" data-code="CT009" aria-selected="false">qq群/微信群消息</div>
+          <div class="ant-select-item-option" role="option" data-code="CT0013" aria-selected="false">猎头</div>
+          <div class="ant-select-item-option" role="option" data-code="CT001" aria-selected="false">一网通</div>
+          <div class="ant-select-item-option" role="option" data-code="CT0016" aria-selected="false">其他</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!--
+          面试期望城市: harvested id resume_basicInfo_expectedInterviewCity.
+          Live node is the inner combobox input. The select root class was not
+          captured, so this stand-in is non-search. Option rows are synthetic.
+          All 44 dict names stay complete. 北京 does not match 北京市.
+          --live refuses live_interview_city_select_fill_unclaimed.
+          Never Save. 招行 is not supported. RankingMajor is not in this fixture.
+        -->
+        <div class="ant-form-item" data-field="面试期望城市" data-dom="synthetic-harvested-options">
+          <div class="ant-form-item-label"><label for="resume_basicInfo_expectedInterviewCity">面试期望城市</label></div>
+          <div class="ant-form-item-control">
+            <div class="ant-select" id="resume_basicInfo_expectedInterviewCity">
+              <div class="ant-select-selector"><span class="ant-select-selection-item" data-code=""></span></div>
+              <div class="ant-select-dropdown" id="resume_basicInfo_expectedInterviewCity_list" role="listbox">
+          <div class="ant-select-item-option" role="option" data-code="P00271" aria-selected="false">北京市</div>
+          <div class="ant-select-item-option" role="option" data-code="C0035" aria-selected="false">长春市</div>
+          <div class="ant-select-item-option" role="option" data-code="C00164" aria-selected="false">长沙市</div>
+          <div class="ant-select-item-option" role="option" data-code="C00216" aria-selected="false">成都市</div>
+          <div class="ant-select-item-option" role="option" data-code="C10002" aria-selected="false">大连市</div>
+          <div class="ant-select-item-option" role="option" data-code="C00194" aria-selected="false">东莞市</div>
+          <div class="ant-select-item-option" role="option" data-code="C00182" aria-selected="false">佛山市</div>
+          <div class="ant-select-item-option" role="option" data-code="C0097" aria-selected="false">福州市</div>
+          <div class="ant-select-item-option" role="option" data-code="C00178" aria-selected="false">广州市</div>
+          <div class="ant-select-item-option" role="option" data-code="C00237" aria-selected="false">贵阳市</div>
+          <div class="ant-select-item-option" role="option" data-code="C0044" aria-selected="false">哈尔滨市</div>
+          <div class="ant-select-item-option" role="option" data-code="C00213" aria-selected="false">海口市</div>
+          <div class="ant-select-item-option" role="option" data-code="C0070" aria-selected="false">杭州市</div>
+          <div class="ant-select-item-option" role="option" data-code="C0081" aria-selected="false">合肥市</div>
+          <div class="ant-select-item-option" role="option" data-code="C0023" aria-selected="false">呼和浩特市</div>
+          <div class="ant-select-item-option" role="option" data-code="C00117" aria-selected="false">济南市</div>
+          <div class="ant-select-item-option" role="option" data-code="C00246" aria-selected="false">昆明市</div>
+          <div class="ant-select-item-option" role="option" data-code="C00279" aria-selected="false">兰州市</div>
+          <div class="ant-select-item-option" role="option" data-code="C00106" aria-selected="false">南昌市</div>
+          <div class="ant-select-item-option" role="option" data-code="C0057" aria-selected="false">南京市</div>
+          <div class="ant-select-item-option" role="option" data-code="C00199" aria-selected="false">南宁市</div>
+          <div class="ant-select-item-option" role="option" data-code="C0062" aria-selected="false">南通市</div>
+          <div class="ant-select-item-option" role="option" data-code="C0071" aria-selected="false">宁波市</div>
+          <div class="ant-select-item-option" role="option" data-code="C00118" aria-selected="false">青岛市</div>
+          <div class="ant-select-item-option" role="option" data-code="C0099" aria-selected="false">泉州市</div>
+          <div class="ant-select-item-option" role="option" data-code="P00281" aria-selected="false">上海市</div>
+          <div class="ant-select-item-option" role="option" data-code="C00179" aria-selected="false">深圳市</div>
+          <div class="ant-select-item-option" role="option" data-code="C10001" aria-selected="false">沈阳市</div>
+          <div class="ant-select-item-option" role="option" data-code="C001" aria-selected="false">石家庄市</div>
+          <div class="ant-select-item-option" role="option" data-code="C0061" aria-selected="false">苏州市</div>
+          <div class="ant-select-item-option" role="option" data-code="C0012" aria-selected="false">太原市</div>
+          <div class="ant-select-item-option" role="option" data-code="C002" aria-selected="false">唐山市</div>
+          <div class="ant-select-item-option" role="option" data-code="P00301" aria-selected="false">天津市</div>
+          <div class="ant-select-item-option" role="option" data-code="C0072" aria-selected="false">温州市</div>
+          <div class="ant-select-item-option" role="option" data-code="C00306" aria-selected="false">乌鲁木齐市</div>
+          <div class="ant-select-item-option" role="option" data-code="C0058" aria-selected="false">无锡市</div>
+          <div class="ant-select-item-option" role="option" data-code="C00151" aria-selected="false">武汉市</div>
+          <div class="ant-select-item-option" role="option" data-code="C00269" aria-selected="false">西安市</div>
+          <div class="ant-select-item-option" role="option" data-code="C00293" aria-selected="false">西宁市</div>
+          <div class="ant-select-item-option" role="option" data-code="C00100" aria-selected="false">厦门市</div>
+          <div class="ant-select-item-option" role="option" data-code="C00122" aria-selected="false">烟台市</div>
+          <div class="ant-select-item-option" role="option" data-code="C00301" aria-selected="false">银川市</div>
+          <div class="ant-select-item-option" role="option" data-code="C00134" aria-selected="false">郑州市</div>
+          <div class="ant-select-item-option" role="option" data-code="P00291" aria-selected="false">重庆市</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <button type="button" id="save-btn" class="ant-btn ant-btn-primary" disabled>保存</button>
+      </form>
+    </div>
+
+    <footer class="footer">Copyright © 2023 招商银行 版权所有 · CSS-confirmed fixture · never Save</footer>
+  </div>
+  <script>
+    // Explicitly synthetic fixture behavior. This is not harvested live CMB code.
+    // Production fill must only click and inspect the state accepted by the page.
+    window.__cmbSyntheticSelectClick = (event) => {
+      const option = event.target.closest('[role="option"]');
+      if (!option) return;
+      const root = option.closest('.ant-select');
+      if (!root) return;
+      const shown = root.querySelector('.ant-select-selection-item');
+      for (const sibling of root.querySelectorAll('[role="option"]')) {
+        sibling.setAttribute('aria-selected', sibling === option ? 'true' : 'false');
+      }
+      shown.textContent = option.textContent;
+      shown.setAttribute('data-code', option.getAttribute('data-code'));
+    };
+    document.addEventListener('click', window.__cmbSyntheticSelectClick);
+  </script>
+</body>
+</html>

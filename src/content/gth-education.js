@@ -333,6 +333,24 @@
           if (!path.length || path.length > 6) stop('education_category_path_invalid');
           const labelOf = row => row.querySelector(':scope > label > span[uid],:scope > label > span,:scope > span');
           const selectedRows = () => [...popup.querySelectorAll('.selected-view-data > li')];
+          const confirmCategory = async (uid, text) => {
+            // This is only the local picker confirmation. A matching leaf name
+            // alone cannot bind a selected row with a different category UID.
+            selectorStep('category_confirm');
+            await boundAction(() => {
+              const selected = selectedRows();
+              const confirm = [...popup.querySelectorAll('a.pop-btn.confirm')].filter(visible);
+              const href = confirm[0]?.getAttribute('href');
+              if (selected.length !== 1 || selected[0].getAttribute('uid') !== uid
+                || norm(selected[0].textContent) !== text || confirm.length !== 1
+                || !enabled(confirm[0]) || norm(confirm[0].textContent) !== '确定'
+                || href && !/^(#|javascript:(?:;|void\(0\)))$/iu.test(href))
+                stop('education_category_selection_unknown');
+              if (!popup?.isConnected || !visible(popup) || !confirm[0]?.isConnected
+                || !popup.contains(confirm[0])) stop('profile_action_target_changed');
+              return confirm[0].click();
+            });
+          };
           const acceptsCategory = value => norm(value) === norm(answer) || norm(value) === path.at(-1)
             || path.length === 1 && norm(value).split('/').at(-1) === path[0];
           const reopenCategory = async () => {
@@ -509,22 +527,13 @@
                 stop('education_category_reselect_unknown');
               selectorStep('category_reselect_click');await boundAction(()=>{if(!(againCheckbox)?.isConnected)stop('profile_action_target_changed');return againCheckbox.click();});await pause(180);
               if (visible(popup)) {
-                const selected = [...popup.querySelectorAll('.selected-view-data > li')].filter(visible);
-                const confirm = [...popup.querySelectorAll('a.pop-btn.confirm')].filter(visible);
-                if (selected.length !== 1 || norm(selected[0].textContent) !== knownText
-                  || confirm.length !== 1 || !enabled(confirm[0]))
-                  stop('education_category_selection_unknown');
-                selectorStep('category_confirm');await boundAction(()=>{if(!(confirm[0])?.isConnected)stop('profile_action_target_changed');return confirm[0].click();});
+                await confirmCategory(knownUid, knownText);
               }
               return;
             }
             selectorStep('category_option_click');commit();await boundAction(()=>{if(!(checkbox)?.isConnected)stop('profile_action_target_changed');return checkbox.click();});await pause(150);
             if (visible(popup)) {
-              const selected = [...popup.querySelectorAll('.selected-view-data > li')].filter(visible);
-              const confirm = [...popup.querySelectorAll('a.pop-btn.confirm')].filter(visible);
-              if (selected.length !== 1 || norm(selected[0].textContent) !== path.at(-1)
-                || confirm.length !== 1 || !enabled(confirm[0])) stop('education_category_selection_unknown');
-              selectorStep('category_confirm');await boundAction(()=>{if(!(confirm[0])?.isConnected)stop('profile_action_target_changed');return confirm[0].click();});
+              await confirmCategory(knownUid, knownText);
             }
           };
           let categoryReselectAttempt = 0;
@@ -670,7 +679,7 @@
 
   async function trial(request, full = false) {
     const FIELDS = full ? [...FULL_FIELDS, ...COMPLEX_FIELDS] : TEXT_FIELDS;
-    const result = { fields: [], editorLeftOpen: false, writeStarted: false,
+    const result = { fields: [], editorLeftOpen: false, writeStarted: false, liveSupportClaimed: false,
       savedOnSite: null, submitted: null, softwareClickedSave: false,
       softwareClickedSubmit: false, softwareClickedDelete: false };
     if (state.busy) return { ok: false, reason: 'fill_in_progress', ...result };
@@ -719,38 +728,7 @@
         stop('editor_structure_changed');
       if (otherSectionForms(sections).length)
         stop('other_section_editor_open');
-      if (!allForms.length) {
-        selectorStep('editor_open');
-        const rows = records(section);
-        if(rows.length>30||newTarget&&rows.length>=30)stop('education_record_count_not_supported');
-        if(!newTarget&&rows.length===0)stop('education_target_record_missing');
-        if(!newTarget&&request.rowIndex>=rows.length)stop('education_target_record_missing');
-        targetRecordCount=rows.length;
-        const edits = newTarget?[...section.querySelectorAll('.title_ a.h-e-btn')]
-          .filter(link=>visible(link)&&['添加','新增'].includes(norm(link.textContent))&&enabled(link))
-          :[...rows[request.rowIndex].querySelectorAll('a')]
-            .filter(link => visible(link) && link.querySelector('.el-icon-edit-outline'));
-        if (edits.length !== 1 || edits[0].getAttribute('href')
-          && !/^(#|javascript:(?:;|void\(0\)))$/iu.test(edits[0].getAttribute('href')))
-          stop(newTarget?'education_add_not_unique':'education_edit_not_unique');
-        const otherRecordsBefore=JSON.stringify(rows.filter((_,index)=>newTarget||index!==request.rowIndex).map(snapshot));
-        if(outside(page())!==outsideBefore||forms(page()).length!==0)stop('editor_structure_changed');
-        await boundAction(()=>{if(!(edits[0])?.isConnected)stop('profile_action_target_changed');return edits[0].click();});if(newTarget)result.addClickCount=1;
-        openedByUs = true;
-        const deadline = Date.now() + 5000;
-        do {
-          await pause(80);
-          sections = page();
-          allForms = forms(sections);
-          form = sections[1].querySelector('form');
-          if (allForms.length > 1 || allForms.length === 1 && allForms[0] !== form)
-            stop('editor_structure_changed');
-          if (form && form.querySelector('.el-form-item')) break;
-        } while (Date.now() < deadline);
-        if (!form || !form.querySelector('.el-form-item') || records(sections[1]).length !== targetRecordCount-(newTarget?0:1)
-          || JSON.stringify(records(sections[1]).map(snapshot)) !== otherRecordsBefore)
-          stop('education_editor_not_safe');
-      } else {
+      if (!allForms.length) stop('manual_open_editor_required');
         form = allForms[0];
         targetRecordCount=records(section).length+(newTarget?0:1);
         const markedCount=form.dataset.resumeGthEducationRecordCount;
@@ -760,7 +738,6 @@
           ||targetRecordCount>30||!newTarget&&request.rowIndex>=targetRecordCount
           ||markedCount!==undefined&&markedCount!==String(targetRecordCount))
           stop('unmarked_education_editor');
-      }
       result.editorLeftOpen = true;
       if (performance.timeOrigin !== timeOrigin || outside(sections) !== outsideBefore
         || forms(sections).length !== 1 || forms(sections)[0] !== form)
@@ -972,10 +949,35 @@
             ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
           const setter = Object.getOwnPropertyDescriptor(prototype, 'value')?.set;
           if (!setter) stop('native_setter_missing');
-          result.writeStarted = true;
-          await boundAction(()=>{if(!(control)?.isConnected)stop('profile_action_target_changed');return setter.call(control, answer);});
-          await boundAction(()=>{if(!(control)?.isConnected)stop('profile_action_target_changed');return control.dispatchEvent(new Event('input', {bubbles:true}));});
-          await boundAction(()=>{if(!(control)?.isConnected)stop('profile_action_target_changed');return control.dispatchEvent(new Event('change', {bubbles:true}));});
+          // Binding verification yields to the page before every action. Keep
+          // the guard inside that await boundary so a connected old control or
+          // a newly typed value cannot be overwritten or receive stale events.
+          const guardTextAction = expected => {
+            if (!control?.isConnected) stop('profile_action_target_changed');
+            const live = page();
+            if (performance.timeOrigin !== timeOrigin || forms(live).length !== 1
+              || forms(live)[0] !== form || outside(live) !== outsideBefore
+              || !sameTarget(selectedTarget, target(form, field))
+              || selectedTarget.read() !== expected
+              || valuesExcept(form, selectedTarget.controls) !== untouchedBefore
+              || JSON.stringify(records(live[1]).map(snapshot)) !== otherRecordsBefore)
+              stop('original_value_changed');
+            if (control.maxLength >= 0 && answer.length > control.maxLength)
+              stop('value_too_long');
+          };
+          await boundAction(() => {
+            guardTextAction(existing);
+            result.writeStarted = true;
+            return setter.call(control, answer);
+          });
+          await boundAction(() => {
+            guardTextAction(answer);
+            return control.dispatchEvent(new Event('input', {bubbles:true}));
+          });
+          await boundAction(() => {
+            guardTextAction(answer);
+            return control.dispatchEvent(new Event('change', {bubbles:true}));
+          });
         }
         selectorStep('field_readback');await pause(250);
         sections = page();

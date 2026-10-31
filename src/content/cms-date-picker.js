@@ -116,8 +116,9 @@
     return dates.length && dates.every((date) => date === dates[0]) ? dates[0] : null;
   }
 
-  async function closePortal(locate, deadline) {
+  async function closePortal(locate, deadline, ownsPortals) {
     if (openPortals().length === 0) return true;
+    if (!ownsPortals()) return false;
     const input = locate();
     input?.dispatchEvent(new KeyboardEvent("keydown", {
       key: "Escape", code: "Escape", keyCode: 27, which: 27, bubbles: true
@@ -130,6 +131,7 @@
       key: "Escape", code: "Escape", keyCode: 27, which: 27, bubbles: true
     }));
     if (await waitUntil(() => openPortals().length === 0, 650, deadline, true)) return true;
+    if (!ownsPortals()) return false;
     for (const type of ["mousedown", "mouseup", "click"])
       document.body.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true }));
     return !!await waitUntil(() => openPortals().length === 0, 650, deadline, true);
@@ -146,7 +148,7 @@
     const startTimeOrigin = performance.timeOrigin;
     const locate = () => location.origin === startOrigin && location.pathname === startPath
       && performance.timeOrigin === startTimeOrigin ? uniqueBirthInput(form) : null;
-    if (!form || locate() !== input || !input.readOnly || input.disabled)
+    if (!form || locate() !== input || !input.readOnly || !enabled(input))
       return { status: "skipped", reason: "control_guard" };
     if (input.value) return input.value === targetDate
       ? { status: "verified", reason: "readback_matched" }
@@ -156,26 +158,78 @@
     // One bounded attempt. Never retry a date click, as it may have succeeded
     // before a delayed component repaint.
     const deadline = Date.now() + 12000;
+    const neighbors = [...form.querySelectorAll("input.ant-calendar-picker-input")]
+      .filter((element) => element !== input).map((element) => ({
+        element, value: element.value, disabled: element.disabled, readOnly: element.readOnly
+      }));
+    const neighborsUnchanged = () => {
+      const live = [...form.querySelectorAll("input.ant-calendar-picker-input")]
+        .filter((element) => element !== locate());
+      return live.length === neighbors.length && neighbors.every((saved, index) =>
+        live[index] === saved.element && saved.element.value === saved.value
+          && saved.element.disabled === saved.disabled && saved.element.readOnly === saved.readOnly);
+    };
+    let ownedPortal = null;
+    let opening = false;
+    let foreignCalendarActivity = false;
+    const originalPicker = input.closest(".ant-calendar-picker");
+    // A sole popup is attributable to this opener only while no other
+    // existing calendar picker has been activated during its async mount.
+    const observeCalendar = (event) => {
+      const picker = event.target?.closest?.(".ant-calendar-picker");
+      if (picker && picker !== originalPicker && picker.querySelector("input.ant-calendar-picker-input"))
+        foreignCalendarActivity = true;
+    };
+    for (const type of ["mousedown", "click", "focusin", "keydown"])
+      document.addEventListener(type, observeCalendar, true);
     let clickedDay = false;
     let interrupted = false;
+    let profileError = null;
     let decision = { status: "failed", reason: "control_error" };
-    try {
+    const refuse = (reason, status = "failed") => {
+      const error = new Error(reason);
+      error.cmsDateDecision = { status, reason };
+      throw error;
+    };
+    const ownsPortals = () => {
+      if (foreignCalendarActivity) return false;
+      const portals = openPortals();
+      return portals.length === 0 || !!ownedPortal && portals.length === 1 && portals[0] === ownedPortal;
+    };
+    const requireUnchangedField = () => {
       requireVisibleFillPage();
-      await checkProfileWrite(); input.click();
-      const portal = await waitUntil(() => openPortals().length === 1 && openPortals()[0], STEP_MS, deadline);
+      if (locate() !== input || !input.readOnly || !enabled(input) || !neighborsUnchanged())
+        refuse("field_changed");
+      if (input.value) refuse("existing_value", "skipped");
+      if (!ownsPortals() || ownedPortal && !openPortals().includes(ownedPortal))
+        refuse("field_changed");
+    };
+    // A profile check can suspend while React replaces a control, a person
+    // enters a value, or another calendar opens. Revalidate the exact empty
+    // slot, portal and candidate on both sides of every asynchronous check.
+    const guardedClick = async (candidate, resolve) => {
+      const requireCandidate = () => {
+        requireUnchangedField();
+        if (!candidate?.isConnected || !visible(candidate) || !enabled(candidate)
+          || resolve() !== candidate) refuse("field_changed");
+      };
+      requireCandidate();
+      await checkProfileWrite();
+      requireCandidate();
+      candidate.click();
+    };
+    try {
+      await guardedClick(input, locate);
+      opening = true;
+      const portal = await waitUntil(() => {
+        if (foreignCalendarActivity) refuse("field_changed");
+        return openPortals().length === 1 && openPortals()[0];
+      }, STEP_MS, deadline);
+      ownedPortal = portal;
       if (!portal) {
-        // A framework can still have a timer queued to mount the portal.
-        // Send both close signals even though none is visible yet.
-        locate()?.dispatchEvent(new KeyboardEvent("keydown", {
-          key: "Escape", code: "Escape", keyCode: 27, which: 27, bubbles: true
-        }));
-        document.dispatchEvent(new KeyboardEvent("keydown", {
-          key: "Escape", code: "Escape", keyCode: 27, which: 27, bubbles: true
-        }));
-        for (const type of ["mousedown", "mouseup", "click"])
-          document.body.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true }));
+        requireUnchangedField();
         decision = { status: "failed", reason: "portal_not_open" };
-      } else if (openPortals().length !== 1 || locate() == null) {
+      } else if (openPortals().length !== 1 || locate() !== input) {
         decision = { status: "failed", reason: "field_changed" };
       } else {
         const targetYear = Number(targetDate.slice(0, 4));
@@ -183,8 +237,9 @@
         const yearTrigger = oneVisible(portal, ".ant-calendar-date-panel .ant-calendar-year-select");
         if (!yearTrigger) decision = { status: "skipped", reason: "year_selector_missing" };
         else {
-          requireVisibleFillPage();
-          await checkProfileWrite(); yearTrigger.click();
+          await guardedClick(yearTrigger, () => !oneVisible(portal, ".ant-calendar-year-panel")
+            && !oneVisible(portal, ".ant-calendar-month-panel")
+            ? oneVisible(portal, ".ant-calendar-date-panel .ant-calendar-year-select") : null);
           let yearPanel = await waitUntil(() => oneVisible(portal, ".ant-calendar-year-panel"), STEP_MS, deadline);
           if (!yearPanel || locate() == null) decision = { status: "failed", reason: "year_panel_missing" };
           else {
@@ -202,8 +257,13 @@
               const control = oneVisible(yearPanel,
                 `.ant-calendar-year-panel-${direction}-decade-btn`);
               if (!enabled(control)) break;
-              requireVisibleFillPage();
-              await checkProfileWrite(); control.click();
+              await guardedClick(control, () => {
+                if (oneVisible(portal, ".ant-calendar-year-panel") !== yearPanel) return null;
+                const liveCells = [...yearPanel.querySelectorAll(".ant-calendar-year-panel-year")].filter(visible);
+                const liveYears = liveCells.map(parseYear);
+                if (liveYears.length !== years.length || liveYears.some((value, index) => value !== years[index])) return null;
+                return oneVisible(yearPanel, `.ant-calendar-year-panel-${direction}-decade-btn`);
+              });
               await pause(40);
             }
             yearPanel = oneVisible(portal, ".ant-calendar-year-panel");
@@ -212,8 +272,12 @@
             if (yearChoices.length !== 1 || locate() == null)
               decision = { status: "skipped", reason: yearChoices.length ? "ambiguous_year" : "year_not_found" };
             else {
-              requireVisibleFillPage();
-              await checkProfileWrite(); yearChoices[0].click();
+              await guardedClick(yearChoices[0], () => {
+                const panel = oneVisible(portal, ".ant-calendar-year-panel");
+                const choices = panel ? [...panel.querySelectorAll(".ant-calendar-year-panel-year")]
+                  .filter((cell) => visible(cell) && parseYear(cell) === targetYear && enabled(cell)) : [];
+                return panel === yearPanel && choices.length === 1 ? choices[0] : null;
+              });
               // Ant v3 variants either open the month panel or return to the
               // day panel after choosing a year. In the latter case use the
               // displayed month's own selector, never infer a month. The day
@@ -227,8 +291,10 @@
               if (afterYear?.classList.contains("ant-calendar-date-panel")) {
                 const monthTrigger = oneVisible(afterYear, ".ant-calendar-month-select");
                 if (enabled(monthTrigger)) {
-                  requireVisibleFillPage();
-                  await checkProfileWrite(); monthTrigger.click();
+                  await guardedClick(monthTrigger, () => !oneVisible(portal, ".ant-calendar-year-panel")
+                    && !oneVisible(portal, ".ant-calendar-month-panel")
+                    && oneVisible(portal, ".ant-calendar-date-panel") === afterYear
+                    ? oneVisible(afterYear, ".ant-calendar-month-select") : null);
                 }
               }
               const monthPanel = await waitUntil(() => oneVisible(portal, ".ant-calendar-month-panel"), STEP_MS, deadline);
@@ -237,8 +303,12 @@
               if (monthChoices.length !== 1 || locate() == null)
                 decision = { status: "skipped", reason: monthChoices.length ? "ambiguous_month" : "month_not_found" };
               else {
-                requireVisibleFillPage();
-                await checkProfileWrite(); monthChoices[0].click();
+                await guardedClick(monthChoices[0], () => {
+                  const panel = oneVisible(portal, ".ant-calendar-month-panel");
+                  const choices = panel ? [...panel.querySelectorAll(".ant-calendar-month-panel-month")]
+                    .filter((cell) => visible(cell) && parseMonth(cell, targetYear) === targetMonth && enabled(cell)) : [];
+                  return panel === monthPanel && choices.length === 1 ? choices[0] : null;
+                });
                 // A stale day grid may still be present underneath the month
                 // overlay during React's transition. Do not click its cells.
                 const dayPanel = await waitUntil(() =>
@@ -252,8 +322,14 @@
                   decision = { status: "skipped", reason: dayChoices.length ? "ambiguous_day"
                     : allDayChoices.length ? "disabled_day" : "day_not_found" };
                 else {
-                  requireVisibleFillPage();
-                  await checkProfileWrite(); dayChoices[0].click();
+                  await guardedClick(dayChoices[0], () => {
+                    if (oneVisible(portal, ".ant-calendar-year-panel")
+                      || oneVisible(portal, ".ant-calendar-month-panel")) return null;
+                    const panel = oneVisible(portal, ".ant-calendar-date-panel");
+                    const choices = panel ? [...panel.querySelectorAll(".ant-calendar-date")]
+                      .filter((cell) => visible(cell) && parseFullDate(cell) === targetDate && enabled(cell)) : [];
+                    return panel === dayPanel && choices.length === 1 ? choices[0] : null;
+                  });
                   clickedDay = true;
                   const readback = await waitUntil(() => {
                     const live = locate();
@@ -268,23 +344,45 @@
           }
         }
       }
-    } catch (error) { if(/^profile_[a-z_]+$/u.test(error?.message||''))throw error;
+    } catch (error) {
+      if (/^profile_[a-z_]+$/u.test(error?.message || "")) profileError = error;
       interrupted = error?.message === PAGE_HIDDEN_DURING_FILL;
-      decision = { status: "failed", reason: "control_error" };
+      decision = error?.cmsDateDecision || { status: "failed", reason: "control_error" };
     }
     // Wait for Ant's exiting portal before using Escape/body fallback. A label
     // appearing before portal closure is not enough to report success.
-    const naturallyClosed = !!await waitUntil(() => openPortals().length === 0, CLOSE_MS, deadline, true);
-    const closed = naturallyClosed || await closePortal(locate, Date.now() + 1400);
+    let closed = false;
+    try {
+      // Interruption can arrive before the framework mounts this popup.
+      // Cancel only our still-bound pending opener; another calendar's
+      // activation revokes that ownership even before its popup is visible.
+      if (opening && !ownedPortal && !foreignCalendarActivity && openPortals().length === 0
+        && locate() === input && neighborsUnchanged()) {
+        for (const element of [input, document]) element.dispatchEvent(new KeyboardEvent("keydown", {
+          key: "Escape", code: "Escape", keyCode: 27, which: 27, bubbles: true
+        }));
+        for (const type of ["mousedown", "mouseup", "click"])
+          document.body.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true }));
+      }
+      const naturallyClosed = openPortals().length === 0 || clickedDay
+        && !!await waitUntil(() => openPortals().length === 0, CLOSE_MS, deadline, true);
+      closed = naturallyClosed || opening && await closePortal(locate, Date.now() + 1400, ownsPortals);
+    } finally {
+      for (const type of ["mousedown", "click", "focusin", "keydown"])
+        document.removeEventListener(type, observeCalendar, true);
+    }
+    if (profileError) throw profileError;
     if (interrupted || document.visibilityState !== "visible") throw new Error(PAGE_HIDDEN_DURING_FILL);
     if (!closed) return { status: "failed", reason: "portal_not_closed" };
     const live = locate();
-    if (!live) return { status: "failed", reason: "field_changed" };
+    if (!live || !clickedDay && live !== input || !live.readOnly || !enabled(live) || !neighborsUnchanged())
+      return { status: "failed", reason: "field_changed" };
     if (clickedDay && live.value !== targetDate) return { status: "failed", reason: "readback_mismatch" };
     if (decision.status === "verified" && live.value === targetDate) return decision;
-    if (decision.status === "skipped" && live.value) return { status: "failed", reason: "unexpected_value" };
+    if (decision.status === "skipped" && live.value && decision.reason !== "existing_value")
+      return { status: "failed", reason: "unexpected_value" };
     return decision;
   }
 
-  globalThis.ResumeCmsDatePicker = Object.freeze({implementationRevision:2, fillBirthDate });
+  globalThis.ResumeCmsDatePicker = Object.freeze({implementationRevision:3, fillBirthDate });
 })();

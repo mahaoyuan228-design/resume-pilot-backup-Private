@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Offline generic transfers</title>
+  <link id="transfer-ant-css" rel="stylesheet" href="/vendor/antd.css">
+  <link id="transfer-element-css" rel="stylesheet" href="/vendor/element.css">
+  <link rel="stylesheet" href="/fixtures/zoo.css">
+  <style>.transfer-row { margin: 24px 0; } .transfer-row > label { display: block; margin-bottom: 8px; }</style>
+</head>
+<body>
+  <aside>Disposable dual lists; Never-Save; liveSupportClaimed=false</aside>
+  <form id="transfer-form">
+    <main id="app"></main>
+    <input id="neighbor" value="ZOO_NEIGHBOR_KEEP">
+    <input id="disabled-neighbor" value="ZOO_DISABLED_KEEP" disabled>
+    <div class="safety-buttons"><button type="button">保存</button><button type="button">提交</button><button type="button">下一步</button><button type="button">投递</button><button type="button">删除</button></div>
+  </form>
+  <script src="/vendor/vue.js"></script>
+  <script src="/vendor/moment.js"></script>
+  <script src="/vendor/antd.js"></script>
+  <script src="/vendor/element.js"></script>
+  <script src="/fixtures/transfer.js"></script>
+</body>
+</html>

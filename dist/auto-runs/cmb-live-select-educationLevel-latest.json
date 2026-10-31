@@ -1,0 +1,123 @@
+{
+  "siteId": "cmb",
+  "field": "educationLevel",
+  "label": "学历",
+  "refuseCodeWas": "live_education_level_select_fill_unclaimed",
+  "liveSelectFillClaimed": true,
+  "formFillClaimed": false,
+  "neverSave": true,
+  "ts": "2026-10-19T05:59:43.158Z",
+  "probe": {
+    "ok": true,
+    "reason": "matched",
+    "href": "https://career.cmbchina.com/center/resume",
+    "selectId": "resume_educationHistoryList_0_educationLevelCode",
+    "targetText": "本科",
+    "targetCode": "ED004",
+    "before": {
+      "text": "高中",
+      "title": "高中",
+      "code": "",
+      "placeholder": "",
+      "open": false,
+      "classes": "ant-select ant-select-in-form-item ant-select-single ant-select-allow-clear ant-select-show-arrow"
+    },
+    "after": {
+      "text": "本科",
+      "title": "本科",
+      "code": "",
+      "placeholder": "",
+      "open": false,
+      "classes": "ant-select ant-select-in-form-item ant-select-status-success ant-select-focused ant-select-single ant-select-allow-clear ant-select-show-arrow"
+    },
+    "final": {
+      "text": "高中",
+      "title": "高中",
+      "code": "",
+      "placeholder": "",
+      "open": false,
+      "classes": "ant-select ant-select-in-form-item ant-select-status-success ant-select-focused ant-select-single ant-select-allow-clear ant-select-show-arrow"
+    },
+    "pick": {
+      "ok": true,
+      "reason": "clicked",
+      "optionsSample": [
+        {
+          "text": "博士后",
+          "title": "博士后"
+        },
+        {
+          "text": "博士研究生",
+          "title": "博士研究生"
+        },
+        {
+          "text": "MBA",
+          "title": "MBA"
+        },
+        {
+          "text": "硕士研究生",
+          "title": "硕士研究生"
+        },
+        {
+          "text": "本科",
+          "title": "本科"
+        },
+        {
+          "text": "大专",
+          "title": "大专"
+        },
+        {
+          "text": "中技（中专/技校/职高）",
+          "title": "中技（中专/技校/职高）"
+        },
+        {
+          "text": "高中",
+          "title": "高中"
+        }
+      ],
+      "optionsCount": 8
+    },
+    "restored": {
+      "ok": true,
+      "reason": "clicked",
+      "optionsSample": [
+        {
+          "text": "博士后",
+          "title": "博士后"
+        },
+        {
+          "text": "博士研究生",
+          "title": "博士研究生"
+        },
+        {
+          "text": "MBA",
+          "title": "MBA"
+        },
+        {
+          "text": "硕士研究生",
+          "title": "硕士研究生"
+        },
+        {
+          "text": "本科",
+          "title": "本科"
+        },
+        {
+          "text": "大专",
+          "title": "大专"
+        },
+        {
+          "text": "中技（中专/技校/职高）",
+          "title": "中技（中专/技校/职高）"
+        },
+        {
+          "text": "高中",
+          "title": "高中"
+        }
+      ],
+      "optionsCount": 8
+    },
+    "saveButtonCount": 0,
+    "neverSave": true,
+    "saved": false
+  }
+}

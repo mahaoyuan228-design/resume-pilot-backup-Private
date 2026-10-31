@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <title>unknown option nodes</title>
+  <style>
+    .ant-select, .ant-select-selection, .ant-select-selection-selected-value, .ant-select-dropdown, .weird-option { display: block; min-height: 16px; }
+    .ant-select-dropdown-hidden { display: none; }
+  </style>
+</head>
+<body>
+  <div class="ant-form-item">
+    <div class="ant-form-item-label"><label>户口类型</label></div>
+    <div class="ant-select" id="hukou">
+      <div class="ant-select-selection"><div class="ant-select-selection-selected-value">家庭户口</div></div>
+    </div>
+  </div>
+  <div class="ant-select-dropdown ant-select-dropdown-hidden" id="menu">
+    <div class="weird-option">集体户口</div>
+  </div>
+  <script>
+    window.__weirdClicks = 0;
+    document.querySelector('.weird-option').addEventListener('click', () => { window.__weirdClicks += 1; });
+    document.querySelector('.ant-select-selection').addEventListener('mousedown', () => {
+      document.querySelector('.ant-select').classList.add('ant-select-open');
+      document.getElementById('menu').classList.remove('ant-select-dropdown-hidden');
+    });
+  </script>
+</body>
+</html>

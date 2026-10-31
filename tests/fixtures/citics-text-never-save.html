@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8">
+<title>CITICS offline text/radio safety contract</title>
+<body>
+<!-- Synthetic Ant form-item contract using the labels and text/radio control kinds
+     recorded in dist/site-probes/citics-field-map-20261018.json. No live fill claim. -->
+<form id="resume">
+  <div class="ant-form-item"><div class="ant-form-item-label"><label>姓</label></div><input class="ant-input" id="last"></div>
+  <div class="ant-form-item"><div class="ant-form-item-label"><label>名</label></div><input class="ant-input" id="first"></div>
+  <div class="ant-form-item"><div class="ant-form-item-label"><label>证件号码</label></div><input class="ant-input" id="identity"></div>
+  <div class="ant-form-item"><div class="ant-form-item-label"><label>手机</label></div><input class="ant-input" type="tel" id="phone"></div>
+  <div class="ant-form-item"><div class="ant-form-item-label"><label>电子邮箱</label></div><input class="ant-input" type="email" id="email"></div>
+  <div class="ant-form-item"><div class="ant-form-item-label"><label>确认邮箱</label></div><input class="ant-input" type="email" id="confirm-email"></div>
+  <div class="ant-form-item"><div class="ant-form-item-label"><label>姓（拼音）</label></div><input class="ant-input" id="last-pinyin"></div>
+  <div class="ant-form-item"><div class="ant-form-item-label"><label>名（拼音）</label></div><input class="ant-input" id="first-pinyin"></div>
+  <div class="ant-form-item"><div class="ant-form-item-label"><label>联系地址</label></div><input class="ant-input" id="address"></div>
+  <div class="ant-form-item"><div class="ant-form-item-label"><label>邮编</label></div><input class="ant-input" id="postal-code"></div>
+  <div class="ant-form-item"><div class="ant-form-item-label"><label>微信</label></div><input class="ant-input" id="wechat"></div>
+  <div class="ant-form-item"><div class="ant-form-item-label"><label>紧急联系人</label></div><input class="ant-input" id="emergency-contact"></div>
+  <div class="ant-form-item"><div class="ant-form-item-label"><label>紧急联系人手机</label></div><input class="ant-input" type="tel" id="emergency-phone"></div>
+  <div class="ant-form-item" id="gender-item"><div class="ant-form-item-label"><label>性别</label></div>
+    <label class="ant-radio-wrapper"><span class="ant-radio"><input type="radio" name="gender" value="男" id="male"></span><span>男</span></label>
+    <label class="ant-radio-wrapper"><span class="ant-radio"><input type="radio" name="gender" value="女" id="female"></span><span>女</span></label>
+  </div>
+  <div class="ant-form-item"><div class="ant-form-item-label"><label>民族</label></div>
+    <div class="ant-select"><div class="ant-select-selection"><div class="ant-select-selection-selected-value" id="ethnicity-readback">汉族</div></div></div>
+  </div>
+  <button type="button">保存</button><button type="button">提交</button><button type="button">暂存</button>
+  <button type="button">下一步</button><button type="button">投递</button><button type="button">删除</button>
+</form>
+<!-- Independent controls exercise preservation beyond the recognized CITICS fields.
+     These are harness sentinels, not additional CITICS control evidence. -->
+<input id="neighbor-input" value="occupied neighbor">
+<input type="radio" name="neighbor-radio" id="neighbor-radio" checked>
+<textarea id="neighbor-textarea">keep this text</textarea>
+<select id="neighbor-select"><option value="keep" selected>keep</option></select>
+</body>
+</html>

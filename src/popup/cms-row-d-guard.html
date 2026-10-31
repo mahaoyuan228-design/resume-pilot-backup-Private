@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>CMS 网络只读保护</title>
+<style>body{font:14px/1.5 system-ui,sans-serif;width:420px;max-width:90vw;padding:16px;margin:0;color:#172033}button{display:block;margin:10px 0;padding:8px 12px}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#f3f5f8;padding:10px}strong{color:#9d301f}</style></head>
+<body><h1>CMS 网络只读保护</h1>
+<p><strong>当前仍禁止填写和打开控件。原生取消尚未接通。</strong></p>
+<p>只保护当前CMS标签页：阻断经网络栈的非GET请求、新建长连接和已知自动保存端点。不能追回开启前的请求，也未证明既有长连接、无标签页工作线程及其他GET副作用的覆盖。</p>
+<p>开启后不会因关闭本弹窗、超时或异常而自动撤去规则。本页面不关闭招聘页、不读取资料库、不填写或保存字段。仅在浏览器确认受保护标签页已关闭后，才可清理本次规则；这不是简历取消或恢复证明。</p>
+<button id="identity" type="button">读取本扩展与当前CMS标签的部分身份凭据</button>
+<p>仅五个关键自有资源的当次部分指纹，须外部核对；不证明已加载代码、完整包、安装路径或同一受控会话。</p>
+<button id="arm" type="button">开启当前CMS页的只读保护</button>
+<button id="status" type="button">核对规则状态</button>
+<button id="evidence" type="button">读取Chrome实际命中记录</button>
+<button id="export" type="button" disabled>导出已读取的脱敏记录</button>
+<button id="remove-closed" type="button">受保护网页已关闭后清理规则</button>
+<p id="message" role="status">尚未开启。旧安装包没有本次新增权限；需要审阅并更新完整包。</p>
+<pre id="result"></pre><p>规则安装、日志命中均不等于真站验收PASS，不增加分数。</p>
+<a href="popup.html">返回扩展首页</a><script type="module" src="cms-row-d-guard.js"></script></body></html>

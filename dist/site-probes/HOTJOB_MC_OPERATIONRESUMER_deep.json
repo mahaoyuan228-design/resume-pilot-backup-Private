@@ -1,0 +1,21 @@
+{
+  "url": "https://wecruit.hotjob.cn/SU661f37091eb8053acd6cdf3d/mc/deliver/operationResumer",
+  "decision": "B",
+  "frameworks": {
+    "ant": false,
+    "amList": true,
+    "myListItem": 13,
+    "formCell": false,
+    "antFormItem": false
+  },
+  "topClasses": [
+    "am-list-item",
+    "my-list-item",
+    "am-input-item",
+    "select-am-list-extra",
+    "resume-info-title"
+  ],
+  "note": "antd-mobile H5; not Ant CMS pb shell",
+  "stillLoggedIn": true,
+  "at": "2026-10-18T20:40:00+08:00"
+}

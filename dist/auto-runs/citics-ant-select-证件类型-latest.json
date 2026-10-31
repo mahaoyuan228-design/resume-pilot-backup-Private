@@ -1,0 +1,133 @@
+{
+  "siteId": "citics",
+  "label": "证件类型",
+  "ok": true,
+  "reason": "readback_matched",
+  "before": "身份证",
+  "after": "中国护照",
+  "expected": "中国护照",
+  "saved": false,
+  "skippedSave": true,
+  "skippedYidun": true,
+  "clickedOption": true,
+  "liveEdge": false,
+  "surface": "synthetic-ant-design-vue-1",
+  "structure": {
+    "itemClass": [
+      "ant-row",
+      "ant-form-item"
+    ],
+    "selectClass": [
+      "ant-select",
+      "ant-select-focused",
+      "ant-select-enabled"
+    ],
+    "visibleSelects": 1,
+    "cascaderInItem": false,
+    "innerSample": [
+      "div.ant-select-selection.ant-select-selection--single",
+      "div.ant-select-selection__rendered",
+      "div.ant-select-selection-selected-value",
+      "span.ant-select-arrow",
+      "i.anticon.anticon-down.ant-select-arrow-icon",
+      "svg.",
+      "path."
+    ],
+    "sampleOptions": [
+      "身份证",
+      "中国护照",
+      "港澳居民来往内地通行证",
+      "台湾居民来往大陆通行证"
+    ],
+    "optionSelector": ".ant-select-dropdown-menu-item[role=option]",
+    "neighborDiffs": []
+  },
+  "selectors": [
+    {
+      "role": "readback",
+      "selector": ".ant-select-selection-selected-value",
+      "hit": 1
+    },
+    {
+      "role": "readback",
+      "selector": ".ant-select-selection-item",
+      "hit": 0
+    },
+    {
+      "role": "open",
+      "selector": ".ant-select-selection",
+      "hit": 1
+    },
+    {
+      "role": "open",
+      "selector": ".ant-select-selector",
+      "hit": 0
+    },
+    {
+      "role": "dropdown",
+      "selector": ".ant-select-dropdown",
+      "hit": 1
+    },
+    {
+      "role": "option",
+      "selector": ".ant-select-dropdown-menu-item[role=option]",
+      "hit": 4
+    },
+    {
+      "role": "option",
+      "selector": ".ant-select-dropdown-menu-item",
+      "hit": 4
+    },
+    {
+      "role": "option",
+      "selector": ".ant-select-item-option[role=option]",
+      "hit": 0
+    },
+    {
+      "role": "option",
+      "selector": ".ant-select-item-option",
+      "hit": 0
+    }
+  ],
+  "at": "2026-10-18T13:35:00.594Z",
+  "final": "身份证",
+  "restored": true,
+  "neighborCount": 3,
+  "neighborsUnchanged": true,
+  "commitClicks": 0,
+  "checks": [
+    {
+      "name": "happy",
+      "ok": true,
+      "reason": "readback_matched",
+      "before": "身份证",
+      "after": "中国护照",
+      "final": "身份证"
+    },
+    {
+      "name": "double-select",
+      "ok": true,
+      "reason": "select_structure_unexpected",
+      "clickedOption": false
+    },
+    {
+      "name": "option-selector-miss",
+      "ok": true,
+      "reason": "select_option_selector_missing",
+      "clickedOption": false,
+      "weirdClicks": 0
+    },
+    {
+      "name": "readback-missing",
+      "ok": true,
+      "reason": "select_readback_missing",
+      "clickedOption": false,
+      "opened": 0
+    },
+    {
+      "name": "other-label-refused",
+      "ok": true,
+      "reason": "label_not_allowed"
+    }
+  ]
+}

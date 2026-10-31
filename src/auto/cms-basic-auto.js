@@ -1,8 +1,12 @@
+import { requestBackground } from './bg-request.mjs';
+
 // Internal one-shot helper: no toolbar popup. Readiness or fill-without-save.
 const params = new URLSearchParams(location.search);
 const mode = params.get('mode') || 'readiness';
 const openIfMissing = params.get('openIfMissing') === '1' || params.get('openIfMissing') === 'true';
 const reportPort = Number.parseInt(params.get('reportPort') || '0', 10);
+// Optional hotjob tenant page (validated again in the SW); absent → 招商 baseline.
+const cmsPage = params.get('cmsPage') || '';
 const statusEl = document.getElementById('status');
 const outEl = document.getElementById('out');
 
@@ -49,16 +53,18 @@ if (mode === 'reload') {
 } else {
   const autoMode = ['readiness', 'fill', 'seed_from_education'].includes(mode) ? mode : 'readiness';
   show(`正在请求后台 CMS_BASIC_AUTO（mode=${autoMode}）…`, { openIfMissing, reportPort });
-  await postEvent('auto_begin', { autoMode, openIfMissing });
+  await postEvent('auto_begin', { autoMode, openIfMissing, cmsPage: cmsPage || null });
   try {
     const dryRun = params.get('dryRun') === '1' || params.get('dryRun') === 'true';
-    const result = await chrome.runtime.sendMessage({
+    const message = {
       type: 'CMS_BASIC_AUTO',
       mode: autoMode,
       openIfMissing,
       dryRun,
       originConfirmed: true
-    });
+    };
+    if (cmsPage) message.cmsPage = cmsPage;
+    const result = await requestBackground(message);
     if (result == null) {
       const payload = {
         ok: false,

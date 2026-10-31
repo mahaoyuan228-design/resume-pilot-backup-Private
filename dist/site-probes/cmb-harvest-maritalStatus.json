@@ -1,0 +1,51 @@
+{
+  "ok": true,
+  "url": "https://career.cmbchina.com/center/resume",
+  "neverSave": true,
+  "harvestedAt": "2026-10-19T04:03:02.543Z",
+  "source": "GET /api/socialRecruitmentWebsite/common/getCommonDictMap",
+  "field": {
+    "ok": true,
+    "key": "maritalStatus",
+    "label": "婚姻状况（可选）",
+    "kindGuess": "Select",
+    "selectId": "resume_basicInfo_maritalStatus",
+    "listId": "resume_basicInfo_maritalStatus_list",
+    "optionCount": 4,
+    "options": [
+      {
+        "text": "未婚",
+        "title": "未婚",
+        "code": "MS001",
+        "id": "0EEF375A-54CA-4FD5-A60D-31B0C1350E40",
+        "disabled": false,
+        "selected": false
+      },
+      {
+        "text": "已婚",
+        "title": "已婚",
+        "code": "MS002",
+        "id": "E006E66E-3A06-4867-AEE5-A8B5995132A4",
+        "disabled": false,
+        "selected": false
+      },
+      {
+        "text": "离异",
+        "title": "离异",
+        "code": "MS004",
+        "id": "547F58B2-FC8A-41B8-8E1E-83148752949C",
+        "disabled": false,
+        "selected": false
+      },
+      {
+        "text": "已育",
+        "title": "已育",
+        "code": "MS007",
+        "id": "A49E0AD1-1097-4BB2-9BDD-AD34F992EBCC",
+        "disabled": false,
+        "selected": false
+      }
+    ],
+    "source": "dictmap"
+  }
+}

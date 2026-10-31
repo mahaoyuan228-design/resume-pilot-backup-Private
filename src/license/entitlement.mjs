@@ -6,6 +6,7 @@ import { LICENSE_CODES, LicenseGateError, toUiLicenseCode } from './errors.mjs';
 import { FLAVOR_INTERNAL, normalizeFlavor } from './flavor.mjs';
 import { evaluateLocalGate } from './gate.mjs';
 import {
+  decodeActivationCode,
   isSignedEntitlementEnvelope,
   reverifyStoredSignedEntitlement,
   verifySignedEntitlement,
@@ -140,7 +141,7 @@ export async function readLicenseStatus({
 
   const bag = await storage.get(ENTITLEMENT_KEY);
   const entitlement = bag?.[ENTITLEMENT_KEY] ?? null;
-  const decision = isFillAllowed({
+  const decision = await isFillAllowedAsync({
     flavor: normalized,
     config,
     entitlement,
@@ -170,6 +171,7 @@ export async function readLicenseStatus({
 /**
  * Parse a locally pasted activation token.
  * Accepted forms (no payment APIs):
+ * - RQF1. activation code (signed, bound per-seat envelope)
  * - JSON object text (unsigned sketch OR signed envelope { v, alg, payload, signature })
  * - base64 / base64url encoding of that JSON
  * Signed envelopes are returned with signedEnvelope:true; crypto verify happens in activateLocalToken.
@@ -180,7 +182,7 @@ export function parseActivationToken(raw) {
     throw new LicenseGateError(LICENSE_CODES.NOT_ACTIVATED, 'token_empty');
   }
 
-  let parsed = tryParseJson(text);
+  let parsed = text.startsWith('RQF') ? decodeActivationCode(text) : tryParseJson(text);
   if (parsed == null) {
     const decoded = tryDecodeBase64Json(text);
     if (decoded == null) {

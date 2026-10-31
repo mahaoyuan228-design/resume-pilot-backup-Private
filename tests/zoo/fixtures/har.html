@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Generic HAR control fixture</title>
+  <link rel="icon" href="data:,">
+  <script src="/controls/model.js" defer></script>
+  <script src="/controls/registry.js" defer></script>
+  <script src="/controls/upload.js" defer></script>
+  <script src="/controls/native.js" defer></script>
+  <script src="/controls/date-controls.js" defer></script>
+</head>
+<body>
+  <h1>Disposable native controls</h1>
+  <p>First-party synthetic data for passive engine planning and HAR replay.</p>
+  <label>Text <input data-control="text" type="text"></label>
+  <label>Date <input data-control="date" type="date"></label>
+  <label>Month <input data-control="month" type="month"></label>
+  <label>Choice
+    <select data-control="select">
+      <option value="">Choose an option</option>
+      <option value="alpha">Alpha</option>
+      <option value="beta">Beta</option>
+    </select>
+  </label>
+  <label>Preserved neighbor <input data-control="neighbor" value="HAR_NEIGHBOR_KEEP"></label>
+  <script>
+    (() => {
+      const effects = { clicks: 0, inputs: 0, changes: 0, submits: 0 };
+      for (const [event, counter] of [['click', 'clicks'], ['input', 'inputs'], ['change', 'changes'], ['submit', 'submits']]) {
+        document.addEventListener(event, e => {
+          effects[counter]++;
+          if (event === 'submit') e.preventDefault();
+        }, true);
+      }
+      window.__harZoo = {
+        ready: true,
+        snapshot: () => ({
+          values: Object.fromEntries([...document.querySelectorAll('[data-control]')]
+            .map(el => [el.dataset.control, el.value])),
+          effects: { ...effects },
+          liveSupportClaimed: false,
+        }),
+      };
+    })();
+  </script>
+</body>
+</html>

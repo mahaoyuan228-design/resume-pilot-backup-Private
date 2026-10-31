@@ -1,3 +1,5 @@
+import { requestBackground } from './bg-request.mjs';
+
 // Internal one-shot helper: no toolbar popup. Inspect/readiness or fill-without-save.
 const params = new URLSearchParams(location.search);
 const mode = params.get('mode') || 'readiness';
@@ -57,7 +59,7 @@ if (mode === 'reload') {
   show(`正在请求后台 GTH_EDUCATION_AUTO（mode=${autoMode}）…`, { profileIndex, replaceExisting, rowIndex, openIfMissing, reportPort });
   await postEvent('auto_begin', { autoMode, profileIndex, replaceExisting, rowIndex, openIfMissing });
   try {
-    const result = await chrome.runtime.sendMessage({
+    const result = await requestBackground({
       type: 'GTH_EDUCATION_AUTO',
       mode: autoMode,
       profileIndex,

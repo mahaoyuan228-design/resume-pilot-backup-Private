@@ -1,0 +1,21 @@
+{
+  "schema": "cmb-rankingmajor-harvest/1",
+  "synthetic": true,
+  "reachable": true,
+  "scopeReadable": true,
+  "labelLocated": true,
+  "labelText": "专业排名",
+  "candidateCount": 0,
+  "association": "clear",
+  "snapshots": { "first": true, "second": true, "agree": true },
+  "control": null,
+  "files": {
+    "context": true,
+    "dom01": true,
+    "dom02": true,
+    "fieldImage": true,
+    "verdict": true
+  },
+  "interactionEvidence": false,
+  "note": "Synthetic complete check with zero controls. Not a live DOM snapshot."
+}

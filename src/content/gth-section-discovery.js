@@ -113,82 +113,10 @@
     }
   }
 
-  async function discover({ waitTimeoutMs = 6000, inspectSection = null } = {}) {
-    const result = { ok: false, reason: '', completedSections: [],
-      fields: [], originalValuesPreserved: false, editorLeftOpen: false };
-    const timeOrigin = performance.timeOrigin;
-    const timeout = Number.isInteger(waitTimeoutMs)
-      ? Math.max(250, Math.min(waitTimeoutMs, 15000)) : 6000;
-    try {
-      if (document.readyState !== 'complete') stop('page_not_ready');
-      if (document.visibilityState !== 'visible') stop('page_hidden');
-      const sections = structure(timeOrigin);
-      if (openForms(sections).length) {
-        result.editorLeftOpen = true;
-        stop('preexisting_editor');
-      }
-      const original = closedSnapshot(sections);
-      for (const sectionName of EDITABLE) {
-        if (document.visibilityState !== 'visible') stop('page_hidden');
-        const current = structure(timeOrigin);
-        if (openForms(current).length) stop('preexisting_editor');
-        if (closedSnapshot(current) !== original) stop('overview_values_changed');
-        const section = current[TITLES.indexOf(sectionName)];
-        const links = [...section.querySelectorAll('.title_ a.h-e-btn')]
-          .filter(node => normalized(node.textContent) === '编辑');
-        if (links.length !== 1 || !visible(links[0])) stop('edit_link_not_unique');
-        if (document.visibilityState !== 'visible') stop('page_hidden');
-        links[0].click();
-        result.editorLeftOpen = true;
-        const opened = await waitForEditor(sectionName, timeOrigin, true,
-          Date.now() + timeout);
-        const beforeCancel = fingerprint(opened.form);
-        const found = inventory(opened.form, sectionName);
-        let matched = [];
-        if (inspectSection !== null) {
-          if (typeof inspectSection !== 'function') stop('inspect_callback_invalid');
-          const report = await inspectSection(sectionName);
-          if (!Array.isArray(report?.fields) || report.url?.split(/[?#]/)[0] !== PAGE
-            || report.fields.some(field => field.scope?.sectionName !== sectionName))
-            stop('match_scope_mismatch');
-          matched = report.fields.map(field => {
-            // The matcher needs currentValue internally to classify old values.
-            // The popup only needs the conclusion, never the applicant's value.
-            const { currentValue, detail, ...safe } = field;
-            return { ...safe, id: `gth:${sectionName}:${safe.id}`,
-              hasExistingValue: !!String(currentValue ?? '').trim() };
-          });
-        }
-        // A second read prevents cancelling an editor changed by the website or
-        // a person while discovery was in progress.
-        await pause(50);
-        const freshSections = structure(timeOrigin);
-        const freshForms = openForms(freshSections);
-        const freshForm = freshSections[TITLES.indexOf(sectionName)].querySelector('form');
-        if (freshForms.length !== 1 || freshForm !== freshForms[0]
-          || fingerprint(freshForm) !== beforeCancel)
-          stop('editor_values_changed');
-        const cancel = [...freshForm.querySelectorAll('button')]
-          .filter(node => node.type === 'button' && normalized(node.textContent) === '取消');
-        if (cancel.length !== 1 || !visible(cancel[0])) stop('cancel_not_unique');
-        if (document.visibilityState !== 'visible') stop('page_hidden');
-        cancel[0].click();
-        const closed = await waitForEditor(sectionName, timeOrigin, false,
-          Date.now() + timeout);
-        result.editorLeftOpen = false;
-        if (closedSnapshot(closed.sections) !== original) stop('overview_values_changed');
-        result.completedSections.push({ ...found, matcherFieldCount: matched.length });
-        result.fields.push(...matched);
-      }
-      result.ok = true;
-      result.reason = 'complete';
-      result.originalValuesPreserved = true;
-      return result;
-    } catch (error) {
-      result.reason = error instanceof DiscoveryError ? error.code : 'discovery_failed';
-      return result;
-    }
+  async function discover() {
+    return { ok: false, status: 'manual', reason: 'manual_open_editor_required',
+      completedSections: [], fields: [], originalValuesPreserved: true, editorLeftOpen: false,
+      entryAttempted: false, writeAttempted: false, liveSupportClaimed: false };
   }
-
   globalThis.ResumeGthSectionDiscovery = Object.freeze({ discover });
 })();

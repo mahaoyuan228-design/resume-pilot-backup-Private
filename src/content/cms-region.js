@@ -89,7 +89,7 @@
   async function fillRegion(wrap,fact) {
     if(location.origin!==ORIGIN||!PATH.test(location.pathname))return {status:'skipped',reason:'wrong_site',partial:false};
     const initial=scope(wrap);if(!initial)return {status:'skipped',reason:'control_guard',partial:false};
-    if(!sameFact(initial,fact))return {status:'skipped',reason:'unconfirmed_or_incomplete_region_pair',partial:false};
+    if(!sameFact(initial,fact))return {status:'failed',reason:'unconfirmed_or_incomplete_region_pair',partial:false};
     const desired=[fact.province.trim(),fact.city.trim()],href=location.href,timeOrigin=performance.timeOrigin;
     const baseline={...initial,href,timeOrigin};
     const outside=(ignoreWrap=baseline.wrap)=>canonical([...baseline.form.querySelectorAll('input,textarea,select,.ant-select-selection-selected-value,.ant-select-selection-item')]
@@ -211,5 +211,5 @@
       sectionName:baseline.sectionName,question:baseline.question,partial:result.partial,selectedLevels:selections};
     return result;
   }
-  globalThis.ResumeCmsRegion=Object.freeze({implementationRevision:2,fillRegion,resolveFact,inspectControl,diagnostics:()=>lastDiagnostic?{...lastDiagnostic}:null});
+  globalThis.ResumeCmsRegion=Object.freeze({implementationRevision:3,fillRegion,resolveFact,inspectControl,diagnostics:()=>lastDiagnostic?{...lastDiagnostic}:null});
 })();

@@ -1,0 +1,29 @@
+# CMB career.cmbchina.com JS/CSS class hints · 2026-10-19 (Asia/Shanghai)
+# Public curl only. Same JS hash as CDP 2026-10-18 probe.
+# Framework: React createRoot + ant-design (NOT Vue; CDP vue:true was false positive).
+# NOT live form DOM — SPA #root shell until login.
+
+js=main.d37c8446.js bytes=916499
+css=main.02cda64a.css bytes=593383
+
+## ant class counts in CSS (selected)
+ant-form	css_dot_count=249	js_literal_count=0
+ant-form-item	css_dot_count=163	js_literal_count=0
+ant-form-item-label	css_dot_count=64	js_literal_count=0
+ant-form-item-control	css_dot_count=13	js_literal_count=0
+ant-input	css_dot_count=1099	js_literal_count=0
+ant-select	css_dot_count=761	js_literal_count=0
+ant-radio	css_dot_count=118	js_literal_count=0
+ant-picker	css_dot_count=801	js_literal_count=0
+ant-upload	css_dot_count=334	js_literal_count=0
+ant-btn	css_dot_count=917	js_literal_count=0
+ant-modal	css_dot_count=85	js_literal_count=0
+
+## first-slice contract (provisional until live harvest)
+ITEM_SEL=.ant-form-item
+LABEL_SEL=.ant-form-item-label, label
+INPUT_SEL=input.ant-input (+ text/tel/email fallbacks)
+LABELS=姓名,手机号,邮箱
+
+## routes seen in JS
+login, center, resume, resumeList, fintechresume, viewresume, campus/home, social/home

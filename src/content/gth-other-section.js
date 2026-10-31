@@ -1,5 +1,9 @@
-// Narrow 国泰海通「其他信息」draft filler. It writes only two empty, uniquely
-// labelled controls and leaves the section editor open for separate Save.
+// Narrow 国泰海通「其他信息」fill-without-save. Values come only from a
+// confirmed resumeProfile (customAnswers + one matching customFact per
+// question). Caller-supplied answers are not a fill source. A missing or
+// unconfirmed value fails closed and is not invented. liveSupportClaimed
+// stays false. This file does not claim the site is supported. Never clicks
+// 保存 / 提交 / 投递 / 删除. The editor is left open.
 (() => {
   if (globalThis.ResumeGthOtherSection && globalThis.ResumeGthOtherSectionRevision===3) return;
 
@@ -90,48 +94,51 @@
       && ![...item.querySelectorAll('.el-form-item__error')]
         .some(error => visible(error) && norm(error.textContent)));
   }
-  function acceptedAnswers(answers) {
-    if (!answers || typeof answers !== 'object') stop('invalid_test_answer');
-    return FIELDS.map(spec => {
-      const answer = answers[spec.question];
-      if (typeof answer !== 'string' || !answer.trim() || answer.length > 2000
-        || /[\u0000-\u0008\u000b\u000c\u000e-\u001f]/u.test(answer))
-        stop('invalid_test_answer');
-      return answer;
+  const fieldRow = (question, status, reason) => ({
+    question, path: `customAnswers.${question}`, labels: [question], status, reason
+  });
+  function profileAnswers(profile) {
+    if (!profile || typeof profile !== 'object' || Array.isArray(profile)) stop('missing_profile_value');
+    const facts = Array.isArray(profile.customFacts) ? profile.customFacts : [];
+    const confirmed = new Set(Array.isArray(profile.confirmedFields) ? profile.confirmedFields : []);
+    const values = FIELDS.map(spec => {
+      const answer = profile.customAnswers?.[spec.question];
+      return typeof answer === 'string' ? answer : '';
     });
+    if (values.some(answer => !answer.trim())) stop('missing_profile_value');
+    if (values.some(answer => answer.length > 4000
+      || /[\u0000-\u0008\u000b\u000c\u000e-\u001f]/u.test(answer)))
+      stop('invalid_profile_value');
+    const confirmedFacts = FIELDS.every((spec, index) => {
+      const answer = values[index];
+      const matched = facts.filter(item => item?.question === spec.question);
+      const fact = matched.length === 1 ? matched[0] : null;
+      return !!fact && fact.answer === answer && fact.sitePageUrl === PAGE
+        && fact.sectionName === SECTION && fact.rowContext === 'none'
+        && confirmed.has(`customAnswers.${spec.question}`);
+    });
+    if (!confirmedFacts) stop('profile_fact_unconfirmed');
+    return values;
   }
 
-  async function fill({ sectionName, answers, profileBinding } = {}) {
+  async function fill({ sectionName, profile, profileBinding } = {}) {
     const result = { ok: false, sectionName: SECTION, fields: [],
       editorLeftOpen: false, writeStarted: false, savedOnSite: false,
-      submitted: false, softwareClickedSave: false, softwareClickedSubmit: false };
+      submitted: false, softwareClickedSave: false, softwareClickedSubmit: false,
+      softwareClickedDelete: false, liveSupportClaimed: false, complete: false };
     if (busy) return { ...result, reason: 'fill_in_progress' };
     busy = true;activeBinding=profileBinding;lastBinding=profileBinding;
     const timeOrigin = performance.timeOrigin;
     try {
       await checkBinding();
       if (sectionName !== SECTION) stop('unsupported_section');
-      const values = acceptedAnswers(answers);
+      const values = profileAnswers(profile);
       let sections = sectionsAt(timeOrigin);
       let forms = formsOf(sections);
       if (forms.length > 1 || forms.length === 1 && !sections[6].contains(forms[0]))
         stop('editor_structure_changed');
       const outsideBefore = outsideState(sections);
-      if (!forms.length) {
-        const links = [...sections[6].querySelectorAll('.title_ a.h-e-btn')]
-          .filter(node => norm(node.textContent) === '编辑' && visible(node));
-        if (links.length !== 1) stop('edit_link_not_unique');
-        await boundAction(()=>{if(!(links[0])?.isConnected)stop('profile_action_target_changed');return links[0].click();});
-        const deadline = Date.now() + 4000;
-        do {
-          await pause(60);
-          sections = sectionsAt(timeOrigin);
-          forms = formsOf(sections);
-          if (forms.length > 1 || forms.length === 1 && !sections[6].contains(forms[0]))
-            stop('editor_structure_changed');
-          if (forms.length === 1 && forms[0].querySelector('.el-form-item')) break;
-        } while (Date.now() < deadline);
-      }
+      if (!forms.length) stop('manual_open_editor_required');
       if (forms.length !== 1 || !sections[6].contains(forms[0])
         || outsideState(sections) !== outsideBefore) stop('editor_structure_changed');
       const form = forms[0];
@@ -140,10 +147,9 @@
       const originals = targets.map(target => target.node.value);
       if (originals.some(value => value !== '')) {
         await checkBinding();result.ok = true;
-        result.fields = targets.map((target, index) => ({ question: target.question,
-          status: originals[index] === values[index] ? 'verified' : 'skipped',
-          reason: originals[index] === values[index]
-            ? 'preexisting_same_value' : 'existing_value' }));
+        result.fields = targets.map((target, index) => fieldRow(target.question,
+          originals[index] === values[index] ? 'verified' : 'skipped',
+          originals[index] === values[index] ? 'preexisting_same_value' : 'existing_value'));
         return result;
       }
       if (targets.some((target, index) =>
@@ -184,13 +190,12 @@
         || outsideState(sections) !== outsideBefore) stop('readback_mismatch');
       if (!noValidationErrors(latest)) stop('site_validation_failed');
       await checkBinding();result.ok = true;
-      result.fields = latest.map(target => ({ question: target.question,
-        status: 'verified', reason: 'readback_matched' }));
+      result.fields = latest.map(target => fieldRow(target.question, 'verified', 'readback_matched'));
       return result;
     } catch (error) {
       result.reason = error instanceof Stop ? error.code : 'fill_failed';
-      result.fields = FIELDS.map(spec => ({ question: spec.question,
-        status: result.writeStarted ? 'failed' : 'skipped', reason: result.reason }));
+      result.fields = FIELDS.map(spec => fieldRow(spec.question,
+        result.writeStarted ? 'failed' : 'skipped', result.reason));
       return result;
     } finally {
       busy = false;activeBinding=null;

@@ -1,0 +1,9 @@
+{
+  "page": "https://wecruit.hotjob.cn/SU629dbc0c0dcad452299bc0f7/pb/resumeOperation.html",
+  "otherPage": "https://wecruit.hotjob.cn/SU000000000000000000000000/pb/resumeOperation.html",
+  "sectionName": "个人基本信息必填",
+  "rowContext": "single",
+  "questions": ["现居住地", "籍贯"],
+  "pair": { "province": "Synthetic Province", "city": "Synthetic City" },
+  "note": "Synthetic region facts only. No applicant answers, no DOM selectors, no Save."
+}

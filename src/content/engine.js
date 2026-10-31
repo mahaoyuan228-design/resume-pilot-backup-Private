@@ -8,14 +8,145 @@
   if(nativeMessages.hasListeners?.()===false)globalThis.__resumeNativeListenersResetObserved=true;
   if(globalThis.__resumeQuickFillInstalled){
     existingListenerAlive=!!ownedListener&&nativeMessages.hasListener?.(ownedListener)===true;
-    if(existingListenerAlive&&globalThis.__resumeQuickFillEngineRevision===5&&typeof globalThis.ResumeQuickFillGthInspect==='function')return;
+    if(existingListenerAlive&&globalThis.__resumeQuickFillEngineRevision===26&&typeof globalThis.ResumeQuickFillGthInspect==='function'
+      &&typeof globalThis.ResumeQuickFillFillCurrentPage==='function')return;
     if(existingListenerAlive){if(fillState.pending)throw Error('profile_write_context_busy');nativeMessages.removeListener(ownedListener);existingListenerAlive=false;}
     else if(!ownedListener&&nativeMessages.hasListeners?.()===true&&!globalThis.__resumeNativeListenersResetObserved)throw Error('extension_reload_required');
   }
 
   async function checkProfileWrite(){const context=globalThis.ResumeProfileWriteContext;if(context)await context.check();}
   const M = globalThis.ResumeMatcher;
+  const proseValue = value => String(value ?? '').replace(/\r\n?/gu, '\n');
+  const richtextControl = control => control.hasAttribute('contenteditable') && !control.matches('input,textarea,select,iframe');
+  const proseControl = control => control instanceof HTMLTextAreaElement || richtextControl(control);
+  // ISOLATED-world observation mirrors L1's plain-text block/BR contract.
+  function richtextValue(root) {
+    const block = node => /^(DIV|P|LI|UL|OL|BLOCKQUOTE|PRE|H[1-6]|SECTION|ARTICLE)$/u.test(node.nodeName);
+    const read = node => {
+      if (node.nodeType === 3) return node.data;
+      if (node.nodeName === 'BR') return '\n';
+      const children = [...node.childNodes].filter(child => child.nodeType === 1 || child.nodeType === 3);
+      if ((node === root || block(node)) && children.length === 1 && children[0].nodeName === 'BR') return '';
+      let text = '', previous = null;
+      for (const child of children) {
+        const value = read(child);
+        if (!block(child) && value === '') continue;
+        if (previous && (block(previous) || block(child))) text += '\n';
+        text += value; previous = child;
+      }
+      return text;
+    };
+    return proseValue(read(root));
+  }
+  let atsControlTargets = new Map();
+  const atsControlPeers = new Set();
+  async function loadAtsControlTargets(enabled = null) {
+    atsControlTargets = new Map();
+    atsControlPeers.clear();
+    if (enabled === null) enabled = typeof globalThis.chrome?.storage?.local?.get === 'function'
+      && (await chrome.storage.local.get('resumeAtsEngineWriteEnabled')).resumeAtsEngineWriteEnabled === true;
+    if (!enabled) return;
+    const response = await chrome.runtime.sendMessage({ type: 'RESUME_ATS_CONTROL_CANDIDATES', timeOrigin: performance.timeOrigin });
+    if (response?.ok !== true || response.mode !== 'candidates' || response.writeStarted !== false || response.liveSupportClaimed !== false) throw Error('control_candidates_unavailable');
+    for (const candidate of response.candidates || []) {
+      const nodes = document.querySelectorAll(candidate.selector);
+      if (nodes.length !== 1 || !nodes[0].matches('input,textarea,[contenteditable]')
+        && !(candidate.type === 'tree-select' && nodes[0].matches('[role="combobox"]'))
+        && !(candidate.type === 'slider' && nodes[0].matches('[role="slider"]'))
+        && !(candidate.type === 'transfer' && nodes[0].matches('.el-transfer,.ant-transfer'))
+        && !(candidate.type === 'rate' && nodes[0].matches('.el-rate,.ant-rate,[role="slider"]'))) continue;
+      if (['multi-select', 'tree-select', 'slider', 'rate', 'transfer'].includes(candidate.type)) {
+        const roots = typeof candidate.rootSelector === 'string' ? document.querySelectorAll(candidate.rootSelector) : [];
+        if (roots.length !== 1 || !roots[0].contains(nodes[0])) continue;
+        for (const peer of roots[0].querySelectorAll('input,textarea,[contenteditable]')) if (peer !== nodes[0]) atsControlPeers.add(peer);
+      }
+      atsControlTargets.set(nodes[0], candidate);
+    }
+  }
+  let fieldMemorySnapshot = null;
+  async function loadFieldMemory() {
+    fieldMemorySnapshot = null;
+    if (!globalThis.ResumeDomainMemory || !chrome.storage?.local) return;
+    try { fieldMemorySnapshot = await globalThis.ResumeDomainMemory.load(chrome.storage.local, location.href); }
+    catch { /* Unavailable or invalid memory leaves the field manual. */ }
+  }
   const RESERVED_TYPES = new Set(["hidden", "password", "search", "submit", "reset", "button", "image", "checkbox"]);
+  const MANUAL_CONTROL_SELECTOR = 'iframe,[data-captcha],[class*="captcha" i],[id*="captcha" i],[name*="captcha" i],input[autocomplete="one-time-code"]';
+  const LOGIN_REGION_SELECTOR = '[role="form"],[role="dialog"],[role="region"],[role="group"],section,fieldset,article,.section,.form-section,[data-section]';
+  function loginSignal(node) {
+    if (node.matches('input:not([type="button"]):not([type="submit"]):not([type="reset"])')) {
+      if (node.type === 'password' || node.autocomplete === 'one-time-code') return true;
+      if (node.closest('[data-captcha],[class*="captcha" i],[id*="captcha" i],[name*="captcha" i]')) return true;
+      const item = node.closest('.ant-form-item,.el-form-item,.ivu-form-item,.form-item,.form-group,.field,[data-field],[data-form-item]');
+      const itemLabels = item ? [...item.querySelectorAll('label,.label,[data-label],.ant-form-item-label,.el-form-item__label,.ivu-form-item-label,.form-item-label,.field-label')]
+        .map(label => label.textContent) : [];
+      const text = ['name', 'id', 'aria-label', 'placeholder'].map(name => node.getAttribute(name) || '')
+        .concat([...(node.labels || [])].map(label => label.textContent), itemLabels).join(' ');
+      const by = (node.getAttribute('aria-labelledby') || '').split(/\s+/)
+        .map(id => document.getElementById(id)?.textContent || '').join(' ');
+      return /验证码|驗證碼|captcha|verification[\s_-]*code|one[\s_-]*time[\s_-]*(?:code|password)|(?:^|[\s_-])otp(?:$|[\s_-])/iu.test(`${text} ${by}`);
+    }
+    const text = String(node.getAttribute('aria-label') || node.textContent?.trim() || node.value || '')
+      .normalize('NFKC').replace(/\s+/gu, '').trim();
+    return /(?:获取|发送|重新获取|重新发送)(?:短信)?验证码|^(?:(?:立即|安全|快速|确认|继续|一键|账号|验证码|手机)?登录(?:并注册|\/注册)?|signin|login|(?:send|get)(?:verification)?code)$/iu.test(text);
+  }
+  function loginScope(signal) {
+    // Native ownership includes controls associated through form= outside the
+    // form subtree. A semantic region bounds a form-less login panel.
+    const form = signal.form || signal.closest('form');
+    if (form) return form;
+    const ariaForm = signal.closest('[role="form"]');
+    if (ariaForm) return ariaForm;
+    const navigation = signal.closest('header,nav,[role="navigation"]');
+    const region = signal.closest(LOGIN_REGION_SELECTOR);
+    if (region && (!navigation || navigation.contains(region))) return region;
+    // Component wrappers often have no form/region semantics. Use the first
+    // local ancestor sharing the challenge/button with an answer editor.
+    for (let root = signal.parentElement; root && root !== document.body && root !== document.documentElement; root = root.parentElement) {
+      const editors = [...root.querySelectorAll('input,select,textarea,[contenteditable="true"]')]
+        .filter(node => {
+          const region = node.closest(LOGIN_REGION_SELECTOR);
+          return node !== signal && !node.form && (!region || region.contains(root))
+            && !['hidden', 'button', 'submit', 'reset', 'image'].includes(node.type);
+        });
+      if (editors.length) return root;
+      if (root === navigation) break;
+    }
+    // A navigation action without its own editor is not a login form. Never
+    // borrow an editor through body/html to turn the whole page into one.
+    const parent = signal.parentElement;
+    return signal.matches('input') && parent !== document.body && parent !== document.documentElement ? parent : null;
+  }
+  function loginFormScopes() {
+    return new Set([...document.querySelectorAll('input,button,[role="button"]')]
+      .filter(loginSignal).map(loginScope).filter(Boolean));
+  }
+  function inLoginScope(control, scope) {
+    const form = control.form || control.closest('form');
+    if (scope.matches('form')) return form === scope;
+    if (scope.matches('[role="form"]')) return control.closest('[role="form"]') === scope;
+    if (form && (!scope.matches(LOGIN_REGION_SELECTOR) || !scope.contains(form))) return false;
+    const region = control.closest(LOGIN_REGION_SELECTOR);
+    // A page header's login action cannot claim an independent resume region.
+    return scope.contains(control) && (!region || region === scope || region.contains(scope));
+  }
+  function loginControlReason(control, scopes = loginFormScopes()) {
+    return [...scopes].some(scope => inLoginScope(control, scope)) ? 'login_form_detected' : null;
+  }
+  const manualControlReason = (control, scopes) => loginControlReason(control, scopes)
+    || (control.closest(MANUAL_CONTROL_SELECTOR) ? "iframe_or_captcha_manual" : null);
+  function loginAdvisoryHints() {
+    return loginFormScopes().size ? [{ status: 'login_required', reason: 'login_form_detected',
+      message: '请先登录', advisory: true, blocking: false, liveSupportClaimed: false }] : [];
+  }
+  function requireWritableControl(control, writeStarted = false) {
+    const reason = manualControlReason(control);
+    if (reason) throw Object.assign(Error(reason), { writeStarted });
+  }
+  function manualControlEntry(control, position, reason = manualControlReason(control)) {
+    return { id: fieldId(control, position), labels: labelTexts(control), kind: control.tagName.toLowerCase(),
+      key: null, control, semanticStatus: "manual", reason: reason || "iframe_or_captcha_manual" };
+  }
   const PAGE_HIDDEN_DURING_FILL = "fill_interrupted_page_hidden";
   const CMS_PHOTO_PAGE = "https://wecruit.hotjob.cn/SU629dbc0c0dcad452299bc0f7/pb/resumeOperation.html";
   function requireVisibleFillPage() {
@@ -30,6 +161,11 @@
     return control instanceof HTMLInputElement && control.type === "search"
       && control.getAttribute("role") === "combobox"
       && !!control.closest(".ant-form-item .ant-select");
+  }
+
+  function treeQueryControl(control) {
+    return control instanceof HTMLInputElement
+      && !!control.closest('.ant-select-tree-dropdown,[role="tree"]');
   }
 
   function formItemQuestion(item) {
@@ -55,51 +191,137 @@
     return String(value ?? "").normalize("NFKC").replace(/\s+/g, "").trim();
   }
 
-  function visible(control) {
+  function visible(control, confirmedWidget = false) {
     if (control.disabled || control.closest('[hidden],[aria-hidden="true"]')) return false;
-    if (control instanceof HTMLInputElement && RESERVED_TYPES.has(control.type) && !antSelectControl(control)) return false;
+    if (control instanceof HTMLInputElement && RESERVED_TYPES.has(control.type) && !antSelectControl(control)
+      && !(confirmedWidget && control.type === 'search')) return false;
     const style = getComputedStyle(control);
     return style.display !== "none" && style.visibility !== "hidden" && control.getClientRects().length > 0;
   }
 
+  function questionOwnsControl(label, control, scope) {
+    if (!label) return false;
+    if (label.htmlFor) {
+      const target = document.getElementById(label.htmlFor);
+      const candidate = atsControlTargets.get(control);
+      return target === control || !!target && control.contains(target)
+        || !!target && ['slider', 'rate', 'transfer'].includes(candidate?.type) && document.querySelector(candidate.rootSelector) === target;
+    }
+    const editors = [...scope.querySelectorAll('input:not([type="hidden"]),select,textarea,[contenteditable]')]
+      .filter(node => !node.hasAttribute('contenteditable') || ['', 'true', 'plaintext-only'].includes(node.getAttribute('contenteditable').toLowerCase())
+        && !node.parentElement?.closest('[contenteditable]'))
+      .filter(node => !['button', 'submit', 'reset', 'image'].includes(node.type) && !treeQueryControl(node) && !atsControlPeers.has(node));
+    // A confirmed inputless widget is the editor for a standard
+    // form-item label. Include every peer so a shared row stays ambiguous.
+    for (const [node, candidate] of atsControlTargets) {
+      if (['tree-select', 'slider', 'rate', 'transfer'].includes(candidate.type) && scope.contains(node)
+        && !node.matches('input,textarea,[contenteditable]')) editors.push(node);
+    }
+    const widget = node => node.closest('.ant-select,.el-select,.ivu-select,.ant-radio-group,.el-radio-group,.ivu-radio-group,.ant-slider,.el-slider,.ant-rate,.el-rate,.ant-transfer,.el-transfer') || node;
+    if (editors.length && editors.every(node => node.type === 'radio' && node.name === editors[0].name)) return editors.includes(control);
+    const owners = new Set(editors.map(widget));
+    return owners.size === 1 && owners.has(widget(control));
+  }
+
+  const FORM_ITEM_SELECTOR = '.ant-form-item,.el-form-item,.ivu-form-item,.form-item,.form-group,.field,[data-field],[data-form-item]';
+  const ITEM_QUESTION_SELECTOR = '.ant-form-item-label,.el-form-item__label,.ivu-form-item-label,.form-item-label,.field-label,.label,[data-label]';
+  const SECTION_SELECTOR = 'fieldset,section,.section,.form-section,[role="group"],[role="region"],[data-section]';
+  function cleanQuestion(value) {
+    const text = String(value || '').replace(/\s+/gu, ' ').trim();
+    const prompt = text.normalize('NFKC').replace(/^[*\s:：]+/u, '');
+    // Prompts are not questions, including prompts placed in a label node.
+    return /^(?:请(?:选择|输入|填写|选取)|please\b|select(?:\s|$)|enter(?:\s|$)|placeholder\b)/iu.test(prompt)
+      || /^[\s*＊:：.\-—]*$/u.test(text) ? '' : text;
+  }
+
+  function questionText(node) {
+    if (!node) return '';
+    if (node.matches?.('input,select,textarea,button,[contenteditable],[hidden],[aria-hidden="true"],'
+      + '[class*="display-value"],[class*="selected-value"],[class*="selection-item"]')) return '';
+    const copy = node.cloneNode(true);
+    copy.querySelectorAll?.('input,select,textarea,button,[contenteditable],script,style,[hidden],[aria-hidden="true"],'
+      + '[class*="display-value"],[class*="selected-value"],[class*="selection-item"]')
+      .forEach(item => item.remove());
+    return cleanQuestion(copy.textContent);
+  }
+
+  function generalSection(control) {
+    for (let section = control.parentElement?.closest(SECTION_SELECTOR); section;
+      section = section.parentElement?.closest(SECTION_SELECTOR)) {
+      const labelledBy = section.getAttribute('aria-labelledby');
+      const ids = labelledBy?.trim().split(/\s+/u).map(id => document.getElementById(id));
+      let name = ids?.length && ids.every(Boolean) ? ids.map(questionText).join(' ').trim() : '';
+      name ||= cleanQuestion(section.getAttribute('aria-label'));
+      if (!name) {
+        const candidates = [...section.querySelectorAll('legend,h1,h2,h3,h4,h5,h6,[role="heading"],[data-section-title],.section-title,.form-section-title,.group-title')]
+          .filter(node => node.closest(SECTION_SELECTOR) === section);
+        const headings = candidates.filter(node => !candidates.some(other => other !== node && node.contains(other)));
+        if (headings.length === 1) name = questionText(headings[0]);
+      }
+      if (name) return { element: section, name };
+    }
+    return null;
+  }
+
   function labelTexts(control) {
-    const found = [];
-    const add = (value) => {
-      const clean = String(value || "").replace(/\s+/g, " ").trim();
-      if (clean && !found.includes(clean)) found.push(clean);
-    };
-    // The Ant form item's own label is the question. A placeholder may be a
-    // generic hint or even name a different fact; it must not veto that label.
-    const antQuestion = formItemQuestion(control.closest(".ant-form-item"));
-    if (antQuestion) {
-      add(antQuestion.textContent);
-      return found;
+    const texts = nodes => [...new Set(nodes.map(questionText).filter(Boolean))];
+    const item = control.closest(FORM_ITEM_SELECTOR);
+    if (item) {
+      // Component question containers outrank even an associated label in
+      // their answer subtree. Option/display labels are a different source.
+      for (const selector of [ITEM_QUESTION_SELECTOR, 'label']) {
+        const candidates = [...item.querySelectorAll(selector)]
+          .filter(label => label.closest(FORM_ITEM_SELECTOR) === item)
+          .flatMap(label => {
+            const children = label.matches('label') ? [] : [...label.querySelectorAll('label')]
+              .filter(child => child.closest(FORM_ITEM_SELECTOR) === item);
+            return children.length ? children : [label];
+          })
+          .filter(label => !label.matches('.ant-radio-wrapper,.el-radio,.ivu-radio-wrapper'));
+        const own = candidates.filter(label => !candidates.some(other => other !== label && label.contains(other))
+          && questionOwnsControl(label, control, item));
+        const labels = texts(own);
+        if (labels.length) return labels;
+      }
     }
-    for (const label of control.labels || []) {
-      const copy = label.cloneNode(true);
-      copy.querySelectorAll("input,select,textarea,button").forEach((item) => item.remove());
-      add(copy.textContent);
+    const candidate = atsControlTargets.get(control);
+    const widgetRoot = ['slider', 'rate', 'transfer'].includes(candidate?.type) ? document.querySelector(candidate.rootSelector) : null;
+    const ownLabels = [...new Set([...(control.labels || []), ...document.querySelectorAll('label[for]')])]
+      .filter(label => (label.control === control || control.id && label.htmlFor === control.id
+        || widgetRoot?.id && label.htmlFor === widgetRoot.id) && questionOwnsControl(label, control, label));
+    const labels = texts(ownLabels);
+    if (labels.length) return labels;
+    const labelledBy = control.getAttribute('aria-labelledby') || widgetRoot?.getAttribute('aria-labelledby');
+    if (labelledBy) {
+      const nodes = labelledBy.trim().split(/\s+/u).map(id => document.getElementById(id));
+      if (nodes.every(Boolean)) {
+        const text = texts(nodes).join(' ');
+        if (text) return [text];
+      }
     }
-    add(control.getAttribute("aria-label"));
-    const labelledBy = control.getAttribute("aria-labelledby");
-    if (labelledBy) for (const id of labelledBy.split(/\s+/)) add(document.getElementById(id)?.textContent);
-    // Ant Design and Element UI often put the question on the enclosing form
-    // item without associating it with the native input. Take only that item's
-    // own, unique label so a nested repeat row cannot borrow another question.
-    add(formItemQuestion(control.closest(".ant-form-item"))?.textContent);
-    const elementItem = control.closest(".el-form-item");
-    if (elementItem) {
-      const ownLabels = [...elementItem.querySelectorAll(".el-form-item__label")]
-        .filter((label) => label.closest(".el-form-item") === elementItem);
-      if (ownLabels.length === 1) add(ownLabels[0].textContent);
+    for (const node of [control, widgetRoot].filter(Boolean)) {
+      const text = cleanQuestion(node.getAttribute('aria-label'));
+      if (text) return [text];
     }
-    add(control.getAttribute("placeholder"));
-    add(control.getAttribute("title"));
-    if (!found.length) {
-      const near = control.closest(".form-item,.form-group,.field,[data-field]");
-      add(near?.querySelector("label,.label,[data-label]")?.textContent);
+    // Only an adjacent, non-interactive text belongs to this editor. Never
+    // borrow a previous row's question or a shared multi-editor heading.
+    for (let node = control; node?.parentElement; node = node.parentElement) {
+      if (node === item) break;
+      const scope = node.parentElement;
+      let previous = node.previousSibling;
+      while (previous && (previous.nodeType === 8 || !previous.textContent?.trim())) previous = previous.previousSibling;
+      if (!scope.matches('label') && previous && (previous.nodeType === 3 || previous.nodeType === 1
+        && !previous.matches('input,select,textarea,button,a,h1,h2,h3,h4,h5,h6,legend,[role="heading"]')
+        && !previous.querySelector('input,select,textarea,button,a,[contenteditable]'))
+        && questionOwnsControl(previous, control, scope)) {
+        const text = questionText(previous);
+        if (text) return [text];
+      }
+      if (scope.matches('form,' + SECTION_SELECTOR)) break;
     }
-    return found;
+    const section = generalSection(control);
+    if (section && questionOwnsControl(section.element, control, section.element)) return [section.name];
+    return [];
   }
 
   function repeatContext(control) {
@@ -171,7 +393,10 @@
     const headings = [...scope.querySelectorAll(".form-cell > .tit-wrap .tit")]
       .map((item) => M.normalize(item.textContent));
     const signature = ["个人基本信息必填", "自我评价必填", "教育经历必填"];
-    if (!signature.every((name) => headings.includes(name))) return null;
+    // 南粤 same-shell headings omit 自我评价必填. 个人基本信息必填 + 教育经历必填 still binds.
+    const tenantMin = ["个人基本信息必填", "教育经历必填"];
+    if (!signature.every((name) => headings.includes(name))
+      && !tenantMin.every((name) => headings.includes(name))) return null;
     return { element: section, name: M.normalize(heading.textContent) };
   }
 
@@ -216,10 +441,16 @@
     const gth = !cms && !cmb && gthPage ? gthSection(control) : null;
     const fieldset = !cms && !cmb && !gthPage ? control.closest("fieldset") : null;
     const legend = fieldset?.querySelector(":scope > legend");
+    const generic = !cms && !cmb && !gthPage ? generalSection(control) : null;
+    // A single editor can be named by its group heading (e.g. “邮箱”). Such
+    // a question is not also an unknown resume-section restriction.
+    const headingIsQuestion = generic && !M.sectionKind(generic.name)
+      && labelTexts(control).some(label => M.normalize(label) === M.normalize(generic.name))
+      && questionOwnsControl(generic.element, control, generic.element);
     const form = control.closest("form");
     const oneForm = form && document.querySelectorAll("form").length === 1;
     const sectionName = cms?.name || cmb?.name || gth?.name
-      || (gthPage ? "" : M.normalize(legend?.textContent)
+      || (gthPage ? "" : headingIsQuestion ? "" : M.normalize(legend?.textContent || generic?.name)
         || (form?.id ? `form:${form.id}` : oneForm ? "form:single" : ""));
     let rowContext = "none";
     if (cms) {
@@ -363,6 +594,72 @@
       ?{...definition,question,sectionName:section.name,rowContext:"single"}:null;
   }
 
+  // The row-C harvest confirms this wrapper and a plain text input, but no
+  // widget internals. Tighten the existing custom-answer route rather than
+  // infer an address from any general profile field or a changed control.
+  function cmsBasicAddressBinding(control) {
+    if (`${location.origin}${location.pathname}` !== CMS_PHOTO_PAGE) return null;
+    const item = control.closest(".ant-form-item"), wrapperId = "11_51414234_0";
+    const question = M.normalize(formItemQuestion(item)?.textContent);
+    const wrapper = control.closest(`[id="${wrapperId}"]`);
+    const addressLabel = labelTexts(control).some(label => M.normalize(label) === "联系地址")
+      || [...(item?.querySelectorAll('.ant-form-item-label > label') || [])]
+        .some(label => label.closest('.ant-form-item') === item && M.normalize(label.textContent) === "联系地址");
+    if (question !== "联系地址" && !wrapper && !addressLabel
+      && control.getAttribute("placeholder") !== "请填写联系地址") return null;
+    const fail = reason => ({ reason });
+    const section = cmsSection(control);
+    if (!section || section.name !== "个人基本信息必填" || section.element.id !== "11"
+      || document.querySelectorAll('[id="11"]').length !== 1)
+      return fail("question_scope_mismatch");
+    const rows = [...section.element.querySelectorAll(":scope > .form-cell-right > .form-cell-inner")];
+    const row = control.closest(".form-cell-inner");
+    if (rows.length !== 1 || rows[0] !== row) return fail("ambiguous_repeat_group");
+    const peers = [...section.element.querySelectorAll(".ant-form-item")]
+      .filter(candidate => M.normalize(formItemQuestion(candidate)?.textContent) === "联系地址");
+    const wrappers = document.querySelectorAll(`[id="${wrapperId}"]`);
+    if (peers.length > 1 || wrappers.length > 1) return fail("duplicate_target");
+    if (peers.length !== 1 || peers[0] !== item || wrappers.length !== 1) return fail("field_changed");
+    // The metadata records a wrapper ID, not whether that wrapper is the item,
+    // inside it, or its immediate container. Bind the same item and input in
+    // each case without manufacturing an unharvested markup relationship.
+    const wrapperItem = wrapper?.closest(".ant-form-item");
+    if (!wrapper || !wrapper.contains(control) || wrapper.closest(".form-cell-inner") !== row
+      || (wrapperItem ? wrapperItem !== item : !wrapper.contains(item)
+        || wrapper.querySelectorAll(".ant-form-item").length !== 1)
+      || item.closest(".form-cell-inner") !== row || question !== "联系地址")
+      return fail("field_changed");
+    const widgets = ".ant-select,.ant-calendar-picker,.ant-picker,.cascader-plugins-wrap,.el-select,.el-cascader,.el-date-editor";
+    const inputs = [...item.querySelectorAll("input,select,textarea")];
+    const displayed = node => {
+      if (!node || !visible(node)) return false;
+      for (let current = node; current; current = current.parentElement) {
+        const style = getComputedStyle(current);
+        if (current.hidden || current.getAttribute("aria-hidden") === "true" || current.hasAttribute("inert")
+          || style.display === "none" || ["hidden", "collapse"].includes(style.visibility)) return false;
+      }
+      return true;
+    };
+    if (!(control instanceof HTMLInputElement) || control.type !== "text"
+      || control.readOnly || control.matches(":disabled")
+      || control.closest("fieldset[disabled]") || !displayed(control) || !displayed(formItemQuestion(item))
+      || control.getAttribute("placeholder") !== "请填写联系地址"
+      || inputs.length !== 1 || inputs[0] !== control || item.querySelector(widgets)
+      || control.closest(widgets)) return fail("custom_control_not_supported");
+    return { question, sectionName: section.name, rowContext: "single" };
+  }
+
+  function cmsBasicAddressAnswer(profile, control, binding) {
+    if (binding.reason) return { reason: binding.reason };
+    const facts = (profile.customFacts || []).filter(fact => M.normalize(fact?.question) === binding.question);
+    if (facts.length !== 1) return { reason: facts.length ? "ambiguous_profile_fact" : "missing_profile_value" };
+    const fact = facts[0], path = `customAnswers.${fact.question}`;
+    const answer = String(profile.customAnswers?.[fact.question] ?? "").trim();
+    if (!answer) return { path, reason: "missing_profile_value" };
+    if (String(fact.answer ?? "").trim() !== answer) return { path, reason: "question_scope_mismatch" };
+    return confirmedCustomAnswer(profile, fact.question, control);
+  }
+
   function cmsCustomSingleSelect(selection) {
     const item = selection?.closest(".ant-form-item");
     const section = cmsSection(item);
@@ -441,6 +738,15 @@
     '求职意向必填':new Set(['意向一期望工作地点','意向二期望工作地点']),
     '教育经历必填':new Set(['城市'])
   };
+  // Same reason set as planCmsRegionFact. Unsettled or non-unique region facts
+  // fail closed. This does not add selectors and does not Save.
+  function settleUnresolvedEntry(entry, reason) {
+    const closed=new Set(["region_fact_not_unique","region_fact_unconfirmed","region_fact_scope_mismatch",
+      "explicit_region_pair_required","region_adapter_missing","unconfirmed_or_incomplete_region_pair"]);
+    if (reason === "duplicate_target") return "failed";
+    if (entry?.kind === "cms_region" && closed.has(reason)) return "failed";
+    return "skipped";
+  }
   const regionLabel=value=>String(value||'').normalize('NFKC').replace(/[＊*：:\s]/gu,'');
   function cmsRegionControl(wrap) {
     if(location.hostname!=='wecruit.hotjob.cn'||!/^\/SU[^/]+\/pb\/resumeOperation\.html$/.test(location.pathname)
@@ -552,6 +858,17 @@
     if (question === "获得时间" || question === "成绩") {
       return { reason: "section_requires_mapping" };
     }
+    // 家庭关系必填 姓名 classifies as fullName and collided with 个人基本信息必填.
+    if (key === "fullName" && section.name !== "个人基本信息必填") {
+      return { reason: "section_requires_mapping" };
+    }
+    // 南粤 basic info shows both labels. Keep 移动电话; do not also bind 联系电话.
+    if (section.name === "个人基本信息必填" && key === "phone" && question === "联系电话") {
+      const mobile = [...section.element.querySelectorAll(".ant-form-item")].some((item) =>
+        visible(item) && item.closest(".form-cell") === section.element
+        && M.normalize(formItemQuestion(item)?.textContent) === "移动电话");
+      if (mobile) return { reason: "section_requires_mapping" };
+    }
     if (section.name === "自我评价必填" && question === "评价内容" && control instanceof HTMLTextAreaElement) {
       const peers = [...section.element.querySelectorAll("textarea")]
         .filter((item) => visible(item) && M.normalize(formItemQuestion(item.closest(".ant-form-item"))?.textContent) === "评价内容");
@@ -559,9 +876,20 @@
         ? { key: "selfEvaluation" } : { reason: "ambiguous_repeat_group" };
     }
     if (section.name === "个人基本信息必填"
-      && ((key === "major" && question === "专业名称")
+      && ((key === "major" && (question === "专业" || question === "专业名称"))
         || (key === "endDate" && question === "毕业时间"))) {
       return { reason: "section_requires_mapping" };
+    }
+    // One education row can show both 专业 and 专业名称. Both classify as major
+    // and would share education.0.major (duplicate_target). Keep 专业名称.
+    if (section.name === "教育经历必填" && key === "major" && question === "专业") {
+      const right = section.element.querySelector(":scope > .form-cell-right");
+      const rows = [...(right?.querySelectorAll(":scope > .form-cell-inner") || [])];
+      const row = control.closest(".form-cell-inner");
+      const named = rows.length === 1 && rows[0] === row && [...row.querySelectorAll(".ant-form-item")].some((item) =>
+        visible(item) && item.closest(".form-cell-inner") === row
+        && M.normalize(formItemQuestion(item)?.textContent) === "专业名称");
+      if (named) return { reason: "section_requires_mapping" };
     }
     if (section.name === "教育经历必填"
       && control.matches?.(".ant-select-selection.ant-select-selection--single")
@@ -583,7 +911,7 @@
         ? { context, reason: "search_required" } : { context };
     }
     if (section.name !== "教育经历必填" || !(control instanceof HTMLInputElement)) return {};
-    const isMajor = key === "major" && question === "专业名称"
+    const isMajor = key === "major" && (question === "专业" || question === "专业名称")
       && !control.closest(".ant-calendar-picker");
     const isCalendarDate = ((key === "startDate" && question === "开始时间")
       || (key === "endDate" && question === "结束时间"))
@@ -638,6 +966,26 @@
     return validation.valid ? { value: validation.value, path } : { reason: validation.reason, path };
   }
 
+  function semanticProfileValue(profile, path, context) {
+    if (!M.isProfileKey(path)) return { reason: "unmapped_repeat_field" };
+    if (path === "desiredRoles" || path === "desiredCities") return profileValue(profile, path);
+    const parts = path.split(".");
+    if (context && ["work", "internship"].includes(context.kind)) {
+      const actual = M.normalize(profile.experience?.[context.index]?.type);
+      const accepted = context.kind === "work" ? ["work", "工作", "工作经历"] : ["internship", "实习", "实习经历"];
+      if (!accepted.includes(actual)) return { reason: "section_requires_mapping" };
+    }
+    let value = profile;
+    for (const part of parts) {
+      if (!value || !Object.hasOwn(value, part)) return { reason: "missing_profile_value" };
+      value = value[part];
+    }
+    if (value == null || value === "") return { reason: "missing_profile_value" };
+    if (!(profile.confirmedFields || []).includes(path)) return { reason: "unconfirmed_profile_value" };
+    const checked = M.validValue(parts.at(-1), value);
+    return checked.valid ? { value: checked.value } : { reason: checked.reason };
+  }
+
   function fieldId(control, position) {
     return control.id || control.name || `${control.tagName.toLowerCase()}-${position}`;
   }
@@ -688,7 +1036,26 @@
       &&JSON.stringify(options.map(node=>M.normalize(radioOptionLabel(node,true))).sort())===JSON.stringify(["否","是"].sort());
   }
 
+  function datePartPlaceholder(option) {
+    const label = String(option.textContent || '').normalize('NFKC').trim().toLowerCase();
+    const value = String(option.value).normalize('NFKC').trim().toLowerCase();
+    const part = /^(?:年|year|yyyy|-{2,})$/u.test(label) ? 'year'
+      : /^(?:月|month|mm)$/u.test(label) ? 'month' : /^(?:日|day|dd)$/u.test(label) ? 'day' : null;
+    if (!part || !['', '-1', '0', label].includes(value)) return false;
+    const choices = [...option.closest('select').options].filter(node => node !== option
+      && !node.disabled && !node.closest('optgroup[disabled]'));
+    const pattern = part === 'year' ? /^\d{4}$/u : /^\d{1,2}$/u;
+    const display = part === 'year' ? /^(\d{4})年?$/u : part === 'month' ? /^(\d{1,2})月?$/u : /^(\d{1,2})日?$/u;
+    return choices.length > 0 && choices.every(node => {
+      const code = node.value.normalize('NFKC').trim(), text = node.textContent.normalize('NFKC').trim().match(display);
+      return pattern.test(code) && text && Number(code) === Number(text[1])
+        && Number(code) >= (part === 'year' ? 1900 : 1) && Number(code) <= (part === 'year' ? 2100 : part === 'month' ? 12 : 31);
+    });
+  }
+
   function meaningfulCurrent(control, radioOptions = null, antUnnamed = false) {
+    if (['slider', 'rate'].includes(atsControlTargets.get(control)?.type) && control.matches('[role="slider"]')) return control.getAttribute('aria-valuenow') || '';
+    if (richtextControl(control)) return richtextValue(control);
     if(cmsCheckboxControl(control)) {
       const selected=globalThis.ResumeCmsCheckboxes.inspectControl(control)?.selected;
       return selected?.length?JSON.stringify(selected):'';
@@ -708,6 +1075,7 @@
     if (control instanceof HTMLSelectElement) {
       const chosen = control.selectedOptions[0];
       if (!chosen || chosen.disabled || !chosen.value) return "";
+      if (datePartPlaceholder(chosen)) return "";
       if (["请选择", "选择", "请选", "select"].includes(M.normalize(chosen.textContent))) return "";
       return chosen.textContent.trim();
     }
@@ -724,8 +1092,14 @@
       : !!type && type === token);
   }
 
-  function controlConstraint(control, answer) {
+  function controlConstraint(control, answer, confirmedWidget = false) {
     if (!(control instanceof HTMLInputElement || control instanceof HTMLTextAreaElement)) return null;
+    // A readonly widget display is eligible only after MAIN has confirmed the
+    // registered component version and a writable model. Its adapter owns all
+    // effects; it never reaches the native setter in the opt-in route.
+    if (confirmedWidget) return null;
+    if (control.closest('.el-rate,.ant-rate,[role="slider"][aria-roledescription]')) return 'rate_requires_l1';
+    if (control.type === 'range' || control.closest('.el-slider,.ant-slider')) return 'slider_requires_l1';
     if (cmsBirthDateControl(control) || cmsEducationDateControl(control)) {
       // Once this unique CMS date control already contains a value, it is a
       // readback target rather than a date-entry target. Ant may remove its
@@ -747,6 +1121,9 @@
     // Its native input is only a display surface; changing its value directly
     // would not prove that the framework accepted a date or choice.
     if (control instanceof HTMLInputElement && control.closest('.el-date-editor,.el-select,.el-cascader,.cascader-wrap')) return "readonly_control";
+    // Tree search inputs are queries. Only a confirmed MAIN adapter can turn
+    // them into a choice through the owning tree's node click and readback.
+    if (treeQueryControl(control) || control.matches('[role="combobox"][aria-haspopup="tree"]')) return "readonly_control";
     if (antDegreeControl(control) || cmbAntV4Control(control)) return null;
     if (control.readOnly) return "readonly_control";
     if (Array.isArray(answer)) return null;
@@ -760,10 +1137,26 @@
     return null;
   }
 
-  function collect(profile, attachment = null) {
+  function collect(profile, attachment = null, trialScope = null) {
+    const loginScopes = loginFormScopes();
+    // A trial root is resolved before any classification/current-value read.
+    // All ordinary callers keep the existing document-wide collection path.
+    const query = selector => trialScope
+      ? [...(trialScope.wrapper.matches(selector) ? [trialScope.wrapper] : []), ...trialScope.wrapper.querySelectorAll(selector)]
+      : [...document.querySelectorAll(selector)];
     const radioGroups = new Set();
-    const controls = [...document.querySelectorAll("input,select,textarea")].filter((control) => {
-      if (!visible(control)) return false;
+    // Rich text can enter only through MAIN's confirmed, opt-in L1 claim.
+    // It has no legacy native-setter path.
+    const controls = query('input,select,textarea,iframe,[contenteditable]').filter((control) => {
+      if (atsControlPeers.has(control)) return false;
+      // A portalled tree query can sit inside the labelled form item without
+      // belonging to the answer root. It never becomes a native text field.
+      if (treeQueryControl(control)) return false;
+      // Transfer checkboxes and search editors belong to the widget, including
+      // when L1 is disabled or cannot confirm that component's model.
+      if (control.closest('.el-transfer,.ant-transfer')) return false;
+      if (richtextControl(control) && atsControlTargets.get(control)?.type !== 'richtext') return false;
+      if (!visible(control, atsControlTargets.has(control))) return false;
       // An opened but unsupported Ant v3 select exposes its inner text input.
       // It is never a standalone answer field, even when this select itself
       // cannot yet be mapped safely.
@@ -777,17 +1170,49 @@
       }
       return true;
     });
-    const cmsControls = [...document.querySelectorAll(".ant-form-item .ant-select-selection--single")]
+    // Inputless widget targets enter only through MAIN's confirmed opt-in
+    // claim. They have no native text path when the write flag is absent.
+    for (const [control, candidate] of atsControlTargets) {
+      if (['tree-select', 'slider', 'rate', 'transfer'].includes(candidate.type) && !controls.includes(control)
+        && !control.matches('input,textarea,[contenteditable]') && visible(control, true)
+        && (!trialScope || trialScope.wrapper.contains(control))) controls.push(control);
+    }
+    // Observe only the top-level surface; never read a frame's document/window.
+    // A challenge without a visible input still needs a manual placeholder.
+    controls.push(...query(MANUAL_CONTROL_SELECTOR).filter(control => visible(control)
+      && !controls.some(candidate => control.contains(candidate))
+      && !control.parentElement?.closest(MANUAL_CONTROL_SELECTOR)));
+    const cmsControls = query(".ant-form-item .ant-select-selection--single")
       .filter(cmsAntV3Control);
-    const regionControls=[...document.querySelectorAll('.cascader-plugins-wrap')].filter(cmsRegionControl);
-    const checkboxControls=[...document.querySelectorAll('.ant-checkbox-group')].filter(cmsCheckboxControl);
+    const regionControls=query('.cascader-plugins-wrap').filter(cmsRegionControl);
+    const checkboxControls=query('.ant-checkbox-group').filter(cmsCheckboxControl);
     const entries = [...controls, ...cmsControls,...regionControls,...checkboxControls].map((control, position) => {
+      const manualReason = manualControlReason(control, loginScopes);
+      if (manualReason) return manualControlEntry(control, position, manualReason);
       const radio = control instanceof HTMLInputElement && control.type === "radio";
       const group = radio ? radioGroup(control) : null;
       const radioOptions = group?.options || null;
       const labels = radio ? group.labels : labelTexts(control);
+      const conflictingLabels = !radio && new Set(labels.map(M.normalize)).size > 1;
       const section = namedSection(control);
-      const match = M.classify(labels);
+      const legacyMatch = M.classify(labels);
+      const explicitRepeat = repeatContext(control);
+      const questionScope = customQuestionScope(control);
+      const semanticSection = questionScope.sectionName.startsWith("form:") ? "" : questionScope.sectionName;
+      const fieldSection = semanticSection || explicitRepeat?.kind || "";
+      const semantic = M.resolveAtsField({ hostname: location.hostname, labels,
+        section: fieldSection, index: explicitRepeat?.index ?? null });
+      let mappingContext = null;
+      try {
+        mappingContext = globalThis.ResumeDomainMemory?.fieldMetadata({ labels, section: fieldSection,
+          index: explicitRepeat?.index ?? null, kind: radio ? "radio" : control.tagName.toLowerCase(),
+          options: radio ? radioOptions.map(item => radioOptionLabel(item, !!group?.antUnnamed))
+            : control instanceof HTMLSelectElement ? [...control.options].map(option => option.textContent) : [] });
+      } catch { /* Oversized or absent labels are not eligible for memory. */ }
+      const remembered = semantic.status === "manual" && semantic.reason !== "ambiguous_label"
+        && mappingContext ? globalThis.ResumeDomainMemory?.lookup(fieldMemorySnapshot, mappingContext) : null;
+      const match = legacyMatch.key ? legacyMatch : semantic.status === "mapped"
+        ? { key: semantic.key, reason: semantic.reason } : legacyMatch;
       const dedicatedRecordKind = cmsDedicatedRecordKind(control);
       const cms = cmsDecision(control, match.key, cmsSection(control));
       const cmsRegion=cmsRegionControl(control);
@@ -804,8 +1229,20 @@
       const cmsAcademic = cmsScopedAcademicSelectSpec(control);
       const cmsSimple = cmsScopedSimpleInputSpec(control);
       const cmsAssignment = cmsAssignmentRadioControl(control);
-      const result = { id: cmsSimple ? `cms-scoped-input-${cmsSimple.alias}` : cmsCheckbox ? 'cms-checkbox-research-scoped' : cmsAcademic ? `cms-academic-${cmsAcademic.alias}` : cmsSelect ? (control.id || `cms-ant-v3-${M.normalize(labels[0])}`) : fieldId(control, position), labels, kind: cmsCheckbox?'cms_checkbox_group':cmsRegion?'cms_region':radio ? "radio" : degreeSelect ? "ant_degree_select" : cmbSelect ? "cmb_ant_v4_select" : cmsSchool ? "cms_school_search" : cmsSelect ? "cms_ant_v3_select" : cmsBirthDate ? "cms_birth_date" : cmsEducationDate ? "cms_education_date" : antSelectControl(control) ? "ant_select" : control.tagName.toLowerCase(), key, context, scope: customQuestionScope(control), control, radioOptions, antUnnamedRadio: !!group?.antUnnamed };
-      if (dedicatedRecordKind) {
+      const cmsBasicAddress = cmsBasicAddressBinding(control);
+      // Repeated unbound selects (e.g. education 学历 behind a row gate) must
+      // not share a label-only ID. Confirmed paths still drive collision checks.
+      const result = { id: cmsSimple ? `cms-scoped-input-${cmsSimple.alias}` : cmsCheckbox ? 'cms-checkbox-research-scoped' : cmsAcademic ? `cms-academic-${cmsAcademic.alias}` : cmsSelect ? (control.id || `cms-ant-v3-${M.normalize(labels[0])}-${position}`) : fieldId(control, position), labels, kind: cmsCheckbox?'cms_checkbox_group':cmsRegion?'cms_region':radio ? "radio" : degreeSelect ? "ant_degree_select" : cmbSelect ? "cmb_ant_v4_select" : cmsSchool ? "cms_school_search" : cmsSelect ? "cms_ant_v3_select" : cmsBirthDate ? "cms_birth_date" : cmsEducationDate ? "cms_education_date" : antSelectControl(control) ? "ant_select" : control.tagName.toLowerCase(), key, context, scope: questionScope, control, radioOptions, antUnnamedRadio: !!group?.antUnnamed };
+      result.atsProfile = semantic.atsProfile;
+      // Only ordinary controls offer a manual mapping; dedicated record flows
+      // retain their source binding and never learn from their fill results.
+      if (!dedicatedRecordKind && !cmsSection(control) && !degreeSelect && !cmbSelect && !antSelectControl(control)
+        && !cmsSelect && !cmsRegion && !cmsCheckbox && mappingContext && control.type !== "file") result.mappingContext = mappingContext;
+      if (cmsBasicAddress) {
+        result.cmsBasicAddress = true;
+        const value = cmsBasicAddressAnswer(profile, control, cmsBasicAddress);
+        result.path = value.path; result.answer = value.value; result.reason = value.reason || "ready";
+      } else if (dedicatedRecordKind) {
         result.dedicatedRecordKind = dedicatedRecordKind;
         const question = M.normalize(formItemQuestion(control.closest(".ant-form-item"))?.textContent);
         result.reason = CMS_DEDICATED_RECORD_QUESTIONS[dedicatedRecordKind].has(question)
@@ -835,7 +1272,7 @@
         result.path = value?.path;
         result.answer = value?.value;
         result.reason = value?.reason || (value ? "ready" : "missing_profile_value");
-      } else if (antSelectControl(control) && !degreeSelect) {
+      } else if (antSelectControl(control) && !degreeSelect && !['multi-select', 'tree-select'].includes(atsControlTargets.get(control)?.type)) {
         result.reason = "custom_select_not_supported";
       } else if(cmsSimple) {
         const value=cmsScopedAcademicAnswer(profile,cmsSimple);
@@ -853,18 +1290,32 @@
           : acceptsAttachment(control, attachment) ? "ready" : "attachment_type_not_accepted";
       } else if (!labels.length) {
         result.reason = "unlabelled_field";
+      } else if (conflictingLabels || legacyMatch.reason === "ambiguous_label"
+        || (fieldSection && !cmsSection(control) && semantic.status === "manual" && !remembered)) {
+        result.reason = conflictingLabels || legacyMatch.reason === "ambiguous_label" ? "ambiguous_label" : semantic.reason;
+        result.semanticStatus = "manual";
+      } else if ((semantic.status === "mapped" && (!legacyMatch.key || semantic.context)) || remembered) {
+        const path = remembered?.profileKey || semantic.profileKey;
+        const rememberedKind = remembered ? M.sectionKind(mappingContext.section) : null;
+        const semanticContext = remembered && ["work", "internship", "education", "project"].includes(rememberedKind)
+          ? { kind: rememberedKind, index: mappingContext.index } : semantic.context;
+        const value = semanticProfileValue(profile, path, semanticContext);
+        result.path = path; result.answer = value.value; result.reason = value.reason || "ready";
+        result.semanticSource = remembered ? "confirmed_domain_mapping" : semantic.reason;
       } else if (!key) {
         const custom = customValue(profile, labels, control);
         result.path = custom?.path;
         result.answer = custom?.value;
         result.reason = custom?.reason || (custom ? "ready" : match.reason);
+        if (!custom) result.semanticStatus = "manual";
       } else {
         let value = profileValue(profile, key, context);
         if (value.reason === "missing_profile_value") value = customValue(profile, labels, control) || value;
         result.path = value.path;
         result.answer = value.value;
         result.reason = value.reason || "ready";
-        if (result.reason === "ready" && !(control instanceof HTMLSelectElement) && Array.isArray(result.answer) && result.answer.length !== 1) {
+        if (result.reason === "ready" && !(control instanceof HTMLSelectElement)
+          && !['multi-select', 'tree-select', 'transfer'].includes(atsControlTargets.get(control)?.type) && Array.isArray(result.answer) && result.answer.length !== 1) {
           result.reason = "multiple_profile_values";
         }
       }
@@ -874,14 +1325,29 @@
         result.reason = "invalid_profile_value";
       }
       if (result.reason === "ready" && (control instanceof HTMLSelectElement || radio)) {
-        const options = radio ? radioOptions.map((item) => ({ label: radioOptionLabel(item, !!group?.antUnnamed), value: group?.antUnnamed ? "" : item.value, disabled: item.disabled })) : [...control.options];
+        const options = radio ? radioOptions.map((item) => ({ label: radioOptionLabel(item, !!group?.antUnnamed), value: group?.antUnnamed ? "" : item.value, disabled: item.disabled }))
+          : [...control.options].map(option => ({ label: option.label, value: option.value,
+            disabled: option.disabled || !!option.closest('optgroup[disabled]') || datePartPlaceholder(option) }));
         const selection = M.selectOption(options, result.answer);
         result.optionIndex = selection.index;
-        if (selection.index < 0) result.reason = selection.reason;
+        if (selection.index < 0) { result.reason = selection.reason; result.semanticStatus = "manual"; }
       }
-      if (result.reason === "ready") result.reason = controlConstraint(control, result.answer) || "ready";
+      if (result.reason === 'ready' && proseControl(control) && typeof result.path === 'string' && (profile.confirmedFields || []).includes(result.path)) {
+        // Validation may trim a scalar for ordinary inputs. Prose consumes the
+        // original confirmed string, including its spaces and terminal lines.
+        const raw = result.path.startsWith('customAnswers.') ? profile.customAnswers?.[result.path.slice(14)]
+          : result.path.split('.').reduce((value, part) => value != null && Object.hasOwn(value, part) ? value[part] : undefined, profile);
+        if (typeof raw === 'string') result.answer = raw;
+      }
+      if (result.reason === "ready") result.reason = controlConstraint(control, result.answer, atsControlTargets.has(control)) || "ready";
+      if (["unconfirmed_profile_value", "unlabelled_field"].includes(result.reason)) result.semanticStatus = "manual";
       return result;
     });
+    markDuplicateTargets(entries);
+    return entries;
+  }
+
+  function markDuplicateTargets(entries) {
     const paths = new Map();
     for (const entry of entries) {
       if (entry.reason !== "ready" || !entry.path) continue;
@@ -895,9 +1361,17 @@
     return entries;
   }
 
-  function publicEntry(entry) {
-    const { control, answer, radioOptions, antUnnamedRadio,regionFact,checkboxFact, ...plain } = entry;
+  function publicEntry(entry, loginScopes) {
+    const reason = manualControlReason(entry.control, loginScopes);
+    if (reason) {
+      const { control, ...manual } = manualControlEntry(entry.control, 0, reason);
+      return { ...manual, id: entry.id, currentValue: "" };
+    }
+    const { control, answer, radioOptions, antUnnamedRadio,regionFact,checkboxFact,cmsBasicAddress, ...plain } = entry;
     plain.currentValue = meaningfulCurrent(control, radioOptions, antUnnamedRadio);
+    // Search text is a query. MAIN's model and selected display decide
+    // preservation and readback for an explicitly claimed select or tree.
+    if (['input-mask', 'multi-select', 'tree-select', 'slider', 'rate', 'transfer'].includes(atsControlTargets.get(control)?.type)) return plain;
     if(entry.kind==='cms_checkbox_group') {
       const selected=globalThis.ResumeCmsCheckboxes.inspectControl(control)?.selected,
         desired=checkboxFact?.answers?.map(exactOptionText).sort();
@@ -914,8 +1388,12 @@
     const same = plain.kind === "ant_degree_select" || plain.kind === "cmb_ant_v4_select"
       || plain.kind === "cms_ant_v3_select" || plain.kind === "cms_school_search"
       ? (left, right) => exactOptionText(left) === exactOptionText(right)
-      : (left, right) => M.normalize(left) === M.normalize(right);
-    if (plain.reason === "ready" && plain.currentValue && !answers.some((value) => same(plain.currentValue, value))) {
+      : proseControl(control) ? (left, right) => proseValue(left) === proseValue(right)
+        : (left, right) => M.normalize(left) === M.normalize(right);
+    const matchesCurrent = control instanceof HTMLSelectElement
+      ? control.selectedIndex === entry.optionIndex
+      : answers.some((value) => same(plain.currentValue, value));
+    if (plain.reason === "ready" && plain.currentValue && !matchesCurrent) {
       plain.reason = "existing_value";
     }
     return plain;
@@ -1019,6 +1497,7 @@
       const found = cmsPhotoTarget(slot);
       if (found.reason) { row.reason = found.reason; continue; }
       const { item, input } = found;
+      if (loginControlReason(input)) { row.reason = 'login_form_detected'; continue; }
       if (cmsPhotoPresent(item, input)) { row.reason = "photo_existing_value"; continue; }
       const photo = photoUploads?.[slot];
       if (!photo) continue;
@@ -1034,7 +1513,7 @@
         }
         const transfer = new DataTransfer();
         transfer.items.add(file);
-        await checkProfileWrite(); input.files = transfer.files;
+        await checkProfileWrite(); requireWritableControl(input); input.files = transfer.files;
         const assigned = input.files?.[0];
         const original = new Uint8Array(await file.arrayBuffer());
         const assignedBytes = assigned ? new Uint8Array(await assigned.arrayBuffer()) : null;
@@ -1049,7 +1528,7 @@
         if (beforeInput.reason || beforeInput.item !== item || beforeInput.input !== input || input.files?.[0] !== assigned) {
           row.status = "failed"; row.reason = "photo_target_changed"; continue;
         }
-        await checkProfileWrite(); input.dispatchEvent(new Event("input", { bubbles: true }));
+        await checkProfileWrite(); requireWritableControl(input, true); input.dispatchEvent(new Event("input", { bubbles: true }));
         requireVisibleFillPage();
         const beforeChange = cmsPhotoTarget(slot);
         row.nativeInputConnectedBeforeChange = input.isConnected;
@@ -1058,7 +1537,7 @@
         }
         // rc-upload consumes this FileList once and replaces the native input
         // with a new key. Never dispatch to that replacement or refill it.
-        await checkProfileWrite(); input.dispatchEvent(new Event("change", { bubbles: true }));
+        await checkProfileWrite(); requireWritableControl(input, true); input.dispatchEvent(new Event("change", { bubbles: true }));
         row.changeEventsDispatched = 1;
         let complete = false;
         for (let attempt = 0; attempt < 80; attempt += 1) {
@@ -1095,6 +1574,11 @@
         }
       } catch (error) { if(/^profile_[a-z_]+$/u.test(error?.message||''))throw error;
         if (error?.message === PAGE_HIDDEN_DURING_FILL) throw error;
+        if (error?.message === 'login_form_detected') {
+          Object.assign(row, { status: error.writeStarted ? 'failed' : 'skipped', reason: error.message,
+            writeStarted: error.writeStarted === true, semanticStatus: 'manual' });
+          continue;
+        }
         row.status = "failed";
         row.reason = "control_error";
       } finally {
@@ -1129,10 +1613,23 @@
 
   function inspect(profile, attachment) {
     const entries = collect(profile, attachment);
+    const loginScopes = loginFormScopes();
     const validationGaps = currentValidationGaps();
     return { url: location.href, title: document.title,
-      fields: [...entries.map(publicEntry), ...cmsUncollectedQuestions(entries)],
+      fields: [...entries.map(entry => publicEntry(entry, loginScopes)), ...cmsUncollectedQuestions(entries)],
+      entry: globalThis.ResumeFormFlow?.inspect() || null,
+      navigation: globalThis.ResumeFormFlow?.navigation?.inspect() || null,
+      formReadiness: currentFormReadiness(),
+      advisoryHints: loginAdvisoryHints(),
       ...(validationGaps ? { validationGaps } : {}) };
+  }
+
+  function currentFormReadiness() {
+    let diagnosis;
+    try { diagnosis = globalThis.ResumeFormFlow?.readiness?.inspect({ confirmedEditable: [...atsControlTargets.keys()] }); }
+    catch { /* Readiness cannot prevent the independent field scan. */ }
+    return { ...(diagnosis || { status: 'manual', reason: 'form_readiness_unavailable', liveSupportClaimed: false }),
+      advisory: diagnosis?.status !== 'ready', blocking: false };
   }
 
   function setNativeValue(control, value) {
@@ -1483,7 +1980,13 @@
           break;
         }
         requireVisibleFillPage();
-        await checkProfileWrite(); button.click();
+        await checkProfileWrite();
+        if (loginControlReason(button)) {
+          issues.push({ id: `repeat-add-${kind}`, labels: [], kind: 'repeat_add_button', path: null,
+            status: 'skipped', reason: 'login_form_detected', currentValue: '' });
+          break;
+        }
+        button.click();
         await new Promise((resolve) => setTimeout(resolve, 100));
         requireVisibleFillPage();
         const next = document.querySelectorAll(`[data-repeat-kind="${kind}"]`).length;
@@ -1536,7 +2039,143 @@
       const chosen = control.selectedOptions[0];
       return !!chosen && M.selectOption([chosen], entry.answer).index === 0;
     }
-    return control.value === String(answer);
+    return proseControl(control) ? proseValue(meaningfulCurrent(control)) === proseValue(answer) : control.value === String(answer);
+  }
+
+
+  const CMS_ROW_D_TRIAL_SPECS=Object.freeze({
+    expectedWorkNature:Object.freeze({wrapper:'13_43_0',kind:'cms_ant_v3_select',question:'期望工作性质'}),
+    researchInterests:Object.freeze({wrapper:'13_102501_0',kind:'cms_checkbox_group',
+      question:'如应聘研究发展中心行业研究类岗位请勾选（建议仅勾选3~5项）'})
+  });
+  // Public static option labels from the R7 provenance fixture; no defaults.
+  const CMS_ROW_D_RESEARCH_OPTIONS=['非研究类岗位，不涉及','宏观','策略','债券','银行','非银行金融','房地产',
+    '量化','基金评价','金属及材料（有色金属）','化工','交通运输','生物医药','汽车','机械','军工',
+    '电力设备及新能源','建材','食品饮料','轻工纺服','纺服化妆品','农林牧渔','家电',
+    '商业（零售+社会服务）','电子','传媒','通信','计算机','中小盘','环保及公用事业','煤炭开采','智库研究'];
+  function cmsRowDTrialScope(spec) {
+    const fail=()=>{throw Error('trial_scope_changed');};
+    if(location.href!==CMS_PHOTO_PAGE||(document.designMode||'off').toLowerCase()!=='off')fail();
+    const sections=[...document.querySelectorAll('[id="13"]')],wrappers=[...document.querySelectorAll(`[id="${spec.wrapper}"]`)];
+    if(sections.length!==1||wrappers.length!==1)fail();
+    const section=sections[0],wrapper=wrappers[0];
+    const editable=node=>{for(let current=node;current;current=current.parentElement){
+      const value=current.getAttribute('contenteditable');if(value!==null&&value.toLowerCase()!=='false')return true;
+    }return false;};
+    // Static labels are read only after the complete editable ancestry boundary.
+    if(editable(section)||[...section.querySelectorAll('[contenteditable]')].some(editable))fail();
+    // The reused CMS parser checks shell headings and duplicate question labels
+    // globally. These may supply only static metadata, never editable text.
+    const staticLabels=[...document.querySelectorAll('.form-cell > .tit-wrap .tit,.ant-form-item-label > label')];
+    const liveMetadata='input,select,textarea,button,[role="combobox"],.ant-select-selection-selected-value,.ant-select-selection-item';
+    if(staticLabels.some(node=>editable(node)||[...node.querySelectorAll('[contenteditable]')].some(editable)
+      ||node.matches(liveMetadata)||node.querySelector(liveMetadata)))fail();
+    // confirmedCustomAnswer -> repeatedCustomQuestion may otherwise follow
+    // arbitrary global aria-labelledby/near-label/fieldset legend references.
+    // Preserve that real parser, but refuse its generic outside-control branch
+    // structurally before it can read another field's current display text.
+    if([...document.querySelectorAll('input,select,textarea')].some(node=>visible(node)&&!node.closest('.ant-form-item')))fail();
+    const items=[...new Set([wrapper.closest('.ant-form-item'),...wrapper.querySelectorAll('.ant-form-item')].filter(Boolean))];
+    if(items.length!==1)fail();
+    const item=items[0],form=item.closest('form'),row=item.closest('.form-cell-inner');
+    const rows=[...section.querySelectorAll(':scope > .form-cell-right > .form-cell-inner')];
+    const labels=[...item.querySelectorAll('.ant-form-item-label > label')].filter(label=>label.closest('.ant-form-item')===item);
+    if(!form||wrapper.closest('.form-cell')!==section||item.closest('.form-cell')!==section
+      ||rows.length!==1||rows[0]!==row||labels.length!==1||M.normalize(labels[0].textContent)!==M.normalize(spec.question)
+      ||M.normalize(section.querySelector(':scope > .tit-wrap .tit')?.textContent)!==M.normalize('求职意向必填'))fail();
+    const selector=spec.kind==='cms_checkbox_group'?'.ant-checkbox-group':'.ant-select-selection--single';
+    const controls=[...(wrapper.matches(selector)?[wrapper]:[]),...wrapper.querySelectorAll(selector)];
+    if(controls.length!==1)fail();
+    const control=controls[0];
+    for(let node=control;node&&node!==section;node=node.parentElement){
+      const id=node.getAttribute('id')||'';if(/^\d+_\d+_\d+$/u.test(id)&&node!==wrapper)fail();
+    }
+    if(control.closest('.ant-form-item')!==item||!visible(control)||wrapper.querySelector('.ant-select-open,.cascader-plugins-wrap,.ant-calendar-picker,.ant-picker,button,textarea,select'))fail();
+    const inputs=[...wrapper.querySelectorAll('input')];
+    if(inputs.length!==(spec.kind==='cms_checkbox_group'?32:1)
+      ||inputs.some(input=>input.disabled||input.closest('.ant-form-item')!==item)
+      ||control.closest('[inert],[aria-disabled="true"],fieldset[disabled]'))fail();
+    // Native inputs must be closed over this exact widget before collect can
+    // dispatch by type (notably radioGroup's document/form-wide legend path).
+    if(spec.kind==='cms_checkbox_group') {
+      if(inputs.some(input=>input.type!=='checkbox'||!control.contains(input)
+        ||input.closest('.ant-checkbox-group')!==control))fail();
+      const snapshot=globalThis.ResumeCmsCheckboxes?.inspectControl(control);
+      if(!snapshot||snapshot.options.some((option,index)=>exactOptionText(option.text)!==exactOptionText(CMS_ROW_D_RESEARCH_OPTIONS[index])))fail();
+    } else {
+      const select=control.closest('.ant-select'),input=inputs[0];
+      if(!select||!wrapper.contains(select)||wrapper.querySelectorAll('.ant-select').length!==1
+        ||input.type!=='text'||visible(input)||!control.contains(input)
+        ||input.closest('.ant-select-selection')!==control||input.closest('.ant-select')!==select)fail();
+    }
+    return {section,wrapper,item,form,row,label:labels[0],control};
+  }
+  async function cmsRowDPreexistingTrial(message) {
+    const reject=reason=>{throw Error(reason);};
+    const spec=CMS_ROW_D_TRIAL_SPECS[message.target],startUrl=location.href;
+    if(!spec)reject('trial_request_invalid');
+    if(location.href!==CMS_PHOTO_PAGE)reject('trial_wrong_page');
+    if(globalThis.ResumeProfileWriteContext)reject('profile_write_context_busy');
+    let interrupted=false,observer;
+    const eventTypes=['click','input','change','focus','blur','focusin','focusout','submit'];
+    const onEvent=()=>{interrupted=true;};
+    const context={profileBinding:message.profileBinding,writeStarted:false,async check(write=true){
+      if(write)reject('trial_write_forbidden');
+      if(globalThis.ResumeProfileWriteContext!==context)reject('profile_write_context_changed');
+      if(interrupted||location.href!==startUrl)reject('trial_interrupted');
+      requireVisibleFillPage();
+      let verdict;try{verdict=await chrome.runtime.sendMessage({type:'RESUME_PROFILE_BINDING_CHECK',profileBinding:message.profileBinding});}catch{}
+      if(verdict?.allowed!==true)reject('profile_binding_changed');
+      if(interrupted||location.href!==startUrl)reject('trial_interrupted');
+      requireVisibleFillPage();
+    }};
+    const projection=async()=>{
+      let reply;try{reply=await chrome.runtime.sendMessage({type:'RESUME_CMS_ROW_D_TRIAL_FACT',target:message.target,profileBinding:message.profileBinding});}catch{}
+      if(reply?.allowed!==true)reject(/^profile_[a-z_]+$/u.test(reply?.reason||'')?reply.reason:'profile_trial_unavailable');
+      const profile=reply.projection,path=`customAnswers.${spec.question}`;
+      if(!profile||Object.keys(profile).sort().join('|')!=='confirmedFields|customAnswers|customFacts|schemaVersion'
+        ||profile.schemaVersion!==1||!Array.isArray(profile.customFacts)||profile.customFacts.length!==1
+        ||profile.customFacts[0]?.question!==spec.question||Object.keys(profile.customAnswers||{}).join('|')!==spec.question
+        ||JSON.stringify(profile.confirmedFields)!==JSON.stringify([path]))reject('profile_trial_fact_invalid');
+      return profile;
+    };
+    const entryAt=(profile,scope)=>{
+      const entries=collect(profile,null,scope),entry=entries[0];
+      if(entries.length!==1||entry.control!==scope.control||entry.kind!==spec.kind
+        ||entry.path!==`customAnswers.${spec.question}`||entry.reason!=='ready')reject('trial_target_not_ready');
+      if(spec.kind==='cms_ant_v3_select'&&!['全职','实习'].includes(String(entry.answer).trim()))reject('trial_target_not_ready');
+      if(!meaningfulCurrent(entry.control))reject('trial_current_empty');
+      // This is the product's actual comparison, before every mutation branch.
+      if(!answerMatches(entry,null))reject('trial_current_not_equal');
+      return entry;
+    };
+    globalThis.ResumeProfileWriteContext=context;
+    for(const type of eventTypes)document.addEventListener(type,onEvent,true);
+    try {
+      await context.check(false);
+      const profile=await projection();
+      await context.check(false);
+      if(interrupted||location.href!==startUrl)reject('trial_interrupted');
+      requireVisibleFillPage();
+      const scope=cmsRowDTrialScope(spec);
+      observer=new MutationObserver(()=>{interrupted=true;});
+      observer.observe(scope.section,{subtree:true,childList:true,attributes:true,characterData:true});
+      const entry=entryAt(profile,scope),signature=entrySignature(entry),fact=JSON.stringify(profile);
+      await context.check(false);
+      const fresh=await projection();
+      if(JSON.stringify(fresh)!==fact)reject('profile_binding_changed');
+      await context.check(false);
+      const liveScope=cmsRowDTrialScope(spec);
+      if(Object.keys(scope).some(key=>scope[key]!==liveScope[key]))reject('trial_scope_changed');
+      const live=entryAt(fresh,liveScope);
+      if(entrySignature(live)!==signature||interrupted)reject('trial_interrupted');
+      return {cmsRowDTrial:true,preexistingOnly:true,neverSave:true,target:message.target,status:'verified',reason:'preexisting_same_value',
+        writeStarted:false,softwareClickedSave:false,softwareClickedSubmit:false,liveSupportClaimed:false,
+        livePassClaimed:false,valuesExposed:false,adapterWriteVerified:false};
+    } finally {
+      observer?.disconnect();for(const type of eventTypes)document.removeEventListener(type,onEvent,true);
+      if(globalThis.ResumeProfileWriteContext===context)delete globalThis.ResumeProfileWriteContext;
+    }
   }
 
   async function fill(profile,attachment,photoUploads=null,profileBinding=null){
@@ -1545,30 +2184,103 @@
       if(globalThis.ResumeProfileWriteContext!==context)throw Error('profile_write_context_changed');
       let verdict;try{verdict=await chrome.runtime.sendMessage({type:'RESUME_PROFILE_BINDING_CHECK',profileBinding});}catch{}
       if(verdict?.allowed!==true){const error=Error('profile_binding_changed');error.writeStarted=context.writeStarted;error.fillNotStarted=!context.writeStarted;throw error;}
-      requireVisibleFillPage();if(write)context.writeStarted=true;
+      requireVisibleFillPage();
+      if(context.activeControl)requireWritableControl(context.activeControl,context.activeControlWriteStarted===true);
+      if(write){context.writeStarted=true;if(context.activeControl)context.activeControlWriteStarted=true;}
     }};
     globalThis.ResumeProfileWriteContext=context;
-    try{await context.check(false);const result=await fillOwnedContent(profile,attachment,photoUploads);await context.check(false);return result;}
+    try{await context.check(false);const result=await fillOwnedContent(profile,attachment,photoUploads);await context.check(false);
+      return {...result,writeStarted:context.writeStarted,writeAttempted:context.writeStarted};}
     finally{if(globalThis.ResumeProfileWriteContext===context)delete globalThis.ResumeProfileWriteContext;}
   }
-  async function setBoundNativeValue(control,value){
+  async function setBoundNativeValue(control,value,verifyTarget=null){
     const proto=control instanceof HTMLTextAreaElement?HTMLTextAreaElement.prototype:HTMLInputElement.prototype,setter=Object.getOwnPropertyDescriptor(proto,'value')?.set;
-    await checkProfileWrite();requireVisibleFillPage();if(setter)setter.call(control,value);else control.value=value;
-    for(const type of ['input','change','blur']){await checkProfileWrite();requireVisibleFillPage();control.dispatchEvent(new Event(type,{bubbles:true}));}
+    await checkProfileWrite();requireVisibleFillPage();verifyTarget?.(false);requireWritableControl(control);if(setter)setter.call(control,value);else control.value=value;
+    for(const type of ['input','change','blur']){await checkProfileWrite();requireVisibleFillPage();verifyTarget?.(true);requireWritableControl(control,true);control.dispatchEvent(new Event(type,{bubbles:true}));}
+  }
+
+  function atsControlSelector(control) {
+    if (!control?.isConnected || control.getRootNode() !== document) throw Error('control_target_changed');
+    const claimed = atsControlTargets.get(control);
+    if (['multi-select', 'transfer'].includes(claimed?.type)) {
+      const nodes = document.querySelectorAll(claimed.selector);
+      if (nodes.length !== 1 || nodes[0] !== control) throw Error('control_target_changed');
+      return claimed.selector;
+    }
+    if (control.id) {
+      const selector = `#${CSS.escape(control.id)}`;
+      if (document.querySelectorAll(selector).length === 1) return selector;
+    }
+    const parts = [];
+    for (let node = control; node && node !== document.documentElement; node = node.parentElement) {
+      const parent = node.parentElement;
+      if (!parent) throw Error('control_target_changed');
+      parts.unshift(`${node.tagName.toLowerCase()}:nth-child(${[...parent.children].indexOf(node) + 1})`);
+    }
+    const selector = ['html', ...parts].join(' > ');
+    if (selector.length > 2048 || document.querySelectorAll(selector).length !== 1) throw Error('control_target_ambiguous');
+    return selector;
+  }
+
+  async function fillAtsControl(entry, result) {
+    const context = globalThis.ResumeProfileWriteContext;
+    await context.check(false);
+    requireWritableControl(entry.control);
+    const response = await chrome.runtime.sendMessage({ type: 'RESUME_ATS_CONTROL_WRITE',
+      selector: atsControlSelector(entry.control), path: entry.path, value: entry.answer,
+      profileBinding: context.profileBinding, timeOrigin: performance.timeOrigin });
+    if (response?.writeStarted === true) { context.writeStarted = true; context.activeControlWriteStarted = true; }
+    await context.check(false);
+    if (!response || response.liveSupportClaimed !== false) throw Error('control_result_invalid');
+    result.adapter = response.adapter || null;
+    result.adapterStatus = response.ok === true ? response.status : 'unsupported';
+    result.status = response.ok === true && response.status === 'success' ? 'verified'
+      : response.writeStarted === true || ['mismatch', 'reverted'].includes(response.status) ? 'failed' : 'skipped';
+    result.reason = response.reason || 'control_write_failed';
+    result.currentValue = ['slider', 'rate', 'transfer'].includes(atsControlTargets.get(entry.control)?.type) && response.status === 'success'
+      ? response.domReadback : meaningfulCurrent(entry.control, entry.radioOptions, entry.antUnnamedRadio);
+    return response.readbackId;
+  }
+
+  async function verifyAtsControl(entry, result, readbackId) {
+    const context = globalThis.ResumeProfileWriteContext;
+    await context.check(false);
+    const response = await chrome.runtime.sendMessage({ type: 'RESUME_ATS_CONTROL_VERIFY',
+      selector: atsControlSelector(entry.control), path: entry.path, value: entry.answer, readbackId,
+      profileBinding: context.profileBinding, timeOrigin: performance.timeOrigin });
+    await context.check(false);
+    // A transport acknowledgement or the earlier write cannot replace the
+    // original plan's final model AND display verification in MAIN.
+    if (response?.ok !== true || response.liveSupportClaimed !== false || response.writeStarted !== false
+      || response.status !== 'success' || response.adapter !== result.adapter) {
+      result.status = 'failed';
+      result.adapterStatus = response?.ok === true ? response.status : 'unsupported';
+      result.reason = response?.reason || 'control_readback_failed';
+    } else if (['slider', 'rate', 'transfer'].includes(atsControlTargets.get(entry.control)?.type)) result.currentValue = response.domReadback;
   }
 
   async function fillOwnedContent(profile, attachment, photoUploads = null) {
     requireVisibleFillPage();
+    // Absent/false is the legacy path. Enabling the experiment never turns an
+    // unsupported L1 outcome into a second attempt through the old writer.
+    const atsEngineWriteEnabled = typeof globalThis.chrome?.storage?.local?.get === 'function'
+      && (await chrome.storage.local.get('resumeAtsEngineWriteEnabled')).resumeAtsEngineWriteEnabled === true;
+    if (atsEngineWriteEnabled) await loadAtsControlTargets(true);
+    else if (typeof atsControlTargets !== 'undefined') { atsControlTargets.clear(); atsControlPeers.clear(); }
+    const advisoryHints = [];
     if (location.origin + location.pathname === CMS_PHOTO_PAGE) {
       const session = typeof globalThis.ResumeCmsSession?.check === "function"
         ? await globalThis.ResumeCmsSession.check() : null;
       if (session?.authenticated !== true) {
-        const error = new Error(session?.reason || "site_session_unverified");
-        error.fillNotStarted = true;error.writeStarted = false;throw error;
+        advisoryHints.push({ status: 'login_required', reason: session?.reason || 'site_session_unverified',
+          advisory: true, blocking: false, liveSupportClaimed: false });
       }
       requireVisibleFillPage();
     }
-    const results = await ensureRepeatRows(profile);
+    const formReadiness = currentFormReadiness();
+    if (formReadiness.advisory) advisoryHints.push(formReadiness);
+    advisoryHints.push(...loginAdvisoryHints());
+    const results = atsEngineWriteEnabled ? [] : await ensureRepeatRows(profile);
     let decodedAttachment = null;
     const processed = new Set();
     const records = new Map();
@@ -1636,10 +2348,11 @@
         }
         processed.add(entry.control);
         if (!record) {
-          record = { key, entry, scope: originalScope, signature: entrySignature(original), result: fresh };
+          record = { key, entry, scope: originalScope, signature: entrySignature(original),
+            result: { ...fresh, beforeValue: fresh.currentValue } };
           records.set(key, record);
           for (const token of tokens) ids.set(token, record);
-          results.push(fresh);
+          results.push(record.result);
         }
         const result = record.result;
         if (rebindFailure) {
@@ -1675,6 +2388,9 @@
         }
         if (existing && result.status !== "verified") continue;
         if (existing && result.status === "verified") {
+          // A successful L1 write is never retried after a re-render. Its
+          // original target and plan must pass the final read-only check.
+          if (atsEngineWriteEnabled) continue;
           if (answerMatches(entry, attachment)) continue;
           // A date picker may have committed a value before the site re-renders.
           // Never click it a second time if that value later disappears.
@@ -1694,7 +2410,7 @@
             continue;
           }
         } else if (fresh.reason !== "ready") {
-          result.status = fresh.reason === "duplicate_target" ? "failed" : "skipped";
+          result.status = settleUnresolvedEntry(entry, fresh.reason);
           continue;
         }
         if (cmsMenuBlocked) {
@@ -1712,7 +2428,7 @@
           result.reason = "blocked_by_open_calendar";
           continue;
         }
-        if (answerMatches(entry, attachment)) {
+        if (!atsEngineWriteEnabled && answerMatches(entry, attachment)) {
           result.status = "verified";
           // This value was already on the page when this field was reached.
           // A prior software write to the same logical field keeps its
@@ -1721,10 +2437,17 @@
           continue;
         }
         const control = entry.control;
+        let genericWriteStarted = false;
         try {
           requireVisibleFillPage();
+          requireWritableControl(control);
+          globalThis.ResumeProfileWriteContext.activeControl = control;
+          globalThis.ResumeProfileWriteContext.activeControlWriteStarted = false;
           const answer = Array.isArray(entry.answer) ? entry.answer[0] : entry.answer;
-          if (entry.kind === "ant_degree_select") {
+          if (atsEngineWriteEnabled) {
+            record.readbackId = await fillAtsControl(entry, result);
+            continue;
+          } else if (entry.kind === "ant_degree_select") {
             Object.assign(result, await fillAntDegreeSelect(entry, answer));
             const live = currentDegreeControl(control);
             result.currentValue = live ? meaningfulCurrent(live) : "";
@@ -1786,37 +2509,56 @@
             const transfer = new DataTransfer();
             transfer.items.add(file);
             requireVisibleFillPage();
-            await checkProfileWrite(); control.files = transfer.files;
+            await checkProfileWrite(); requireWritableControl(control); control.files = transfer.files; genericWriteStarted = true;
             requireVisibleFillPage();
-            await checkProfileWrite(); control.dispatchEvent(new Event("input", { bubbles: true }));
+            await checkProfileWrite(); requireWritableControl(control,genericWriteStarted); control.dispatchEvent(new Event("input", { bubbles: true }));
             requireVisibleFillPage();
-            await checkProfileWrite(); control.dispatchEvent(new Event("change", { bubbles: true }));
+            await checkProfileWrite(); requireWritableControl(control,genericWriteStarted); control.dispatchEvent(new Event("change", { bubbles: true }));
             const selected = control.files?.[0];
             result.status = selected?.name === file.name && selected?.size === file.size ? "verified" : "failed";
           } else if (entry.kind === "radio") {
             const selected = entry.radioOptions[entry.optionIndex];
             requireVisibleFillPage();
-            await checkProfileWrite(); selected.click();
+            await checkProfileWrite(); requireWritableControl(selected); selected.click();
             result.status = selected.checked ? "verified" : "failed";
           } else if (control instanceof HTMLSelectElement) {
             requireVisibleFillPage();
-            await checkProfileWrite(); control.selectedIndex = entry.optionIndex;
+            await checkProfileWrite(); requireWritableControl(control); control.selectedIndex = entry.optionIndex; genericWriteStarted = true;
             requireVisibleFillPage();
-            await checkProfileWrite(); control.dispatchEvent(new Event("input", { bubbles: true }));
+            await checkProfileWrite(); requireWritableControl(control,genericWriteStarted); control.dispatchEvent(new Event("input", { bubbles: true }));
             requireVisibleFillPage();
-            await checkProfileWrite(); control.dispatchEvent(new Event("change", { bubbles: true }));
+            await checkProfileWrite(); requireWritableControl(control,genericWriteStarted); control.dispatchEvent(new Event("change", { bubbles: true }));
             const chosen = control.selectedOptions[0];
             result.status = chosen && M.selectOption([chosen], entry.answer).index === 0 ? "verified" : "failed";
           } else {
-            await setBoundNativeValue(control, String(answer));
+            const beforeValue = control.value, beforeHref = location.href;
+            const verifyAddress = entry.cmsBasicAddress ? written => {
+              const binding = cmsBasicAddressBinding(control);
+              if (!control.isConnected || !binding || binding.reason) throw Error(binding?.reason || "field_changed");
+              if (location.href !== beforeHref || entryScope(control) !== scope) throw Error("field_changed");
+              const fact = cmsBasicAddressAnswer(profile, control, binding);
+              if (fact.reason || fact.path !== entry.path || fact.value !== answer) throw Error(fact.reason || "field_changed");
+              if (control.value !== (written ? String(answer) : beforeValue)) throw Error("existing_value");
+            } : null;
+            await setBoundNativeValue(control, String(answer), verifyAddress);
             result.status = control.value === String(answer) ? "verified" : "failed";
           }
           result.reason = result.status === "verified" ? "readback_matched" : "readback_mismatch";
           result.currentValue = meaningfulCurrent(control, entry.radioOptions, entry.antUnnamedRadio);
         } catch (error) { if(/^profile_[a-z_]+$/u.test(error?.message||''))throw error;
           if (error?.message === PAGE_HIDDEN_DURING_FILL) throw error;
+          if (["iframe_or_captcha_manual", "login_form_detected"].includes(error?.message)) {
+            Object.assign(result, { status: error.writeStarted ? "failed" : "skipped", semanticStatus: "manual",
+              reason: error.message, writeStarted: error.writeStarted === true,
+              currentValue: error.writeStarted ? meaningfulCurrent(control, entry.radioOptions, entry.antUnnamedRadio) : "" });
+            delete result.mappingContext;
+            continue;
+          }
           result.status = "failed";
-          result.reason = "control_error";
+          result.reason = entry.cmsBasicAddress && ["field_changed", "question_scope_mismatch", "ambiguous_repeat_group",
+            "duplicate_target", "custom_control_not_supported", "ambiguous_profile_fact", "missing_profile_value",
+            "unconfirmed_profile_value", "question_scope_unconfirmed", "existing_value"].includes(error?.message)
+            ? error.message : "control_error";
           result.detail = String(error?.message || error).slice(0, 150);
           if (["cms_ant_v3_select", "cms_school_search",'cms_region'].includes(entry.kind) && visibleCmsAntV3Dropdowns().length) {
             cmsMenuBlocked = true;
@@ -1827,6 +2569,9 @@
           if (["cms_birth_date", "cms_education_date"].includes(entry.kind) && visibleCmsCalendarPortals().length) {
             cmsCalendarBlocked = true;
           }
+        } finally {
+          globalThis.ResumeProfileWriteContext.activeControl = null;
+          globalThis.ResumeProfileWriteContext.activeControlWriteStarted = false;
         }
       }
       await new Promise((resolve) => setTimeout(resolve, awaitingDependentOptions ? 350 : 40));
@@ -1865,20 +2610,29 @@
         continue;
       }
       result.currentValue = meaningfulCurrent(live.control, live.radioOptions, live.antUnnamedRadio);
-      if (!answerMatches(live, attachment)) {
+      if (atsEngineWriteEnabled) {
+        try { await verifyAtsControl(live, result, record.readbackId); }
+        catch (error) {
+          if (/^profile_[a-z_]+$/u.test(error?.message || '') || error?.message === PAGE_HIDDEN_DURING_FILL) throw error;
+          result.status = 'failed'; result.adapterStatus = 'unsupported'; result.reason = 'control_readback_failed';
+        }
+      } else if (!answerMatches(live, attachment)) {
         result.status = "failed";
         result.reason = "readback_mismatch";
-      } else if (live.control.validity && !live.control.validity.valid) {
+      }
+      if (result.status === 'verified' && live.control.validity && !live.control.validity.valid) {
         result.status = "failed";
         result.reason = "browser_validation_failed";
       }
     }
     // Page scripts may autosave or submit after input/change events. The extension
     // cannot infer the remote site's final state from local DOM readback alone.
-    const photoRows = await fillCmsPhotos(photoUploads);
+    const photoRows = atsEngineWriteEnabled ? [] : await fillCmsPhotos(photoUploads);
     const validationGaps = currentValidationGaps();
+    if (!advisoryHints.some(hint => hint.reason === 'login_form_detected')) advisoryHints.push(...loginAdvisoryHints());
     return { url: location.href, title: document.title,
       fields: [...results, ...cmsUncollectedQuestions(finalEntries, photoRows), ...photoRows],
+      formReadiness, advisoryHints, liveSupportClaimed: false,
       ...(validationGaps ? { validationGaps } : {}),
       savedOnSite: null, submitted: null, softwareClickedSubmit: false };
   }
@@ -1913,8 +2667,7 @@
     return {ok:true,data:{requestId:record.requestId,state:record.state,...(record.state==='settled'?{outcome}:{})}};
   }
 
-  // A deliberately narrow GTH trial. The general RESUME_FILL route remains
-  // blocked on this site; this route can touch only one confirmed empty field.
+  // A deliberately narrow GTH trial; the user must open its editor first.
   async function gthSalaryTrial(profile, requestId) {
     const page = "https://hr.gtht.com/resume/edit/";
     const titles = ["基本信息", "教育经历", "求职意向", "工作经验",
@@ -1971,21 +2724,7 @@
       if (forms.length > 1 || (forms.length === 1 && !sections[2].contains(forms[0])))
         fail("editor_structure_changed");
       const outsideBefore = otherSections(sections);
-      if (!forms.length) {
-        const links = [...sections[2].querySelectorAll(".title_ a.h-e-btn")]
-          .filter((node) => M.normalize(node.textContent) === "编辑" && visible(node));
-        if (links.length !== 1) fail("edit_link_not_unique");
-        await checkProfileWrite(); links[0].click();
-        const deadline = Date.now() + 4000;
-        do {
-          await pause(60);
-          sections = sectionsNow();
-          forms = sections.flatMap((section) => [...section.querySelectorAll("form")]);
-          if (forms.length > 1 || (forms.length === 1 && !sections[2].contains(forms[0])))
-            fail("editor_structure_changed");
-          if (forms.length === 1 && forms[0].querySelector(".el-form-item")) break;
-        } while (Date.now() < deadline);
-      }
+      if (!forms.length) fail('entry_activation_manual');
       if (forms.length !== 1 || !sections[2].contains(forms[0])
         || otherSections(sections) !== outsideBefore) fail("editor_structure_changed");
       const form = forms[0];
@@ -2076,315 +2815,31 @@
     }
   }
 
-  // Internal five-field method trial for the one GTH section. Answers are
-  // explicitly experimental and never copied into the applicant's profile.
-  // This route leaves the editor open and never clicks Save or Submit.
-  async function gthIntentTest(answers, requestId) {
-    const page = "https://hr.gtht.com/resume/edit/";
-    const titles = ["基本信息", "教育经历", "求职意向", "工作经验",
-      "职业技能与特长", "附件简历", "其他信息"];
-    const questions = ["期望从事职位类别", "期望薪资", "现从事行业",
-      "现从事职位类别", "现薪资"];
-    const selectQuestions = new Set([questions[0], questions[2], questions[3]]);
-    const confirmQuestions = new Set([questions[0]]);
-    const fail = (reason) => { throw new Error(reason); };
-    const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-    const heading = (section) => {
-      const copy = section.querySelector(".title_")?.cloneNode(true);
-      copy?.querySelectorAll("a,button").forEach((node) => node.remove());
-      return M.normalize(copy?.textContent);
-    };
-    const sectionsNow = () => {
-      if (location.href !== page) fail("wrong_page");
-      requireVisibleFillPage();
-      const sections = [...document.querySelectorAll(".r-section")];
-      if (sections.length !== titles.length
-        || sections.some((section, index) => heading(section) !== titles[index]))
-        fail("section_structure_changed");
-      return sections;
-    };
-    const ownLabel = (item) => {
-      const labels = [...item.querySelectorAll(".el-form-item__label")]
-        .filter((node) => node.closest(".el-form-item") === item);
-      return labels.length === 1 ? M.normalize(labels[0].textContent) : "";
-    };
-    const stateOf = (node) => [node.tagName, node.type || "", node.value || "",
-      !!node.checked, node.selectedIndex ?? null,
-      [...(node.files || [])].map((file) => [file.name, file.size, file.type])];
-    const otherFormValues = (form) => JSON.stringify(
-      [...form.querySelectorAll("input,select,textarea")]
-        .filter((node) => !questions.includes(ownLabel(node.closest(".el-form-item") || form)))
-        .map(stateOf));
-    const otherSections = (sections) => JSON.stringify(sections
-      .filter((_, index) => index !== 2)
-      .map((section) => [section.textContent,
-        [...section.querySelectorAll("input,select,textarea")].map(stateOf)]));
-    const visiblePopups = () => [...document.querySelectorAll(".popover.plugin-dialog-wrap")]
-      .filter((node) => visible(node) && getComputedStyle(node).display !== "none");
-    let writeStarted = false;
-    try {
-      if (location.href !== page || document.readyState !== "complete") fail("wrong_page_or_not_ready");
-      requireVisibleFillPage();
-      if (!answers || typeof answers !== "object" || Array.isArray(answers)
-        || Object.keys(answers).length !== questions.length
-        || questions.some((question) => typeof answers[question] !== "string"
-          || !answers[question] || answers[question].length > 80
-          || /[\r\n\u0000-\u001f]/u.test(answers[question])))
-        fail("test_answers_invalid");
-      if (![questions[1], questions[4]].every((question) => /^\d{1,10}$/.test(answers[question])))
-        fail("test_salary_format_invalid");
-      let sections = sectionsNow();
-      let forms = sections.flatMap((section) => [...section.querySelectorAll("form")]);
-      if (forms.length > 1 || (forms.length === 1 && !sections[2].contains(forms[0])))
-        fail("editor_structure_changed");
-      const outsideBefore = otherSections(sections);
-      if (!forms.length) {
-        const links = [...sections[2].querySelectorAll(".title_ a.h-e-btn")]
-          .filter((node) => M.normalize(node.textContent) === "编辑" && visible(node));
-        if (links.length !== 1) fail("edit_link_not_unique");
-        await checkProfileWrite(); links[0].click();
-        const deadline = Date.now() + 4000;
-        do {
-          await pause(60);
-          sections = sectionsNow();
-          forms = sections.flatMap((section) => [...section.querySelectorAll("form")]);
-          if (forms.length > 1 || (forms.length === 1 && !sections[2].contains(forms[0])))
-            fail("editor_structure_changed");
-          if (forms.length === 1 && forms[0].querySelector(".el-form-item")) break;
-        } while (Date.now() < deadline);
-      }
-      if (forms.length !== 1 || !sections[2].contains(forms[0])
-        || otherSections(sections) !== outsideBefore) fail("editor_structure_changed");
-      const form = forms[0];
-      const field = (question) => {
-        const items = [...form.querySelectorAll(".el-form-item")]
-          .filter((item) => ownLabel(item) === question);
-        if (items.length !== 1 || !items[0].classList.contains("is-required"))
-          fail("target_not_unique_or_required");
-        const item = items[0];
-        // The popup creates temporary search-result checkboxes. Exclude those
-        // menu controls when validating the persistent applicant field.
-        const controls = [...item.querySelectorAll("input,select,textarea")]
-          .filter((node) => node.closest(".el-form-item") === item
-            && !node.closest(".popover.plugin-dialog-wrap"));
-        const exposed = controls.filter((node) => visible(node));
-        let input, widget = null;
-        if (selectQuestions.has(question)) {
-          const widgets = [...item.querySelectorAll(".cascader-wrap")];
-          if (widgets.length !== 1 || item.querySelector(".el-select,.el-cascader,.el-date-editor")
-            || exposed.length !== 1 || controls.length !== 1
-            || !(exposed[0] instanceof HTMLInputElement)
-            || exposed[0].type !== "text" || !exposed[0].readOnly
-            || exposed[0].disabled || !widgets[0].contains(exposed[0])
-            || !widgets[0].querySelector(":scope > .input-l.pointer")?.contains(exposed[0])
-            || widgets[0].querySelectorAll(":scope > .popover.plugin-dialog-wrap").length !== 1
-            || widgets[0].querySelectorAll(":scope > .popover.plugin-dialog-wrap .search-input").length !== 1)
-            fail("target_select_structure_changed");
-          widget = widgets[0];
-          input = exposed[0];
-        } else {
-          if (controls.length !== 1 || exposed.length !== 1
-            || !(exposed[0] instanceof HTMLInputElement)
-            || exposed[0].type !== "text" || exposed[0].readOnly
-            || exposed[0].disabled || exposed[0].closest(".el-select,.el-cascader,.el-date-editor"))
-            fail("target_not_plain_text");
-          input = exposed[0];
-        }
-        if (input.maxLength >= 0 && answers[question].length > input.maxLength)
-          fail("value_too_long");
-        return { item, input, widget };
-      };
-      // Validate every target before the first write. A single new or changed
-      // widget shape stops the whole trial without changing any applicant value.
-      const initial = questions.map((question) => [question, field(question)]);
-      if (initial.some(([question, target]) => target.input.value !== ""
-        && target.input.value !== answers[question])) fail("target_has_existing_value");
-      const beforeOther = otherFormValues(form);
-      await pause(80);
-      if (sectionsNow()[2] !== sections[2] || !form.isConnected
-        || otherSections(sectionsNow()) !== outsideBefore
-        || otherFormValues(form) !== beforeOther
-        || initial.some(([question, target]) => field(question).input !== target.input
-          || target.input.value !== "" && target.input.value !== answers[question]))
-        fail("original_value_changed");
-      const originalValues = new Map(initial.map(([question, target]) => [question, target.input.value]));
-      for (const question of questions) {
-        requireVisibleFillPage();
-        const target = field(question);
-        if (target.input.value === answers[question]) continue;
-        if (target.input.value !== "" || otherFormValues(form) !== beforeOther
-          || otherSections(sectionsNow()) !== outsideBefore)
-          fail("original_value_changed");
-        if (!target.widget) {
-          writeStarted = true;
-          await setBoundNativeValue(target.input, answers[question]);
-        } else {
-          if (visiblePopups().length) fail("other_menu_open");
-          writeStarted = true;
-          const trigger = target.widget.querySelector(":scope > .input-l.pointer");
-          const popup = target.widget.querySelector(":scope > .popover.plugin-dialog-wrap");
-          const search = popup?.querySelector(".search-input");
-          if (!trigger || !visible(trigger) || !popup || visible(popup) || !search)
-            fail("selector_structure_changed");
-          await checkProfileWrite(); trigger.click();
-          let confirmed = false;
-          try {
-          for (let attempt = 0; attempt < 30; attempt += 1) {
-            requireVisibleFillPage();
-            if (visiblePopups().length > 1) fail("menu_not_unique");
-            if (visible(popup)) break;
-            await pause(40);
-          }
-          if (!visible(popup) || visiblePopups().length !== 1 || !visible(search))
-            fail("menu_not_rendered");
-          if (search.value !== "") fail("search_has_existing_value");
-          // This GTH widget searches terminal nodes into dialog-search-wrap.
-          // The first category is multi-select with a visible Confirm footer;
-          // the other two selectors are single-choice and commit immediately.
-          const searchWrap = popup.querySelector(":scope > .dialog-search-wrap");
-          const footer = popup.querySelector(":scope > .plugin-dialog-pop-foot");
-          const requiresConfirm = confirmQuestions.has(question);
-          if (!searchWrap || !footer || visible(footer) !== requiresConfirm)
-            fail("selector_mode_changed");
-          if (requiresConfirm && popup.querySelectorAll(".selected-view-data > li").length)
-            fail("selector_has_existing_selection");
-          const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
-          if (!setter) fail("search_input_unsupported");
-          await checkProfileWrite(); setter.call(search, answers[question]);
-          await checkProfileWrite(); search.dispatchEvent(new Event("input", { bubbles: true }));
-          let candidates = [];
-          for (let attempt = 0; attempt < 30; attempt += 1) {
-            requireVisibleFillPage();
-            candidates = [...searchWrap.querySelectorAll(
-              ":scope > .eo-cascader-menu.simple-tree-outer > .simple-tree-wrapper > li.branch")]
-              .filter((node) => {
-                const checkbox = node.querySelector(":scope > label > input[type=checkbox][uid]");
-                const label = node.querySelector(":scope > label > span[uid]");
-                return visible(searchWrap) && visible(node)
-                  && !node.classList.contains("has-child")
-                  && !node.classList.contains("is-disabled")
-                  && node.getAttribute("aria-disabled") !== "true"
-                  && checkbox && label && !checkbox.disabled && !checkbox.checked
-                  && checkbox.getAttribute("uid") === label.getAttribute("uid")
-                  && M.normalize(label.textContent) === M.normalize(answers[question]);
-              });
-            if (candidates.length) break;
-            await pause(40);
-          }
-          if (candidates.length !== 1) fail(candidates.length ? "ambiguous_option" : "option_not_found");
-          const checkbox = candidates[0].querySelector(":scope > label > input[type=checkbox][uid]");
-          await checkProfileWrite(); checkbox.click();
-          if (requiresConfirm) {
-            let selected = [];
-            for (let attempt = 0; attempt < 30; attempt += 1) {
-              requireVisibleFillPage();
-              selected = [...popup.querySelectorAll(".selected-view-data > li")];
-              if (selected.length) break;
-              await pause(40);
-            }
-            if (!visible(popup) || selected.length !== 1
-              || M.normalize(selected[0].textContent) !== M.normalize(answers[question]))
-              fail("selector_selection_mismatch");
-            const confirm = [...footer.querySelectorAll("a.pop-btn.confirm")].filter(visible);
-            if (confirm.length !== 1) fail("confirm_not_unique");
-            await checkProfileWrite(); confirm[0].click();
-          }
-          for (let attempt = 0; attempt < 30; attempt += 1) {
-            requireVisibleFillPage();
-            if (field(question).input.value === answers[question] && !visiblePopups().length) break;
-            await pause(40);
-          }
-          confirmed = field(question).input.value === answers[question]
-            && !visiblePopups().length;
-          if (!confirmed) fail("selector_readback_mismatch");
-          } finally {
-            // A failed search must not strand a menu over the next field. Only
-            // close this exact widget if this trial opened it and the page is
-            // still visible; never close a different user's open menu.
-            if (location.href === page && document.visibilityState === "visible"
-              && trigger.isConnected && visible(popup)
-              && visiblePopups().length === 1 && visiblePopups()[0] === popup) {
-              if (!confirmed && search.isConnected && search.value === answers[question]) {
-                const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
-                await checkProfileWrite(); setter?.call(search, "");
-                await checkProfileWrite(); search.dispatchEvent(new Event("input", { bubbles: true }));
-              }
-              const cancel = [...popup.querySelectorAll("a.pop-btn.cancel")].filter(visible);
-              await checkProfileWrite();
-              if (cancel.length === 1) cancel[0].click();
-              else trigger.click();
-            }
-          }
-        }
-        await pause(250);
-        if (!form.isConnected || sectionsNow()[2] !== sections[2]
-          || otherFormValues(form) !== beforeOther
-          || otherSections(sectionsNow()) !== outsideBefore)
-          fail("other_values_changed");
-        if (field(question).input.value !== answers[question]) fail("readback_mismatch");
-      }
-      const check = () => {
-        try {
-          if (location.href !== page || document.visibilityState !== "visible"
-            || !form.isConnected || sectionsNow()[2] !== sections[2]
-            || otherFormValues(form) !== beforeOther
-            || otherSections(sectionsNow()) !== outsideBefore
-            || visiblePopups().length) return false;
-          return questions.every((question) => {
-            const { item, input } = field(question);
-            return input.value === answers[question]
-              && !item.classList.contains("is-error")
-              && !item.classList.contains("is-validating")
-              && input.getAttribute("aria-invalid") !== "true"
-              && ![...item.querySelectorAll(".el-form-item__error")]
-                .some((node) => visible(node) && M.normalize(node.textContent))
-              && (!input.validity || input.validity.valid);
-          });
-        } catch { return false; }
-      };
-      await pause(250);
-      if (!check()) fail("site_validation_or_readback_failed");
-      if (fillState.gthIntent?.requestId === requestId)
-        fillState.gthIntent.currentCheck = check;
-      return { url: page, title: document.title,
-        fields: questions.map((question) => ({ id: `gth:求职意向:${question}`,
-          labels: [question], status: "verified",
-          reason: originalValues.get(question) === answers[question]
-            ? "preexisting_same_value" : "readback_matched" })),
-        experimental: true, editorLeftOpen: true, savedOnSite: null,
-        submitted: null, softwareClickedSave: false, softwareClickedSubmit: false };
-    } catch (error) { if(/^profile_[a-z_]+$/u.test(error?.message||''))throw error;
-      if (error && typeof error === "object") {
-        error.writeStarted = writeStarted;
-        throw error;
-      }
-      const wrapped = new Error(String(error));
-      wrapped.writeStarted = writeStarted;
-      throw wrapped;
-    }
-  }
-
   if (!existingListenerAlive) { const engineListener=(message, _sender, sendResponse) => {
-    if(["RESUME_FILL","GTH_SALARY_TRIAL","GTH_INTENT_TEST","GTH_SALARY_STATUS","GTH_INTENT_TEST_STATUS"].includes(message?.type)&&_sender?.id!==chrome.runtime.id){sendResponse({ok:false,error:"profile_wrong_sender",fillNotStarted:true,writeStarted:false});return false;}
-    if (!message || !["RESUME_INSPECT", "RESUME_FILL", "GTH_SALARY_TRIAL", "GTH_SALARY_STATUS",
-      "GTH_INTENT_TEST", "GTH_INTENT_TEST_STATUS"].includes(message.type)) return;
-    if(message.type==='GTH_INTENT_TEST_STATUS'||message.type==='GTH_SALARY_STATUS') {
-      const record=message.type==='GTH_INTENT_TEST_STATUS'?fillState.gthIntent:fillState.gthSalary;
-      boundGthStatus(message,record).then(sendResponse,()=>sendResponse({ok:false,error:'profile_binding_unavailable'}));return true;
+    if(message?.type==='CMS_ROW_D_PREEXISTING_TRIAL') {
+      const refuse=error=>sendResponse({ok:false,error,fillNotStarted:true,writeStarted:false});
+      if(_sender?.id!==chrome.runtime.id){refuse('profile_wrong_sender');return false;}
+      if(Object.keys(message).sort().join('|')!=='profileBinding|target|type'
+        ||!Object.hasOwn(CMS_ROW_D_TRIAL_SPECS,message.target)){refuse('trial_request_invalid');return false;}
+      if(fillState.pending){refuse('fill_in_progress');return false;}
+      fillState.pending=true;
+      cmsRowDPreexistingTrial(message).then(data=>({ok:true,data}),error=>({ok:false,
+        error:/^(?:profile|trial|fill)_[a-z_]+$/u.test(error?.message||'')?error.message:'trial_failed',
+        fillNotStarted:true,writeStarted:false})).then(reply=>{fillState.pending=false;sendResponse(reply);});
+      return true;
     }
-    if ((message.type === "GTH_SALARY_TRIAL" || message.type === "GTH_INTENT_TEST")
+    if(["RESUME_FILL","GTH_SALARY_TRIAL","GTH_SALARY_STATUS"].includes(message?.type)&&_sender?.id!==chrome.runtime.id){sendResponse({ok:false,error:"profile_wrong_sender",fillNotStarted:true,writeStarted:false});return false;}
+    if (!message || !["RESUME_INSPECT", "RESUME_FILL", "GTH_SALARY_TRIAL", "GTH_SALARY_STATUS"].includes(message.type)) return;
+    if(message.type==='GTH_SALARY_STATUS') {
+      boundGthStatus(message,fillState.gthSalary).then(sendResponse,()=>sendResponse({ok:false,error:'profile_binding_unavailable'}));return true;
+    }
+    if (message.type === "GTH_SALARY_TRIAL"
       && (typeof message.requestId !== "string"
         || !/^[A-Za-z0-9-]{10,100}$/.test(message.requestId))) {
       sendResponse({ ok: false, error: "invalid_request_id", writeStarted: false });
       return false;
     }
-    if (message.type === "RESUME_FILL"
-      && `${location.origin}${location.pathname}` === "https://hr.gtht.com/resume/edit/") {
-      sendResponse({ ok: false, error: "gth_read_only" });
-      return false;
-    }
-    if (message.type === "RESUME_FILL" || message.type === "GTH_SALARY_TRIAL"
-      || message.type === "GTH_INTENT_TEST") {
+    if (message.type === "RESUME_FILL" || message.type === "GTH_SALARY_TRIAL") {
       if (document.visibilityState !== "visible") {
         sendResponse({ ok: false, error: "page_hidden",
           ...(message.type !== "RESUME_FILL" ? { writeStarted: false } : {}) });
@@ -2398,28 +2853,30 @@
       fillState.pending = true;
       if (message.type === "GTH_SALARY_TRIAL") {
         fillState.gthSalary = { requestId: message.requestId, state: "running", profileBinding:message.profileBinding };
-      } else if (message.type === "GTH_INTENT_TEST") {
-        fillState.gthIntent = { requestId: message.requestId, state: "running", profileBinding:message.profileBinding };
       }
     }
     Promise.resolve()
-      .then(() => message.type === "RESUME_FILL"
+      .then(async () => {
+        await loadFieldMemory();
+        if (message.type === 'RESUME_INSPECT') await loadAtsControlTargets();
+        return message.type === "RESUME_FILL"
         ? fill(message.profile || {}, message.attachment || null, message.photoUploads || null, message.profileBinding)
         : message.type === "GTH_SALARY_TRIAL"
           ? runBoundGthTrial(message,()=>gthSalaryTrial(message.profile || {}, message.requestId))
-          : message.type === "GTH_INTENT_TEST"
-            ? runBoundGthTrial(message,()=>gthIntentTest(message.answers || {}, message.requestId))
-          : inspect(message.profile || {}, message.attachment || null))
+          : inspect(message.profile || {}, message.attachment || null);
+      })
       .then((data) => ({ ok: true, data }),
         (error) => ({ ok: false, error: String(error?.message || error),
+          ...(error?.readiness ? { readiness: error.readiness, status: error.readiness.status,
+            reason: error.readiness.reason, writeAttempted: false, saveAttempted: false,
+            skippedSave: true, liveSupportClaimed: false } : {}),
           ...(error?.fillNotStarted === true ? { fillNotStarted: true, writeStarted: false } : {}),
-          ...((message.type === "GTH_SALARY_TRIAL" || message.type === "GTH_INTENT_TEST")
+          ...(message.type === "GTH_SALARY_TRIAL"
             && typeof error?.writeStarted === "boolean"
             ? { writeStarted: error.writeStarted }
             : error?.writeStarted ? { writeStarted: true } : {}) }))
       .then((reply) => {
-        if (message.type === "RESUME_FILL" || message.type === "GTH_SALARY_TRIAL"
-          || message.type === "GTH_INTENT_TEST") fillState.pending = false;
+        if (message.type === "RESUME_FILL" || message.type === "GTH_SALARY_TRIAL") fillState.pending = false;
         if (message.type === "GTH_SALARY_TRIAL"
           && fillState.gthSalary?.requestId === message.requestId) {
           const record = fillState.gthSalary;
@@ -2428,18 +2885,21 @@
             ? "verified" : !reply.ok && reply.writeStarted === false
               ? "failed_before_write" : "write_started_unverified";
         }
-        if (message.type === "GTH_INTENT_TEST"
-          && fillState.gthIntent?.requestId === message.requestId) {
-          const record = fillState.gthIntent;
-          record.state = "settled";
-          record.outcome = reply.ok && typeof record.currentCheck === "function"
-            ? "verified" : !reply.ok && reply.writeStarted === false
-              ? "failed_before_write" : "write_started_unverified";
-        }
         sendResponse(reply);
       });
     return true;
-  };chrome.runtime.onMessage.addListener(engineListener);globalThis.__resumeQuickFillEngineListener=engineListener;globalThis.__resumeQuickFillEngineRevision=5;}
+  };chrome.runtime.onMessage.addListener(engineListener);globalThis.__resumeQuickFillEngineListener=engineListener;globalThis.__resumeQuickFillEngineRevision=26;}
+  // ATS runners and the popup share the current-document scan and field writer.
+  globalThis.ResumeQuickFillFillCurrentPage = async (profile, profileBinding) => {
+    if (fillState.pending) throw Object.assign(Error('fill_in_progress'), { fillNotStarted: true, writeStarted: false });
+    fillState.pending = true;
+    try {
+      await loadFieldMemory();
+      const result = await fill(profile || {}, null, null, profileBinding);
+      return { ...result, ok: true, skippedSave: true, saved: false, neverSave: true,
+        softwareClickedSave: false, softwareClickedSubmit: false, liveSupportClaimed: false };
+    } finally { fillState.pending = false; }
+  };
   globalThis.ResumeQuickFillGthInspect = (profile) => {
     if (`${location.origin}${location.pathname}` !== "https://hr.gtht.com/resume/edit/")
       throw new Error("gth_inspect_wrong_page");

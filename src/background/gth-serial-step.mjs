@@ -28,11 +28,7 @@ export function existingEducationControl({action,recordIdentity,expectedRecords,
   const projection=rows=>rows.map(row=>[row.index,row.recordIdentity,row.formDataURL]);
   if(JSON.stringify(projection(records))!==JSON.stringify(projection(expectedRecords))||records[index]?.recordIdentity!==recordIdentity)return stop('serial_education_target_changed');
   const all=sections.flatMap(section=>[...section.querySelectorAll('form')]);
-  if(action==='open'){
-   if(all.length||owner.mode!=='read')return stop('serial_education_closed_required');const rows=[...section.querySelectorAll('.sec-context > .sec-detail')];if(rows.length!==records.length)return stop('serial_education_row_count_changed');
-   const edits=[...rows[index].querySelectorAll('a')].filter(node=>visible(node)&&node.querySelector('.el-icon-edit-outline'));if(edits.length!==1||edits[0].getAttribute('href')&&!/^(#|javascript:(?:;|void\(0\)))$/iu.test(edits[0].getAttribute('href')))return stop('serial_education_edit_unknown');
-   edits[0].click();return {ok:true,clicked:true};
-  }
+  if(action==='open')return {ok:false,status:'manual',reason:'manual_open_editor_required',clicked:false};
   const form=section.querySelector('form'),expectedID=JSON.parse(recordIdentity)[1];
   if(action!=='mark'||all.length!==1||all[0]!==form||owner.mode!=='edit'||owner.isEditFlag!==true||String(owner.expandFormId)!==expectedID)return stop('serial_education_target_not_loaded');
   const formOwners=[];vue=form.__vue__;for(let i=0;vue&&i<8;i++,vue=vue.$parent){const data=vue.$data||vue;if(data.tableName==='resume_education'&&data.isEduInfoSection===true)formOwners.push(vue);}

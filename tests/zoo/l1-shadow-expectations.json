@@ -1,0 +1,49 @@
+{
+  "baseTip": "8dcd68619cdad860f1402e56196fc61aefd881f0",
+  "comparison": "L1 shadow target versus accepted legacy DOM and fixture model readback; legacy adapters have no shared plan API",
+  "liveSupportClaimed": false,
+  "cases": {
+    "cms-month": {
+      "selector": ".ant-calendar-picker",
+      "field": "englishExamDate",
+      "value": "2023-01",
+      "adapter": "antdv1-month",
+      "status": "planned",
+      "comparison": "intentional_difference",
+      "reason": "L1 can plan a synthetic AMonthPicker month; the legacy writer rejects month-only precision. This is not live evidence."
+    },
+    "cms-school": {
+      "selector": "#school.ant-select",
+      "field": "school",
+      "value": "离线示例大学",
+      "adapter": "antdv1-select-search",
+      "status": "planned",
+      "comparison": "legacy_readback_equal"
+    },
+    "hotjob-pair": {
+      "selector": ".cascader-plugins-wrap",
+      "field": "residence",
+      "value": ["北京市", "北京市"],
+      "adapter": "hotjob-pair-cascader",
+      "status": "planned",
+      "comparison": "legacy_readback_equal"
+    },
+    "gth-month-range": {
+      "selector": "#dates-item",
+      "field": "employmentDates",
+      "value": ["2023-01", "2024-06"],
+      "adapter": "el-month-range",
+      "status": "planned",
+      "comparison": "legacy_readback_equal"
+    },
+    "gth-plugin-picker": {
+      "selector": "#job-category .cascader-wrap",
+      "field": "jobCategory",
+      "value": "投资/证券/基金",
+      "adapter": null,
+      "status": "manual",
+      "comparison": "intentional_difference",
+      "reason": "The legacy GTH plugin-dialog writer is a site-specific contract reserved for L3; generic L1 must not claim it as Element Cascader."
+    }
+  }
+}

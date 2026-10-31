@@ -1,6 +1,6 @@
 {
   "version": "0.1.4.9",
-  "sumsSha256": "792eb80bff63033d2175b9494688e939738594c59dbb2245b36957b37897dc2e",
+  "sumsSha256": "687e461d7a59f03b88300f9baa169c94163e53357ff14bfd85a7be2966ae1ce1",
   "inventory": [
     {
       "path": "manifest.json",
@@ -280,8 +280,8 @@
     },
     {
       "path": "src/content/engine.js",
-      "sha256": "29063355409a4a9d10d35539143f103a0bda81200bb58e9a183b2d6845ec2a40",
-      "sourceSha256": "29063355409a4a9d10d35539143f103a0bda81200bb58e9a183b2d6845ec2a40",
+      "sha256": "b06dc289a16bad3365647abe2badeac8e8139d561d240720a3b2e124cf2b031f",
+      "sourceSha256": "b06dc289a16bad3365647abe2badeac8e8139d561d240720a3b2e124cf2b031f",
       "kind": "frozen-product"
     },
     {
@@ -1216,8 +1216,8 @@
     },
     {
       "path": "tests/l1-write-route.test.mjs",
-      "sha256": "abfc7838b0284b9e25235d4fbc60fa14d5dff9aa448473c08495276b71ab16e2",
-      "sourceSha256": "abfc7838b0284b9e25235d4fbc60fa14d5dff9aa448473c08495276b71ab16e2",
+      "sha256": "a383e18b2c6807fb24b012de56315508011bb895a579946e2a52be53aa735065",
+      "sourceSha256": "a383e18b2c6807fb24b012de56315508011bb895a579946e2a52be53aa735065",
       "kind": "selected-ats-r2-offline-regression"
     },
     {
@@ -1577,8 +1577,8 @@
     {
       "path": "tests/cms-basic-info-gaps.test.mjs",
       "kind": "selected-ats-edu-select-label-offline-regression",
-      "sha256": "3991dd9d8067d755d36122f3afc2c2bc9ec13a3a577ea57ffcc70a32dbb01ced",
-      "sourceSha256": "3991dd9d8067d755d36122f3afc2c2bc9ec13a3a577ea57ffcc70a32dbb01ced"
+      "sha256": "40d92986feb7d1e858b89a18e7d473ebd38cbab5f611b3e6372292d9f7c39fd8",
+      "sourceSha256": "40d92986feb7d1e858b89a18e7d473ebd38cbab5f611b3e6372292d9f7c39fd8"
     },
     {
       "path": "tests/cms-decision-nanyue-name-phone.test.mjs",
@@ -1595,8 +1595,8 @@
     {
       "path": "tests/engine-edu-select-label.test.mjs",
       "kind": "selected-ats-edu-select-label-offline-regression",
-      "sha256": "46ecfa1c7602e56fc9cf44786ca5c096baa1fc743b667b01aae4dd62636aaa9d",
-      "sourceSha256": "46ecfa1c7602e56fc9cf44786ca5c096baa1fc743b667b01aae4dd62636aaa9d"
+      "sha256": "8d2e99ccd3f1b5fbe228ac926e7f43c8f881c8bab6872794c140e19e26617fcd",
+      "sourceSha256": "8d2e99ccd3f1b5fbe228ac926e7f43c8f881c8bab6872794c140e19e26617fcd"
     },
     {
       "path": "tests/engine-edu-section-boundary.test.mjs",

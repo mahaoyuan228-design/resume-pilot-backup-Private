@@ -79,7 +79,9 @@ function fixture(t, { field = item(), sectionId = '11', heading = SECTION, extra
   return { window, document, target, counts, message, safety, setBindingHook: hook => { onBindingCheck = hook; } };
 }
 
-const addressFields = result => result.data.fields.filter(field => field.labels.some(label => label.startsWith(QUESTION) || label === '请填写联系地址'));
+const guardedAddressIds = new Set(['offline-address-first', 'offline-address-second']);
+const addressFields = result => result.data.fields.filter(field => guardedAddressIds.has(field.id)
+  || field.labels.some(label => label.startsWith(QUESTION) || label === '请填写联系地址'));
 
 test('confirmed empty harvested address uses the existing guarded native write without clicks', async t => {
   const h = fixture(t);
@@ -139,7 +141,7 @@ for (const [name, options, reason] of [
   ['textarea drift', { field: item({ input: '<textarea class="ant-input" placeholder="请填写联系地址"></textarea>' }) }, 'custom_control_not_supported'],
   ['calendar drift', { field: item({ input: '<span class="ant-calendar-picker"><input class="ant-input" placeholder="请填写联系地址"></span>' }) }, 'custom_control_not_supported'],
   ['select display drift', { field: item({ input: '<div class="ant-select"><input class="ant-input" placeholder="请填写联系地址"></div>' }) }, 'custom_control_not_supported'],
-  ['multiple inputs', { field: item({ input: '<input class="ant-input" placeholder="请填写联系地址"><input class="ant-input" placeholder="请填写联系地址">' }) }, 'custom_control_not_supported'],
+  ['multiple inputs', { field: item({ input: '<input id="offline-address-first" class="ant-input" placeholder="请填写联系地址"><input id="offline-address-second" class="ant-input" placeholder="请填写联系地址">' }) }, 'custom_control_not_supported'],
   ['duplicate question', { field: item() + item({ wrapper: '11_duplicate_0' }) }, 'duplicate_target'],
   ['duplicate wrapper', { field: item() + '<div id="11_51414234_0"></div>' }, 'duplicate_target'],
   ['multiple rows', { extraRow: '<div class="form-cell-inner"></div>' }, 'ambiguous_repeat_group'],
@@ -274,7 +276,7 @@ test('a stale revision-6 listener is replaced so reinjection installs the addres
   h.window.__resumeQuickFillEngineRevision = 6;
   h.window.eval(SOURCES[1]);
   assert.notEqual(h.window.__resumeQuickFillEngineListener, stale);
-  assert.equal(h.window.__resumeQuickFillEngineRevision, 25);
+  assert.equal(h.window.__resumeQuickFillEngineRevision, 26);
   assert.equal(h.window.chrome.runtime.onMessage.hasListener(stale), false);
   assert.equal(h.window.chrome.runtime.onMessage.hasListener(h.window.__resumeQuickFillEngineListener), true);
   h.safety();

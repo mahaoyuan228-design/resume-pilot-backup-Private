@@ -8,92 +8,26 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
+import { JSDOM } from 'jsdom';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const require = createRequire(import.meta.url);
 const M = require('../src/core/matcher.js');
+const dom = new JSDOM('<!doctype html><body></body>');
+const fixtureDocument = dom.window.document;
+dom.window.Element.prototype.getClientRects = () => [{}];
+test.after(() => dom.window.close());
 
-class El {
-  constructor(tag, { className = '', text = '', children = [] } = {}) {
-    this.tagName = String(tag || 'div').toUpperCase();
-    this.classList = new Set(className.split(/\s+/u).filter(Boolean));
-    this.textContent = text;
-    this.children = children;
-    this.parent = null;
-    this.disabled = false;
-    this.type = '';
-    for (const child of children) child.parent = this;
-  }
-  getAttribute(name) { return this.attributes?.[name] ?? null; }
-  closest(selector) {
-    let cur = this;
-    while (cur) {
-      if (selector === '[hidden],[aria-hidden="true"]') {
-        if (cur.getAttribute('hidden') != null || cur.getAttribute('aria-hidden') === 'true') return cur;
-      } else if (matches(cur, selector)) return cur;
-      cur = cur.parent;
-    }
-    return null;
-  }
-  matches(selector) { return matches(this, selector); }
-  querySelector(selector) { return this.querySelectorAll(selector)[0] || null; }
-  querySelectorAll(selector) { return queryAll(this, selector); }
-  getClientRects() { return [{}]; }
+function el(tag, { className = '', text = '', children = [] } = {}) {
+  const node = fixtureDocument.createElement(tag);
+  node.className = className;
+  node.textContent = text;
+  node.append(...children);
+  return node;
 }
-
-class InputEl extends El {
-  constructor(opts) {
-    super('input', opts);
-    this.type = 'text';
-  }
-}
-
-function matches(node, selector) {
-  if (selector.includes(' ')) {
-    const parts = selector.split(/\s+/u);
-    return matches(node, parts.pop()) && !!node.parent?.closest(parts.join(' '));
-  }
-  if (selector === 'input') return node.tagName === 'INPUT';
-  if (selector === 'label') return node.tagName === 'LABEL';
-  if (selector === 'textarea') return node.tagName === 'TEXTAREA';
-  if (selector.startsWith('.')) return selector.split('.').filter(Boolean).every((name) => node.classList.has(name));
-  return false;
-}
-
-function descendants(node, acc = []) {
-  for (const child of node.children) {
-    acc.push(child);
-    descendants(child, acc);
-  }
-  return acc;
-}
-
-function queryAll(root, selector) {
-  const sel = selector.trim();
-  if (sel.startsWith(':scope > ')) {
-    const rest = sel.slice(':scope > '.length);
-    if (rest.includes(' > ')) {
-      const [childSel, ...remaining] = rest.split(' > ');
-      return root.children.filter((child) => matches(child, childSel))
-        .flatMap((child) => queryAll(child, ':scope > ' + remaining.join(' > ')));
-    }
-    if (!rest.includes(' ')) return root.children.filter((child) => matches(child, rest));
-    const [childSel, descSel] = rest.split(/\s+/u);
-    return root.children.filter((child) => matches(child, childSel))
-      .flatMap((child) => descendants(child).filter((node) => matches(node, descSel)));
-  }
-  if (sel.includes(' > ')) {
-    const [left, right] = sel.split(' > ');
-    return descendants(root).filter((node) => matches(node, left))
-      .flatMap((node) => node.children.filter((child) => matches(child, right)));
-  }
-  return descendants(root).filter((node) => matches(node, sel));
-}
-
-function el(tag, opts) { return new El(tag, opts); }
 
 function field(question) {
-  const control = new InputEl();
+  const control = el('input');
   const item = el('div', {
     className: 'ant-form-item',
     children: [
@@ -148,17 +82,30 @@ function educationRow(questions) {
 
 function loadCmsFns() {
   const src = fs.readFileSync(path.join(root, 'src/content/engine.js'), 'utf8');
-  const code = ['antSelectControl', 'formItemQuestion', 'visible', 'labelTexts', 'cmsDecision', 'markDuplicateTargets']
+  const code = ['antSelectControl', 'formItemQuestion', 'visible', ...labelFunctions, 'cmsDecision', 'markDuplicateTargets']
     .map((name) => extractFunction(src, name)).join('\n');
-  globalThis.HTMLInputElement = InputEl;
-  globalThis.HTMLTextAreaElement = class HTMLTextAreaElement extends El {};
+  globalThis.HTMLInputElement = dom.window.HTMLInputElement;
+  globalThis.HTMLTextAreaElement = dom.window.HTMLTextAreaElement;
+  globalThis.HTMLSelectElement = dom.window.HTMLSelectElement;
   globalThis.getComputedStyle = () => ({ display: 'block', visibility: 'visible' });
-  globalThis.document = { getElementById() { return null; } };
+  globalThis.document = fixtureDocument;
   const RESERVED_TYPES = new Set(['hidden', 'password', 'search', 'submit', 'reset', 'button', 'image', 'checkbox']);
   const CMS_EDUCATION_SELECT_KEYS = { 学校: 'school', 学历: 'degree' };
   const cmsSchoolSearchControl = () => false;
   return new Function('M', 'RESERVED_TYPES', 'CMS_EDUCATION_SELECT_KEYS', 'cmsSchoolSearchControl',
-    `${code}\nreturn { cmsDecision, markDuplicateTargets };`)(M, RESERVED_TYPES, CMS_EDUCATION_SELECT_KEYS, cmsSchoolSearchControl);
+    `${labelConstants(src)}\nconst atsControlTargets = new Map(), atsControlPeers = new Set();\n${code}\nreturn { cmsDecision, markDuplicateTargets };`)(M, RESERVED_TYPES, CMS_EDUCATION_SELECT_KEYS, cmsSchoolSearchControl);
+}
+
+// Run the actual shared label resolver against DOM nodes so selector support,
+// clone/removal behavior and ownership checks stay identical to the engine.
+const labelFunctions = ['treeQueryControl', 'questionOwnsControl', 'cleanQuestion', 'questionText', 'generalSection', 'labelTexts'];
+function labelConstants(src) {
+  return ['FORM_ITEM_SELECTOR', 'ITEM_QUESTION_SELECTOR', 'SECTION_SELECTOR']
+    .map(name => {
+      const declaration = src.match(new RegExp(`^  const ${name} = .+;$`, 'm'))?.[0];
+      assert.ok(declaration, name);
+      return declaration;
+    }).join('\n');
 }
 
 const { cmsDecision, markDuplicateTargets } = loadCmsFns();
@@ -168,15 +115,14 @@ const { cmsDecision, markDuplicateTargets } = loadCmsFns();
 // production collect -> fill loop so an unbound field can still fail by ID.
 function selectPage({ rows = 1, dedicated = false, duplicateId = '' } = {}) {
   const makeSelect = () => el('div', {
-    className: 'ant-select-selection ant-select-selection--single',
-    children: [el('span', { className: 'ant-select-selection-selected-value', text: '本科' })]
+    className: 'ant-select ant-select-selection ant-select-selection--single',
+    children: [el('span', { className: 'ant-select-selection-selected-value', text: '本科' }), el('input')]
   });
   const makeRow = () => {
     const control = makeSelect();
     control.id = duplicateId;
     const item = field('学历*').item;
-    item.children[1] = control;
-    control.parent = item;
+    item.children[1].replaceWith(control);
     return { control, row: el('div', { className: 'form-cell-inner', children: [item] }) };
   };
   const basicRow = makeRow();
@@ -192,9 +138,8 @@ function selectPage({ rows = 1, dedicated = false, duplicateId = '' } = {}) {
   const education = makeSection('教育经历必填', educationRows);
   education.dedicated = dedicated;
   const form = el('form', { children: [basic, education] });
-  form.isConnected = true;
+  fixtureDocument.body.replaceChildren(form);
   const controls = [basicRow.control, ...educationRows.map(item => item.control)];
-  controls.forEach(control => { control.isConnected = true; });
   const doc = {
     body: form, title: 'offline unit double',
     querySelectorAll: selector => selector === 'input,select,textarea' ? []
@@ -205,10 +150,14 @@ function selectPage({ rows = 1, dedicated = false, duplicateId = '' } = {}) {
     ? { alias: '__cms_basic_education_level', sectionName: '个人基本信息必填', rowContext: 'single' } : null;
   const disabled = () => false;
   const src = fs.readFileSync(path.join(root, 'src/content/engine.js'), 'utf8');
-  const names = ['collect', 'formItemQuestion', 'labelTexts', 'fieldId', 'profileValue', 'cmsAntV3Answer', 'logicalEntryKey',
+  const names = ['collect', 'formItemQuestion', ...labelFunctions, 'fieldId', 'profileValue', 'cmsAntV3Answer', 'logicalEntryKey',
     'entrySignature', 'entryScope', 'publicEntry', 'meaningfulCurrent', 'exactOptionText', 'settleUnresolvedEntry', 'fillOwnedContent'];
   const deps = {
-    M, cmsDecision, markDuplicateTargets, atsControlTargets: new Map(),
+    M, cmsDecision, markDuplicateTargets, atsControlTargets: new Map(), atsControlPeers: new Set(),
+    loginFormScopes: () => new Set(), loginAdvisoryHints: () => [],
+    currentFormReadiness: () => ({ advisory: false, blocking: false }),
+    proseControl: () => false, // This scaffold contains only Ant select displays.
+    richtextControl: () => false,
     MANUAL_CONTROL_SELECTOR: '[data-captcha]', manualControlReason: disabled, // No challenge surfaces in this isolated select scaffold.
     visible: () => true, cmsAntV3InnerSearch: disabled, cmsRegionControl: disabled,
     cmsCheckboxControl: disabled, namedSection: () => null, cmsSection: sectionOf,
@@ -234,7 +183,7 @@ function selectPage({ rows = 1, dedicated = false, duplicateId = '' } = {}) {
     // Any attempt to fill a widget, save, submit, or otherwise write is an error.
     setBoundNativeValue: async () => { throw Error('unexpected_write'); }
   };
-  const api = new Function(...Object.keys(deps), names.map(name => extractFunction(src, name)).join('\n')
+  const api = new Function(...Object.keys(deps), labelConstants(src) + '\n' + names.map(name => extractFunction(src, name)).join('\n')
     + '\nreturn { collect, fillOwnedContent };')(...Object.values(deps));
   const profile = { customAnswers: { __cms_basic_education_level: '硕士研究生' },
     education: [{ degree: '硕士研究生' }], confirmedFields: ['education.0.degree'] };
@@ -242,7 +191,7 @@ function selectPage({ rows = 1, dedicated = false, duplicateId = '' } = {}) {
 }
 
 async function fillOffline(page) {
-  globalThis.HTMLSelectElement = class HTMLSelectElement extends El {};
+  globalThis.HTMLSelectElement = dom.window.HTMLSelectElement;
   globalThis.ResumeProfileWriteContext = { async check(write = true) {
     assert.equal(write, false, 'Never Save / no field writes in these readback cases');
   } };
@@ -252,7 +201,7 @@ async function fillOffline(page) {
 
 test('basic 学历 already bound: one education 学历 keeps education.0.degree', async () => {
   const page = selectPage();
-  globalThis.HTMLSelectElement = class HTMLSelectElement extends El {};
+  globalThis.HTMLSelectElement = dom.window.HTMLSelectElement;
   const entries = page.collect(page.profile);
   assert.equal(entries[0].path, 'customAnswers.__cms_basic_education_level');
   assert.equal(entries[1].path, 'education.0.degree');

@@ -171,7 +171,7 @@ for(const revision of [7,8,10,12])test(`legacy revision ${revision} is replaced 
   const h=await harness(t),events=h.window.chrome.runtime.onMessage;
   events.removeListener(h.window.__resumeQuickFillEngineListener);
   const old=()=>{};events.addListener(old);h.window.__resumeQuickFillEngineListener=old;h.window.__resumeQuickFillEngineRevision=revision;
-  h.window.eval(sources[2]);assert.equal(events.hasListener(old),false);assert.equal(h.window.__resumeQuickFillEngineRevision,18);
+  h.window.eval(sources[2]);assert.equal(events.hasListener(old),false);assert.equal(h.window.__resumeQuickFillEngineRevision,26);
   assert.equal((await h.run()).ok,true);h.safety();
 });
 for(const revision of [7,8,12])test(`pending legacy revision ${revision} keeps its listener and shared lock`,async t=>{

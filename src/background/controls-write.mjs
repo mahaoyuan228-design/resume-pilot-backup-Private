@@ -73,6 +73,56 @@ export async function writeControlInPage(payload) {
   const reject = reason => { throw Error(reason); };
   const registry = globalThis.ResumeControls;
   let element, scope, identity = null, writeStarted = false;
+  // executeScript serializes this function into MAIN. Keep the DOM-only login
+  // check here as well as in ISOLATED so background awaits cannot bypass it.
+  // The engine-login-guard suite exercises both copies with the same fixtures.
+  const loginFormDetected = control => {
+    const regionSelector = '[role="form"],[role="dialog"],[role="region"],[role="group"],section,fieldset,article,.section,.form-section,[data-section]';
+    const isSignal = node => {
+      if (node.matches('input:not([type="button"]):not([type="submit"]):not([type="reset"])')) {
+        if (node.type === 'password' || node.autocomplete === 'one-time-code') return true;
+        if (node.closest('[data-captcha],[class*="captcha" i],[id*="captcha" i],[name*="captcha" i]')) return true;
+        const item = node.closest('.ant-form-item,.el-form-item,.ivu-form-item,.form-item,.form-group,.field,[data-field],[data-form-item]');
+        const itemLabels = item ? [...item.querySelectorAll('label,.label,[data-label],.ant-form-item-label,.el-form-item__label,.ivu-form-item-label,.form-item-label,.field-label')]
+          .map(label => label.textContent) : [];
+        const text = ['name', 'id', 'aria-label', 'placeholder'].map(name => node.getAttribute(name) || '')
+          .concat([...(node.labels || [])].map(label => label.textContent), itemLabels).join(' ');
+        const by = (node.getAttribute('aria-labelledby') || '').split(/\s+/)
+          .map(id => document.getElementById(id)?.textContent || '').join(' ');
+        return /验证码|驗證碼|captcha|verification[\s_-]*code|one[\s_-]*time[\s_-]*(?:code|password)|(?:^|[\s_-])otp(?:$|[\s_-])/iu.test(`${text} ${by}`);
+      }
+      const text = String(node.getAttribute('aria-label') || node.textContent?.trim() || node.value || '')
+        .normalize('NFKC').replace(/\s+/gu, '').trim();
+      return /(?:获取|发送|重新获取|重新发送)(?:短信)?验证码|^(?:(?:立即|安全|快速|确认|继续|一键|账号|验证码|手机)?登录(?:并注册|\/注册)?|signin|login|(?:send|get)(?:verification)?code)$/iu.test(text);
+    };
+    const owner = signal => {
+      const form = signal.form || signal.closest('form');
+      if (form) return form;
+      const ariaForm = signal.closest('[role="form"]');
+      if (ariaForm) return ariaForm;
+      const navigation = signal.closest('header,nav,[role="navigation"]');
+      const region = signal.closest(regionSelector);
+      if (region && (!navigation || navigation.contains(region))) return region;
+      for (let root = signal.parentElement; root && root !== document.body && root !== document.documentElement; root = root.parentElement) {
+        const editors = [...root.querySelectorAll('input,select,textarea,[contenteditable="true"]')]
+          .filter(node => {
+            const region = node.closest(regionSelector);
+            return node !== signal && !node.form && (!region || region.contains(root))
+              && !['hidden', 'button', 'submit', 'reset', 'image'].includes(node.type);
+          });
+        if (editors.length) return root;
+        if (root === navigation) break;
+      }
+      const parent = signal.parentElement;
+      return signal.matches('input') && parent !== document.body && parent !== document.documentElement ? parent : null;
+    };
+    const form = control.form || control.closest('form'), region = control.closest(regionSelector);
+    return [...document.querySelectorAll('input,button,[role="button"]')].filter(isSignal).map(owner)
+      .filter(Boolean).some(root => root.matches('form') ? form === root
+        : root.matches('[role="form"]') ? control.closest('[role="form"]') === root
+        : (!form || root.matches(regionSelector) && root.contains(form))
+          && root.contains(control) && (!region || region === root || region.contains(root)));
+  };
   const check = async () => {
     if (location.href !== payload.expectedUrl || performance.timeOrigin !== payload.timeOrigin) reject('control_document_changed');
     if (document.visibilityState !== 'visible') reject('fill_interrupted_page_hidden');
@@ -87,6 +137,7 @@ export async function writeControlInPage(payload) {
         || ref.framework !== identity.framework || ref.vm !== identity.vm || ref.componentType !== identity.componentType) reject('control_adapter_changed');
       if (!model.available || model.disabled || model.readonly) reject('control_not_writable');
     }
+    if (loginFormDetected(element)) reject('login_form_detected');
   };
   try {
     if (registry?.version !== 1 || registry.liveSupportClaimed !== false) reject('control_registry_missing');

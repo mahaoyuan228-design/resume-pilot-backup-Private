@@ -276,7 +276,7 @@ test('a stale revision-6 listener is replaced so reinjection installs the addres
   h.window.__resumeQuickFillEngineRevision = 6;
   h.window.eval(SOURCES[1]);
   assert.notEqual(h.window.__resumeQuickFillEngineListener, stale);
-  assert.equal(h.window.__resumeQuickFillEngineRevision, 27);
+  assert.equal(h.window.__resumeQuickFillEngineRevision, 28);
   assert.equal(h.window.chrome.runtime.onMessage.hasListener(stale), false);
   assert.equal(h.window.chrome.runtime.onMessage.hasListener(h.window.__resumeQuickFillEngineListener), true);
   h.safety();

@@ -8,7 +8,7 @@
   if(nativeMessages.hasListeners?.()===false)globalThis.__resumeNativeListenersResetObserved=true;
   if(globalThis.__resumeQuickFillInstalled){
     existingListenerAlive=!!ownedListener&&nativeMessages.hasListener?.(ownedListener)===true;
-    if(existingListenerAlive&&globalThis.__resumeQuickFillEngineRevision===27&&typeof globalThis.ResumeQuickFillGthInspect==='function'
+    if(existingListenerAlive&&globalThis.__resumeQuickFillEngineRevision===28&&typeof globalThis.ResumeQuickFillGthInspect==='function'
       &&typeof globalThis.ResumeQuickFillFillCurrentPage==='function')return;
     if(existingListenerAlive){if(fillState.pending)throw Error('profile_write_context_busy');nativeMessages.removeListener(ownedListener);existingListenerAlive=false;}
     else if(!ownedListener&&nativeMessages.hasListeners?.()===true&&!globalThis.__resumeNativeListenersResetObserved)throw Error('extension_reload_required');
@@ -271,10 +271,25 @@
         const editorSelector = 'input,select,textarea,[contenteditable],[role="combobox"]';
         const branches = [...section.children].filter(node => node.contains(control)
           || node.matches(editorSelector) || node.querySelector(editorSelector));
-        if (branches.length !== 1 || !branches[0].contains(control)) continue;
+        if (!branches.length || !branches.some(branch => branch.contains(control))) continue;
         let header = branches[0].previousElementSibling;
         while (header && !questionText(header)) header = header.previousElementSibling;
         const name = questionText(header);
+        if (branches.length > 1 && !M.sectionKind(name) && !header?.matches('h1,h2,h3,h4,h5,h6,[role="heading"]')
+          && !header?.querySelector('h1,h2,h3,h4,h5,h6,[role="heading"]')) continue;
+        if (branches.length > 1) {
+          const boundaries = [];
+          for (let node = branches[0].nextElementSibling; node && node !== branches.at(-1); node = node.nextElementSibling) {
+            const title = questionText(node);
+            if (title && !branches.includes(node) && (M.sectionKind(title)
+              || node.matches('h1,h2,h3,h4,h5,h6,[role="heading"]')
+              || node.querySelector('h1,h2,h3,h4,h5,h6,[role="heading"]'))) boundaries.push(title);
+          }
+          // Flat sibling sections have no independent container identity.
+          // Keep their combined scope unconfirmed rather than borrowing the
+          // first heading for another record's shared date questions.
+          if (boundaries.length) return { element: section, name: [name, ...boundaries].join(' / ') };
+        }
         // An unknown nearer group title is still a boundary. Do not borrow
         // an education heading through another section's editors.
         if (name && (M.sectionKind(name) || header.matches('h1,h2,h3,h4,h5,h6,[role="heading"]')
@@ -362,55 +377,91 @@
     const row = control.closest("[data-repeat-kind]");
     if (!row) return null;
     const kind = row.getAttribute("data-repeat-kind");
-    const rows = [...document.querySelectorAll(`[data-repeat-kind="${kind}"]`)];
+    const rows = [...(control.closest('form') || document).querySelectorAll('[data-repeat-kind]')]
+      .filter(peer => peer.getAttribute('data-repeat-kind') === kind);
     return { kind, index: rows.indexOf(row) };
   }
 
-  function singleEducationContext(control, profile, cache) {
-    // An unmarked row has no ordering contract. Only a single source record
-    // and a complete, unique school/degree/major trio prove the same binding.
-    if (profile.education?.length !== 1) return null;
-    const section = generalSection(control);
-    if (!section || M.sectionKind(section.name) !== 'education') return null;
-    if (!cache.has('sections')) {
-      cache.set('sections', new Set([...new Set([...document.querySelectorAll('input,select,textarea,[contenteditable]'), ...atsControlTargets.keys()])]
-        .filter(node => visible(node, atsControlTargets.has(node)))
-        .map(node => generalSection(node)).filter(row => row && M.sectionKind(row.name) === 'education')
-        .map(row => row.element)));
+  function pageRepeatBindings() {
+    const sections = new Map(), bindings = new Map();
+    const editors = new Set([...document.querySelectorAll('input,select,textarea,[contenteditable]'), ...atsControlTargets.keys()]);
+    // Include hidden record editors in the ordering proof. A collapsed first
+    // record must not turn the next visible record into source zero.
+    for (const control of editors) {
+      if (atsControlPeers.has(control) || treeQueryControl(control) || control.closest('[data-repeat-kind]')
+        || control.type === 'hidden' || cmsSection(control) || namedSection(control)) continue;
+      const section = generalSection(control), kind = M.sectionKind(section?.name);
+      if (!['education', 'work', 'internship', 'project'].includes(kind)) continue;
+      if (!sections.has(section.element)) sections.set(section.element, { ...section, kind, fields: [], editors: [] });
+      sections.get(section.element).editors.push(control);
+      const labels = labelTexts(control);
+      if (new Set(labels.map(M.normalize)).size !== 1) continue;
+      const match = M.resolveAtsField({ hostname: location.hostname, labels, section: section.name, index: 0 });
+      if (match.status === 'mapped') sections.get(section.element).fields.push({ control, key: match.key });
     }
-    if (cache.get('sections').size !== 1) return null;
-    if (!cache.has(section.element)) {
-      const keys = ['school', 'degree', 'major'];
-      const groups = new Map(keys.map(key => [key, new Map()]));
-      const editors = new Set([...section.element.querySelectorAll('input,select,textarea,[contenteditable]'),
-        ...[...atsControlTargets.keys()].filter(node => section.element.contains(node))]);
-      for (const node of editors) {
-        if (atsControlPeers.has(node) || treeQueryControl(node) || !visible(node, atsControlTargets.has(node))
-          || generalSection(node)?.element !== section.element) continue;
-        const labels = labelTexts(node);
-        if (new Set(labels.map(M.normalize)).size !== 1) continue;
-        const match = M.resolveAtsField({ hostname: location.hostname, labels, section: section.name, index: 0 });
-        if (!groups.has(match.key)) continue;
-        const owner = answerWidget(node) || node;
-        const peers = groups.get(match.key).get(owner) || [];
-        peers.push(node); groups.get(match.key).set(owner, peers);
+    const commonParent = fields => {
+      let root = fields[0]?.control.parentElement;
+      while (root && !fields.every(field => root.contains(field.control))) root = root.parentElement;
+      return root;
+    };
+    const branchAt = (root, control) => {
+      let branch = control;
+      while (branch.parentElement && branch.parentElement !== root) branch = branch.parentElement;
+      return branch;
+    };
+    const record = fields => {
+      if (!fields.length || new Set(fields.map(field => field.key)).size !== fields.length) return false;
+      if (fields.length === 1) return true;
+      const root = commonParent(fields), branches = fields.map(field => branchAt(root, field.control));
+      // Each branch must be one question, not a fragment containing several
+      // questions from another record. Never stitch two partial rows together.
+      return new Set(branches).size === fields.length && fields.every((field, index) =>
+        questionOwnsControl({ htmlFor: '' }, field.control, branches[index]));
+    };
+    for (const section of sections.values()) {
+      if ([...sections.values()].filter(peer => peer.kind === section.kind).length !== 1 || !section.fields.length) continue;
+      const root = commonParent(section.fields);
+      if (section.editors.some(control => !root.contains(control))) continue;
+      let rows;
+      if (record(section.fields)) rows = [{ element: root, fields: section.fields }];
+      else {
+        rows = [...root.children].map(element => ({ element,
+          fields: section.fields.filter(field => element.contains(field.control)) }))
+          .filter(row => section.editors.some(control => row.element.contains(control)));
+        // A list needs independent record containers with a shared question.
+        // Flat duplicate fields and unrelated partial fragments have no index.
+        if (rows.length < 2 || rows.some(row => !record(row.fields)
+          || row.element.matches(FORM_ITEM_SELECTOR + ',label,input,select,textarea,' + ANSWER_WIDGET_SELECTOR))
+          || !rows[0].fields.some(field => rows.every(row => row.fields.some(peer => peer.key === field.key)))) continue;
       }
-      const owners = keys.map(key => groups.get(key));
-      const unique = owners.every(group => group.size === 1 && [...group.values()][0].length === 1)
-        && new Set(owners.map(group => [...group.keys()][0])).size === keys.length;
-      const trio = unique ? owners.flatMap(group => [...group.values()][0]) : [];
-      let row = trio[0]?.parentElement;
-      while (row && !trio.every(node => row.contains(node))) row = row.parentElement;
-      const branches = row && trio.map(node => {
-        let branch = node;
-        while (branch.parentElement !== row) branch = branch.parentElement;
-        return branch;
-      });
-      // Three peer question branches establish one record. Two partial
-      // records nested under a common list cannot be stitched together.
-      cache.set(section.element, branches && new Set(branches).size === keys.length ? new Set(trio) : new Set());
+      const order = rows.map(row => row.element);
+      rows.forEach((row, index) => row.fields.forEach(field => bindings.set(field.control,
+        { kind: section.kind, index, section: section.element, row: row.element, order })));
     }
-    return cache.get(section.element).has(control) ? { kind: 'education', index: 0 } : null;
+    for (const control of editors) {
+      const row = control.closest('[data-repeat-kind]'), context = row && repeatContext(control);
+      if (!context) continue;
+      const section = control.closest('form') || document.body;
+      const order = [...section.querySelectorAll('[data-repeat-kind]')]
+        .filter(peer => peer.getAttribute('data-repeat-kind') === context.kind);
+      bindings.set(control, { ...context, section, row, order });
+    }
+    return bindings;
+  }
+
+  const repeatBindings = new WeakMap();
+  let repeatFillPlan = null;
+  function repeatPlanMatches(binding) {
+    if (!repeatFillPlan) return true;
+    const plan = repeatFillPlan.find(plan => plan.section === binding.section && plan.kind === binding.kind);
+    return !!plan && plan.kind === binding.kind && plan.order.length === binding.order.length
+      && plan.order.every((row, index) => row === binding.order[index]);
+  }
+  function sameRepeatBinding(entry, live) {
+    const before = repeatBindings.get(entry), after = repeatBindings.get(live);
+    return !before && !after || !!before && !!after && before.kind === after.kind && before.index === after.index
+      && before.section === after.section && before.row === after.row && before.row.isConnected
+      && before.order.length === after.order.length && before.order.every((row, index) => row === after.order[index]);
   }
 
   function namedSection(control) {
@@ -1267,7 +1318,7 @@
       .filter(cmsAntV3Control);
     const regionControls=query('.cascader-plugins-wrap').filter(cmsRegionControl);
     const checkboxControls=query('.ant-checkbox-group').filter(cmsCheckboxControl);
-    const educationContexts = new Map();
+    const pageRepeats = pageRepeatBindings();
     const entries = [...controls, ...cmsControls,...regionControls,...checkboxControls].map((control, position) => {
       const manualReason = manualControlReason(control, loginScopes);
       if (manualReason) return manualControlEntry(control, position, manualReason);
@@ -1278,11 +1329,12 @@
       const conflictingLabels = !radio && new Set(labels.map(M.normalize)).size > 1;
       const section = namedSection(control);
       const legacyMatch = M.classify(labels);
-      const explicitRepeat = repeatContext(control) || singleEducationContext(control, profile, educationContexts);
+      const detectedRepeat = pageRepeats.get(control);
+      const explicitRepeat = repeatContext(control) || (detectedRepeat && { kind: detectedRepeat.kind, index: detectedRepeat.index });
       const questionScope = customQuestionScope(control);
       const semanticSection = questionScope.sectionName.startsWith("form:") ? "" : questionScope.sectionName;
       const fieldSection = semanticSection || explicitRepeat?.kind || "";
-      const semantic = M.resolveAtsField({ hostname: location.hostname, labels,
+      const semantic = M.resolveAtsField({ hostname: location.hostname, labels, profile,
         section: fieldSection, index: explicitRepeat?.index ?? null });
       let mappingContext = null;
       try {
@@ -1300,7 +1352,7 @@
       const cmsRegion=cmsRegionControl(control);
       const cmsCheckbox=cmsCheckboxControl(control);
       const key = cmsCheckbox?'checkbox_group':cmsRegion?'region':cms.key || match.key;
-      const decision = sectionDecision(control, key, section, repeatContext(control));
+      const decision = sectionDecision(control, key, section, explicitRepeat);
       const context = dedicatedRecordKind ? undefined : cms.context || decision.context;
       const degreeSelect = antDegreeControl(control);
       const cmbSelect = cmbAntV4Control(control);
@@ -1316,6 +1368,7 @@
       // not share a label-only ID. Confirmed paths still drive collision checks.
       const result = { id: cmsSimple ? `cms-scoped-input-${cmsSimple.alias}` : cmsCheckbox ? 'cms-checkbox-research-scoped' : cmsAcademic ? `cms-academic-${cmsAcademic.alias}` : cmsSelect ? (control.id || `cms-ant-v3-${M.normalize(labels[0])}-${position}`) : fieldId(control, position), labels, kind: cmsCheckbox?'cms_checkbox_group':cmsRegion?'cms_region':radio ? "radio" : degreeSelect ? "ant_degree_select" : cmbSelect ? "cmb_ant_v4_select" : cmsSchool ? "cms_school_search" : cmsSelect ? "cms_ant_v3_select" : cmsBirthDate ? "cms_birth_date" : cmsEducationDate ? "cms_education_date" : antSelectControl(control) ? "ant_select" : control.tagName.toLowerCase(), key, context, scope: questionScope, control, radioOptions, antUnnamedRadio: !!group?.antUnnamed };
       result.atsProfile = semantic.atsProfile;
+      if (detectedRepeat) repeatBindings.set(result, detectedRepeat);
       // Only ordinary controls offer a manual mapping; dedicated record flows
       // retain their source binding and never learn from their fill results.
       if (!dedicatedRecordKind && !cmsSection(control) && !degreeSelect && !cmbSelect && !antSelectControl(control)
@@ -1376,7 +1429,7 @@
         || (fieldSection && !cmsSection(control) && semantic.status === "manual" && !remembered)) {
         result.reason = conflictingLabels || legacyMatch.reason === "ambiguous_label" ? "ambiguous_label" : semantic.reason;
         result.semanticStatus = "manual";
-      } else if ((semantic.status === "mapped" && (!legacyMatch.key || semantic.context)) || remembered) {
+      } else if ((semantic.status === "mapped" && (!legacyMatch.key || semantic.context || semantic.profileKey !== semantic.key)) || remembered) {
         const path = remembered?.profileKey || semantic.profileKey;
         const rememberedKind = remembered ? M.sectionKind(mappingContext.section) : null;
         const semanticContext = remembered && ["work", "internship", "education", "project"].includes(rememberedKind)
@@ -1425,6 +1478,7 @@
         if (typeof raw === 'string') result.answer = raw;
       }
       if (result.reason === "ready") result.reason = controlConstraint(control, result.answer, atsControlTargets.has(control)) || "ready";
+      if (detectedRepeat && !repeatPlanMatches(detectedRepeat)) { result.reason = 'field_changed'; result.semanticStatus = 'manual'; }
       if (["unconfirmed_profile_value", "unlabelled_field"].includes(result.reason)) result.semanticStatus = "manual";
       return result;
     });
@@ -1436,9 +1490,10 @@
     const paths = new Map();
     for (const entry of entries) {
       if (entry.reason !== "ready" || !entry.path) continue;
-      const matches = paths.get(entry.path) || [];
+      const target = logicalEntryKey(entry);
+      const matches = paths.get(target) || [];
       matches.push(entry);
-      paths.set(entry.path, matches);
+      paths.set(target, matches);
     }
     for (const matches of paths.values()) {
       if (matches.length > 1) for (const entry of matches) entry.reason = "duplicate_target";
@@ -2043,51 +2098,8 @@
     return bytes;
   }
 
-  async function ensureRepeatRows(profile) {
-    const issues = [];
-    for (const kind of ["education", "project"]) {
-      if (kind === "education" && location.origin + location.pathname === CMS_PHOTO_PAGE
-        && document.querySelector('form .form-cell[id="14"]')) continue;
-      const collection = REPEAT_KEYS[kind].collection;
-      const confirmed = new Set(profile.confirmedFields || []);
-      const target = Math.min((profile[collection] || []).reduce((highest, row, index) =>
-        Object.entries(row).some(([field, value]) => value && confirmed.has(`${collection}.${index}.${field}`)) ? index + 1 : highest, 0), 8);
-      let rows = document.querySelectorAll(`[data-repeat-kind="${kind}"]`).length;
-      while (rows < target) {
-        requireVisibleFillPage();
-        const matches = [...document.querySelectorAll(`[data-add-repeat="${kind}"]`)];
-        const button = matches.length === 1 ? matches[0] : null;
-        if (!(button instanceof HTMLButtonElement)
-          || button.getAttribute("type")?.toLowerCase() !== "button"
-          || button.hasAttribute("formaction") || button.disabled || !visible(button)) {
-          issues.push({ id: `repeat-add-${kind}`, labels: [kind === "education" ? "教育经历加行" : "项目经历加行"],
-            kind: "repeat_add_button", path: null, status: "skipped", reason: "custom_control_not_supported", currentValue: "" });
-          break;
-        }
-        requireVisibleFillPage();
-        await checkProfileWrite();
-        if (loginControlReason(button)) {
-          issues.push({ id: `repeat-add-${kind}`, labels: [], kind: 'repeat_add_button', path: null,
-            status: 'skipped', reason: 'login_form_detected', currentValue: '' });
-          break;
-        }
-        button.click();
-        await new Promise((resolve) => setTimeout(resolve, 100));
-        requireVisibleFillPage();
-        const next = document.querySelectorAll(`[data-repeat-kind="${kind}"]`).length;
-        if (next <= rows) {
-          issues.push({ id: `repeat-add-${kind}`, labels: [kind === "education" ? "教育经历加行" : "项目经历加行"],
-            kind: "repeat_add_button", path: null, status: "skipped", reason: "custom_control_not_supported", currentValue: "" });
-          break;
-        }
-        rows = next;
-      }
-    }
-    return issues;
-  }
-
   function logicalEntryKey(entry) {
-    return entry.path ? `path:${entry.path}` : `field:${JSON.stringify([entry.id, entry.kind, entry.labels.map(M.normalize)])}`;
+    return entry.path ? `path:${entry.path}${entry.semanticSource === 'single_education_degree' ? ':basic_degree' : ''}` : `field:${JSON.stringify([entry.id, entry.kind, entry.labels.map(M.normalize)])}`;
   }
 
   function entrySignature(entry) {
@@ -2271,12 +2283,13 @@
       if(verdict?.allowed!==true){const error=Error('profile_binding_changed');error.writeStarted=context.writeStarted;error.fillNotStarted=!context.writeStarted;throw error;}
       requireVisibleFillPage();
       if(context.activeControl)requireWritableControl(context.activeControl,context.activeControlWriteStarted===true);
+      context.activeRepeatCheck?.();
       if(write){context.writeStarted=true;if(context.activeControl)context.activeControlWriteStarted=true;}
     }};
     globalThis.ResumeProfileWriteContext=context;
-    try{await context.check(false);const result=await fillOwnedContent(profile,attachment,photoUploads);await context.check(false);
+    try{await context.check(false);const result=await fillOwnedContent(profile,attachment,photoUploads);await context.check(false);context.finalRepeatCheck?.();
       return {...result,writeStarted:context.writeStarted,writeAttempted:context.writeStarted};}
-    finally{if(globalThis.ResumeProfileWriteContext===context)delete globalThis.ResumeProfileWriteContext;}
+    finally{repeatFillPlan=null;if(globalThis.ResumeProfileWriteContext===context)delete globalThis.ResumeProfileWriteContext;}
   }
   async function setBoundNativeValue(control,value,verifyTarget=null){
     const proto=control instanceof HTMLTextAreaElement?HTMLTextAreaElement.prototype:HTMLInputElement.prototype,setter=Object.getOwnPropertyDescriptor(proto,'value')?.set;
@@ -2365,7 +2378,7 @@
     const formReadiness = currentFormReadiness();
     if (formReadiness.advisory) advisoryHints.push(formReadiness);
     advisoryHints.push(...loginAdvisoryHints());
-    const results = atsEngineWriteEnabled ? [] : await ensureRepeatRows(profile);
+    const results = []; // Fill only records the user has already opened.
     let decodedAttachment = null;
     const processed = new Set();
     const records = new Map();
@@ -2375,6 +2388,7 @@
     let cmsCalendarBlocked = false;
     const startUrl = location.href;
     const firstEntries = collect(profile, attachment);
+    repeatFillPlan = [...pageRepeatBindings().values()];
     const initialScopes = new Set(firstEntries.map((entry) => entryScope(entry.control)));
     for (let pass = 0; pass < 3; pass += 1) {
       requireVisibleFillPage();
@@ -2404,7 +2418,7 @@
             .filter((candidate) => logicalEntryKey(candidate) === key);
           if (matches.length !== 1) {
             rebindFailure = matches.length ? "duplicate_target" : "field_changed";
-          } else if (entrySignature(matches[0]) !== entrySignature(original)) {
+          } else if (entrySignature(matches[0]) !== entrySignature(original) || !sameRepeatBinding(original, matches[0])) {
             rebindFailure = "field_changed";
           } else if (entryScope(matches[0].control) !== originalScope) {
             rebindFailure = "form_changed";
@@ -2460,6 +2474,12 @@
           result.status = "failed";
           result.reason = "field_changed";
           continue;
+        }
+        if (repeatBindings.has(entry)) {
+          const live = collect(profile, attachment).find(candidate => candidate.control === entry.control);
+          if (!live || logicalEntryKey(live) !== key || !sameRepeatBinding(entry, live)) {
+            result.status = 'failed'; result.reason = 'field_changed'; continue;
+          }
         }
         // Keep the collision guard aware of framework-assigned replacement
         // ids encountered on later passes as well as the initial id.
@@ -2528,6 +2548,11 @@
           requireWritableControl(control);
           globalThis.ResumeProfileWriteContext.activeControl = control;
           globalThis.ResumeProfileWriteContext.activeControlWriteStarted = false;
+          globalThis.ResumeProfileWriteContext.activeRepeatCheck = repeatBindings.has(entry) ? () => {
+            const live = collect(profile, attachment).find(candidate => candidate.control === control);
+            if (!live || live.reason === 'field_changed' || logicalEntryKey(live) !== key
+              || entrySignature(live) !== entrySignature(entry) || !sameRepeatBinding(entry, live)) throw Error('field_changed');
+          } : null;
           const answer = Array.isArray(entry.answer) ? entry.answer[0] : entry.answer;
           if (atsEngineWriteEnabled) {
             record.readbackId = await fillAtsControl(entry, result);
@@ -2640,7 +2665,7 @@
             continue;
           }
           result.status = "failed";
-          result.reason = entry.cmsBasicAddress && ["field_changed", "question_scope_mismatch", "ambiguous_repeat_group",
+          result.reason = repeatBindings.has(entry) && error?.message === 'field_changed' ? 'field_changed' : entry.cmsBasicAddress && ["field_changed", "question_scope_mismatch", "ambiguous_repeat_group",
             "duplicate_target", "custom_control_not_supported", "ambiguous_profile_fact", "missing_profile_value",
             "unconfirmed_profile_value", "question_scope_unconfirmed", "existing_value"].includes(error?.message)
             ? error.message : "control_error";
@@ -2657,6 +2682,7 @@
         } finally {
           globalThis.ResumeProfileWriteContext.activeControl = null;
           globalThis.ResumeProfileWriteContext.activeControlWriteStarted = false;
+          globalThis.ResumeProfileWriteContext.activeRepeatCheck = null;
         }
       }
       await new Promise((resolve) => setTimeout(resolve, awaitingDependentOptions ? 350 : 40));
@@ -2689,7 +2715,7 @@
         result.reason = "form_changed";
         continue;
       }
-      if (entrySignature(live) !== record.signature || !live.control.isConnected) {
+      if (entrySignature(live) !== record.signature || !live.control.isConnected || !sameRepeatBinding(record.entry, live)) {
         result.status = "failed";
         result.reason = "field_changed";
         continue;
@@ -2713,6 +2739,17 @@
     // Page scripts may autosave or submit after input/change events. The extension
     // cannot infer the remote site's final state from local DOM readback alone.
     const photoRows = atsEngineWriteEnabled ? [] : await fillCmsPhotos(photoUploads);
+    globalThis.ResumeProfileWriteContext.finalRepeatCheck = () => {
+      const latest = collect(profile, attachment);
+      for (const record of records.values()) {
+        if (record.result.status !== 'verified' || !repeatBindings.has(record.entry)) continue;
+        const matches = latest.filter(entry => logicalEntryKey(entry) === record.key);
+        if (location.href !== startUrl || matches.length !== 1 || !sameRepeatBinding(record.entry, matches[0])
+          || entrySignature(matches[0]) !== record.signature) {
+          record.result.status = 'failed'; record.result.reason = 'field_changed';
+        }
+      }
+    };
     const validationGaps = currentValidationGaps();
     if (!advisoryHints.some(hint => hint.reason === 'login_form_detected')) advisoryHints.push(...loginAdvisoryHints());
     return { url: location.href, title: document.title,
@@ -2973,7 +3010,7 @@
         sendResponse(reply);
       });
     return true;
-  };chrome.runtime.onMessage.addListener(engineListener);globalThis.__resumeQuickFillEngineListener=engineListener;globalThis.__resumeQuickFillEngineRevision=27;}
+  };chrome.runtime.onMessage.addListener(engineListener);globalThis.__resumeQuickFillEngineListener=engineListener;globalThis.__resumeQuickFillEngineRevision=28;}
   // ATS runners and the popup share the current-document scan and field writer.
   globalThis.ResumeQuickFillFillCurrentPage = async (profile, profileBinding) => {
     if (fillState.pending) throw Object.assign(Error('fill_in_progress'), { fillNotStarted: true, writeStarted: false });

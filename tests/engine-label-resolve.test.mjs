@@ -131,16 +131,18 @@ test('unassociated shared form-item and section questions cannot label several i
   assert.deepEqual(h.effects, { input: 0, change: 0, click: 0, submit: 0 });
 });
 
-for (const [section, question, path] of [
-  ['教育经历', '学校', 'education.0.school'], ['实习经历', '实习公司', 'experience.0.organization'],
-]) test(`${section} heading supplies context while missing record index remains manual`, async t => {
+for (const [section, question, path, expected] of [
+  ['教育经历', '学校', 'education.0.school', profile.education[0].school],
+  ['实习经历', '实习公司', 'experience.0.organization', profile.experience[0].organization],
+]) test(`${section} heading and one existing record bind source index zero`, async t => {
   const h = boot(t, `<form><section><h2>${section}</h2><div class="form-item"><div class="form-item-label">${question}</div><input id="target" placeholder="请选择"></div></section></form>`);
   const field = (await h.request('RESUME_INSPECT')).fields.find(row => row.id === 'target');
   assert.deepEqual([...field.labels], [question]);
-  assert.equal(field.reason, 'ambiguous_repeat_group'); assert.equal(field.semanticStatus, 'manual');
-  assert.notEqual(field.path, path);
+  assert.equal(field.reason, 'ready'); assert.equal(field.path, path);
   const filled = (await h.request('RESUME_FILL')).fields.find(row => row.id === 'target');
-  assert.equal(filled.status, 'skipped'); assert.equal(h.window.document.getElementById('target').value, '');
+  assert.equal(filled.status, 'verified', JSON.stringify(filled));
+  assert.equal(h.window.document.getElementById('target').value, expected);
+  assert.equal(h.effects.click, 0); assert.equal(h.effects.submit, 0); assert.equal(h.storageWrites, 0);
 });
 
 for (const [kind, section, question, path, expected] of [

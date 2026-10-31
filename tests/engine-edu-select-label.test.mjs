@@ -168,14 +168,41 @@ test('one complete plain education record maps its school, degree and major with
   assert.equal(h.effects.some(event => event.type === 'click'), false); safe(h);
 });
 
-for (const [name, markup, suppliedProfile] of [
-  ['two visible records', plainEducation(plainRows(facts, '-first') + plainRows(facts, '-second'))],
-  ['multiple source records', plainEducation(), { ...profile, education: [...profile.education, { school: 'SYNTHETIC_SECOND_SCHOOL', degree: 'SYNTHETIC_SECOND_DEGREE', major: 'SYNTHETIC_SECOND_MAJOR' }] }],
-  ...facts.map(([, missing]) => [`missing ${missing} question`, plainEducation(plainRows(facts.filter(([, key]) => key !== missing)))]),
+const multipleEducation = {
+  ...profile,
+  education: [...profile.education, { school: 'SYNTHETIC_SECOND_SCHOOL', degree: 'SYNTHETIC_SECOND_DEGREE', major: 'SYNTHETIC_SECOND_MAJOR' }],
+  confirmedFields: [...profile.confirmedFields, ...facts.map(([, key]) => `education.1.${key}`)],
+};
+
+for (const [name, markup, suppliedProfile, expected] of [
+  ['two visible records', plainEducation(plainRows(facts, '-first') + plainRows(facts, '-second')), multipleEducation,
+    facts.flatMap(([, key]) => [[`${key}-first`, 0, key], [`${key}-second`, 1, key]])],
+  ['multiple source records', plainEducation(), multipleEducation, facts.map(([, key]) => [key, 0, key])],
+  ...facts.map(([, missing]) => [`missing ${missing} question`, plainEducation(plainRows(facts.filter(([, key]) => key !== missing))),
+    profile, facts.filter(([, key]) => key !== missing).map(([, key]) => [key, 0, key])]),
+]) test(`plain education ${name} binds each existing field to its record index`, async t => {
+  const h = structural(t, markup, suppliedProfile);
+  const inspected = await h.run('RESUME_INSPECT');
+  assert.deepEqual(h.effects, []);
+  const filled = await h.run('RESUME_FILL');
+  for (const [id, index, key] of expected) {
+    const before = inspected.fields.find(row => row.id === id);
+    assert.equal(before.path, `education.${index}.${key}`, JSON.stringify(before));
+    assert.equal(before.reason, 'ready', JSON.stringify(before));
+    const after = filled.fields.find(row => row.id === id);
+    assert.equal(after.path, before.path); assert.equal(after.status, 'verified', JSON.stringify(after));
+    assert.equal(h.w.document.getElementById(id).value, suppliedProfile.education[index][key]);
+  }
+  assert.equal(filled.fields.filter(row => row.path?.startsWith('education.') && row.status === 'verified').length, expected.length);
+  assert.equal(h.effects.filter(event => event.type === 'change').length, expected.length);
+  assert.equal(h.effects.some(event => event.type === 'click'), false); safe(h);
+});
+
+for (const [name, markup] of [
   ['two separate education blocks', plainEducation(plainRows(facts, '-first')) + plainEducation(plainRows(facts, '-second'))],
   ['unknown section heading', plainEducation(plainRows(), '未识别分区')],
 ]) test(`plain education ${name} cannot guess an education index`, async t => {
-  const h = structural(t, markup, suppliedProfile);
+  const h = structural(t, markup);
   for (const type of ['RESUME_INSPECT', 'RESUME_FILL']) {
     const fields = (await h.run(type)).fields.filter(row => /^(school|degree|major)/u.test(row.id));
     assert.ok(fields.length >= 2);
@@ -205,7 +232,7 @@ const vendorFiles = {
 
 // This second fixture uses pinned real libraries and the production MAIN write
 // bridge. Values change only via their ordinary option click handlers.
-async function realSelect(t, lib, { wrapInLabel = true, entries = facts, searchable = true } = {}) {
+async function realSelect(t, lib, { wrapInLabel = true, entries = facts, searchable = true, unmarked = false } = {}) {
   const dom = new JSDOM('<!doctype html><body><form><div id="app"></div><input id="neighbor" value="KEEP">'
     + '<button type="submit">Save</button></form></body>',
   { url: 'https://fixture.example.test/resume', pretendToBeVisual: true, runScripts: 'outside-only' });
@@ -225,7 +252,7 @@ async function realSelect(t, lib, { wrapInLabel = true, entries = facts, searcha
         <${option} value="${key}-code" ${lib === 'el' ? `label="${profile.education[0][key]}"` : ''}>${profile.education[0][key]}</${option}>
       </${tag}></${wrapper}></div></div></div>`).join('');
   const app = new w.Vue({ el: '#app', data: () => ({ school: '', degree: '', major: '' }),
-    template: record(fields) });
+    template: unmarked ? plainEducation(`<div class="record-content">${fields}</div>`) : record(fields) });
   await w.Vue.nextTick();
   t.after(() => { app.$destroy(); dom.window.close(); });
   const data = { [CONTROL_WRITE_FLAG]: true, resumeProfile: copy(profile),
@@ -258,9 +285,12 @@ async function realSelect(t, lib, { wrapInLabel = true, entries = facts, searcha
   } };
 }
 
-for (const [lib, adapter, searchable = true] of [['el', 'el-select-search'], ['ant', 'antdv1-select-search'], ['ivu', 'ivu-select'], ['ant', 'antdv1-select', false]])
-  test(`${adapter} real wrapped education selects use existing adapter writes and independent readback receipts`, async t => {
-    const h = await realSelect(t, lib, { wrapInLabel: lib !== 'ivu', searchable });
+for (const [lib, adapter, searchable = true, unmarked = false] of [
+  ['el', 'el-select-search'], ['ant', 'antdv1-select-search'], ['ivu', 'ivu-select'], ['ant', 'antdv1-select', false],
+  ['el', 'el-select-search', true, true], ['ant', 'antdv1-select-search', true, true],
+]) test(`${adapter} real ${unmarked ? 'unmarked' : 'wrapped'} education selects use existing adapter writes and independent readback receipts`, async t => {
+    const h = await realSelect(t, lib, { wrapInLabel: !unmarked && lib !== 'ivu', searchable, unmarked });
+    if (unmarked) assert.equal(h.w.document.querySelectorAll('[data-repeat-kind]').length, 0);
     const before = await h.run('RESUME_INSPECT');
     for (const [question, key] of facts) {
       const row = before.fields.find(field => field.path === `education.0.${key}`);
@@ -291,12 +321,12 @@ test('a real iView select reopened by an outer label activation never reports a 
   assert.equal(h.w.ResumeControls.liveSupportClaimed, false); safe(h);
 });
 
-test('reinjection replaces a revision 26 listener once before resolving wrapped education labels', async t => {
+test('reinjection replaces a revision 27 listener once before resolving wrapped education labels', async t => {
   const h = structural(t, plainEducation()), previous = h.w.__resumeQuickFillEngineListener;
-  h.w.__resumeQuickFillEngineRevision = 26;
+  h.w.__resumeQuickFillEngineRevision = 27;
   h.w.eval(source('src/content/engine.js'));
   const current = h.w.__resumeQuickFillEngineListener;
-  assert.notEqual(current, previous); assert.equal(h.w.__resumeQuickFillEngineRevision, 27);
+  assert.notEqual(current, previous); assert.equal(h.w.__resumeQuickFillEngineRevision, 28);
   assert.equal(h.listeners.length, 1); assert.equal(h.listeners[0], current);
   h.w.eval(source('src/content/engine.js'));
   assert.equal(h.w.__resumeQuickFillEngineListener, current); assert.equal(h.listeners.length, 1);

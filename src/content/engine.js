@@ -8,7 +8,7 @@
   if(nativeMessages.hasListeners?.()===false)globalThis.__resumeNativeListenersResetObserved=true;
   if(globalThis.__resumeQuickFillInstalled){
     existingListenerAlive=!!ownedListener&&nativeMessages.hasListener?.(ownedListener)===true;
-    if(existingListenerAlive&&globalThis.__resumeQuickFillEngineRevision===26&&typeof globalThis.ResumeQuickFillGthInspect==='function'
+    if(existingListenerAlive&&globalThis.__resumeQuickFillEngineRevision===27&&typeof globalThis.ResumeQuickFillGthInspect==='function'
       &&typeof globalThis.ResumeQuickFillFillCurrentPage==='function')return;
     if(existingListenerAlive){if(fillState.pending)throw Error('profile_write_context_busy');nativeMessages.removeListener(ownedListener);existingListenerAlive=false;}
     else if(!ownedListener&&nativeMessages.hasListeners?.()===true&&!globalThis.__resumeNativeListenersResetObserved)throw Error('extension_reload_required');
@@ -51,11 +51,12 @@
     for (const candidate of response.candidates || []) {
       const nodes = document.querySelectorAll(candidate.selector);
       if (nodes.length !== 1 || !nodes[0].matches('input,textarea,[contenteditable]')
-        && !(candidate.type === 'tree-select' && nodes[0].matches('[role="combobox"]'))
+        && !(['select', 'tree-select'].includes(candidate.type) && nodes[0].matches('[role="combobox"]'))
         && !(candidate.type === 'slider' && nodes[0].matches('[role="slider"]'))
         && !(candidate.type === 'transfer' && nodes[0].matches('.el-transfer,.ant-transfer'))
         && !(candidate.type === 'rate' && nodes[0].matches('.el-rate,.ant-rate,[role="slider"]'))) continue;
-      if (['multi-select', 'tree-select', 'slider', 'rate', 'transfer'].includes(candidate.type)) {
+      if ((['select', 'select-search', 'cascader'].includes(candidate.type) && candidate.rootSelector)
+        || ['multi-select', 'tree-select', 'slider', 'rate', 'transfer'].includes(candidate.type)) {
         const roots = typeof candidate.rootSelector === 'string' ? document.querySelectorAll(candidate.rootSelector) : [];
         if (roots.length !== 1 || !roots[0].contains(nodes[0])) continue;
         for (const peer of roots[0].querySelectorAll('input,textarea,[contenteditable]')) if (peer !== nodes[0]) atsControlPeers.add(peer);
@@ -205,6 +206,8 @@
       const target = document.getElementById(label.htmlFor);
       const candidate = atsControlTargets.get(control);
       return target === control || !!target && control.contains(target)
+        || !!target && target === answerWidget(control) && target.contains(control)
+          && questionOwnsControl({ htmlFor: '' }, control, target)
         || !!target && ['slider', 'rate', 'transfer'].includes(candidate?.type) && document.querySelector(candidate.rootSelector) === target;
     }
     const editors = [...scope.querySelectorAll('input:not([type="hidden"]),select,textarea,[contenteditable]')]
@@ -214,18 +217,35 @@
     // A confirmed inputless widget is the editor for a standard
     // form-item label. Include every peer so a shared row stays ambiguous.
     for (const [node, candidate] of atsControlTargets) {
-      if (['tree-select', 'slider', 'rate', 'transfer'].includes(candidate.type) && scope.contains(node)
+      if (['select', 'tree-select', 'slider', 'rate', 'transfer'].includes(candidate.type) && scope.contains(node)
         && !node.matches('input,textarea,[contenteditable]')) editors.push(node);
     }
-    const widget = node => node.closest('.ant-select,.el-select,.ivu-select,.ant-radio-group,.el-radio-group,.ivu-radio-group,.ant-slider,.el-slider,.ant-rate,.el-rate,.ant-transfer,.el-transfer') || node;
+    const widget = node => {
+      const root = answerWidget(node);
+      // CSS alone cannot prove that two editors are one compound answer.
+      // MAIN must confirm its owner and exclude internal peers first.
+      if (root && (atsControlTargets.has(node) || root.querySelectorAll('input:not([type="hidden"]),select,textarea,[contenteditable]').length <= 1)) return root;
+      return node.closest('.ant-radio-group,.el-radio-group,.ivu-radio-group,.ant-slider,.el-slider,.ant-rate,.el-rate,.ant-transfer,.el-transfer') || node;
+    };
     if (editors.length && editors.every(node => node.type === 'radio' && node.name === editors[0].name)) return editors.includes(control);
     const owners = new Set(editors.map(widget));
     return owners.size === 1 && owners.has(widget(control));
   }
 
-  const FORM_ITEM_SELECTOR = '.ant-form-item,.el-form-item,.ivu-form-item,.form-item,.form-group,.field,[data-field],[data-form-item]';
-  const ITEM_QUESTION_SELECTOR = '.ant-form-item-label,.el-form-item__label,.ivu-form-item-label,.form-item-label,.field-label,.label,[data-label]';
+  const FORM_ITEM_SELECTOR = '.moka-form-item,.ant-form-item,.el-form-item,.ivu-form-item,.form-item,.form-group,.field,[data-field],[data-form-item]';
+  const ITEM_QUESTION_SELECTOR = '.moka-form-item-label,.ant-form-item-label,.el-form-item__label,.ivu-form-item-label,.form-item-label,.field-label,.label,[data-label]';
   const SECTION_SELECTOR = 'fieldset,section,.section,.form-section,[role="group"],[role="region"],[data-section]';
+  // Answer surfaces never supply a question, even when their selected display
+  // is an ordinary label/span or an accessibility shadow of the current value.
+  const ANSWER_WIDGET_SELECTOR = '.moka-select,.ant-select,.el-select,.ivu-select,.ant-cascader,.ant-cascader-picker,.el-cascader,.ivu-cascader,.dropdown,[role="combobox"],[role="listbox"],[role="tree"]';
+  const ANSWER_TEXT_SELECTOR = 'input,select,textarea,button,[contenteditable],script,style,[hidden],[aria-hidden="true"],'
+    + ANSWER_WIDGET_SELECTOR + ',[class*="display-value"],[class*="selected-value"],[class*="selection-item"],'
+    + '.ant-select-selection__choice__content,.ant-cascader-picker-label,.el-cascader__label,.el-select__selected-item,.ivu-select-placeholder';
+  function answerWidget(control) {
+    const candidate = atsControlTargets.get(control);
+    const root = candidate?.rootSelector && document.querySelector(candidate.rootSelector);
+    return root?.contains(control) ? root : control.parentElement?.closest(ANSWER_WIDGET_SELECTOR) || control.closest(ANSWER_WIDGET_SELECTOR);
+  }
   function cleanQuestion(value) {
     const text = String(value || '').replace(/\s+/gu, ' ').trim();
     const prompt = text.normalize('NFKC').replace(/^[*\s:：]+/u, '');
@@ -236,18 +256,32 @@
 
   function questionText(node) {
     if (!node) return '';
-    if (node.matches?.('input,select,textarea,button,[contenteditable],[hidden],[aria-hidden="true"],'
-      + '[class*="display-value"],[class*="selected-value"],[class*="selection-item"]')) return '';
+    if (node.matches?.(ANSWER_TEXT_SELECTOR) || node.closest?.(ANSWER_WIDGET_SELECTOR)) return '';
     const copy = node.cloneNode(true);
-    copy.querySelectorAll?.('input,select,textarea,button,[contenteditable],script,style,[hidden],[aria-hidden="true"],'
-      + '[class*="display-value"],[class*="selected-value"],[class*="selection-item"]')
-      .forEach(item => item.remove());
+    copy.querySelectorAll?.(ANSWER_TEXT_SELECTOR).forEach(item => item.remove());
     return cleanQuestion(copy.textContent);
   }
 
   function generalSection(control) {
-    for (let section = control.parentElement?.closest(SECTION_SELECTOR); section;
-      section = section.parentElement?.closest(SECTION_SELECTOR)) {
+    for (let section = control.parentElement; section && !section.matches('body,html'); section = section.parentElement) {
+      if (!section.matches(SECTION_SELECTOR)) {
+        // Plain component wrappers often have no section semantics. Accept
+        // only one existing section synonym in a preceding direct header;
+        // never infer a section from placeholders or the answer subtree.
+        const editorSelector = 'input,select,textarea,[contenteditable],[role="combobox"]';
+        const branches = [...section.children].filter(node => node.contains(control)
+          || node.matches(editorSelector) || node.querySelector(editorSelector));
+        if (branches.length !== 1 || !branches[0].contains(control)) continue;
+        let header = branches[0].previousElementSibling;
+        while (header && !questionText(header)) header = header.previousElementSibling;
+        const name = questionText(header);
+        // An unknown nearer group title is still a boundary. Do not borrow
+        // an education heading through another section's editors.
+        if (name && (M.sectionKind(name) || header.matches('h1,h2,h3,h4,h5,h6,[role="heading"]')
+          || header.querySelector('h1,h2,h3,h4,h5,h6,[role="heading"]')
+          || !questionOwnsControl(header, control, section))) return { element: section, name };
+        continue;
+      }
       const labelledBy = section.getAttribute('aria-labelledby');
       const ids = labelledBy?.trim().split(/\s+/u).map(id => document.getElementById(id));
       let name = ids?.length && ids.every(Boolean) ? ids.map(questionText).join(' ').trim() : '';
@@ -284,8 +318,7 @@
         if (labels.length) return labels;
       }
     }
-    const candidate = atsControlTargets.get(control);
-    const widgetRoot = ['slider', 'rate', 'transfer'].includes(candidate?.type) ? document.querySelector(candidate.rootSelector) : null;
+    const widgetRoot = answerWidget(control);
     const ownLabels = [...new Set([...(control.labels || []), ...document.querySelectorAll('label[for]')])]
       .filter(label => (label.control === control || control.id && label.htmlFor === control.id
         || widgetRoot?.id && label.htmlFor === widgetRoot.id) && questionOwnsControl(label, control, label));
@@ -311,16 +344,17 @@
       let previous = node.previousSibling;
       while (previous && (previous.nodeType === 8 || !previous.textContent?.trim())) previous = previous.previousSibling;
       if (!scope.matches('label') && previous && (previous.nodeType === 3 || previous.nodeType === 1
-        && !previous.matches('input,select,textarea,button,a,h1,h2,h3,h4,h5,h6,legend,[role="heading"]')
+        && !previous.matches('input,select,textarea,button,a')
         && !previous.querySelector('input,select,textarea,button,a,[contenteditable]'))
         && questionOwnsControl(previous, control, scope)) {
         const text = questionText(previous);
+        if (M.sectionKind(text)) continue;
         if (text) return [text];
       }
       if (scope.matches('form,' + SECTION_SELECTOR)) break;
     }
     const section = generalSection(control);
-    if (section && questionOwnsControl(section.element, control, section.element)) return [section.name];
+    if (section && !M.sectionKind(section.name) && questionOwnsControl(section.element, control, section.element)) return [section.name];
     return [];
   }
 
@@ -330,6 +364,53 @@
     const kind = row.getAttribute("data-repeat-kind");
     const rows = [...document.querySelectorAll(`[data-repeat-kind="${kind}"]`)];
     return { kind, index: rows.indexOf(row) };
+  }
+
+  function singleEducationContext(control, profile, cache) {
+    // An unmarked row has no ordering contract. Only a single source record
+    // and a complete, unique school/degree/major trio prove the same binding.
+    if (profile.education?.length !== 1) return null;
+    const section = generalSection(control);
+    if (!section || M.sectionKind(section.name) !== 'education') return null;
+    if (!cache.has('sections')) {
+      cache.set('sections', new Set([...new Set([...document.querySelectorAll('input,select,textarea,[contenteditable]'), ...atsControlTargets.keys()])]
+        .filter(node => visible(node, atsControlTargets.has(node)))
+        .map(node => generalSection(node)).filter(row => row && M.sectionKind(row.name) === 'education')
+        .map(row => row.element)));
+    }
+    if (cache.get('sections').size !== 1) return null;
+    if (!cache.has(section.element)) {
+      const keys = ['school', 'degree', 'major'];
+      const groups = new Map(keys.map(key => [key, new Map()]));
+      const editors = new Set([...section.element.querySelectorAll('input,select,textarea,[contenteditable]'),
+        ...[...atsControlTargets.keys()].filter(node => section.element.contains(node))]);
+      for (const node of editors) {
+        if (atsControlPeers.has(node) || treeQueryControl(node) || !visible(node, atsControlTargets.has(node))
+          || generalSection(node)?.element !== section.element) continue;
+        const labels = labelTexts(node);
+        if (new Set(labels.map(M.normalize)).size !== 1) continue;
+        const match = M.resolveAtsField({ hostname: location.hostname, labels, section: section.name, index: 0 });
+        if (!groups.has(match.key)) continue;
+        const owner = answerWidget(node) || node;
+        const peers = groups.get(match.key).get(owner) || [];
+        peers.push(node); groups.get(match.key).set(owner, peers);
+      }
+      const owners = keys.map(key => groups.get(key));
+      const unique = owners.every(group => group.size === 1 && [...group.values()][0].length === 1)
+        && new Set(owners.map(group => [...group.keys()][0])).size === keys.length;
+      const trio = unique ? owners.flatMap(group => [...group.values()][0]) : [];
+      let row = trio[0]?.parentElement;
+      while (row && !trio.every(node => row.contains(node))) row = row.parentElement;
+      const branches = row && trio.map(node => {
+        let branch = node;
+        while (branch.parentElement !== row) branch = branch.parentElement;
+        return branch;
+      });
+      // Three peer question branches establish one record. Two partial
+      // records nested under a common list cannot be stitched together.
+      cache.set(section.element, branches && new Set(branches).size === keys.length ? new Set(trio) : new Set());
+    }
+    return cache.get(section.element).has(control) ? { kind: 'education', index: 0 } : null;
   }
 
   function namedSection(control) {
@@ -1073,7 +1154,7 @@
       return control.querySelector(".ant-select-selection-selected-value")?.textContent?.trim() || "";
     }
     if (control instanceof HTMLSelectElement) {
-      const chosen = control.selectedOptions[0];
+      const chosen = control.options[control.selectedIndex];
       if (!chosen || chosen.disabled || !chosen.value) return "";
       if (datePartPlaceholder(chosen)) return "";
       if (["请选择", "选择", "请选", "select"].includes(M.normalize(chosen.textContent))) return "";
@@ -1173,7 +1254,7 @@
     // Inputless widget targets enter only through MAIN's confirmed opt-in
     // claim. They have no native text path when the write flag is absent.
     for (const [control, candidate] of atsControlTargets) {
-      if (['tree-select', 'slider', 'rate', 'transfer'].includes(candidate.type) && !controls.includes(control)
+      if (['select', 'tree-select', 'slider', 'rate', 'transfer'].includes(candidate.type) && !controls.includes(control)
         && !control.matches('input,textarea,[contenteditable]') && visible(control, true)
         && (!trialScope || trialScope.wrapper.contains(control))) controls.push(control);
     }
@@ -1186,6 +1267,7 @@
       .filter(cmsAntV3Control);
     const regionControls=query('.cascader-plugins-wrap').filter(cmsRegionControl);
     const checkboxControls=query('.ant-checkbox-group').filter(cmsCheckboxControl);
+    const educationContexts = new Map();
     const entries = [...controls, ...cmsControls,...regionControls,...checkboxControls].map((control, position) => {
       const manualReason = manualControlReason(control, loginScopes);
       if (manualReason) return manualControlEntry(control, position, manualReason);
@@ -1196,7 +1278,7 @@
       const conflictingLabels = !radio && new Set(labels.map(M.normalize)).size > 1;
       const section = namedSection(control);
       const legacyMatch = M.classify(labels);
-      const explicitRepeat = repeatContext(control);
+      const explicitRepeat = repeatContext(control) || singleEducationContext(control, profile, educationContexts);
       const questionScope = customQuestionScope(control);
       const semanticSection = questionScope.sectionName.startsWith("form:") ? "" : questionScope.sectionName;
       const fieldSection = semanticSection || explicitRepeat?.kind || "";
@@ -1272,7 +1354,7 @@
         result.path = value?.path;
         result.answer = value?.value;
         result.reason = value?.reason || (value ? "ready" : "missing_profile_value");
-      } else if (antSelectControl(control) && !degreeSelect && !['multi-select', 'tree-select'].includes(atsControlTargets.get(control)?.type)) {
+      } else if (antSelectControl(control) && !degreeSelect && !['select', 'select-search', 'cascader', 'multi-select', 'tree-select'].includes(atsControlTargets.get(control)?.type)) {
         result.reason = "custom_select_not_supported";
       } else if(cmsSimple) {
         const value=cmsScopedAcademicAnswer(profile,cmsSimple);
@@ -1302,6 +1384,9 @@
         const value = semanticProfileValue(profile, path, semanticContext);
         result.path = path; result.answer = value.value; result.reason = value.reason || "ready";
         result.semanticSource = remembered ? "confirmed_domain_mapping" : semantic.reason;
+      } else if (['school', 'degree', 'major'].includes(key) && !context) {
+        result.reason = 'ambiguous_repeat_group';
+        result.semanticStatus = 'manual';
       } else if (!key) {
         const custom = customValue(profile, labels, control);
         result.path = custom?.path;
@@ -1371,7 +1456,7 @@
     plain.currentValue = meaningfulCurrent(control, radioOptions, antUnnamedRadio);
     // Search text is a query. MAIN's model and selected display decide
     // preservation and readback for an explicitly claimed select or tree.
-    if (['input-mask', 'multi-select', 'tree-select', 'slider', 'rate', 'transfer'].includes(atsControlTargets.get(control)?.type)) return plain;
+    if (['input-mask', 'select', 'select-search', 'cascader', 'multi-select', 'tree-select', 'slider', 'rate', 'transfer'].includes(atsControlTargets.get(control)?.type)) return plain;
     if(entry.kind==='cms_checkbox_group') {
       const selected=globalThis.ResumeCmsCheckboxes.inspectControl(control)?.selected,
         desired=checkboxFact?.answers?.map(exactOptionText).sort();
@@ -2036,7 +2121,7 @@
     }
     if (entry.kind === "radio") return !!entry.radioOptions?.[entry.optionIndex]?.checked;
     if (control instanceof HTMLSelectElement) {
-      const chosen = control.selectedOptions[0];
+      const chosen = control.options[control.selectedIndex];
       return !!chosen && M.selectOption([chosen], entry.answer).index === 0;
     }
     return proseControl(control) ? proseValue(meaningfulCurrent(control)) === proseValue(answer) : control.value === String(answer);
@@ -2237,7 +2322,7 @@
     result.status = response.ok === true && response.status === 'success' ? 'verified'
       : response.writeStarted === true || ['mismatch', 'reverted'].includes(response.status) ? 'failed' : 'skipped';
     result.reason = response.reason || 'control_write_failed';
-    result.currentValue = ['slider', 'rate', 'transfer'].includes(atsControlTargets.get(entry.control)?.type) && response.status === 'success'
+    result.currentValue = ['select', 'select-search', 'cascader', 'multi-select', 'tree-select', 'slider', 'rate', 'transfer'].includes(atsControlTargets.get(entry.control)?.type) && response.status === 'success'
       ? response.domReadback : meaningfulCurrent(entry.control, entry.radioOptions, entry.antUnnamedRadio);
     return response.readbackId;
   }
@@ -2256,7 +2341,7 @@
       result.status = 'failed';
       result.adapterStatus = response?.ok === true ? response.status : 'unsupported';
       result.reason = response?.reason || 'control_readback_failed';
-    } else if (['slider', 'rate', 'transfer'].includes(atsControlTargets.get(entry.control)?.type)) result.currentValue = response.domReadback;
+    } else if (['select', 'select-search', 'cascader', 'multi-select', 'tree-select', 'slider', 'rate', 'transfer'].includes(atsControlTargets.get(entry.control)?.type)) result.currentValue = response.domReadback;
   }
 
   async function fillOwnedContent(profile, attachment, photoUploads = null) {
@@ -2528,7 +2613,7 @@
             await checkProfileWrite(); requireWritableControl(control,genericWriteStarted); control.dispatchEvent(new Event("input", { bubbles: true }));
             requireVisibleFillPage();
             await checkProfileWrite(); requireWritableControl(control,genericWriteStarted); control.dispatchEvent(new Event("change", { bubbles: true }));
-            const chosen = control.selectedOptions[0];
+            const chosen = control.options[control.selectedIndex];
             result.status = chosen && M.selectOption([chosen], entry.answer).index === 0 ? "verified" : "failed";
           } else {
             const beforeValue = control.value, beforeHref = location.href;
@@ -2888,7 +2973,7 @@
         sendResponse(reply);
       });
     return true;
-  };chrome.runtime.onMessage.addListener(engineListener);globalThis.__resumeQuickFillEngineListener=engineListener;globalThis.__resumeQuickFillEngineRevision=26;}
+  };chrome.runtime.onMessage.addListener(engineListener);globalThis.__resumeQuickFillEngineListener=engineListener;globalThis.__resumeQuickFillEngineRevision=27;}
   // ATS runners and the popup share the current-document scan and field writer.
   globalThis.ResumeQuickFillFillCurrentPage = async (profile, profileBinding) => {
     if (fillState.pending) throw Object.assign(Error('fill_in_progress'), { fillNotStarted: true, writeStarted: false });
